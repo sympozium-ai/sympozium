@@ -3407,7 +3407,10 @@ func (m tuiModel) View() string {
 
 	if showFeed {
 		rightW := fullWidth - m.width - 1 // 1 for vertical separator
-		feedStr := m.renderFeed(rightW, m.height)
+		// Derive feed height from the actual left-pane line count so the
+		// right pane never exceeds it (which would push the header off-screen).
+		feedH := strings.Count(base, "\n")
+		feedStr := m.renderFeed(rightW, feedH)
 		base = joinPanesHorizontally(base, feedStr, m.width, rightW)
 		m.width = fullWidth // restore for overlay centering
 	}
@@ -4058,6 +4061,9 @@ func (m tuiModel) renderFeed(width, height int) string {
 
 	result := []string{allLines[0]}
 	result = append(result, visible...)
+	if len(result) > height {
+		result = result[:height]
+	}
 	for len(result) < height {
 		result = append(result, "")
 	}
