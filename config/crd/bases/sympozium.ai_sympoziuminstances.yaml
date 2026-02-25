@@ -177,6 +177,10 @@ spec:
                 items:
                   description: SecretRef references a Kubernetes Secret.
                   properties:
+                    provider:
+                      description: Provider is the AI provider name (e.g. "openai",
+                        "anthropic", "azure-openai", "ollama").
+                      type: string
                     secret:
                       description: Secret is the name of the Secret.
                       type: string
