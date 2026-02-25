@@ -113,7 +113,7 @@ func main() {
 	if memoryEnabled {
 		memoryInstruction := "\n\nYou have persistent memory. After completing your task, " +
 			"output a memory update block wrapped in markers like this:\n" +
-			"__KUBECLAW_MEMORY__\n<your updated MEMORY.md content>\n__KUBECLAW_MEMORY_END__\n" +
+			"__SYMPOZIUM_MEMORY__\n<your updated MEMORY.md content>\n__SYMPOZIUM_MEMORY_END__\n" +
 			"Include key facts, preferences, and context from this and past interactions. " +
 			"Keep it concise (under 256KB). Use markdown format."
 		systemPrompt += memoryInstruction
@@ -175,7 +175,7 @@ func main() {
 	// Extract and emit memory update before stripping markers from the response.
 	if memoryEnabled && res.Response != "" {
 		if memUpdate := extractMemoryUpdate(res.Response); memUpdate != "" {
-			fmt.Fprintf(os.Stdout, "\n__KUBECLAW_MEMORY__%s__KUBECLAW_MEMORY_END__\n", memUpdate)
+			fmt.Fprintf(os.Stdout, "\n__SYMPOZIUM_MEMORY__%s__SYMPOZIUM_MEMORY_END__\n", memUpdate)
 			log.Printf("emitted memory update (%d bytes)", len(memUpdate))
 		}
 	}
@@ -202,7 +202,7 @@ func main() {
 	// Print a structured marker to stdout so the controller can extract
 	// the result from pod logs even after the IPC volume is gone.
 	if markerBytes, err := json.Marshal(res); err == nil {
-		fmt.Fprintf(os.Stdout, "\n__KUBECLAW_RESULT__%s__KUBECLAW_END__\n", string(markerBytes))
+		fmt.Fprintf(os.Stdout, "\n__SYMPOZIUM_RESULT__%s__SYMPOZIUM_END__\n", string(markerBytes))
 	}
 
 	if res.Status == "error" {
@@ -480,12 +480,12 @@ func fatal(msg string) {
 // extractMemoryUpdate looks for a memory update block in the LLM response.
 // The agent is instructed to wrap its memory updates in:
 //
-//	__KUBECLAW_MEMORY__
+//	__SYMPOZIUM_MEMORY__
 //	<content>
-//	__KUBECLAW_MEMORY_END__
+//	__SYMPOZIUM_MEMORY_END__
 func extractMemoryUpdate(response string) string {
-	const startMarker = "__KUBECLAW_MEMORY__"
-	const endMarker = "__KUBECLAW_MEMORY_END__"
+	const startMarker = "__SYMPOZIUM_MEMORY__"
+	const endMarker = "__SYMPOZIUM_MEMORY_END__"
 
 	startIdx := strings.LastIndex(response, startMarker)
 	if startIdx < 0 {
@@ -499,11 +499,11 @@ func extractMemoryUpdate(response string) string {
 	return strings.TrimSpace(payload[:endIdx])
 }
 
-// stripMemoryMarkers removes all __KUBECLAW_MEMORY__...END__ blocks from the
+// stripMemoryMarkers removes all __SYMPOZIUM_MEMORY__...END__ blocks from the
 // response text so they don't appear in the TUI feed or channel messages.
 func stripMemoryMarkers(response string) string {
-	const startMarker = "__KUBECLAW_MEMORY__"
-	const endMarker = "__KUBECLAW_MEMORY_END__"
+	const startMarker = "__SYMPOZIUM_MEMORY__"
+	const endMarker = "__SYMPOZIUM_MEMORY_END__"
 
 	for {
 		startIdx := strings.Index(response, startMarker)

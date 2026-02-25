@@ -1,6 +1,6 @@
 ---
 # Example AgentRun
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: alice-run-001
@@ -18,7 +18,7 @@ spec:
     maxTokens: 128000
   sandbox:
     enabled: true
-    image: ghcr.io/alexsjones/kubeclaw/sandbox:v0.0.29
+    image: ghcr.io/alexsjones/sympozium/sandbox:v0.0.29
   skills:
     - code-review
   toolPolicy:

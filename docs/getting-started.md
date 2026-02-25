@@ -1,6 +1,6 @@
-# Getting Started with KubeClaw
+# Getting Started with Sympozium
 
-This guide walks you through installing KubeClaw, onboarding your first agent,
+This guide walks you through installing Sympozium, onboarding your first agent,
 and setting up practical agent patterns for SRE, security, and DevOps workflows.
 
 ---
@@ -16,60 +16,60 @@ and setting up practical agent patterns for SRE, security, and DevOps workflows.
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew install AlexsJones/kubeclaw/kubeclaw
+brew install AlexsJones/sympozium/sympozium
 ```
 
 ### Shell installer
 
 ```bash
-curl -fsSL https://kubeclaw.com/install.sh | sh
+curl -fsSL https://sympozium.com/install.sh | sh
 ```
 
 ### From source
 
 ```bash
-go install github.com/kubeclaw/kubeclaw/cmd/kubeclaw@latest
+go install github.com/alexsjones/sympozium/cmd/sympozium@latest
 ```
 
 Verify the install:
 
 ```bash
-kubeclaw version
+sympozium version
 ```
 
 ---
 
 ## Deploy the control plane
 
-KubeClaw needs its CRDs, controller, NATS event bus, and webhook installed in
+Sympozium needs its CRDs, controller, NATS event bus, and webhook installed in
 your cluster. The CLI handles this automatically during onboarding, or you can
 do it manually:
 
 ```bash
-kubeclaw install
+sympozium install
 ```
 
-This creates the `kubeclaw-system` namespace and deploys all components. It is
+This creates the `sympozium-system` namespace and deploys all components. It is
 idempotent — safe to run again if something changes.
 
 ---
 
 ## Onboard your first agent
 
-KubeClaw offers two onboarding paths: an **interactive TUI wizard** (default)
+Sympozium offers two onboarding paths: an **interactive TUI wizard** (default)
 and a **plain console fallback** for headless / CI environments.
 
 ### TUI wizard (recommended)
 
 ```bash
-kubeclaw onboard
+sympozium onboard
 ```
 
 The wizard walks you through six steps:
 
 | Step | What it does |
 |------|--------------|
-| **1 — Cluster check** | Verifies the cluster is reachable and KubeClaw is installed. Offers to run `kubeclaw install` if CRDs are missing. |
+| **1 — Cluster check** | Verifies the cluster is reachable and Sympozium is installed. Offers to run `sympozium install` if CRDs are missing. |
 | **2 — Provider** | Choose your LLM provider (OpenAI, Anthropic, Azure OpenAI, Ollama, or any OpenAI-compatible endpoint). Enter a base URL if needed, then paste your API key. |
 | **3 — Channel** | Optionally connect a messaging channel (Telegram, Slack, Discord, WhatsApp) or skip for now. |
 | **4 — Policy** | Choose a policy preset: **Permissive** (everything allowed), **Default** (commands require approval), or **Restrictive** (very locked-down). |
@@ -79,9 +79,9 @@ The wizard walks you through six steps:
 The wizard creates:
 
 - A **Kubernetes Secret** with your API key
-- A **ClawInstance** custom resource (your agent identity)
-- A **ClawPolicy** (tool-gating rules)
-- A **ClawSchedule** heartbeat (unless you chose "disabled")
+- A **SympoziumInstance** custom resource (your agent identity)
+- A **SympoziumPolicy** (tool-gating rules)
+- A **SympoziumSchedule** heartbeat (unless you chose "disabled")
 
 After onboarding you land in the TUI dashboard — your agent is live.
 
@@ -91,7 +91,7 @@ If your terminal does not support the TUI (e.g. a plain SSH session or CI
 pipeline), pass `--console`:
 
 ```bash
-kubeclaw onboard --console
+sympozium onboard --console
 ```
 
 You will get the same six prompts as numbered menus in plain text.
@@ -103,7 +103,7 @@ You will get the same six prompts as numbered menus in plain text.
 Once onboarded, launch the dashboard:
 
 ```bash
-kubeclaw
+sympozium
 ```
 
 From the dashboard you can:
@@ -112,7 +112,7 @@ From the dashboard you can:
 - **View runs** — see live status of current and past AgentRuns.
 - **Edit an instance** — open the edit modal (press `e`) to change the
   heartbeat schedule, review memory, or toggle skills.
-- **Switch instances** — if you have multiple ClawInstances.
+- **Switch instances** — if you have multiple SympoziumInstances.
 
 ---
 
@@ -124,7 +124,7 @@ Type a message into the input bar:
 List all pods that are not Running across every namespace.
 ```
 
-KubeClaw creates an **AgentRun** CR, spins up an ephemeral pod, calls your LLM,
+Sympozium creates an **AgentRun** CR, spins up an ephemeral pod, calls your LLM,
 and uses the built-in tools to fulfil the task. You will see the result stream
 back in the TUI.
 
@@ -140,9 +140,9 @@ Every agent pod ships with these seven tools:
 | `list_directory` | List directory contents |
 | `send_channel_message` | Send a message to Telegram / Slack / Discord / WhatsApp |
 | `fetch_url` | HTTP GET a URL and return the body |
-| `schedule_task` | Create, update, suspend, or delete ClawSchedule CRDs |
+| `schedule_task` | Create, update, suspend, or delete SympoziumSchedule CRDs |
 
-Tools are governed by the **ClawPolicy** you selected during onboarding. The
+Tools are governed by the **SympoziumPolicy** you selected during onboarding. The
 default policy lets read-only tools run freely and asks for approval before
 `execute_command`.
 
@@ -151,7 +151,7 @@ default policy lets read-only tools run freely and asks for approval before
 ## Agent patterns
 
 Below are three practical agent personas you can set up. Each combines a
-**ClawInstance**, one or more **SkillPacks**, and a tailored **heartbeat** to
+**SympoziumInstance**, one or more **SkillPacks**, and a tailored **heartbeat** to
 create a purpose-built agent.
 
 ### 1. SRE On-Call Agent
@@ -162,8 +162,8 @@ perform rollbacks.
 **Skills:** `k8s-ops`, `incident-response`
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: sre-oncall
 spec:
@@ -179,8 +179,8 @@ spec:
 **Heartbeat** — every 30 minutes:
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawSchedule
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumSchedule
 metadata:
   name: sre-oncall-heartbeat
 spec:
@@ -223,8 +223,8 @@ anti-patterns. Runs on a daily schedule.
 **Skills:** `code-review` (includes security-patterns)
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: security-auditor
 spec:
@@ -240,8 +240,8 @@ spec:
 **Heartbeat** — daily at 9 AM:
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawSchedule
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumSchedule
 metadata:
   name: security-daily-scan
 spec:
@@ -284,8 +284,8 @@ troubleshooting. Runs with a permissive policy on development clusters.
 **Skills:** `k8s-ops`, `code-review`
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: devops
 spec:
@@ -301,8 +301,8 @@ spec:
 **Heartbeat** — every hour:
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawSchedule
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumSchedule
 metadata:
   name: devops-heartbeat
 spec:
@@ -339,8 +339,8 @@ iteration without approval gates.
 
 ## Built-in SkillPacks
 
-KubeClaw ships with three built-in SkillPacks. Enable them on any
-ClawInstance:
+Sympozium ships with three built-in SkillPacks. Enable them on any
+SympoziumInstance:
 
 | SkillPack | Category | What it includes |
 |-----------|----------|------------------|
@@ -365,10 +365,10 @@ Connect your agent to a messaging platform so you can interact over chat:
 
 | Channel | How to connect |
 |---------|----------------|
-| **Telegram** | Create a bot with [@BotFather](https://t.me/BotFather), get the token, pass it during onboarding or set it in the ClawInstance channel config. |
+| **Telegram** | Create a bot with [@BotFather](https://t.me/BotFather), get the token, pass it during onboarding or set it in the SympoziumInstance channel config. |
 | **Slack** | Create a Slack app with Socket Mode enabled, add the bot/app token during onboarding. |
 | **Discord** | Create a Discord bot, grab the token, and connect it during onboarding. |
-| **WhatsApp** | Use the WhatsApp Business API — KubeClaw displays a QR code in the TUI for pairing. |
+| **WhatsApp** | Use the WhatsApp Business API — Sympozium displays a QR code in the TUI for pairing. |
 
 Channels are optional. You can always interact through the TUI or by creating
 AgentRun CRs directly with kubectl.
@@ -399,10 +399,10 @@ scan the cluster, or run a standing task.
 | Disabled | — | On-demand only, no background activity |
 
 You can change the heartbeat at any time through the TUI edit modal or by
-editing the ClawSchedule CR directly:
+editing the SympoziumSchedule CR directly:
 
 ```bash
-kubectl edit clawschedule <instance>-heartbeat
+kubectl edit sympoziumschedule <instance>-heartbeat
 ```
 
 ---
@@ -412,7 +412,7 @@ kubectl edit clawschedule <instance>-heartbeat
 You do not need the TUI to run tasks. Create an AgentRun CR directly:
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: quick-check
@@ -441,4 +441,4 @@ The phase transitions: `Pending` → `Running` → `Succeeded` (or `Failed`).
 - **Write a custom SkillPack** — see [Writing Skills](writing-skills.md)
 - **Add a new tool** — see [Writing Tools](writing-tools.md)
 - **Write integration tests** — see [Writing Integration Tests](writing-integration-tests.md)
-- **Read the full architecture** — see [Design Document](kubeclaw-design.md)
+- **Read the full architecture** — see [Design Document](sympozium-design.md)

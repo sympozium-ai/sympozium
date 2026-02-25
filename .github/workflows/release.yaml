@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 env:
-  REGISTRY: ghcr.io/alexsjones/kubeclaw
+  REGISTRY: ghcr.io/alexsjones/sympozium
 
 jobs:
   release-cli:
@@ -41,20 +41,20 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           go build -ldflags="-s -w -X main.version=${VERSION}" \
-            -o kubeclaw ./cmd/kubeclaw
+            -o sympozium ./cmd/sympozium
 
       - name: Package
         run: |
           PLATFORM="${{ matrix.goos }}-${{ matrix.goarch }}"
-          tar -czf "kubeclaw-${PLATFORM}.tar.gz" kubeclaw
-          sha256sum "kubeclaw-${PLATFORM}.tar.gz" > "kubeclaw-${PLATFORM}.tar.gz.sha256"
+          tar -czf "sympozium-${PLATFORM}.tar.gz" sympozium
+          sha256sum "sympozium-${PLATFORM}.tar.gz" > "sympozium-${PLATFORM}.tar.gz.sha256"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kubeclaw-*.tar.gz
-            kubeclaw-*.sha256
+            sympozium-*.tar.gz
+            sympozium-*.sha256
 
   release-manifests:
     runs-on: ubuntu-latest
@@ -63,7 +63,7 @@ jobs:
 
       - name: Package install manifests
         run: |
-          tar -czf kubeclaw-manifests.tar.gz \
+          tar -czf sympozium-manifests.tar.gz \
             config/crd/bases/ \
             config/manager/ \
             config/rbac/ \
@@ -77,7 +77,7 @@ jobs:
       - name: Upload manifests
         uses: softprops/action-gh-release@v2
         with:
-          files: kubeclaw-manifests.tar.gz
+          files: sympozium-manifests.tar.gz
 
   release-images:
     runs-on: ubuntu-latest
@@ -140,7 +140,7 @@ jobs:
       - name: Checkout tap
         uses: actions/checkout@v4
         with:
-          repository: AlexsJones/homebrew-kubeclaw
+          repository: AlexsJones/homebrew-sympozium
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
@@ -152,7 +152,7 @@ jobs:
 
           declare -A SHAS
           for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
-            URL="https://github.com/AlexsJones/kubeclaw/releases/download/${TAG}/kubeclaw-${platform}.tar.gz"
+            URL="https://github.com/AlexsJones/sympozium/releases/download/${TAG}/sympozium-${platform}.tar.gz"
             echo "Hashing ${URL}..."
             SHA=$(curl -fsSL "${URL}" | shasum -a 256 | awk '{print $1}')
             SHAS[$platform]="${SHA}"
@@ -161,52 +161,52 @@ jobs:
 
           mkdir -p homebrew-tap/Formula
 
-          cat > homebrew-tap/Formula/kubeclaw.rb << RUBY
-          class Kubeclaw < Formula
+          cat > homebrew-tap/Formula/sympozium.rb << RUBY
+          class Sympozium < Formula
             desc "Kubernetes-native AI agent orchestration platform CLI"
-            homepage "https://github.com/AlexsJones/kubeclaw"
+            homepage "https://github.com/AlexsJones/sympozium"
             version "${VERSION}"
             license "Apache-2.0"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/AlexsJones/kubeclaw/releases/download/v#{version}/kubeclaw-darwin-arm64.tar.gz"
+                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-darwin-arm64.tar.gz"
                 sha256 "${SHAS[darwin-arm64]}"
               else
-                url "https://github.com/AlexsJones/kubeclaw/releases/download/v#{version}/kubeclaw-darwin-amd64.tar.gz"
+                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-darwin-amd64.tar.gz"
                 sha256 "${SHAS[darwin-amd64]}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/AlexsJones/kubeclaw/releases/download/v#{version}/kubeclaw-linux-arm64.tar.gz"
+                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-linux-arm64.tar.gz"
                 sha256 "${SHAS[linux-arm64]}"
               else
-                url "https://github.com/AlexsJones/kubeclaw/releases/download/v#{version}/kubeclaw-linux-amd64.tar.gz"
+                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-linux-amd64.tar.gz"
                 sha256 "${SHAS[linux-amd64]}"
               end
             end
 
             def install
-              bin.install "kubeclaw"
+              bin.install "sympozium"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/kubeclaw version")
+              assert_match version.to_s, shell_output("#{bin}/sympozium version")
             end
           end
           RUBY
 
           # Fix heredoc indentation
-          sed -i 's/^          //' homebrew-tap/Formula/kubeclaw.rb
+          sed -i 's/^          //' homebrew-tap/Formula/sympozium.rb
 
       - name: Commit and push
         run: |
           cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/kubeclaw.rb
+          git add Formula/sympozium.rb
           git diff --cached --quiet && echo "No changes" && exit 0
-          git commit -m "Update kubeclaw to ${GITHUB_REF_NAME}"
+          git commit -m "Update sympozium to ${GITHUB_REF_NAME}"
           git push origin HEAD:main

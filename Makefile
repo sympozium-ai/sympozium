@@ -1,8 +1,8 @@
-# KubeClaw Makefile
+# Sympozium Makefile
 # Kubernetes-native agent orchestration platform
 
 # Image registry — matches ghcr.io/<owner>/<repo>/<image>
-REGISTRY ?= ghcr.io/alexsjones/kubeclaw
+REGISTRY ?= ghcr.io/alexsjones/sympozium
 TAG ?= latest
 
 # Tool versions
@@ -23,7 +23,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 BIN_DIR = bin
 
 # All binaries
-BINARIES = controller apiserver ipc-bridge webhook agent-runner kubeclaw
+BINARIES = controller apiserver ipc-bridge webhook agent-runner sympozium
 
 # All channel binaries
 CHANNELS = telegram whatsapp discord slack
@@ -87,7 +87,7 @@ $(CONTROLLER_GEN):
 
 generate: controller-gen ## Generate code (deepcopy, CRD manifests)
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
-	$(CONTROLLER_GEN) rbac:roleName=kubeclaw-manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=sympozium-manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 manifests: controller-gen ## Generate CRD manifests
 	$(CONTROLLER_GEN) crd paths="./api/..." output:crd:artifacts:config=config/crd/bases

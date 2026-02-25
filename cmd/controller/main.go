@@ -1,5 +1,5 @@
-// Package main is the entry point for the KubeClaw controller manager.
-// It starts all CRD controllers: ClawInstance, AgentRun, ClawPolicy, SkillPack.
+// Package main is the entry point for the Sympozium controller manager.
+// It starts all CRD controllers: SympoziumInstance, AgentRun, SympoziumPolicy, SkillPack.
 package main
 
 import (
@@ -15,10 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	"github.com/kubeclaw/kubeclaw/internal/controller"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
-	"github.com/kubeclaw/kubeclaw/internal/orchestrator"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	"github.com/alexsjones/sympozium/internal/controller"
+	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/orchestrator"
 )
 
 var (
@@ -29,7 +29,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(kubeclawv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(sympoziumv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -58,7 +58,7 @@ func main() {
 		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "kubeclaw-controller-leader",
+		LeaderElectionID:       "sympozium-controller-leader",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -76,13 +76,13 @@ func main() {
 	}
 
 	// Register controllers
-	if err := (&controller.ClawInstanceReconciler{
+	if err := (&controller.SympoziumInstanceReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Log:      ctrl.Log.WithName("controllers").WithName("ClawInstance"),
+		Log:      ctrl.Log.WithName("controllers").WithName("SympoziumInstance"),
 		ImageTag: imageTag,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClawInstance")
+		setupLog.Error(err, "unable to create controller", "controller", "SympoziumInstance")
 		os.Exit(1)
 	}
 
@@ -99,12 +99,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ClawPolicyReconciler{
+	if err := (&controller.SympoziumPolicyReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ClawPolicy"),
+		Log:    ctrl.Log.WithName("controllers").WithName("SympoziumPolicy"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClawPolicy")
+		setupLog.Error(err, "unable to create controller", "controller", "SympoziumPolicy")
 		os.Exit(1)
 	}
 
@@ -117,12 +117,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ClawScheduleReconciler{
+	if err := (&controller.SympoziumScheduleReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ClawSchedule"),
+		Log:    ctrl.Log.WithName("controllers").WithName("SympoziumSchedule"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClawSchedule")
+		setupLog.Error(err, "unable to create controller", "controller", "SympoziumSchedule")
 		os.Exit(1)
 	}
 
@@ -171,7 +171,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting KubeClaw controller manager")
+	setupLog.Info("starting Sympozium controller manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

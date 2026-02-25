@@ -1,4 +1,4 @@
-module github.com/kubeclaw/kubeclaw
+module github.com/alexsjones/sympozium
 
 go 1.25.0
 

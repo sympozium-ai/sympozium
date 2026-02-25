@@ -7,8 +7,8 @@
 #   - Generous resource limits
 #   - Higher sub-agent depth for complex multi-step tasks
 #   - All feature gates enabled
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawPolicy
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumPolicy
 metadata:
   name: permissive
 spec:

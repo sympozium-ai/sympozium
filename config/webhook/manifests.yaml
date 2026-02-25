@@ -3,10 +3,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubeclaw-webhook
-  namespace: kubeclaw-system
+  name: sympozium-webhook
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: webhook
 spec:
   replicas: 2
@@ -18,14 +18,14 @@ spec:
       labels:
         app.kubernetes.io/component: webhook
     spec:
-      serviceAccountName: kubeclaw-controller-manager
+      serviceAccountName: sympozium-controller-manager
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: webhook
-          image: ghcr.io/alexsjones/kubeclaw/webhook:v0.0.29
+          image: ghcr.io/alexsjones/sympozium/webhook:v0.0.29
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9443
@@ -49,13 +49,13 @@ spec:
       volumes:
         - name: cert
           secret:
-            secretName: kubeclaw-webhook-cert
+            secretName: sympozium-webhook-cert
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: kubeclaw-webhook-service
-  namespace: kubeclaw-system
+  name: sympozium-webhook-service
+  namespace: sympozium-system
 spec:
   selector:
     app.kubernetes.io/component: webhook
@@ -67,16 +67,16 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: kubeclaw-validating-webhook
+  name: sympozium-validating-webhook
   annotations:
-    cert-manager.io/inject-ca-from: kubeclaw-system/kubeclaw-webhook-cert
+    cert-manager.io/inject-ca-from: sympozium-system/sympozium-webhook-cert
 webhooks:
-  - name: vagentpod.kubeclaw.io
+  - name: vagentpod.sympozium.ai
     admissionReviewVersions: ["v1"]
     clientConfig:
       service:
-        name: kubeclaw-webhook-service
-        namespace: kubeclaw-system
+        name: sympozium-webhook-service
+        namespace: sympozium-system
         path: /validate-agent-pods
     failurePolicy: Ignore
     rules:
@@ -86,22 +86,22 @@ webhooks:
         resources: ["pods"]
     objectSelector:
       matchLabels:
-        kubeclaw.io/agent-pod: "true"
+        sympozium.ai/agent-pod: "true"
     sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: kubeclaw-mutating-webhook
+  name: sympozium-mutating-webhook
   annotations:
-    cert-manager.io/inject-ca-from: kubeclaw-system/kubeclaw-webhook-cert
+    cert-manager.io/inject-ca-from: sympozium-system/sympozium-webhook-cert
 webhooks:
-  - name: magentpod.kubeclaw.io
+  - name: magentpod.sympozium.ai
     admissionReviewVersions: ["v1"]
     clientConfig:
       service:
-        name: kubeclaw-webhook-service
-        namespace: kubeclaw-system
+        name: sympozium-webhook-service
+        namespace: sympozium-system
         path: /mutate-agent-pods
     failurePolicy: Ignore
     rules:
@@ -111,6 +111,6 @@ webhooks:
         resources: ["pods"]
     objectSelector:
       matchLabels:
-        kubeclaw.io/agent-pod: "true"
+        sympozium.ai/agent-pod: "true"
     sideEffects: None
     reinvocationPolicy: IfNeeded

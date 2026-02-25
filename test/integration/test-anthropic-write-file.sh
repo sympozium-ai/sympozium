@@ -2,7 +2,7 @@
 # Integration test: verify the Anthropic provider + write_file tool works end-to-end.
 #
 # What it does:
-#   1. Creates a test ClawInstance + AgentRun using provider=anthropic
+#   1. Creates a test SympoziumInstance + AgentRun using provider=anthropic
 #   2. The AgentRun task tells Claude to write a specific file using write_file
 #   3. Waits for the AgentRun to complete (Succeeded or Failed)
 #   4. Checks pod logs for evidence the tool was invoked
@@ -10,7 +10,7 @@
 #   6. Cleans up test resources
 #
 # Prerequisites:
-#   - Kind cluster running with KubeClaw installed
+#   - Kind cluster running with Sympozium installed
 #   - An Anthropic API key in the environment (ANTHROPIC_API_KEY) or an existing
 #     secret named "inttest-anthropic-key" in the default namespace
 #
@@ -28,7 +28,7 @@ RUN_NAME="inttest-anthropic-write-run"
 SECRET_NAME="inttest-anthropic-key"
 MODEL="${TEST_MODEL:-claude-sonnet-4-20250514}"
 TIMEOUT="${TEST_TIMEOUT:-120}"             # seconds to wait for completion
-MARKER_TEXT="kubeclaw-anthropic-ok"        # text the agent must write
+MARKER_TEXT="sympozium-anthropic-ok"        # text the agent must write
 TARGET_FILE="/workspace/anthropic-test.txt"
 
 RED='\033[0;31m'
@@ -43,21 +43,21 @@ info() { echo -e "${YELLOW}● $*${NC}"; }
 cleanup() {
     info "Cleaning up test resources..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 # --- Pre-flight checks ---
 info "Running integration test: Anthropic provider + write_file tool"
 
-if ! kubectl get crd agentruns.kubeclaw.io >/dev/null 2>&1; then
-    fail "KubeClaw CRDs not installed. Is the cluster set up?"
+if ! kubectl get crd agentruns.sympozium.ai >/dev/null 2>&1; then
+    fail "Sympozium CRDs not installed. Is the cluster set up?"
     exit 1
 fi
 
-if ! kubectl get deployment kubeclaw-controller-manager -n kubeclaw-system >/dev/null 2>&1; then
-    fail "KubeClaw controller not running."
+if ! kubectl get deployment sympozium-controller-manager -n sympozium-system >/dev/null 2>&1; then
+    fail "Sympozium controller not running."
     exit 1
 fi
 
@@ -79,11 +79,11 @@ fi
 cleanup 2>/dev/null || true
 sleep 2
 
-# --- Create test ClawInstance ---
-info "Creating ClawInstance: $INSTANCE_NAME"
+# --- Create test SympoziumInstance ---
+info "Creating SympoziumInstance: $INSTANCE_NAME"
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
@@ -98,13 +98,13 @@ EOF
 # --- Create test AgentRun ---
 info "Creating AgentRun: $RUN_NAME (provider: anthropic, model: $MODEL)"
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: ${RUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kubeclaw.io/instance: ${INSTANCE_NAME}
+    sympozium.ai/instance: ${INSTANCE_NAME}
 spec:
   instanceRef: ${INSTANCE_NAME}
   agentId: default
@@ -129,7 +129,7 @@ while [[ $elapsed -lt $TIMEOUT ]]; do
     phase=$(kubectl get agentrun "$RUN_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
     # Capture pod name as soon as it exists
     if [[ -z "$pod" ]]; then
-        pod=$(kubectl get pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        pod=$(kubectl get pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         if [[ -n "$pod" ]]; then
             info "Pod found: $pod"
         fi

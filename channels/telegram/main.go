@@ -15,8 +15,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/kubeclaw/kubeclaw/internal/channel"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/channel"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // TelegramChannel implements the Telegram Bot API channel.
@@ -32,7 +32,7 @@ func main() {
 	var eventBusURL string
 	var botToken string
 
-	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "ClawInstance name")
+	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "SympoziumInstance name")
 	flag.StringVar(&eventBusURL, "event-bus-url", os.Getenv("EVENT_BUS_URL"), "Event bus URL")
 	flag.StringVar(&botToken, "bot-token", os.Getenv("TELEGRAM_BOT_TOKEN"), "Telegram Bot API token")
 	flag.Parse()

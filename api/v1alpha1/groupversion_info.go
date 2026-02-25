@@ -1,6 +1,6 @@
-// Package v1alpha1 contains API Schema definitions for the kubeclaw.io v1alpha1 API group.
+// Package v1alpha1 contains API Schema definitions for the sympozium.ai v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=kubeclaw.io
+// +groupName=sympozium.ai
 package v1alpha1
 
 import (
@@ -10,7 +10,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "kubeclaw.io", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "sympozium.ai", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionResource scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

@@ -308,9 +308,9 @@ func (in *ToolPolicySpec) DeepCopy() *ToolPolicySpec {
 	return out
 }
 
-// --- ClawInstance ---
+// --- SympoziumInstance ---
 
-func (in *ClawInstance) DeepCopyInto(out *ClawInstance) {
+func (in *SympoziumInstance) DeepCopyInto(out *SympoziumInstance) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -318,52 +318,52 @@ func (in *ClawInstance) DeepCopyInto(out *ClawInstance) {
 	in.Status.DeepCopyInto(&out.Status)
 }
 
-func (in *ClawInstance) DeepCopy() *ClawInstance {
+func (in *SympoziumInstance) DeepCopy() *SympoziumInstance {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawInstance)
+	out := new(SympoziumInstance)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawInstance) DeepCopyObject() runtime.Object {
+func (in *SympoziumInstance) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawInstanceList) DeepCopyInto(out *ClawInstanceList) {
+func (in *SympoziumInstanceList) DeepCopyInto(out *SympoziumInstanceList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
-		*out = make([]ClawInstance, len(*in))
+		*out = make([]SympoziumInstance, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }
 
-func (in *ClawInstanceList) DeepCopy() *ClawInstanceList {
+func (in *SympoziumInstanceList) DeepCopy() *SympoziumInstanceList {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawInstanceList)
+	out := new(SympoziumInstanceList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawInstanceList) DeepCopyObject() runtime.Object {
+func (in *SympoziumInstanceList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawInstanceSpec) DeepCopyInto(out *ClawInstanceSpec) {
+func (in *SympoziumInstanceSpec) DeepCopyInto(out *SympoziumInstanceSpec) {
 	*out = *in
 	if in.Channels != nil {
 		in, out := &in.Channels, &out.Channels
@@ -388,16 +388,16 @@ func (in *ClawInstanceSpec) DeepCopyInto(out *ClawInstanceSpec) {
 	}
 }
 
-func (in *ClawInstanceSpec) DeepCopy() *ClawInstanceSpec {
+func (in *SympoziumInstanceSpec) DeepCopy() *SympoziumInstanceSpec {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawInstanceSpec)
+	out := new(SympoziumInstanceSpec)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawInstanceStatus) DeepCopyInto(out *ClawInstanceStatus) {
+func (in *SympoziumInstanceStatus) DeepCopyInto(out *SympoziumInstanceStatus) {
 	*out = *in
 	if in.Channels != nil {
 		in, out := &in.Channels, &out.Channels
@@ -415,11 +415,11 @@ func (in *ClawInstanceStatus) DeepCopyInto(out *ClawInstanceStatus) {
 	}
 }
 
-func (in *ClawInstanceStatus) DeepCopy() *ClawInstanceStatus {
+func (in *SympoziumInstanceStatus) DeepCopy() *SympoziumInstanceStatus {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawInstanceStatus)
+	out := new(SympoziumInstanceStatus)
 	in.DeepCopyInto(out)
 	return out
 }
@@ -544,9 +544,9 @@ func (in *ChannelStatus) DeepCopy() *ChannelStatus {
 	return out
 }
 
-// --- ClawPolicy ---
+// --- SympoziumPolicy ---
 
-func (in *ClawPolicy) DeepCopyInto(out *ClawPolicy) {
+func (in *SympoziumPolicy) DeepCopyInto(out *SympoziumPolicy) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -554,52 +554,52 @@ func (in *ClawPolicy) DeepCopyInto(out *ClawPolicy) {
 	in.Status.DeepCopyInto(&out.Status)
 }
 
-func (in *ClawPolicy) DeepCopy() *ClawPolicy {
+func (in *SympoziumPolicy) DeepCopy() *SympoziumPolicy {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawPolicy)
+	out := new(SympoziumPolicy)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawPolicy) DeepCopyObject() runtime.Object {
+func (in *SympoziumPolicy) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawPolicyList) DeepCopyInto(out *ClawPolicyList) {
+func (in *SympoziumPolicyList) DeepCopyInto(out *SympoziumPolicyList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
-		*out = make([]ClawPolicy, len(*in))
+		*out = make([]SympoziumPolicy, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }
 
-func (in *ClawPolicyList) DeepCopy() *ClawPolicyList {
+func (in *SympoziumPolicyList) DeepCopy() *SympoziumPolicyList {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawPolicyList)
+	out := new(SympoziumPolicyList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawPolicyList) DeepCopyObject() runtime.Object {
+func (in *SympoziumPolicyList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawPolicySpec) DeepCopyInto(out *ClawPolicySpec) {
+func (in *SympoziumPolicySpec) DeepCopyInto(out *SympoziumPolicySpec) {
 	*out = *in
 	if in.SandboxPolicy != nil {
 		in, out := &in.SandboxPolicy, &out.SandboxPolicy
@@ -630,16 +630,16 @@ func (in *ClawPolicySpec) DeepCopyInto(out *ClawPolicySpec) {
 	}
 }
 
-func (in *ClawPolicySpec) DeepCopy() *ClawPolicySpec {
+func (in *SympoziumPolicySpec) DeepCopy() *SympoziumPolicySpec {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawPolicySpec)
+	out := new(SympoziumPolicySpec)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawPolicyStatus) DeepCopyInto(out *ClawPolicyStatus) {
+func (in *SympoziumPolicyStatus) DeepCopyInto(out *SympoziumPolicyStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
@@ -650,11 +650,11 @@ func (in *ClawPolicyStatus) DeepCopyInto(out *ClawPolicyStatus) {
 	}
 }
 
-func (in *ClawPolicyStatus) DeepCopy() *ClawPolicyStatus {
+func (in *SympoziumPolicyStatus) DeepCopy() *SympoziumPolicyStatus {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawPolicyStatus)
+	out := new(SympoziumPolicyStatus)
 	in.DeepCopyInto(out)
 	return out
 }
@@ -1002,9 +1002,9 @@ func (in *RBACRule) DeepCopy() *RBACRule {
 	return out
 }
 
-// --- ClawSchedule ---
+// --- SympoziumSchedule ---
 
-func (in *ClawSchedule) DeepCopyInto(out *ClawSchedule) {
+func (in *SympoziumSchedule) DeepCopyInto(out *SympoziumSchedule) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -1012,65 +1012,65 @@ func (in *ClawSchedule) DeepCopyInto(out *ClawSchedule) {
 	in.Status.DeepCopyInto(&out.Status)
 }
 
-func (in *ClawSchedule) DeepCopy() *ClawSchedule {
+func (in *SympoziumSchedule) DeepCopy() *SympoziumSchedule {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawSchedule)
+	out := new(SympoziumSchedule)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawSchedule) DeepCopyObject() runtime.Object {
+func (in *SympoziumSchedule) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawScheduleList) DeepCopyInto(out *ClawScheduleList) {
+func (in *SympoziumScheduleList) DeepCopyInto(out *SympoziumScheduleList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
-		*out = make([]ClawSchedule, len(*in))
+		*out = make([]SympoziumSchedule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }
 
-func (in *ClawScheduleList) DeepCopy() *ClawScheduleList {
+func (in *SympoziumScheduleList) DeepCopy() *SympoziumScheduleList {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawScheduleList)
+	out := new(SympoziumScheduleList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawScheduleList) DeepCopyObject() runtime.Object {
+func (in *SympoziumScheduleList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClawScheduleSpec) DeepCopyInto(out *ClawScheduleSpec) {
+func (in *SympoziumScheduleSpec) DeepCopyInto(out *SympoziumScheduleSpec) {
 	*out = *in
 }
 
-func (in *ClawScheduleSpec) DeepCopy() *ClawScheduleSpec {
+func (in *SympoziumScheduleSpec) DeepCopy() *SympoziumScheduleSpec {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawScheduleSpec)
+	out := new(SympoziumScheduleSpec)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClawScheduleStatus) DeepCopyInto(out *ClawScheduleStatus) {
+func (in *SympoziumScheduleStatus) DeepCopyInto(out *SympoziumScheduleStatus) {
 	*out = *in
 	if in.LastRunTime != nil {
 		in, out := &in.LastRunTime, &out.LastRunTime
@@ -1089,11 +1089,11 @@ func (in *ClawScheduleStatus) DeepCopyInto(out *ClawScheduleStatus) {
 	}
 }
 
-func (in *ClawScheduleStatus) DeepCopy() *ClawScheduleStatus {
+func (in *SympoziumScheduleStatus) DeepCopy() *SympoziumScheduleStatus {
 	if in == nil {
 		return nil
 	}
-	out := new(ClawScheduleStatus)
+	out := new(SympoziumScheduleStatus)
 	in.DeepCopyInto(out)
 	return out
 }

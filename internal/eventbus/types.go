@@ -1,5 +1,5 @@
 // Package eventbus provides an abstraction over the event bus (NATS JetStream)
-// used for communication between KubeClaw components.
+// used for communication between Sympozium components.
 package eventbus
 
 import (
@@ -36,7 +36,7 @@ type EventBus interface {
 	Close() error
 }
 
-// Topics used by KubeClaw components.
+// Topics used by Sympozium components.
 const (
 	TopicAgentRunRequested     = "agent.run.requested"
 	TopicAgentRunStarted       = "agent.run.started"

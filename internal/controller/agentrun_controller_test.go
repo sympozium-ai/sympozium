@@ -8,22 +8,22 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 )
 
 // helper builds a minimal AgentRun for testing.
-func newTestRun() *kubeclawv1alpha1.AgentRun {
-	return &kubeclawv1alpha1.AgentRun{
+func newTestRun() *sympoziumv1alpha1.AgentRun {
+	return &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-run",
 			Namespace: "default",
 		},
-		Spec: kubeclawv1alpha1.AgentRunSpec{
+		Spec: sympoziumv1alpha1.AgentRunSpec{
 			InstanceRef: "my-instance",
 			AgentID:     "default",
 			SessionKey:  "sess-1",
 			Task:        "do stuff",
-			Model: kubeclawv1alpha1.ModelSpec{
+			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:      "openai",
 				Model:         "gpt-4o",
 				AuthSecretRef: "my-secret",
@@ -53,14 +53,14 @@ func TestBuildJob_Labels(t *testing.T) {
 	job := r.buildJob(run, false, nil)
 
 	labels := job.Spec.Template.Labels
-	if labels["kubeclaw.io/instance"] != "my-instance" {
-		t.Errorf("instance label = %q", labels["kubeclaw.io/instance"])
+	if labels["sympozium.ai/instance"] != "my-instance" {
+		t.Errorf("instance label = %q", labels["sympozium.ai/instance"])
 	}
-	if labels["kubeclaw.io/agent-run"] != "test-run" {
-		t.Errorf("agent-run label = %q", labels["kubeclaw.io/agent-run"])
+	if labels["sympozium.ai/agent-run"] != "test-run" {
+		t.Errorf("agent-run label = %q", labels["sympozium.ai/agent-run"])
 	}
-	if labels["kubeclaw.io/component"] != "agent-run" {
-		t.Errorf("component label = %q", labels["kubeclaw.io/component"])
+	if labels["sympozium.ai/component"] != "agent-run" {
+		t.Errorf("component label = %q", labels["sympozium.ai/component"])
 	}
 }
 
@@ -101,8 +101,8 @@ func TestBuildJob_ServiceAccount(t *testing.T) {
 	r := &AgentRunReconciler{}
 	job := r.buildJob(newTestRun(), false, nil)
 
-	if job.Spec.Template.Spec.ServiceAccountName != "kubeclaw-agent" {
-		t.Errorf("SA = %q, want kubeclaw-agent", job.Spec.Template.Spec.ServiceAccountName)
+	if job.Spec.Template.Spec.ServiceAccountName != "sympozium-agent" {
+		t.Errorf("SA = %q, want sympozium-agent", job.Spec.Template.Spec.ServiceAccountName)
 	}
 }
 
@@ -270,7 +270,7 @@ func TestBuildContainers_IPCBridgeEnvVars(t *testing.T) {
 func TestBuildContainers_WithSandbox(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	run.Spec.Sandbox = &kubeclawv1alpha1.AgentRunSandboxSpec{Enabled: true}
+	run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{Enabled: true}
 	cs := r.buildContainers(run, false, nil)
 	// agent + ipc-bridge + sandbox = 3
 	if len(cs) != 3 {
@@ -284,7 +284,7 @@ func TestBuildContainers_WithSandbox(t *testing.T) {
 func TestBuildContainers_SandboxCustomImage(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	run.Spec.Sandbox = &kubeclawv1alpha1.AgentRunSandboxSpec{
+	run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{
 		Enabled: true,
 		Image:   "my-sandbox:v1",
 	}
@@ -297,7 +297,7 @@ func TestBuildContainers_SandboxCustomImage(t *testing.T) {
 func TestBuildContainers_SandboxDisabled(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	run.Spec.Sandbox = &kubeclawv1alpha1.AgentRunSandboxSpec{Enabled: false}
+	run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{Enabled: false}
 	cs := r.buildContainers(run, false, nil)
 	if len(cs) != 2 {
 		t.Errorf("container count = %d, want 2 (sandbox disabled)", len(cs))
@@ -342,7 +342,7 @@ func TestBuildVolumes_IPCUsesMemory(t *testing.T) {
 func TestBuildVolumes_SkillsWithRefs(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	run.Spec.Skills = []kubeclawv1alpha1.SkillRef{
+	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
 		{ConfigMapRef: "my-skills"},
 	}
 	vols := r.buildVolumes(run, false)
@@ -444,10 +444,10 @@ func TestBuildContainers_SkillSidecarInjected(t *testing.T) {
 	sidecars := []resolvedSidecar{
 		{
 			skillPackName: "k8s-ops",
-			sidecar: kubeclawv1alpha1.SkillSidecar{
-				Image:          "ghcr.io/alexsjones/kubeclaw/skill-k8s-ops:latest",
+			sidecar: sympoziumv1alpha1.SkillSidecar{
+				Image:          "ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest",
 				MountWorkspace: true,
-				Resources: &kubeclawv1alpha1.SidecarResources{
+				Resources: &sympoziumv1alpha1.SidecarResources{
 					CPU:    "100m",
 					Memory: "128Mi",
 				},
@@ -463,7 +463,7 @@ func TestBuildContainers_SkillSidecarInjected(t *testing.T) {
 	if sc.Name != "skill-k8s-ops" {
 		t.Errorf("sidecar name = %q, want skill-k8s-ops", sc.Name)
 	}
-	if sc.Image != "ghcr.io/alexsjones/kubeclaw/skill-k8s-ops:latest" {
+	if sc.Image != "ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest" {
 		t.Errorf("sidecar image = %q", sc.Image)
 	}
 	// Should have workspace mount
@@ -484,7 +484,7 @@ func TestBuildContainers_SkillSidecarDefaultCommand(t *testing.T) {
 	sidecars := []resolvedSidecar{
 		{
 			skillPackName: "test-skill",
-			sidecar: kubeclawv1alpha1.SkillSidecar{
+			sidecar: sympoziumv1alpha1.SkillSidecar{
 				Image:          "test:latest",
 				MountWorkspace: false,
 			},
@@ -518,8 +518,8 @@ func TestBuildContainers_SkillSidecarDefaultCommand(t *testing.T) {
 func TestBuildContainers_MultipleSkillSidecars(t *testing.T) {
 	r := &AgentRunReconciler{}
 	sidecars := []resolvedSidecar{
-		{skillPackName: "skill-a", sidecar: kubeclawv1alpha1.SkillSidecar{Image: "a:latest", MountWorkspace: true}},
-		{skillPackName: "skill-b", sidecar: kubeclawv1alpha1.SkillSidecar{Image: "b:latest", MountWorkspace: true}},
+		{skillPackName: "skill-a", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "a:latest", MountWorkspace: true}},
+		{skillPackName: "skill-b", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "b:latest", MountWorkspace: true}},
 	}
 	cs := r.buildContainers(newTestRun(), false, sidecars)
 	// agent + ipc-bridge + 2 sidecars = 4
@@ -537,7 +537,7 @@ func TestBuildContainers_MultipleSkillSidecars(t *testing.T) {
 func TestBuildJob_WithSkillSidecars(t *testing.T) {
 	r := &AgentRunReconciler{}
 	sidecars := []resolvedSidecar{
-		{skillPackName: "k8s-ops", sidecar: kubeclawv1alpha1.SkillSidecar{Image: "k8s:latest", MountWorkspace: true}},
+		{skillPackName: "k8s-ops", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "k8s:latest", MountWorkspace: true}},
 	}
 	job := r.buildJob(newTestRun(), false, sidecars)
 	containers := job.Spec.Template.Spec.Containers

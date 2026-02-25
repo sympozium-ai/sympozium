@@ -1,13 +1,13 @@
 ---
-# KubeClaw built-in SkillPack: Kubernetes Operations
-apiVersion: kubeclaw.io/v1alpha1
+# Sympozium built-in SkillPack: Kubernetes Operations
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: k8s-ops
-  namespace: kubeclaw-system
+  namespace: sympozium-system
   labels:
-    kubeclaw.io/builtin: "true"
-    kubeclaw.io/category: kubernetes
+    sympozium.ai/builtin: "true"
+    sympozium.ai/category: kubernetes
 spec:
   category: kubernetes
   version: "0.1.0"
@@ -141,7 +141,7 @@ spec:
     minMemory: 256Mi
     minCPU: 100m
   sidecar:
-    image: ghcr.io/alexsjones/kubeclaw/skill-k8s-ops:v0.0.29
+    image: ghcr.io/alexsjones/sympozium/skill-k8s-ops:v0.0.29
     mountWorkspace: true
     resources:
       cpu: "100m"

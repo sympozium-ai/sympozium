@@ -22,12 +22,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	"github.com/kubeclaw/kubeclaw/internal/orchestrator"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	"github.com/alexsjones/sympozium/internal/orchestrator"
 )
 
-const agentRunFinalizer = "kubeclaw.io/agentrun-finalizer"
-const systemNamespace = "kubeclaw-system"
+const agentRunFinalizer = "sympozium.ai/agentrun-finalizer"
+const systemNamespace = "sympozium-system"
 
 // DefaultRunHistoryLimit is how many completed AgentRuns to keep per instance
 // before the oldest are pruned.
@@ -41,11 +41,11 @@ type AgentRunReconciler struct {
 	Log             logr.Logger
 	PodBuilder      *orchestrator.PodBuilder
 	Clientset       kubernetes.Interface
-	ImageTag        string // release tag for KubeClaw images (e.g. "v0.0.25")
+	ImageTag        string // release tag for Sympozium images (e.g. "v0.0.25")
 	RunHistoryLimit int    // max completed runs to keep per instance (0 = use default)
 }
 
-const imageRegistry = "ghcr.io/alexsjones/kubeclaw"
+const imageRegistry = "ghcr.io/alexsjones/sympozium"
 
 // imageRef returns a fully qualified image reference using the reconciler's tag.
 func (r *AgentRunReconciler) imageRef(name string) string {
@@ -56,9 +56,9 @@ func (r *AgentRunReconciler) imageRef(name string) string {
 	return fmt.Sprintf("%s/%s:%s", imageRegistry, name, tag)
 }
 
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=agentruns,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=agentruns/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=agentruns/finalizers,verbs=update
+// +kubebuilder:rbac:groups=sympozium.ai,resources=agentruns,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=sympozium.ai,resources=agentruns/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=sympozium.ai,resources=agentruns/finalizers,verbs=update
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
@@ -70,7 +70,7 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	log := r.Log.WithValues("agentrun", req.NamespacedName)
 
 	// Fetch the AgentRun
-	agentRun := &kubeclawv1alpha1.AgentRun{}
+	agentRun := &sympoziumv1alpha1.AgentRun{}
 	if err := r.Get(ctx, req.NamespacedName, agentRun); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -96,11 +96,11 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Reconcile based on current phase
 	switch agentRun.Status.Phase {
-	case "", kubeclawv1alpha1.AgentRunPhasePending:
+	case "", sympoziumv1alpha1.AgentRunPhasePending:
 		return r.reconcilePending(ctx, log, agentRun)
-	case kubeclawv1alpha1.AgentRunPhaseRunning:
+	case sympoziumv1alpha1.AgentRunPhaseRunning:
 		return r.reconcileRunning(ctx, log, agentRun)
-	case kubeclawv1alpha1.AgentRunPhaseSucceeded, kubeclawv1alpha1.AgentRunPhaseFailed:
+	case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed:
 		return r.reconcileCompleted(ctx, log, agentRun)
 	default:
 		log.Info("Unknown phase", "phase", agentRun.Status.Phase)
@@ -109,7 +109,7 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // reconcilePending handles an AgentRun that needs a Job created.
-func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (ctrl.Result, error) {
+func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Reconciling pending AgentRun")
 
 	// Validate against policy
@@ -117,7 +117,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("policy validation failed: %v", err))
 	}
 
-	// Ensure the kubeclaw-agent ServiceAccount exists in the target namespace.
+	// Ensure the sympozium-agent ServiceAccount exists in the target namespace.
 	if err := r.ensureAgentServiceAccount(ctx, agentRun.Namespace); err != nil {
 		return ctrl.Result{}, fmt.Errorf("ensuring agent service account: %w", err)
 	}
@@ -127,8 +127,8 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		return ctrl.Result{}, fmt.Errorf("creating input ConfigMap: %w", err)
 	}
 
-	// Look up the ClawInstance to check for memory configuration.
-	instance := &kubeclawv1alpha1.ClawInstance{}
+	// Look up the SympoziumInstance to check for memory configuration.
+	instance := &sympoziumv1alpha1.SympoziumInstance{}
 	memoryEnabled := false
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
@@ -137,7 +137,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		if instance.Spec.Memory != nil && instance.Spec.Memory.Enabled {
 			memoryEnabled = true
 		}
-		// If the AgentRun has no skills, inherit from the ClawInstance.
+		// If the AgentRun has no skills, inherit from the SympoziumInstance.
 		// This is a safety net — tuiCreateRun and the schedule controller
 		// should already copy skills, but older runs or manual CRs may not.
 		if len(agentRun.Spec.Skills) == 0 && len(instance.Spec.Skills) > 0 {
@@ -148,7 +148,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// Resolve skill sidecars from SkillPack CRDs.
 	sidecars := r.resolveSkillSidecars(ctx, log, agentRun)
 
-	// Mirror skill ConfigMaps from kubeclaw-system into the agent namespace
+	// Mirror skill ConfigMaps from sympozium-system into the agent namespace
 	// so projected volumes can reference them (ConfigMaps are namespace-local).
 	if err := r.mirrorSkillConfigMaps(ctx, log, agentRun); err != nil {
 		log.Error(err, "Failed to mirror skill ConfigMaps, skills may be missing")
@@ -175,7 +175,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 
 	// Update status to Running
 	now := metav1.Now()
-	agentRun.Status.Phase = kubeclawv1alpha1.AgentRunPhaseRunning
+	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseRunning
 	agentRun.Status.JobName = job.Name
 	agentRun.Status.StartedAt = &now
 	if err := r.Status().Update(ctx, agentRun); err != nil {
@@ -186,7 +186,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 }
 
 // reconcileRunning checks on a running Job and updates status.
-func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (ctrl.Result, error) {
+func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Checking running AgentRun")
 
 	// Find the Job
@@ -207,7 +207,7 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 		podList := &corev1.PodList{}
 		if err := r.List(ctx, podList,
 			client.InNamespace(agentRun.Namespace),
-			client.MatchingLabels{"kubeclaw.io/agent-run": agentRun.Name},
+			client.MatchingLabels{"sympozium.ai/agent-run": agentRun.Name},
 		); err == nil && len(podList.Items) > 0 {
 			agentRun.Status.PodName = podList.Items[0].Name
 			_ = r.Status().Update(ctx, agentRun)
@@ -281,7 +281,7 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 //   - reason: the termination reason string (e.g. "OOMKilled", "Error")
 //   - hasSidecars: whether the pod has more than 2 containers (agent + ipc-bridge),
 //     indicating skill sidecars that could keep the pod alive after the agent exits
-func (r *AgentRunReconciler) checkAgentContainer(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (done bool, exitCode int32, reason string, hasSidecars bool) {
+func (r *AgentRunReconciler) checkAgentContainer(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (done bool, exitCode int32, reason string, hasSidecars bool) {
 	pod := &corev1.Pod{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
@@ -307,7 +307,7 @@ func (r *AgentRunReconciler) checkAgentContainer(ctx context.Context, log logr.L
 // reconcileCompleted handles cleanup of completed AgentRuns.
 // Instead of deleting immediately, it keeps up to RunHistoryLimit completed
 // runs per instance and prunes only the oldest ones beyond that threshold.
-func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (ctrl.Result, error) {
+func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	// Clean up cluster-scoped RBAC created for skill sidecars.
 	r.cleanupSkillRBAC(ctx, log, agentRun)
 
@@ -342,22 +342,22 @@ func (r *AgentRunReconciler) runHistoryLimit() int {
 
 // pruneOldRuns lists all completed runs for the same instance and deletes the
 // oldest ones when the total exceeds the configured RunHistoryLimit.
-func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) error {
+func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) error {
 	instanceRef := agentRun.Spec.InstanceRef
 	if instanceRef == "" {
 		return nil
 	}
 
-	var allRuns kubeclawv1alpha1.AgentRunList
+	var allRuns sympoziumv1alpha1.AgentRunList
 	if err := r.List(ctx, &allRuns,
 		client.InNamespace(agentRun.Namespace),
-		client.MatchingLabels{"kubeclaw.io/instance": instanceRef},
+		client.MatchingLabels{"sympozium.ai/instance": instanceRef},
 	); err != nil {
 		return fmt.Errorf("listing runs for instance %s: %w", instanceRef, err)
 	}
 
 	// Collect only completed (Succeeded/Failed) runs.
-	var completed []kubeclawv1alpha1.AgentRun
+	var completed []sympoziumv1alpha1.AgentRun
 	for _, run := range allRuns.Items {
 		if run.Status.Phase == "Succeeded" || run.Status.Phase == "Failed" {
 			completed = append(completed, run)
@@ -391,7 +391,7 @@ func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, 
 }
 
 // reconcileDelete handles AgentRun deletion.
-func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (ctrl.Result, error) {
+func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Reconciling AgentRun deletion")
 
 	// Clean up cluster-scoped RBAC resources created for skill sidecars.
@@ -414,10 +414,10 @@ func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logge
 	return ctrl.Result{}, r.Update(ctx, agentRun)
 }
 
-// validatePolicy checks the AgentRun against the applicable ClawPolicy.
-func (r *AgentRunReconciler) validatePolicy(ctx context.Context, agentRun *kubeclawv1alpha1.AgentRun) error {
-	// Look up the ClawInstance to find the policy
-	instance := &kubeclawv1alpha1.ClawInstance{}
+// validatePolicy checks the AgentRun against the applicable SympoziumPolicy.
+func (r *AgentRunReconciler) validatePolicy(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) error {
+	// Look up the SympoziumInstance to find the policy
+	instance := &sympoziumv1alpha1.SympoziumInstance{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
 		Name:      agentRun.Spec.InstanceRef,
@@ -429,7 +429,7 @@ func (r *AgentRunReconciler) validatePolicy(ctx context.Context, agentRun *kubec
 		return nil // No policy, allow
 	}
 
-	policy := &kubeclawv1alpha1.ClawPolicy{}
+	policy := &sympoziumv1alpha1.SympoziumPolicy{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
 		Name:      instance.Spec.PolicyRef,
@@ -447,14 +447,14 @@ func (r *AgentRunReconciler) validatePolicy(ctx context.Context, agentRun *kubec
 
 	// Validate concurrency
 	if policy.Spec.SubagentPolicy != nil {
-		activeRuns := &kubeclawv1alpha1.AgentRunList{}
+		activeRuns := &sympoziumv1alpha1.AgentRunList{}
 		if err := r.List(ctx, activeRuns,
 			client.InNamespace(agentRun.Namespace),
-			client.MatchingLabels{"kubeclaw.io/instance": agentRun.Spec.InstanceRef},
+			client.MatchingLabels{"sympozium.ai/instance": agentRun.Spec.InstanceRef},
 		); err == nil {
 			running := 0
 			for _, run := range activeRuns.Items {
-				if run.Status.Phase == kubeclawv1alpha1.AgentRunPhaseRunning {
+				if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseRunning {
 					running++
 				}
 			}
@@ -467,12 +467,12 @@ func (r *AgentRunReconciler) validatePolicy(ctx context.Context, agentRun *kubec
 	return nil
 }
 
-// ensureAgentServiceAccount creates the kubeclaw-agent ServiceAccount in the
+// ensureAgentServiceAccount creates the sympozium-agent ServiceAccount in the
 // given namespace if it does not already exist. This is needed because agent
-// Jobs reference this SA and run in the user's namespace, not kubeclaw-system.
+// Jobs reference this SA and run in the user's namespace, not sympozium-system.
 func (r *AgentRunReconciler) ensureAgentServiceAccount(ctx context.Context, namespace string) error {
 	sa := &corev1.ServiceAccount{}
-	err := r.Get(ctx, client.ObjectKey{Name: "kubeclaw-agent", Namespace: namespace}, sa)
+	err := r.Get(ctx, client.ObjectKey{Name: "sympozium-agent", Namespace: namespace}, sa)
 	if err == nil {
 		return nil // already exists
 	}
@@ -481,10 +481,10 @@ func (r *AgentRunReconciler) ensureAgentServiceAccount(ctx context.Context, name
 	}
 	sa = &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubeclaw-agent",
+			Name:      "sympozium-agent",
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "kubeclaw",
+				"app.kubernetes.io/managed-by": "sympozium",
 			},
 		},
 	}
@@ -498,11 +498,11 @@ func (r *AgentRunReconciler) ensureAgentServiceAccount(ctx context.Context, name
 }
 
 // buildJob constructs the Kubernetes Job for an AgentRun.
-func (r *AgentRunReconciler) buildJob(agentRun *kubeclawv1alpha1.AgentRun, memoryEnabled bool, sidecars []resolvedSidecar) *batchv1.Job {
+func (r *AgentRunReconciler) buildJob(agentRun *sympoziumv1alpha1.AgentRun, memoryEnabled bool, sidecars []resolvedSidecar) *batchv1.Job {
 	labels := map[string]string{
-		"kubeclaw.io/agent-run": agentRun.Name,
-		"kubeclaw.io/instance":  agentRun.Spec.InstanceRef,
-		"kubeclaw.io/component": "agent-run",
+		"sympozium.ai/agent-run": agentRun.Name,
+		"sympozium.ai/instance":  agentRun.Spec.InstanceRef,
+		"sympozium.ai/component": "agent-run",
 	}
 
 	ttl := int32(300)
@@ -536,7 +536,7 @@ func (r *AgentRunReconciler) buildJob(agentRun *kubeclawv1alpha1.AgentRun, memor
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ServiceAccountName: "kubeclaw-agent",
+					ServiceAccountName: "sympozium-agent",
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &runAsNonRoot,
 						RunAsUser:    &runAsUser,
@@ -551,7 +551,7 @@ func (r *AgentRunReconciler) buildJob(agentRun *kubeclawv1alpha1.AgentRun, memor
 }
 
 // buildContainers constructs the container list for an agent pod.
-func (r *AgentRunReconciler) buildContainers(agentRun *kubeclawv1alpha1.AgentRun, memoryEnabled bool, sidecars []resolvedSidecar) []corev1.Container {
+func (r *AgentRunReconciler) buildContainers(agentRun *sympoziumv1alpha1.AgentRun, memoryEnabled bool, sidecars []resolvedSidecar) []corev1.Container {
 	readOnly := true
 	noPrivEsc := false
 
@@ -604,7 +604,7 @@ func (r *AgentRunReconciler) buildContainers(agentRun *kubeclawv1alpha1.AgentRun
 			Env: []corev1.EnvVar{
 				{Name: "AGENT_RUN_ID", Value: agentRun.Name},
 				{Name: "INSTANCE_NAME", Value: agentRun.Spec.InstanceRef},
-				{Name: "EVENT_BUS_URL", Value: "nats://nats.kubeclaw-system.svc:4222"},
+				{Name: "EVENT_BUS_URL", Value: "nats://nats.sympozium-system.svc:4222"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "ipc", MountPath: "/ipc"},
@@ -690,12 +690,12 @@ func (r *AgentRunReconciler) buildContainers(agentRun *kubeclawv1alpha1.AgentRun
 
 	// Pass channel context so the agent knows how to reply when the run
 	// was triggered by a channel message (WhatsApp, Telegram, etc.).
-	if ch := agentRun.Annotations["kubeclaw.io/reply-channel"]; ch != "" {
+	if ch := agentRun.Annotations["sympozium.ai/reply-channel"]; ch != "" {
 		containers[0].Env = append(containers[0].Env,
 			corev1.EnvVar{Name: "SOURCE_CHANNEL", Value: ch},
 		)
 	}
-	if cid := agentRun.Annotations["kubeclaw.io/reply-chat-id"]; cid != "" {
+	if cid := agentRun.Annotations["sympozium.ai/reply-chat-id"]; cid != "" {
 		containers[0].Env = append(containers[0].Env,
 			corev1.EnvVar{Name: "SOURCE_CHAT_ID", Value: cid},
 		)
@@ -758,7 +758,7 @@ func (r *AgentRunReconciler) buildContainers(agentRun *kubeclawv1alpha1.AgentRun
 }
 
 // buildVolumes constructs the volume list for an agent pod.
-func (r *AgentRunReconciler) buildVolumes(agentRun *kubeclawv1alpha1.AgentRun, memoryEnabled bool) []corev1.Volume {
+func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, memoryEnabled bool) []corev1.Volume {
 	workspaceSizeLimit := resource.MustParse("1Gi")
 	ipcSizeLimit := resource.MustParse("64Mi")
 	tmpSizeLimit := resource.MustParse("256Mi")
@@ -857,13 +857,13 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *kubeclawv1alpha1.AgentRun, m
 func boolPtr(b bool) *bool { return &b }
 
 // createInputConfigMap creates a ConfigMap with the agent's task input.
-func (r *AgentRunReconciler) createInputConfigMap(ctx context.Context, agentRun *kubeclawv1alpha1.AgentRun) error {
+func (r *AgentRunReconciler) createInputConfigMap(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) error {
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-input", agentRun.Name),
 			Namespace: agentRun.Namespace,
 			Labels: map[string]string{
-				"kubeclaw.io/agent-run": agentRun.Name,
+				"sympozium.ai/agent-run": agentRun.Name,
 			},
 		},
 		Data: map[string]string{
@@ -888,9 +888,9 @@ func (r *AgentRunReconciler) createInputConfigMap(ctx context.Context, agentRun 
 }
 
 // succeedRun marks an AgentRun as succeeded and stores the result.
-func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *kubeclawv1alpha1.AgentRun, result string, usage *kubeclawv1alpha1.TokenUsage) (ctrl.Result, error) {
+func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, result string, usage *sympoziumv1alpha1.TokenUsage) (ctrl.Result, error) {
 	now := metav1.Now()
-	agentRun.Status.Phase = kubeclawv1alpha1.AgentRunPhaseSucceeded
+	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseSucceeded
 	agentRun.Status.CompletedAt = &now
 	agentRun.Status.Result = result
 	agentRun.Status.TokenUsage = usage
@@ -898,13 +898,13 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *kubeclawv
 }
 
 const (
-	resultMarkerStart = "__KUBECLAW_RESULT__"
-	resultMarkerEnd   = "__KUBECLAW_END__"
+	resultMarkerStart = "__SYMPOZIUM_RESULT__"
+	resultMarkerEnd   = "__SYMPOZIUM_END__"
 )
 
 // extractResultFromPod reads the agent container logs and looks for the
 // structured result marker written by agent-runner.
-func (r *AgentRunReconciler) extractResultFromPod(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) (string, *kubeclawv1alpha1.TokenUsage) {
+func (r *AgentRunReconciler) extractResultFromPod(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (string, *sympoziumv1alpha1.TokenUsage) {
 	if r.Clientset == nil || agentRun.Status.PodName == "" {
 		return "", nil
 	}
@@ -959,9 +959,9 @@ func (r *AgentRunReconciler) extractResultFromPod(ctx context.Context, log logr.
 		return "", nil
 	}
 
-	var usage *kubeclawv1alpha1.TokenUsage
+	var usage *sympoziumv1alpha1.TokenUsage
 	if parsed.Metrics.InputTokens > 0 || parsed.Metrics.OutputTokens > 0 {
-		usage = &kubeclawv1alpha1.TokenUsage{
+		usage = &sympoziumv1alpha1.TokenUsage{
 			InputTokens:  parsed.Metrics.InputTokens,
 			OutputTokens: parsed.Metrics.OutputTokens,
 			TotalTokens:  parsed.Metrics.InputTokens + parsed.Metrics.OutputTokens,
@@ -980,13 +980,13 @@ func (r *AgentRunReconciler) extractResultFromPod(ctx context.Context, log logr.
 }
 
 const (
-	memoryMarkerStart = "__KUBECLAW_MEMORY__"
-	memoryMarkerEnd   = "__KUBECLAW_MEMORY_END__"
+	memoryMarkerStart = "__SYMPOZIUM_MEMORY__"
+	memoryMarkerEnd   = "__SYMPOZIUM_MEMORY_END__"
 )
 
 // extractAndPersistMemory reads the agent container logs for a memory update
 // marker and patches the instance's memory ConfigMap with the new content.
-func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) {
+func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) {
 	if r.Clientset == nil || agentRun.Status.PodName == "" {
 		return
 	}
@@ -1043,9 +1043,9 @@ func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log lo
 }
 
 // failRun marks an AgentRun as failed.
-func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *kubeclawv1alpha1.AgentRun, reason string) error {
+func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string) error {
 	now := metav1.Now()
-	agentRun.Status.Phase = kubeclawv1alpha1.AgentRunPhaseFailed
+	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
 	agentRun.Status.CompletedAt = &now
 	agentRun.Status.Error = reason
 	return r.Status().Update(ctx, agentRun)
@@ -1056,12 +1056,12 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *kubeclawv1al
 // resolvedSidecar pairs a SkillPack name with its sidecar spec.
 type resolvedSidecar struct {
 	skillPackName string
-	sidecar       kubeclawv1alpha1.SkillSidecar
+	sidecar       sympoziumv1alpha1.SkillSidecar
 }
 
 // resolveSkillSidecars looks up SkillPack CRDs for the AgentRun's active
 // skills and returns any that have a sidecar defined.
-func (r *AgentRunReconciler) resolveSkillSidecars(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) []resolvedSidecar {
+func (r *AgentRunReconciler) resolveSkillSidecars(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) []resolvedSidecar {
 	var sidecars []resolvedSidecar
 	for _, ref := range agentRun.Spec.Skills {
 		if ref.SkillPackRef == "" {
@@ -1075,13 +1075,13 @@ func (r *AgentRunReconciler) resolveSkillSidecars(ctx context.Context, log logr.
 			spName = strings.TrimPrefix(spName, "skillpack-")
 		}
 
-		sp := &kubeclawv1alpha1.SkillPack{}
+		sp := &sympoziumv1alpha1.SkillPack{}
 		if err := r.Get(ctx, client.ObjectKey{
 			Namespace: agentRun.Namespace,
 			Name:      spName,
 		}, sp); err != nil {
-			// SkillPack not in agent namespace — try kubeclaw-system (default
-			// location for built-in skills installed by `kubeclaw install`).
+			// SkillPack not in agent namespace — try sympozium-system (default
+			// location for built-in skills installed by `sympozium install`).
 			if err2 := r.Get(ctx, client.ObjectKey{
 				Namespace: systemNamespace,
 				Name:      spName,
@@ -1101,11 +1101,11 @@ func (r *AgentRunReconciler) resolveSkillSidecars(ctx context.Context, log logr.
 	return sidecars
 }
 
-// mirrorSkillConfigMaps copies skill ConfigMaps from kubeclaw-system into the
+// mirrorSkillConfigMaps copies skill ConfigMaps from sympozium-system into the
 // AgentRun's namespace so that projected volumes can reference them.
 // ConfigMap volume projections are namespace-local in Kubernetes, so when
-// SkillPacks live in kubeclaw-system their ConfigMaps must be mirrored.
-func (r *AgentRunReconciler) mirrorSkillConfigMaps(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) error {
+// SkillPacks live in sympozium-system their ConfigMaps must be mirrored.
+func (r *AgentRunReconciler) mirrorSkillConfigMaps(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) error {
 	if agentRun.Namespace == systemNamespace {
 		return nil // no mirroring needed
 	}
@@ -1118,13 +1118,13 @@ func (r *AgentRunReconciler) mirrorSkillConfigMaps(ctx context.Context, log logr
 			continue
 		}
 
-		// Look for the ConfigMap in kubeclaw-system.
+		// Look for the ConfigMap in sympozium-system.
 		source := &corev1.ConfigMap{}
 		if err := r.Get(ctx, client.ObjectKey{
 			Namespace: systemNamespace,
 			Name:      cmName,
 		}, source); err != nil {
-			log.V(1).Info("Skill ConfigMap not found in kubeclaw-system, skipping mirror", "configmap", cmName)
+			log.V(1).Info("Skill ConfigMap not found in sympozium-system, skipping mirror", "configmap", cmName)
 			continue
 		}
 
@@ -1151,9 +1151,9 @@ func (r *AgentRunReconciler) mirrorSkillConfigMaps(ctx context.Context, log logr
 				Name:      cmName,
 				Namespace: agentRun.Namespace,
 				Labels: map[string]string{
-					"kubeclaw.io/component":  "skillpack-mirror",
-					"kubeclaw.io/agent-run":  agentRun.Name,
-					"kubeclaw.io/managed-by": "kubeclaw",
+					"sympozium.ai/component":  "skillpack-mirror",
+					"sympozium.ai/agent-run":  agentRun.Name,
+					"sympozium.ai/managed-by": "sympozium",
 				},
 			},
 			Data: source.Data,
@@ -1175,11 +1175,11 @@ func (r *AgentRunReconciler) mirrorSkillConfigMaps(ctx context.Context, log logr
 
 // ensureSkillRBAC creates Role/ClusterRole and bindings for skill sidecars.
 // Resources are labelled with the AgentRun name for cleanup.
-func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun, sidecars []resolvedSidecar) error {
+func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun, sidecars []resolvedSidecar) error {
 	for _, sc := range sidecars {
 		// Namespace-scoped Role + RoleBinding
 		if len(sc.sidecar.RBAC) > 0 {
-			roleName := fmt.Sprintf("kubeclaw-skill-%s-%s", sc.skillPackName, agentRun.Name)
+			roleName := fmt.Sprintf("sympozium-skill-%s-%s", sc.skillPackName, agentRun.Name)
 			var rules []rbacv1.PolicyRule
 			for _, rule := range sc.sidecar.RBAC {
 				rules = append(rules, rbacv1.PolicyRule{
@@ -1194,9 +1194,9 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 					Name:      roleName,
 					Namespace: agentRun.Namespace,
 					Labels: map[string]string{
-						"kubeclaw.io/agent-run":  agentRun.Name,
-						"kubeclaw.io/skill":      sc.skillPackName,
-						"kubeclaw.io/managed-by": "kubeclaw",
+						"sympozium.ai/agent-run":  agentRun.Name,
+						"sympozium.ai/skill":      sc.skillPackName,
+						"sympozium.ai/managed-by": "sympozium",
 					},
 				},
 				Rules: rules,
@@ -1213,9 +1213,9 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 					Name:      roleName,
 					Namespace: agentRun.Namespace,
 					Labels: map[string]string{
-						"kubeclaw.io/agent-run":  agentRun.Name,
-						"kubeclaw.io/skill":      sc.skillPackName,
-						"kubeclaw.io/managed-by": "kubeclaw",
+						"sympozium.ai/agent-run":  agentRun.Name,
+						"sympozium.ai/skill":      sc.skillPackName,
+						"sympozium.ai/managed-by": "sympozium",
 					},
 				},
 				RoleRef: rbacv1.RoleRef{
@@ -1226,7 +1226,7 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 				Subjects: []rbacv1.Subject{
 					{
 						Kind:      "ServiceAccount",
-						Name:      "kubeclaw-agent",
+						Name:      "sympozium-agent",
 						Namespace: agentRun.Namespace,
 					},
 				},
@@ -1242,7 +1242,7 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 
 		// Cluster-scoped ClusterRole + ClusterRoleBinding
 		if len(sc.sidecar.ClusterRBAC) > 0 {
-			crName := fmt.Sprintf("kubeclaw-skill-%s-%s", sc.skillPackName, agentRun.Name)
+			crName := fmt.Sprintf("sympozium-skill-%s-%s", sc.skillPackName, agentRun.Name)
 			var rules []rbacv1.PolicyRule
 			for _, rule := range sc.sidecar.ClusterRBAC {
 				rules = append(rules, rbacv1.PolicyRule{
@@ -1256,9 +1256,9 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 				ObjectMeta: metav1.ObjectMeta{
 					Name: crName,
 					Labels: map[string]string{
-						"kubeclaw.io/agent-run":  agentRun.Name,
-						"kubeclaw.io/skill":      sc.skillPackName,
-						"kubeclaw.io/managed-by": "kubeclaw",
+						"sympozium.ai/agent-run":  agentRun.Name,
+						"sympozium.ai/skill":      sc.skillPackName,
+						"sympozium.ai/managed-by": "sympozium",
 					},
 				},
 				Rules: rules,
@@ -1271,9 +1271,9 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 				ObjectMeta: metav1.ObjectMeta{
 					Name: crName,
 					Labels: map[string]string{
-						"kubeclaw.io/agent-run":  agentRun.Name,
-						"kubeclaw.io/skill":      sc.skillPackName,
-						"kubeclaw.io/managed-by": "kubeclaw",
+						"sympozium.ai/agent-run":  agentRun.Name,
+						"sympozium.ai/skill":      sc.skillPackName,
+						"sympozium.ai/managed-by": "sympozium",
 					},
 				},
 				RoleRef: rbacv1.RoleRef{
@@ -1284,7 +1284,7 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 				Subjects: []rbacv1.Subject{
 					{
 						Kind:      "ServiceAccount",
-						Name:      "kubeclaw-agent",
+						Name:      "sympozium-agent",
 						Namespace: agentRun.Namespace,
 					},
 				},
@@ -1301,12 +1301,12 @@ func (r *AgentRunReconciler) ensureSkillRBAC(ctx context.Context, log logr.Logge
 // cleanupSkillRBAC removes cluster-scoped RBAC resources created for an AgentRun.
 // Namespace-scoped resources (Role, RoleBinding) are cleaned up automatically
 // via owner references and garbage collection.
-func (r *AgentRunReconciler) cleanupSkillRBAC(ctx context.Context, log logr.Logger, agentRun *kubeclawv1alpha1.AgentRun) {
+func (r *AgentRunReconciler) cleanupSkillRBAC(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) {
 	// List ClusterRoles owned by this run
 	crList := &rbacv1.ClusterRoleList{}
 	if err := r.List(ctx, crList, client.MatchingLabels{
-		"kubeclaw.io/agent-run":  agentRun.Name,
-		"kubeclaw.io/managed-by": "kubeclaw",
+		"sympozium.ai/agent-run":  agentRun.Name,
+		"sympozium.ai/managed-by": "sympozium",
 	}); err == nil {
 		for i := range crList.Items {
 			if err := r.Delete(ctx, &crList.Items[i]); err != nil && !errors.IsNotFound(err) {
@@ -1318,8 +1318,8 @@ func (r *AgentRunReconciler) cleanupSkillRBAC(ctx context.Context, log logr.Logg
 	// List ClusterRoleBindings owned by this run
 	crbList := &rbacv1.ClusterRoleBindingList{}
 	if err := r.List(ctx, crbList, client.MatchingLabels{
-		"kubeclaw.io/agent-run":  agentRun.Name,
-		"kubeclaw.io/managed-by": "kubeclaw",
+		"sympozium.ai/agent-run":  agentRun.Name,
+		"sympozium.ai/managed-by": "sympozium",
 	}); err == nil {
 		for i := range crbList.Items {
 			if err := r.Delete(ctx, &crbList.Items[i]); err != nil && !errors.IsNotFound(err) {
@@ -1332,7 +1332,7 @@ func (r *AgentRunReconciler) cleanupSkillRBAC(ctx context.Context, log logr.Logg
 // SetupWithManager sets up the controller with the Manager.
 func (r *AgentRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&kubeclawv1alpha1.AgentRun{}).
+		For(&sympoziumv1alpha1.AgentRun{}).
 		Owns(&batchv1.Job{}).
 		Complete(r)
 }

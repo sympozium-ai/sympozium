@@ -1,4 +1,4 @@
-# Writing Skills for KubeClaw
+# Writing Skills for Sympozium
 
 This guide explains how to create a SkillPack — from simple Markdown instruction bundles to full sidecar containers with auto-provisioned RBAC.
 
@@ -6,7 +6,7 @@ This guide explains how to create a SkillPack — from simple Markdown instructi
 
 ## Concepts
 
-A **SkillPack** is a Kubernetes CRD that bundles one or more skills. When toggled on a ClawInstance, the skills are mounted into every AgentRun pod for that instance.
+A **SkillPack** is a Kubernetes CRD that bundles one or more skills. When toggled on a SympoziumInstance, the skills are mounted into every AgentRun pod for that instance.
 
 There are three layers to a skill, each optional beyond the first:
 
@@ -34,7 +34,7 @@ There are three layers to a skill, each optional beyond the first:
 Every skill is a Markdown document that tells the agent _how_ to perform a task. The agent reads these as files at runtime.
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: my-skill
@@ -146,7 +146,7 @@ docker push ghcr.io/yourorg/skill-my-tool:latest
 
 ### Registering a built-in skill image in CI
 
-If the skill is **bundled with KubeClaw** (i.e. lives under `images/` and `config/skills/`), you must add it to the build pipeline so it is built and pushed automatically:
+If the skill is **bundled with Sympozium** (i.e. lives under `images/` and `config/skills/`), you must add it to the build pipeline so it is built and pushed automatically:
 
 1. **Makefile** — append `skill-<name>` to the `IMAGES` variable.
 2. **`.github/workflows/build.yaml`** — add `skill-<name>` to the `image` matrix.
@@ -168,7 +168,7 @@ matrix:
     - skill-my-tool
 ```
 
-This ensures `make docker-build` / `make docker-push` and CI all build the sidecar image alongside the other KubeClaw components.
+This ensures `make docker-build` / `make docker-push` and CI all build the sidecar image alongside the other Sympozium components.
 
 ---
 
@@ -213,7 +213,7 @@ If the sidecar needs to talk to the Kubernetes API (e.g. `kubectl get pods`), de
 
 ### Namespace-scoped RBAC (`rbac`)
 
-Creates a **Role** + **RoleBinding** in the AgentRun's namespace, bound to the `kubeclaw-agent` ServiceAccount:
+Creates a **Role** + **RoleBinding** in the AgentRun's namespace, bound to the `sympozium-agent` ServiceAccount:
 
 ```yaml
   sidecar:
@@ -247,15 +247,15 @@ Creates a **ClusterRole** + **ClusterRoleBinding** for resources that span names
 |--------|-------------|
 | **Scoping** | Namespace RBAC is scoped to the run's namespace. Cluster RBAC is cluster-wide but typically read-only. |
 | **Lifecycle** | Namespace-scoped Roles and RoleBindings have an `ownerReference` to the AgentRun — Kubernetes garbage-collects them automatically. Cluster-scoped resources are cleaned up by the controller on AgentRun deletion. |
-| **Labelling** | All RBAC resources are labelled with `kubeclaw.io/agent-run`, `kubeclaw.io/skill`, and `kubeclaw.io/managed-by: kubeclaw` for auditing. |
+| **Labelling** | All RBAC resources are labelled with `sympozium.ai/agent-run`, `sympozium.ai/skill`, and `sympozium.ai/managed-by: sympozium` for auditing. |
 | **Least privilege** | Each SkillPack declares exactly the permissions it needs. There is no shared god-role — each skill gets its own scoped RBAC. |
 | **Ephemeral** | RBAC exists only while the AgentRun exists. When the run finishes (or is deleted), permissions are revoked. |
 
 ### RBAC naming convention
 
 ```
-Role/ClusterRole:           kubeclaw-skill-<skillpack>-<agentrun>
-RoleBinding/ClusterRoleBinding: kubeclaw-skill-<skillpack>-<agentrun>
+Role/ClusterRole:           sympozium-skill-<skillpack>-<agentrun>
+RoleBinding/ClusterRoleBinding: sympozium-skill-<skillpack>-<agentrun>
 ```
 
 ---
@@ -264,14 +264,14 @@ RoleBinding/ClusterRoleBinding: kubeclaw-skill-<skillpack>-<agentrun>
 
 ### Via the TUI
 
-1. Press `s` on a ClawInstance to drill into the Skills view.
+1. Press `s` on a SympoziumInstance to drill into the Skills view.
 2. Use `Space` or `Enter` to toggle the skill on/off.
 3. The next AgentRun will include the sidecar and RBAC.
 
 ### Via kubectl
 
 ```bash
-kubectl patch clawinstance <name> --type=merge \
+kubectl patch sympoziuminstance <name> --type=merge \
   -p '{"spec":{"skills":[{"skillPackRef":"my-skill"}]}}'
 ```
 
@@ -297,7 +297,7 @@ images/skill-k8s-ops/Dockerfile  # Sidecar container image
 ### SkillPack YAML (abbreviated)
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: k8s-ops
@@ -326,7 +326,7 @@ spec:
         # Resource Management
         ...
   sidecar:
-    image: ghcr.io/alexsjones/kubeclaw/skill-k8s-ops:latest
+    image: ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest
     command: ["sleep", "infinity"]
     mountWorkspace: true
     resources:
@@ -349,17 +349,17 @@ spec:
 
 ```
 1. User toggles k8s-ops on instance "alice"
-   → ClawInstance.spec.skills = [{skillPackRef: "k8s-ops"}]
+   → SympoziumInstance.spec.skills = [{skillPackRef: "k8s-ops"}]
 
 2. AgentRun created for instance "alice"
    → Controller resolves SkillPack "k8s-ops"
    → Finds sidecar spec and RBAC rules
 
 3. Controller creates:
-   → Role "kubeclaw-skill-k8s-ops-alice-run-xyz" (namespace)
-   → RoleBinding "kubeclaw-skill-k8s-ops-alice-run-xyz"
-   → ClusterRole "kubeclaw-skill-k8s-ops-alice-run-xyz"
-   → ClusterRoleBinding "kubeclaw-skill-k8s-ops-alice-run-xyz"
+   → Role "sympozium-skill-k8s-ops-alice-run-xyz" (namespace)
+   → RoleBinding "sympozium-skill-k8s-ops-alice-run-xyz"
+   → ClusterRole "sympozium-skill-k8s-ops-alice-run-xyz"
+   → ClusterRoleBinding "sympozium-skill-k8s-ops-alice-run-xyz"
 
 4. Job pod created with containers:
    → agent (agent-runner image, reads /skills/)
@@ -379,7 +379,7 @@ spec:
 |-------|-------|
 | Skill content not appearing | `kubectl get configmap skillpack-<name>` — does it exist? |
 | Sidecar not injected | Does the SkillPack have `spec.sidecar.image`? Is the skill toggled on the instance? |
-| Permission denied in sidecar | Check RBAC: `kubectl get role,rolebinding -l kubeclaw.io/skill=<name>` |
+| Permission denied in sidecar | Check RBAC: `kubectl get role,rolebinding -l sympozium.ai/skill=<name>` |
 | Sidecar crash | Check pod logs: `kubectl logs <pod> -c skill-<name>` |
 | Image pull error | Verify the sidecar image exists and is accessible from the cluster |
 | UID mismatch | Sidecar must run as UID 1000 (same as the pod's `securityContext.runAsUser`) |
@@ -390,7 +390,7 @@ spec:
 
 ```yaml
 # Minimal SkillPack (Markdown only)
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: my-skill
@@ -406,7 +406,7 @@ spec:
 ---
 
 # Full SkillPack (Markdown + Sidecar + RBAC)
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: my-full-skill

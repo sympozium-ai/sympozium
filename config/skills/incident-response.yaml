@@ -1,13 +1,13 @@
 ---
-# KubeClaw built-in SkillPack: Incident Response
-apiVersion: kubeclaw.io/v1alpha1
+# Sympozium built-in SkillPack: Incident Response
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: incident-response
-  namespace: kubeclaw-system
+  namespace: sympozium-system
   labels:
-    kubeclaw.io/builtin: "true"
-    kubeclaw.io/category: sre
+    sympozium.ai/builtin: "true"
+    sympozium.ai/category: sre
 spec:
   category: sre
   version: "0.1.0"

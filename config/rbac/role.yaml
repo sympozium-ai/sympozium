@@ -2,52 +2,52 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubeclaw-controller-manager
-  namespace: kubeclaw-system
+  name: sympozium-controller-manager
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: controller
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubeclaw-apiserver
-  namespace: kubeclaw-system
+  name: sympozium-apiserver
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: apiserver
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kubeclaw-manager-role
+  name: sympozium-manager-role
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
 rules:
   # CRDs
-  - apiGroups: ["kubeclaw.io"]
+  - apiGroups: ["sympozium.ai"]
     resources:
-      - clawinstances
+      - sympoziuminstances
       - agentruns
-      - clawpolicies
+      - sympoziumpolicies
       - skillpacks
-      - clawschedules
+      - sympoziumschedules
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["kubeclaw.io"]
+  - apiGroups: ["sympozium.ai"]
     resources:
-      - clawinstances/status
+      - sympoziuminstances/status
       - agentruns/status
-      - clawpolicies/status
+      - sympoziumpolicies/status
       - skillpacks/status
-      - clawschedules/status
+      - sympoziumschedules/status
     verbs: ["get", "update", "patch"]
-  - apiGroups: ["kubeclaw.io"]
+  - apiGroups: ["sympozium.ai"]
     resources:
-      - clawinstances/finalizers
+      - sympoziuminstances/finalizers
       - agentruns/finalizers
-      - clawpolicies/finalizers
+      - sympoziumpolicies/finalizers
       - skillpacks/finalizers
-      - clawschedules/finalizers
+      - sympoziumschedules/finalizers
     verbs: ["update"]
   # Core resources for agent pods
   - apiGroups: [""]
@@ -80,17 +80,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubeclaw-manager-rolebinding
+  name: sympozium-manager-rolebinding
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubeclaw-manager-role
+  name: sympozium-manager-role
 subjects:
   - kind: ServiceAccount
-    name: kubeclaw-controller-manager
-    namespace: kubeclaw-system
+    name: sympozium-controller-manager
+    namespace: sympozium-system
 ---
 # The controller needs cluster-admin to create arbitrary RBAC for skill
 # sidecars. Kubernetes prevents RBAC escalation — you cannot create a Role
@@ -99,32 +99,32 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubeclaw-controller-cluster-admin
+  name: sympozium-controller-cluster-admin
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: cluster-admin
 subjects:
   - kind: ServiceAccount
-    name: kubeclaw-controller-manager
-    namespace: kubeclaw-system
+    name: sympozium-controller-manager
+    namespace: sympozium-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubeclaw-apiserver-rolebinding
+  name: sympozium-apiserver-rolebinding
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubeclaw-manager-role
+  name: sympozium-manager-role
 subjects:
   - kind: ServiceAccount
-    name: kubeclaw-apiserver
-    namespace: kubeclaw-system
+    name: sympozium-apiserver
+    namespace: sympozium-system
 ---
 # ServiceAccount for agent pods (created in the workload namespace).
 # The controller creates Jobs that reference this SA. It needs minimal
@@ -133,7 +133,7 @@ subjects:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubeclaw-agent
+  name: sympozium-agent
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: agent

@@ -1,4 +1,4 @@
--- K8sClaw Initial Schema
+-- Sympozium Initial Schema
 -- PostgreSQL with pgvector extension for memory embeddings
 
 -- Enable extensions

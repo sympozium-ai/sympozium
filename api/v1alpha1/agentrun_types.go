@@ -7,7 +7,7 @@ import (
 // AgentRunSpec defines the desired state of an AgentRun.
 // Each agent invocation (including sub-agents) produces an AgentRun CR.
 type AgentRunSpec struct {
-	// InstanceRef is the name of the ClawInstance this run belongs to.
+	// InstanceRef is the name of the SympoziumInstance this run belongs to.
 	InstanceRef string `json:"instanceRef"`
 
 	// AgentID identifies the agent configuration to use.

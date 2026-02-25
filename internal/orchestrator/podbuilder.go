@@ -23,14 +23,14 @@ type PodBuilder struct {
 	// EventBusURL is the URL of the event bus (NATS).
 	EventBusURL string
 
-	// ImageTag is the image tag to use for all KubeClaw images.
+	// ImageTag is the image tag to use for all Sympozium images.
 	ImageTag string
 }
 
-const imageRegistry = "ghcr.io/alexsjones/kubeclaw"
+const imageRegistry = "ghcr.io/alexsjones/sympozium"
 
 // NewPodBuilder creates a PodBuilder with default settings.
-// The tag parameter sets the image tag for all KubeClaw images (e.g. "v0.0.25").
+// The tag parameter sets the image tag for all Sympozium images (e.g. "v0.0.25").
 func NewPodBuilder(tag string) *PodBuilder {
 	if tag == "" {
 		tag = "latest"
@@ -39,7 +39,7 @@ func NewPodBuilder(tag string) *PodBuilder {
 		DefaultAgentImage:     fmt.Sprintf("%s/agent-runner:%s", imageRegistry, tag),
 		DefaultIPCBridgeImage: fmt.Sprintf("%s/ipc-bridge:%s", imageRegistry, tag),
 		DefaultSandboxImage:   fmt.Sprintf("%s/sandbox:%s", imageRegistry, tag),
-		EventBusURL:           "nats://nats.kubeclaw-system.svc:4222",
+		EventBusURL:           "nats://nats.sympozium-system.svc:4222",
 		ImageTag:              tag,
 	}
 }

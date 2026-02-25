@@ -8,8 +8,8 @@
 #   - Network fetch and file writes are denied
 #   - Sub-agent depth and concurrency are tightly capped
 #   - Code execution feature gate is enabled (sandbox enforces isolation)
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawPolicy
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumPolicy
 metadata:
   name: restrictive
 spec:

@@ -170,7 +170,7 @@ func defaultTools() []ToolDef {
 				"properties": map[string]any{
 					"name": map[string]any{
 						"type":        "string",
-						"description": "A short unique name for this schedule (e.g. 'cluster-health-check', 'daily-report'). Used as the ClawSchedule resource name.",
+						"description": "A short unique name for this schedule (e.g. 'cluster-health-check', 'daily-report'). Used as the SympoziumSchedule resource name.",
 					},
 					"schedule": map[string]any{
 						"type":        "string",
@@ -363,7 +363,7 @@ func fetchURLTool(args map[string]any) string {
 	if err != nil {
 		return fmt.Sprintf("Error creating request: %v", err)
 	}
-	req.Header.Set("User-Agent", "KubeClaw/1.0 (agent-runner)")
+	req.Header.Set("User-Agent", "Sympozium/1.0 (agent-runner)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json,text/plain,*/*")
 
 	// Apply custom headers if provided.
@@ -733,7 +733,7 @@ func truncateStr(s string, n int) string {
 // --- Schedule task tool ---
 
 // scheduleTaskTool writes a schedule request to /ipc/schedules/ for the
-// IPC bridge to relay to the controller, which creates/updates a ClawSchedule.
+// IPC bridge to relay to the controller, which creates/updates a SympoziumSchedule.
 func scheduleTaskTool(args map[string]any) string {
 	name, _ := args["name"].(string)
 	action, _ := args["action"].(string)

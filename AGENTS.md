@@ -1,29 +1,29 @@
 # AGENTS.md — Contributor Guide for AI Agents
 
-This file helps AI coding agents (Copilot, Cursor, Cline, etc.) understand the KubeClaw project structure and development workflow.
+This file helps AI coding agents (Copilot, Cursor, Cline, etc.) understand the Sympozium project structure and development workflow.
 
 ---
 
 ## Project Overview
 
-KubeClaw is a **Kubernetes-native agent orchestration platform** written in Go. Every AI agent runs as an ephemeral Kubernetes pod (Job), with policy enforcement via CRDs, admission webhooks, and RBAC. Communication flows through NATS JetStream and a filesystem-based IPC bridge.
+Sympozium is a **Kubernetes-native agent orchestration platform** written in Go. Every AI agent runs as an ephemeral Kubernetes pod (Job), with policy enforcement via CRDs, admission webhooks, and RBAC. Communication flows through NATS JetStream and a filesystem-based IPC bridge.
 
 - **Language:** Go 1.25+
-- **Module:** `github.com/kubeclaw/kubeclaw`
-- **K8s API version:** `kubeclaw.io/v1alpha1`
+- **Module:** `github.com/alexsjones/sympozium`
+- **K8s API version:** `sympozium.ai/v1alpha1`
 
 ---
 
 ## Repository Layout
 
 ```
-api/v1alpha1/           # CRD type definitions (ClawInstance, AgentRun, ClawPolicy, SkillPack, ClawSchedule)
+api/v1alpha1/           # CRD type definitions (SympoziumInstance, AgentRun, SympoziumPolicy, SkillPack, SympoziumSchedule)
 cmd/
   agent-runner/         # Agent container — LLM loop + tool execution
   apiserver/            # HTTP + WebSocket API server
   controller/           # Controller manager (all reconcilers + routers)
   ipc-bridge/           # IPC bridge sidecar (fsnotify → NATS)
-  kubeclaw/             # CLI + TUI (Bubble Tea)
+  sympozium/             # CLI + TUI (Bubble Tea)
   webhook/              # Admission webhook server
 channels/
   telegram/             # Channel pod — Telegram bot
@@ -41,7 +41,7 @@ images/                 # Dockerfiles for all components
 internal/
   apiserver/            # API server implementation
   channel/              # Channel types
-  controller/           # Reconcilers (AgentRun, ClawInstance, ClawPolicy, ClawSchedule, SkillPack) + routers (Channel, Schedule)
+  controller/           # Reconcilers (AgentRun, SympoziumInstance, SympoziumPolicy, SympoziumSchedule, SkillPack) + routers (Channel, Schedule)
   eventbus/             # NATS JetStream client + topic constants
   ipc/                  # IPC bridge (fsnotify watcher, protocol, file handlers)
   orchestrator/         # Pod builder + spawner for agent Jobs
@@ -58,11 +58,11 @@ docs/                   # Design & contributor documentation
 
 | CRD | Purpose |
 |-----|---------|
-| `ClawInstance` | An agent identity — provider config, model, enabled skills, channel bindings |
+| `SympoziumInstance` | An agent identity — provider config, model, enabled skills, channel bindings |
 | `AgentRun` | A single agent invocation — task, result, phase lifecycle |
-| `ClawPolicy` | Policy rules enforced by the admission webhook |
+| `SympoziumPolicy` | Policy rules enforced by the admission webhook |
 | `SkillPack` | Bundled skills (Markdown instructions) + optional sidecar container + RBAC |
-| `ClawSchedule` | Cron-based recurring AgentRun creation (heartbeat, scheduled, sweep) |
+| `SympoziumSchedule` | Cron-based recurring AgentRun creation (heartbeat, scheduled, sweep) |
 
 Type definitions live in `api/v1alpha1/`. After modifying types, regenerate with:
 
@@ -83,7 +83,7 @@ make manifests   # CRD YAML only
 - kubectl
 - An LLM API key (e.g. `OPENAI_API_KEY`)
 
-### Create a Kind Cluster & Install KubeClaw
+### Create a Kind Cluster & Install Sympozium
 
 ```bash
 # Create cluster
@@ -99,7 +99,7 @@ make docker-build TAG=v0.0.32
 for img in controller apiserver ipc-bridge webhook agent-runner \
            channel-telegram channel-slack channel-discord channel-whatsapp \
            skill-k8s-ops; do
-  kind load docker-image ghcr.io/alexsjones/kubeclaw/$img:v0.0.32 --name kind
+  kind load docker-image ghcr.io/alexsjones/sympozium/$img:v0.0.32 --name kind
 done
 
 # Deploy the control plane
@@ -119,10 +119,10 @@ make test
 
 # Build specific image + reload into Kind
 make docker-build-agent-runner TAG=v0.0.32
-kind load docker-image ghcr.io/alexsjones/kubeclaw/agent-runner:v0.0.32 --name kind
+kind load docker-image ghcr.io/alexsjones/sympozium/agent-runner:v0.0.32 --name kind
 
 # Restart the controller to pick up new images
-kubectl rollout restart deployment kubeclaw-controller-manager -n kubeclaw-system
+kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
 ```
 
 ### Common Build Targets
@@ -174,7 +174,7 @@ TEST_MODEL=gpt-5.2 TEST_TIMEOUT=180 ./test/integration/test-write-file.sh
 
 See `docs/writing-integration-tests.md` for the full guide and template. Tests follow this pattern:
 
-1. Create a `ClawInstance` + `AgentRun` with a deterministic task
+1. Create a `SympoziumInstance` + `AgentRun` with a deterministic task
 2. Poll `status.phase` until `Succeeded` or `Failed`
 3. Validate results (pod logs, status, filesystem)
 4. Clean up all test resources
@@ -195,7 +195,7 @@ The agent-runner has 7 built-in tools defined in `cmd/agent-runner/tools.go`:
 | `list_directory` | Native | List directory contents |
 | `send_channel_message` | IPC (bridge) | Send messages to Telegram/Slack/Discord/WhatsApp |
 | `fetch_url` | Native | HTTP GET a URL and return the body |
-| `schedule_task` | IPC (bridge) | Create/update/suspend/resume/delete ClawSchedule CRDs |
+| `schedule_task` | IPC (bridge) | Create/update/suspend/resume/delete SympoziumSchedule CRDs |
 
 See `docs/writing-tools.md` for the full guide on adding new tools.
 
@@ -222,11 +222,11 @@ Key topics in `internal/eventbus/types.go`:
 
 ### Memory
 
-Each ClawInstance has a ConfigMap (`<name>-memory`) mounted at `/memory/MEMORY.md`. The controller extracts memory markers (`<<<MEMORY_START>>>...<<<MEMORY_END>>>`) from agent output and patches the ConfigMap.
+Each SympoziumInstance has a ConfigMap (`<name>-memory`) mounted at `/memory/MEMORY.md`. The controller extracts memory markers (`<<<MEMORY_START>>>...<<<MEMORY_END>>>`) from agent output and patches the ConfigMap.
 
 ### Skills
 
-SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on a ClawInstance, skills are mounted at `/skills/` and sidecars are injected into agent pods. See `docs/writing-skills.md`.
+SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on a SympoziumInstance, skills are mounted at `/skills/` and sidecars are injected into agent pods. See `docs/writing-skills.md`.
 
 ---
 
@@ -234,11 +234,11 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 
 | Document | Location | Content |
 |----------|----------|---------|
-| Design document | `docs/kubeclaw-design.md` | Full architecture, CRD schemas, data flow, security model |
+| Design document | `docs/sympozium-design.md` | Full architecture, CRD schemas, data flow, security model |
 | Writing tools | `docs/writing-tools.md` | How to add new agent tools |
 | Writing skills | `docs/writing-skills.md` | How to create SkillPack CRDs |
 | Writing integration tests | `docs/writing-integration-tests.md` | Test patterns and templates |
-| Sample CRs | `config/samples/` | Example ClawInstance, AgentRun, ClawPolicy, ClawSchedule, SkillPack |
+| Sample CRs | `config/samples/` | Example SympoziumInstance, AgentRun, SympoziumPolicy, SympoziumSchedule, SkillPack |
 | CRD definitions | `api/v1alpha1/` | Go type definitions for all CRDs |
 
 ---
@@ -257,7 +257,7 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 1. Create `channels/<name>/main.go`
 2. Create `images/channel-<name>/Dockerfile`
 3. Add to `CHANNELS` list in `Makefile`
-4. The controller's `buildChannelDeployment` in `internal/controller/clawinstance_controller.go` handles deployment
+4. The controller's `buildChannelDeployment` in `internal/controller/sympoziuminstance_controller.go` handles deployment
 
 ### Modifying a CRD
 1. Edit type in `api/v1alpha1/<name>_types.go`
@@ -274,8 +274,8 @@ go build ./...
 make docker-build-<component> TAG=v0.0.32
 
 # Load into Kind
-kind load docker-image ghcr.io/alexsjones/kubeclaw/<component>:v0.0.32 --name kind
+kind load docker-image ghcr.io/alexsjones/sympozium/<component>:v0.0.32 --name kind
 
 # Restart controller if controller/ipc-bridge/agent-runner changed
-kubectl rollout restart deployment kubeclaw-controller-manager -n kubeclaw-system
+kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
 ```

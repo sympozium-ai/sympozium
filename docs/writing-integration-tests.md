@@ -1,11 +1,11 @@
 # Writing Integration Tests
 
-Integration tests verify that KubeClaw tools work end-to-end in a real cluster.
+Integration tests verify that Sympozium tools work end-to-end in a real cluster.
 Unlike unit tests, they exercise the full pipeline: controller → Job → agent-runner → LLM → tool invocation.
 
 ## Prerequisites
 
-- A Kind (or other) cluster with KubeClaw installed (`make install && kubectl apply -k config/`)
+- A Kind (or other) cluster with Sympozium installed (`make install && kubectl apply -k config/`)
 - An OpenAI API key (or other supported provider)
 - `kubectl` configured to talk to the cluster
 
@@ -30,7 +30,7 @@ kubectl create secret generic inttest-openai-key --from-literal=OPENAI_API_KEY=s
 
 Each test follows the same pattern:
 
-1. **Create resources** — a test `ClawInstance` and `AgentRun` with a deterministic task
+1. **Create resources** — a test `SympoziumInstance` and `AgentRun` with a deterministic task
 2. **Wait for completion** — poll `status.phase` until `Succeeded` or `Failed`
 3. **Validate results** — check pod logs, `status.result`, or the pod filesystem
 4. **Clean up** — delete all test resources
@@ -76,9 +76,9 @@ failures=0
 cleanup() {
     info "Cleaning up..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 # Ensure secret exists
@@ -94,10 +94,10 @@ fi
 cleanup 2>/dev/null || true
 sleep 2
 
-# --- Create ClawInstance ---
+# --- Create SympoziumInstance ---
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
@@ -111,13 +111,13 @@ EOF
 
 # --- Create AgentRun ---
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: ${RUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kubeclaw.io/instance: ${INSTANCE_NAME}
+    sympozium.ai/instance: ${INSTANCE_NAME}
 spec:
   instanceRef: ${INSTANCE_NAME}
   agentId: default
@@ -141,7 +141,7 @@ while [[ $elapsed -lt $TIMEOUT ]]; do
     # Capture pod name early, before cleanup removes it
     if [[ -z "$pod" ]]; then
         pod=$(kubectl get pods -n "$NAMESPACE" \
-            -l "kubeclaw.io/agentrun=$RUN_NAME" \
+            -l "sympozium.ai/agentrun=$RUN_NAME" \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     fi
     [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
@@ -195,7 +195,7 @@ something and then checking the result, the prompt must be:
 ### Good examples
 
 ```
-Use the write_file tool to write the exact text "kubeclaw-integration-ok"
+Use the write_file tool to write the exact text "sympozium-integration-ok"
 to /workspace/test-output.txt. Do not add any extra content.
 ```
 

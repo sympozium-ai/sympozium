@@ -7,8 +7,8 @@
 #   - All tools except fetch_url are allowed
 #   - Network deny-all with only DNS and event bus egress
 #   - Useful for air-gapped or compliance-sensitive clusters
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawPolicy
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumPolicy
 metadata:
   name: network-isolated
 spec:

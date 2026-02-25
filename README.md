@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="header.png" alt="kubeclaw icon" width="800px;">
+  <img src="header.png" alt="sympozium icon" width="800px;">
 </p>
 
 <p align="center">
@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AlexsJones/kubeclaw/actions"><img src="https://github.com/AlexsJones/kubeclaw/actions/workflows/build.yaml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/AlexsJones/kubeclaw/releases/latest"><img src="https://img.shields.io/github/v/release/AlexsJones/kubeclaw" alt="Release"></a>
+  <a href="https://github.com/AlexsJones/sympozium/actions"><img src="https://github.com/AlexsJones/sympozium/actions/workflows/build.yaml/badge.svg" alt="Build"></a>
+  <a href="https://github.com/AlexsJones/sympozium/releases/latest"><img src="https://img.shields.io/github/v/release/AlexsJones/sympozium" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="KubeClaw TUI demo" width="800px;">
+  <img src="demo.gif" alt="Sympozium TUI demo" width="800px;">
 </p>
 
 ---
@@ -27,31 +27,31 @@
 
 **Homebrew:**
 ```bash
-brew tap AlexsJones/kubeclaw
-brew install kubeclaw
+brew tap AlexsJones/sympozium
+brew install sympozium
 ```
 
 **Shell installer:**
 ```bash
-curl -fsSL https://deploy.k8sclaw.ai/install.sh | sh
+curl -fsSL https://deploy.sympozium.ai/install.sh | sh
 ```
 
 📖 **New here?** See the [Getting Started guide](docs/getting-started.md) — install, deploy, onboard your first agent, and learn the TUI and CLI commands.
 
-## Why KubeClaw?
+## Why Sympozium?
 
-KubeClaw serves **two powerful use cases** on one Kubernetes-native platform:
+Sympozium serves **two powerful use cases** on one Kubernetes-native platform:
 
 1. **Orchestrate fleets of AI agents** — customer support, code review, data pipelines, or any domain-specific workflow. Each agent gets its own pod, RBAC, and network policy with proper tenant isolation.
 2. **Administer the cluster itself agentically** — point agents inward to diagnose failures, scale deployments, triage alerts, and remediate issues, all with Kubernetes-native isolation, RBAC, and audit trails.
 
 Agentic frameworks like OpenClaw pioneered rich agent orchestration — sub-agent registries, tool pipelines, channel integrations, and sandbox execution. But they run as **in-process monoliths** with file-based state, single-instance locks, and tightly coupled plugin systems.
 
-KubeClaw takes the same agentic control model and rebuilds it on Kubernetes primitives:
+Sympozium takes the same agentic control model and rebuilds it on Kubernetes primitives:
 
 ### Isolated Skill Sidecars — a game-changer
 
-Most agent frameworks dump every tool into one shared process. One bad `kubectl delete` and your whole agent environment is toast. KubeClaw does this completely differently:
+Most agent frameworks dump every tool into one shared process. One bad `kubectl delete` and your whole agent environment is toast. Sympozium does this completely differently:
 
 **Every skill runs in its own sidecar container** — a separate, isolated process injected into the agent pod at runtime. Use skills to give agents cluster-admin capabilities (`kubectl`, `helm`, scaling) or domain-specific tools — each with ephemeral least-privilege RBAC that's garbage-collected when the run finishes. Toggle a skill on, and the controller automatically:
 
@@ -60,38 +60,38 @@ Most agent frameworks dump every tool into one shared process. One bad `kubectl 
 - Shares a `/workspace` volume so the agent can coordinate with the sidecar
 - **Garbage-collects everything** when the run finishes — containers, roles, bindings, all gone
 
-This means you can give an agent full `kubectl` access for a troubleshooting run without worrying about leftover permissions. Skills are declared as CRDs, toggled per-instance in the TUI with a single keypress, and their containers are built and shipped alongside the rest of KubeClaw. No plugins to install, no runtime to configure — just Kubernetes-native isolation that scales.
+This means you can give an agent full `kubectl` access for a troubleshooting run without worrying about leftover permissions. Skills are declared as CRDs, toggled per-instance in the TUI with a single keypress, and their containers are built and shipped alongside the rest of Sympozium. No plugins to install, no runtime to configure — just Kubernetes-native isolation that scales.
 
 > _"Give the agent tools, not trust."_ — Whether it's orchestrating a fleet or administering the cluster, skills get exactly the permissions they declare, for exactly as long as the run lasts, and not a second longer.
 
 ### How it compares
 
-| Concern | OpenClaw (in-process) | KubeClaw (Kubernetes-native) |
+| Concern | OpenClaw (in-process) | Sympozium (Kubernetes-native) |
 |---------|----------------------|----------------------------|
 | **Agent execution** | Shared memory, single process | Ephemeral **Pod** per invocation (K8s Job) |
 | **Orchestration** | In-process registry + lane queue | **CRD-based** registry with controller reconciliation |
 | **Sandbox isolation** | Long-lived Docker sidecar | Pod **SecurityContext** + PodSecurity admission |
 | **IPC** | In-process EventEmitter | Filesystem sidecar + **NATS JetStream** |
-| **Tool/feature gating** | 7-layer in-process pipeline | **Admission webhooks** + `ClawPolicy` CRD |
+| **Tool/feature gating** | 7-layer in-process pipeline | **Admission webhooks** + `SympoziumPolicy` CRD |
 | **Persistent memory** | Files on disk (`~/.openclaw/`) | **ConfigMap** per instance, controller-managed |
-| **Scheduled tasks** | Cron jobs / external scripts | **ClawSchedule CRD** with cron controller |
+| **Scheduled tasks** | Cron jobs / external scripts | **SympoziumSchedule CRD** with cron controller |
 | **State** | SQLite + flat files | **etcd** (CRDs) + PostgreSQL + object storage |
 | **Multi-tenancy** | Single-instance file lock | **Namespaced CRDs**, RBAC, NetworkPolicy |
 | **Scaling** | Vertical only | **Horizontal** — stateless control plane, HPA |
 | **Channel connections** | In-process per channel | Dedicated **Deployment** per channel type |
 | **Observability** | Application logs | `kubectl logs`, events, conditions, **k9s-style TUI** |
 
-The result: every concept that OpenClaw manages in application code, KubeClaw expresses as a Kubernetes resource — then adds the ability to point agents at the cluster itself. Declarative, reconcilable, observable, and scalable.
+The result: every concept that OpenClaw manages in application code, Sympozium expresses as a Kubernetes resource — then adds the ability to point agents at the cluster itself. Declarative, reconcilable, observable, and scalable.
 
 ---
 
 ### Deploy to Your Cluster
 
 ```bash
-kubeclaw install          # CRDs, controllers, webhook, NATS, RBAC, network policies
-kubeclaw onboard          # interactive setup wizard — instance, provider, channel
-kubeclaw                  # launch the interactive TUI (default command)
-kubeclaw uninstall        # clean removal
+sympozium install          # CRDs, controllers, webhook, NATS, RBAC, network policies
+sympozium onboard          # interactive setup wizard — instance, provider, channel
+sympozium                  # launch the interactive TUI (default command)
+sympozium uninstall        # clean removal
 ```
 
 ## Architecture
@@ -102,7 +102,7 @@ graph TB
         direction TB
 
         subgraph CP["Control Plane"]
-            CM["Controller Manager<br/><small>ClawInstance · AgentRun<br/>ClawPolicy · SkillPack · ClawSchedule</small>"]
+            CM["Controller Manager<br/><small>SympoziumInstance · AgentRun<br/>SympoziumPolicy · SkillPack · SympoziumSchedule</small>"]
             API["API Server<br/><small>HTTP + WebSocket</small>"]
             WH["Admission Webhook<br/><small>Policy enforcement</small>"]
             NATS[("NATS JetStream<br/><small>Event bus</small>")]
@@ -112,10 +112,10 @@ graph TB
         end
 
         subgraph SCHED["Scheduled Tasks"]
-            CS["ClawSchedule Controller<br/><small>Cron-based reconciler</small>"]
-            SROUTER["Schedule Router<br/><small>NATS → ClawSchedule CRD</small>"]
+            CS["SympoziumSchedule Controller<br/><small>Cron-based reconciler</small>"]
+            SROUTER["Schedule Router<br/><small>NATS → SympoziumSchedule CRD</small>"]
             CS -- "creates AgentRuns<br/>on schedule" --> CM
-            SROUTER -- "creates / updates<br/>ClawSchedule CRDs" --> CS
+            SROUTER -- "creates / updates<br/>SympoziumSchedule CRDs" --> CS
         end
 
         subgraph CH["Channel Pods  ·  one Deployment per type"]
@@ -164,7 +164,7 @@ graph TB
     end
 
     USER(["User / Chat Client"]) -- "Telegram · Slack<br/>Discord · WhatsApp" --> CH
-    ADMIN(["Operator / SRE"]) -- "kubeclaw TUI<br/>kubectl · k9s" --> CP
+    ADMIN(["Operator / SRE"]) -- "sympozium TUI<br/>kubectl · k9s" --> CP
 
     style K8S fill:#0d1117,stroke:#30363d,color:#c9d1d9
     style CP fill:#1a1a2e,stroke:#e94560,color:#fff
@@ -216,7 +216,7 @@ Skills are mounted as files into agent pods and optionally inject sidecar contai
 
 ### Channels
 
-Channels connect KubeClaw to external messaging platforms. Each channel runs as a dedicated Kubernetes Deployment. Messages flow through NATS JetStream and are routed to AgentRuns by the channel router.
+Channels connect Sympozium to external messaging platforms. Each channel runs as a dedicated Kubernetes Deployment. Messages flow through NATS JetStream and are routed to AgentRuns by the channel router.
 
 | Channel | Protocol | Self-chat | Status |
 |---------|----------|-----------|--------|
@@ -231,22 +231,22 @@ Channels connect KubeClaw to external messaging platforms. Each channel runs as 
 
 ## Custom Resources
 
-KubeClaw models every agentic concept as a Kubernetes Custom Resource:
+Sympozium models every agentic concept as a Kubernetes Custom Resource:
 
 | CRD | Kubernetes Analogy | Purpose |
 |-----|--------------------|---------|
-| `ClawInstance` | Namespace / Tenant | Per-user gateway — channels, provider config, memory settings, skill bindings |
+| `SympoziumInstance` | Namespace / Tenant | Per-user gateway — channels, provider config, memory settings, skill bindings |
 | `AgentRun` | Job | Single agent execution — task, model, result capture, memory extraction |
-| `ClawPolicy` | NetworkPolicy | Feature and tool gating — what an agent can and cannot do |
+| `SympoziumPolicy` | NetworkPolicy | Feature and tool gating — what an agent can and cannot do |
 | `SkillPack` | ConfigMap | Portable skill bundles — kubectl, Helm, or custom tools — mounted into agent pods as files, with optional sidecar containers for cluster ops |
-| `ClawSchedule` | CronJob | Recurring tasks — heartbeats, sweeps, scheduled runs with cron expressions |
+| `SympoziumSchedule` | CronJob | Recurring tasks — heartbeats, sweeps, scheduled runs with cron expressions |
 
 ### Skill Sidecars
 
 SkillPacks can declare a **sidecar container** that is dynamically injected into the agent pod when the skill is active. The controller automatically creates scoped RBAC:
 
 ```
-ClawInstance has skills: [k8s-ops]
+SympoziumInstance has skills: [k8s-ops]
   → AgentRun created
     → Controller resolves SkillPack "k8s-ops"
       → Finds sidecar: { image: skill-k8s-ops, rbac: [...] }
@@ -262,18 +262,18 @@ The `k8s-ops` built-in skill is the first proof of concept — it provides a sid
 ```
 # In the TUI: press 's' on an instance → Space to toggle k8s-ops
 # Or via kubectl:
-kubectl patch clawinstance <name> --type=merge -p '{"spec":{"skills":[{"skillPackRef":"k8s-ops"}]}}'
+kubectl patch sympoziuminstance <name> --type=merge -p '{"spec":{"skills":[{"skillPackRef":"k8s-ops"}]}}'
 ```
 
 ### Security
 
-KubeClaw enforces defence-in-depth at every layer — from network isolation to per-run RBAC:
+Sympozium enforces defence-in-depth at every layer — from network isolation to per-run RBAC:
 
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
 | **Network** | `NetworkPolicy` deny-all egress on agent pods | Only the IPC bridge can reach NATS; agents cannot reach the internet or other pods |
 | **Pod sandbox** | `SecurityContext` — `runAsNonRoot`, UID 1000, read-only root filesystem | Every agent and sidecar container runs with least privilege |
-| **Admission control** | `ClawPolicy` admission webhook | Feature and tool gates enforced before the pod is created |
+| **Admission control** | `SympoziumPolicy` admission webhook | Feature and tool gates enforced before the pod is created |
 | **Skill RBAC** | Ephemeral `Role`/`ClusterRole` per AgentRun | Each skill declares exactly the API permissions it needs — the controller auto-provisions them at run start and revokes them on completion |
 | **RBAC lifecycle** | `ownerReference` (namespace) + label-based cleanup (cluster) | Namespace RBAC is garbage-collected by Kubernetes. Cluster RBAC is cleaned up by the controller on AgentRun completion and deletion. |
 | **Controller privilege** | `cluster-admin` binding | The controller needs `cluster-admin` to create arbitrary RBAC rules declared by SkillPacks (Kubernetes prevents RBAC escalation otherwise) |
@@ -283,7 +283,7 @@ The skill sidecar RBAC model deserves special attention: permissions are **creat
 
 ### Persistent Memory
 
-Each `ClawInstance` can enable **persistent memory** — a ConfigMap (`<instance>-memory`) containing `MEMORY.md` that is:
+Each `SympoziumInstance` can enable **persistent memory** — a ConfigMap (`<instance>-memory`) containing `MEMORY.md` that is:
 - Mounted read-only into every agent pod at `/memory/MEMORY.md`
 - Prepended as context so the agent knows what it has learned
 - Updated after each run — the controller extracts memory markers from pod logs and patches the ConfigMap
@@ -292,11 +292,11 @@ This gives agents **continuity across runs** without external databases or file 
 
 ### Scheduled Tasks (Heartbeats)
 
-`ClawSchedule` resources define cron-based recurring agent runs — perfect for automated cluster health checks, overnight alert reviews, resource right-sizing sweeps, or any domain-specific task:
+`SympoziumSchedule` resources define cron-based recurring agent runs — perfect for automated cluster health checks, overnight alert reviews, resource right-sizing sweeps, or any domain-specific task:
 
 ```yaml
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawSchedule
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumSchedule
 metadata:
   name: daily-standup
 spec:
@@ -312,19 +312,19 @@ Concurrency policies (`Forbid`, `Allow`, `Replace`) work like `CronJob.spec.conc
 
 ## Interactive TUI
 
-Running `kubeclaw` with no arguments launches a **k9s-style interactive terminal UI** for full cluster-wide agentic management.
+Running `sympozium` with no arguments launches a **k9s-style interactive terminal UI** for full cluster-wide agentic management.
 
 ### Views
 
 | Key | View | Description |
 |-----|------|-------------|
-| `1` | Instances | ClawInstance list with status, channels, memory config |
+| `1` | Instances | SympoziumInstance list with status, channels, memory config |
 | `2` | Runs | AgentRun list with phase, duration, result preview |
-| `3` | Policies | ClawPolicy list with feature gates |
+| `3` | Policies | SympoziumPolicy list with feature gates |
 | `4` | Skills | SkillPack list with file counts |
 | `5` | Channels | Channel pod status (Telegram, Slack, Discord, WhatsApp) |
-| `6` | Pods | All kubeclaw pods with status and restarts |
-| `7` | Schedules | ClawSchedule list with cron, type, phase, run count |
+| `6` | Pods | All sympozium pods with status and restarts |
+| `7` | Schedules | SympoziumSchedule list with cron, type, phase, run count |
 
 ### Keybindings
 
@@ -343,7 +343,7 @@ Running `kubeclaw` with no arguments launches a **k9s-style interactive terminal
 | Command | Description |
 |---------|-------------|
 | `/run <task>` | Create and submit an AgentRun |
-| `/schedule <instance> <cron> <task>` | Create a ClawSchedule |
+| `/schedule <instance> <cron> <task>` | Create a SympoziumSchedule |
 | `/memory <instance>` | View persistent memory for an instance |
 | `/instances` `/runs` `/channels` `/schedules` | Switch views |
 | `/delete <type> <name>` | Delete a resource with confirmation |
@@ -353,7 +353,7 @@ Running `kubeclaw` with no arguments launches a **k9s-style interactive terminal
 ### 1. Install the CLI
 
 ```bash
-curl -fsSL https://deploy.k8sclaw.ai/install.sh | sh
+curl -fsSL https://deploy.sympozium.ai/install.sh | sh
 ```
 
 Detects your OS and architecture, downloads the latest release binary, and installs to `/usr/local/bin` (or `~/.local/bin`).
@@ -361,30 +361,30 @@ Detects your OS and architecture, downloads the latest release binary, and insta
 ### 2. Deploy to your cluster
 
 ```bash
-kubeclaw install
+sympozium install
 ```
 
 Applies CRDs, RBAC, controller manager, API server, admission webhook, NATS event bus, cert-manager (if not present), and network policies to your current kubectl context.
 
 ```bash
-kubeclaw install --version v0.0.13   # specific version
+sympozium install --version v0.0.13   # specific version
 ```
 
 ### 3. Onboard — interactive setup wizard
 
 ```bash
-kubeclaw onboard
+sympozium onboard
 ```
 
 The wizard walks you through five steps:
 
 ```
   ╔═══════════════════════════════════════════╗
-  ║         KubeClaw · Onboarding Wizard       ║
+  ║         Sympozium · Onboarding Wizard       ║
   ╚═══════════════════════════════════════════╝
 
   Step 1/5 — Cluster check
-  Step 2/5 — Name your ClawInstance
+  Step 2/5 — Name your SympoziumInstance
   Step 3/5 — Choose your AI provider
   Step 4/5 — Connect a channel (optional)
   Step 5/5 — Apply default policy
@@ -400,39 +400,39 @@ The wizard walks you through five steps:
 | Ollama | `http://ollama:11434/v1` | none |
 | Any OpenAI-compatible | custom URL | custom |
 
-### 4. Launch KubeClaw
+### 4. Launch Sympozium
 
 ```bash
-kubeclaw
+sympozium
 ```
 
 The interactive TUI gives you full visibility — browse instances, runs, schedules, and channels; view logs and describe output inline; submit agent runs with `/run <task>`; check memory with `/memory <instance>`.
 
 ```bash
-kubeclaw instances list                              # list instances
-kubeclaw runs list                                   # list agent runs
-kubeclaw features enable browser-automation \
+sympozium instances list                              # list instances
+sympozium runs list                                   # list agent runs
+sympozium features enable browser-automation \
   --policy default-policy                           # enable a feature gate
 ```
 
-### 5. Remove KubeClaw
+### 5. Remove Sympozium
 
 ```bash
-kubeclaw uninstall
+sympozium uninstall
 ```
 
 ## Project Structure
 
 ```
-kubeclaw/
-├── api/v1alpha1/           # CRD type definitions (ClawInstance, AgentRun, ClawPolicy, SkillPack, ClawSchedule)
+sympozium/
+├── api/v1alpha1/           # CRD type definitions (SympoziumInstance, AgentRun, SympoziumPolicy, SkillPack, SympoziumSchedule)
 ├── cmd/                    # Binary entry points
 │   ├── agent-runner/       # LLM agent runner (runs inside agent pods)
 │   ├── controller/         # Controller manager (reconciles all CRDs)
 │   ├── apiserver/          # HTTP + WebSocket API server
 │   ├── ipc-bridge/         # IPC bridge sidecar (fsnotify → NATS)
 │   ├── webhook/            # Admission webhook (policy enforcement)
-│   └── kubeclaw/            # CLI + interactive TUI
+│   └── sympozium/            # CLI + interactive TUI
 ├── internal/               # Internal packages
 │   ├── controller/         # Kubernetes controllers (5 reconcilers)
 │   ├── orchestrator/       # Agent pod builder & spawner
@@ -467,9 +467,9 @@ kubeclaw/
 | **Filesystem IPC** | emptyDir volume | Agent writes to `/ipc/`, bridge sidecar watches via fsnotify and publishes to NATS — language-agnostic, zero dependencies in agent container |
 | **NATS JetStream** | StatefulSet | Durable pub/sub with replay — channels and control plane communicate without direct coupling |
 | **NetworkPolicy isolation** | NetworkPolicy | Agent pods get deny-all egress; only the IPC bridge connects to the event bus — agents cannot reach the internet or other pods |
-| **Policy-as-CRD** | Admission Webhook | `ClawPolicy` resources gate tools, sandboxes, and features — enforced at admission time, not at runtime |
+| **Policy-as-CRD** | Admission Webhook | `SympoziumPolicy` resources gate tools, sandboxes, and features — enforced at admission time, not at runtime |
 | **Memory-as-ConfigMap** | ConfigMap | Persistent agent memory lives in etcd — no external database, no file system, fully declarative and backed up with cluster state |
-| **Schedule-as-CRD** | CronJob analogy | `ClawSchedule` resources define recurring tasks with cron expressions — the controller creates AgentRuns, not the user |
+| **Schedule-as-CRD** | CronJob analogy | `SympoziumSchedule` resources define recurring tasks with cron expressions — the controller creates AgentRuns, not the user |
 | **Skills-as-ConfigMap** | ConfigMap volume | SkillPacks generate ConfigMaps mounted into agent pods — portable, versionable, namespace-scoped |
 | **Skill sidecars with auto-RBAC** | Role / ClusterRole | SkillPacks can declare sidecar containers with RBAC rules — the controller injects the container and provisions ephemeral, least-privilege RBAC per run |
 
@@ -479,7 +479,7 @@ kubeclaw/
 |----------|-----------|-------------|
 | `EVENT_BUS_URL` | All | NATS server URL |
 | `DATABASE_URL` | API Server | PostgreSQL connection string |
-| `INSTANCE_NAME` | Channels | Owning ClawInstance name |
+| `INSTANCE_NAME` | Channels | Owning SympoziumInstance name |
 | `MEMORY_ENABLED` | Agent Runner | Whether persistent memory is active |
 | `TELEGRAM_BOT_TOKEN` | Telegram | Bot API token |
 | `SLACK_BOT_TOKEN` | Slack | Bot OAuth token |

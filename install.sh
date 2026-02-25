@@ -1,15 +1,15 @@
 #!/bin/sh
-# kubeclaw installer
-# Usage: curl -fsSL https://deploy.k8sclaw.ai/install.sh | sh
-#        curl -fsSL https://deploy.k8sclaw.ai/install.sh | sh -s -- --local   # Install to ~/.local/bin (no sudo)
+# sympozium installer
+# Usage: curl -fsSL https://deploy.sympozium.ai/install.sh | sh
+#        curl -fsSL https://deploy.sympozium.ai/install.sh | sh -s -- --local   # Install to ~/.local/bin (no sudo)
 #
-# Downloads the latest kubeclaw CLI release from GitHub and installs
+# Downloads the latest sympozium CLI release from GitHub and installs
 # the binary to /usr/local/bin (or ~/.local/bin with --local or if no sudo).
 
 set -e
 
-REPO="AlexsJones/kubeclaw"
-BINARY="kubeclaw"
+REPO="AlexsJones/sympozium"
+BINARY="sympozium"
 LOCAL_INSTALL=""
 
 # --- helpers ---
@@ -152,11 +152,11 @@ install() {
 
 main() {
     parse_args "$@"
-    info "kubeclaw installer"
+    info "sympozium installer"
     detect_platform
     fetch_latest_tag
     install
-    info "Done! Run 'kubeclaw install' to deploy KubeClaw to your cluster."
+    info "Done! Run 'sympozium install' to deploy Sympozium to your cluster."
 }
 
 main "$@"

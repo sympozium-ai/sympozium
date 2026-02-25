@@ -1,4 +1,4 @@
-// Package main is the entry point for the KubeClaw API server.
+// Package main is the entry point for the Sympozium API server.
 package main
 
 import (
@@ -15,16 +15,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	"github.com/kubeclaw/kubeclaw/internal/apiserver"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	"github.com/alexsjones/sympozium/internal/apiserver"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 var scheme = runtime.NewScheme()
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(kubeclawv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(sympoziumv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -33,8 +33,8 @@ func main() {
 	var eventBusURL string
 
 	flag.StringVar(&addr, "addr", ":8080", "API server listen address")
-	flag.StringVar(&namespace, "namespace", "kubeclaw", "KubeClaw namespace")
-	flag.StringVar(&eventBusURL, "event-bus-url", "nats://nats.kubeclaw-system.svc:4222", "Event bus URL")
+	flag.StringVar(&namespace, "namespace", "sympozium", "Sympozium namespace")
+	flag.StringVar(&eventBusURL, "event-bus-url", "nats://nats.sympozium-system.svc:4222", "Event bus URL")
 	flag.Parse()
 
 	log := zap.New(zap.UseDevMode(true))

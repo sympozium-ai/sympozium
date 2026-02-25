@@ -1,5 +1,5 @@
-// Package webhook provides validating and mutating admission webhooks for KubeClaw.
-// These enforce ClawPolicy constraints on AgentRun resources.
+// Package webhook provides validating and mutating admission webhooks for Sympozium.
+// These enforce SympoziumPolicy constraints on AgentRun resources.
 package webhook
 
 import (
@@ -16,31 +16,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 )
 
-// PolicyEnforcer is a validating webhook that enforces ClawPolicy on AgentRuns.
+// PolicyEnforcer is a validating webhook that enforces SympoziumPolicy on AgentRuns.
 type PolicyEnforcer struct {
 	Client  client.Client
 	Log     logr.Logger
 	decoder admission.Decoder
 }
 
-// Handle validates AgentRun creation/updates against the bound ClawPolicy.
+// Handle validates AgentRun creation/updates against the bound SympoziumPolicy.
 func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) admission.Response {
-	run := &kubeclawv1alpha1.AgentRun{}
+	run := &sympoziumv1alpha1.AgentRun{}
 	if err := pe.decoder.Decode(req, run); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	// Look up the owning ClawInstance
-	var instance kubeclawv1alpha1.ClawInstance
+	// Look up the owning SympoziumInstance
+	var instance sympoziumv1alpha1.SympoziumInstance
 	if err := pe.Client.Get(ctx, types.NamespacedName{
 		Name:      run.Spec.InstanceRef,
 		Namespace: run.Namespace,
 	}, &instance); err != nil {
 		return admission.Errored(http.StatusBadRequest,
-			fmt.Errorf("failed to find ClawInstance %s: %w", run.Spec.InstanceRef, err))
+			fmt.Errorf("failed to find SympoziumInstance %s: %w", run.Spec.InstanceRef, err))
 	}
 
 	// If no policy is bound, allow
@@ -48,14 +48,14 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 		return admission.Allowed("no policy bound")
 	}
 
-	// Look up the ClawPolicy
-	var policy kubeclawv1alpha1.ClawPolicy
+	// Look up the SympoziumPolicy
+	var policy sympoziumv1alpha1.SympoziumPolicy
 	if err := pe.Client.Get(ctx, types.NamespacedName{
 		Name:      instance.Spec.PolicyRef,
 		Namespace: run.Namespace,
 	}, &policy); err != nil {
 		return admission.Errored(http.StatusInternalServerError,
-			fmt.Errorf("failed to find ClawPolicy %s: %w", instance.Spec.PolicyRef, err))
+			fmt.Errorf("failed to find SympoziumPolicy %s: %w", instance.Spec.PolicyRef, err))
 	}
 
 	// Validate sandbox policy
@@ -88,7 +88,7 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	return admission.Allowed("policy validated")
 }
 
-func (pe *PolicyEnforcer) validateResources(run *kubeclawv1alpha1.AgentRun, policy *kubeclawv1alpha1.ClawPolicy) error {
+func (pe *PolicyEnforcer) validateResources(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
 	if policy.Spec.SandboxPolicy == nil || run.Spec.Sandbox == nil {
 		return nil
 	}
@@ -106,7 +106,7 @@ func (pe *PolicyEnforcer) validateResources(run *kubeclawv1alpha1.AgentRun, poli
 	return nil
 }
 
-func (pe *PolicyEnforcer) validateSubagentDepth(run *kubeclawv1alpha1.AgentRun, policy *kubeclawv1alpha1.ClawPolicy) error {
+func (pe *PolicyEnforcer) validateSubagentDepth(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
 	if policy.Spec.SubagentPolicy == nil || run.Spec.Parent == nil {
 		return nil
 	}
@@ -119,7 +119,7 @@ func (pe *PolicyEnforcer) validateSubagentDepth(run *kubeclawv1alpha1.AgentRun, 
 	return nil
 }
 
-func (pe *PolicyEnforcer) validateToolPolicy(run *kubeclawv1alpha1.AgentRun, policy *kubeclawv1alpha1.ClawPolicy) error {
+func (pe *PolicyEnforcer) validateToolPolicy(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
 	if run.Spec.ToolPolicy == nil || policy.Spec.ToolGating == nil {
 		return nil
 	}
@@ -138,7 +138,7 @@ func (pe *PolicyEnforcer) validateToolPolicy(run *kubeclawv1alpha1.AgentRun, pol
 	return nil
 }
 
-func (pe *PolicyEnforcer) validateFeatureGates(run *kubeclawv1alpha1.AgentRun, policy *kubeclawv1alpha1.ClawPolicy) error {
+func (pe *PolicyEnforcer) validateFeatureGates(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
 	if policy.Spec.FeatureGates == nil {
 		return nil
 	}
@@ -166,7 +166,7 @@ func (pe *PolicyEnforcer) InjectDecoder(d admission.Decoder) error {
 	return nil
 }
 
-// MutatingPolicyEnforcer is a mutating webhook that injects defaults based on ClawPolicy.
+// MutatingPolicyEnforcer is a mutating webhook that injects defaults based on SympoziumPolicy.
 type MutatingPolicyEnforcer struct {
 	Client  client.Client
 	Log     logr.Logger
@@ -175,13 +175,13 @@ type MutatingPolicyEnforcer struct {
 
 // Handle mutates AgentRun resources to enforce policy defaults.
 func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Request) admission.Response {
-	run := &kubeclawv1alpha1.AgentRun{}
+	run := &sympoziumv1alpha1.AgentRun{}
 	if err := mpe.decoder.Decode(req, run); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	// Look up the owning ClawInstance
-	var instance kubeclawv1alpha1.ClawInstance
+	// Look up the owning SympoziumInstance
+	var instance sympoziumv1alpha1.SympoziumInstance
 	if err := mpe.Client.Get(ctx, types.NamespacedName{
 		Name:      run.Spec.InstanceRef,
 		Namespace: run.Namespace,
@@ -193,7 +193,7 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 		return admission.Allowed("no policy")
 	}
 
-	var policy kubeclawv1alpha1.ClawPolicy
+	var policy sympoziumv1alpha1.SympoziumPolicy
 	if err := mpe.Client.Get(ctx, types.NamespacedName{
 		Name:      instance.Spec.PolicyRef,
 		Namespace: run.Namespace,
@@ -206,7 +206,7 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 	// Inject sandbox defaults
 	if policy.Spec.SandboxPolicy != nil && policy.Spec.SandboxPolicy.Required {
 		if run.Spec.Sandbox == nil {
-			run.Spec.Sandbox = &kubeclawv1alpha1.AgentRunSandboxSpec{
+			run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{
 				Enabled: true,
 			}
 			modified = true
@@ -217,9 +217,9 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 		}
 	}
 
-	// Inject tool policy defaults from ClawPolicy
+	// Inject tool policy defaults from SympoziumPolicy
 	if policy.Spec.ToolGating != nil && run.Spec.ToolPolicy == nil {
-		tp := &kubeclawv1alpha1.ToolPolicySpec{}
+		tp := &sympoziumv1alpha1.ToolPolicySpec{}
 		for _, rule := range policy.Spec.ToolGating.Rules {
 			switch rule.Action {
 			case "allow":
@@ -236,12 +236,12 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 	if run.Labels == nil {
 		run.Labels = make(map[string]string)
 	}
-	if _, exists := run.Labels["kubeclaw.io/role"]; !exists {
-		run.Labels["kubeclaw.io/role"] = "agent"
+	if _, exists := run.Labels["sympozium.ai/role"]; !exists {
+		run.Labels["sympozium.ai/role"] = "agent"
 		modified = true
 	}
 	if run.Spec.Sandbox != nil && run.Spec.Sandbox.Enabled {
-		run.Labels["kubeclaw.io/sandbox"] = "true"
+		run.Labels["sympozium.ai/sandbox"] = "true"
 		modified = true
 	}
 
@@ -249,8 +249,8 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 	if run.Annotations == nil {
 		run.Annotations = make(map[string]string)
 	}
-	if _, exists := run.Annotations["kubeclaw.io/disable-sa-token"]; !exists {
-		run.Annotations["kubeclaw.io/disable-sa-token"] = "true"
+	if _, exists := run.Annotations["sympozium.ai/disable-sa-token"]; !exists {
+		run.Annotations["sympozium.ai/disable-sa-token"] = "true"
 		modified = true
 	}
 

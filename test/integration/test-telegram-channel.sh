@@ -4,7 +4,7 @@
 # This test has two modes:
 #
 # Mode 1 (no TELEGRAM_BOT_TOKEN): Deployment pipeline only
-#   - Creates a ClawInstance with a telegram channel
+#   - Creates a SympoziumInstance with a telegram channel
 #   - Verifies the controller creates a channel-telegram Deployment
 #   - Checks the channel pod starts (may restart without a real token, but
 #     the image pull + container start is validated)
@@ -16,7 +16,7 @@
 #   - Verifies the Telegram bot API was called (checks channel pod logs)
 #
 # Prerequisites:
-#   - Kind cluster running with KubeClaw installed
+#   - Kind cluster running with Sympozium installed
 #   - channel-telegram image available in the cluster
 #   - (Mode 2) TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set
 #
@@ -56,10 +56,10 @@ fi
 cleanup() {
     info "Cleaning up test resources..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    # Wait for the controller to clean up channel deployments (owned by ClawInstance)
+    kubectl delete sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    # Wait for the controller to clean up channel deployments (owned by SympoziumInstance)
     sleep 3
     kubectl delete deployment "$INSTANCE_NAME-channel-telegram" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
     kubectl delete secret "$TELEGRAM_SECRET_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
@@ -73,13 +73,13 @@ else
     info "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for full end-to-end test"
 fi
 
-if ! kubectl get crd agentruns.kubeclaw.io >/dev/null 2>&1; then
-    fail "KubeClaw CRDs not installed."
+if ! kubectl get crd agentruns.sympozium.ai >/dev/null 2>&1; then
+    fail "Sympozium CRDs not installed."
     exit 1
 fi
 
-if ! kubectl get deployment kubeclaw-controller-manager -n kubeclaw-system >/dev/null 2>&1; then
-    fail "KubeClaw controller not running."
+if ! kubectl get deployment sympozium-controller-manager -n sympozium-system >/dev/null 2>&1; then
+    fail "Sympozium controller not running."
     exit 1
 fi
 
@@ -111,7 +111,7 @@ sleep 2
 # ============================================================
 # Part 1: Channel Deployment Pipeline
 # ============================================================
-info "Creating ClawInstance with telegram channel: $INSTANCE_NAME"
+info "Creating SympoziumInstance with telegram channel: $INSTANCE_NAME"
 
 # Build the channel config — use a real or dummy token
 if $FULL_MODE; then
@@ -125,8 +125,8 @@ else
 fi
 
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
@@ -178,9 +178,9 @@ fi
 # Check labels
 if $deploy_found; then
     channel_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.kubeclaw\.io/channel}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.io/channel}' 2>/dev/null || echo "")
     instance_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.kubeclaw\.io/instance}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.io/instance}' 2>/dev/null || echo "")
     if [[ "$channel_label" == "telegram" && "$instance_label" == "$INSTANCE_NAME" ]]; then
         pass "Deployment labels correct (channel=telegram, instance=$INSTANCE_NAME)"
     else
@@ -189,13 +189,13 @@ if $deploy_found; then
     fi
 fi
 
-# Verify ClawInstance status shows the channel
-channel_status=$(kubectl get clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" \
+# Verify SympoziumInstance status shows the channel
+channel_status=$(kubectl get sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" \
     -o jsonpath='{.status.channels[0].type}' 2>/dev/null || echo "")
 if [[ "$channel_status" == "telegram" ]]; then
-    pass "ClawInstance status shows telegram channel"
+    pass "SympoziumInstance status shows telegram channel"
 else
-    info "ClawInstance channel status: $channel_status (may need reconcile)"
+    info "SympoziumInstance channel status: $channel_status (may need reconcile)"
 fi
 
 # Wait for pod to start (or at least be created)
@@ -212,7 +212,7 @@ if $deploy_found; then
         fi
         # Even without a real token, check if the pod at least started
         pod_phase=$(kubectl get pods -n "$NAMESPACE" \
-            -l "kubeclaw.io/channel=telegram,kubeclaw.io/instance=$INSTANCE_NAME" \
+            -l "sympozium.ai/channel=telegram,sympozium.ai/instance=$INSTANCE_NAME" \
             -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
         if [[ "$pod_phase" == "Running" ]]; then
             pod_started=true
@@ -241,17 +241,17 @@ if $FULL_MODE; then
     echo ""
     info "=== Part 2: Full E2E — agent sends Telegram message ==="
 
-    MARKER_TEXT="kubeclaw-telegram-test-$(date +%s)"
+    MARKER_TEXT="sympozium-telegram-test-$(date +%s)"
 
     info "Creating AgentRun: $RUN_NAME"
     cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: ${RUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kubeclaw.io/instance: ${INSTANCE_NAME}
+    sympozium.ai/instance: ${INSTANCE_NAME}
 spec:
   instanceRef: ${INSTANCE_NAME}
   agentId: default
@@ -278,7 +278,7 @@ EOF
             -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
         if [[ -z "$pod" ]]; then
             pod=$(kubectl get pods -n "$NAMESPACE" \
-                -l "kubeclaw.io/agentrun=$RUN_NAME" \
+                -l "sympozium.ai/agentrun=$RUN_NAME" \
                 -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
             if [[ -n "$pod" ]]; then
                 info "Pod found: $pod"
@@ -320,7 +320,7 @@ EOF
 
     # Check channel pod logs for outbound delivery
     tg_pod=$(kubectl get pods -n "$NAMESPACE" \
-        -l "kubeclaw.io/channel=telegram,kubeclaw.io/instance=$INSTANCE_NAME" \
+        -l "sympozium.ai/channel=telegram,sympozium.ai/instance=$INSTANCE_NAME" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [[ -n "$tg_pod" ]]; then
         tg_logs=$(kubectl logs "$tg_pod" -n "$NAMESPACE" 2>/dev/null | tail -30 || echo "")

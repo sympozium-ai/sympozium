@@ -31,8 +31,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/kubeclaw/kubeclaw/internal/channel"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/channel"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // WhatsAppChannel implements the WhatsApp Web channel via whatsmeow.
@@ -49,7 +49,7 @@ func main() {
 	var dataDir string
 	var listenAddr string
 
-	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "ClawInstance name")
+	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "SympoziumInstance name")
 	flag.StringVar(&eventBusURL, "event-bus-url", os.Getenv("EVENT_BUS_URL"), "Event bus URL")
 	flag.StringVar(&dataDir, "data-dir", envOrDefault("WHATSAPP_DATA_DIR", "/data"), "Directory for SQLite credential store")
 	flag.StringVar(&listenAddr, "addr", ":3000", "Listen address for health endpoint")

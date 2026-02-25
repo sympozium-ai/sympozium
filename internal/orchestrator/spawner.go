@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 )
 
 // Spawner handles sub-agent spawn requests by creating AgentRun CRs.
@@ -27,7 +27,7 @@ type SpawnRequest struct {
 	// ParentSessionKey is the session key of the parent.
 	ParentSessionKey string `json:"parentSessionKey"`
 
-	// InstanceName is the ClawInstance this belongs to.
+	// InstanceName is the SympoziumInstance this belongs to.
 	InstanceName string `json:"instanceName"`
 
 	// Namespace is the Kubernetes namespace.
@@ -46,10 +46,10 @@ type SpawnRequest struct {
 	CurrentDepth int `json:"currentDepth"`
 
 	// Model configuration.
-	Model kubeclawv1alpha1.ModelSpec `json:"model"`
+	Model sympoziumv1alpha1.ModelSpec `json:"model"`
 
 	// Skills to mount.
-	Skills []kubeclawv1alpha1.SkillRef `json:"skills,omitempty"`
+	Skills []sympoziumv1alpha1.SkillRef `json:"skills,omitempty"`
 }
 
 // SpawnResult is the result of a spawn operation.
@@ -74,22 +74,22 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 
 	log.Info("Spawning sub-agent", "runName", runName)
 
-	agentRun := &kubeclawv1alpha1.AgentRun{
+	agentRun := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      runName,
 			Namespace: req.Namespace,
 			Labels: map[string]string{
-				"kubeclaw.io/instance":   req.InstanceName,
-				"kubeclaw.io/agent-id":   req.AgentID,
-				"kubeclaw.io/parent-run": req.ParentRunName,
-				"kubeclaw.io/component":  "agent-run",
+				"sympozium.ai/instance":   req.InstanceName,
+				"sympozium.ai/agent-id":   req.AgentID,
+				"sympozium.ai/parent-run": req.ParentRunName,
+				"sympozium.ai/component":  "agent-run",
 			},
 		},
-		Spec: kubeclawv1alpha1.AgentRunSpec{
+		Spec: sympoziumv1alpha1.AgentRunSpec{
 			InstanceRef: req.InstanceName,
 			AgentID:     req.AgentID,
 			SessionKey:  sessionKey,
-			Parent: &kubeclawv1alpha1.ParentRunRef{
+			Parent: &sympoziumv1alpha1.ParentRunRef{
 				RunName:    req.ParentRunName,
 				SessionKey: req.ParentSessionKey,
 				SpawnDepth: req.CurrentDepth + 1,

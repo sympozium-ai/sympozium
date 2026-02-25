@@ -1,5 +1,5 @@
 // Package ipc implements the IPC bridge sidecar that mediates communication
-// between ephemeral agent pods and the durable KubeClaw control plane.
+// between ephemeral agent pods and the durable Sympozium control plane.
 //
 // The bridge watches directories under /ipc for file-based IPC messages from
 // the agent container, translates them into event bus messages, and relays
@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // IPCDir layout constants matching the design doc protocol.

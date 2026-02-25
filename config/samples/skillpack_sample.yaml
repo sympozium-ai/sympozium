@@ -1,6 +1,6 @@
 ---
 # Example SkillPack — simple code review skill bundle
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: code-review-sample

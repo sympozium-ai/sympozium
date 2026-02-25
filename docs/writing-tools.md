@@ -1,6 +1,6 @@
-# Writing Tools for KubeClaw
+# Writing Tools for Sympozium
 
-This guide explains how to add new tools to the KubeClaw agent-runner. Tools are the fundamental building blocks that give agents the ability to _do things_ — execute commands, read files, send messages, call APIs, and interact with the world.
+This guide explains how to add new tools to the Sympozium agent-runner. Tools are the fundamental building blocks that give agents the ability to _do things_ — execute commands, read files, send messages, call APIs, and interact with the world.
 
 ---
 
@@ -23,7 +23,7 @@ Tools are registered in [`cmd/agent-runner/tools.go`](../cmd/agent-runner/tools.
 |--|-------|--------|
 | **What** | Code that runs inside the agent pod | Markdown instructions + optional sidecar |
 | **Where** | Compiled into the `agent-runner` binary | Mounted at `/skills/` from ConfigMaps |
-| **Scope** | Global — every agent run has the same tools | Per-instance — toggled on/off per ClawInstance |
+| **Scope** | Global — every agent run has the same tools | Per-instance — toggled on/off per SympoziumInstance |
 | **Examples** | `execute_command`, `send_channel_message` | `k8s-ops`, `incident-response`, `code-review` |
 
 Think of tools as the agent's **hands** and skills as its **training**. A skill might say "run `kubectl get pods`", but the `execute_command` tool is what actually runs the command.
@@ -342,7 +342,7 @@ Some tools depend on runtime context. The controller passes context as environme
 | `TOOLS_ENABLED` | Always | Enables tool registration |
 | `SOURCE_CHANNEL` | Run came from a channel | Originating channel type (e.g. `whatsapp`) |
 | `SOURCE_CHAT_ID` | Run came from a channel | Chat ID to reply to |
-| `INSTANCE_NAME` | Always | Name of the ClawInstance |
+| `INSTANCE_NAME` | Always | Name of the SympoziumInstance |
 | `AGENT_RUN_ID` | Always | Name of the AgentRun CR |
 
 To add new context, pass it as an env var from the controller (`internal/controller/agentrun_controller.go` in `buildContainers()`) and read it in the agent-runner.
@@ -411,7 +411,7 @@ func TestMyNewTool_MissingParam(t *testing.T) {
 ```bash
 # Create a simple AgentRun that uses your tool
 kubectl apply -f - <<EOF
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: test-tool

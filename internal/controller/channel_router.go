@@ -14,9 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	channelpkg "github.com/kubeclaw/kubeclaw/internal/channel"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	channelpkg "github.com/alexsjones/sympozium/internal/channel"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // ChannelRouter subscribes to channel.message.received on the event bus,
@@ -63,7 +63,7 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 // resolveProvider returns the AI provider for the instance.
 // It prefers the explicit Provider field on AuthRefs, falling back to
 // guessing from the auth secret names.
-func resolveProvider(inst *kubeclawv1alpha1.ClawInstance) string {
+func resolveProvider(inst *sympoziumv1alpha1.SympoziumInstance) string {
 	for _, ref := range inst.Spec.AuthRefs {
 		if ref.Provider != "" {
 			return ref.Provider
@@ -100,14 +100,14 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		"text", truncateForLog(msg.Text, 80),
 	)
 
-	// Look up the ClawInstance to get config and namespace.
-	var instances kubeclawv1alpha1.ClawInstanceList
+	// Look up the SympoziumInstance to get config and namespace.
+	var instances sympoziumv1alpha1.SympoziumInstanceList
 	if err := cr.Client.List(ctx, &instances); err != nil {
-		cr.Log.Error(err, "failed to list ClawInstances")
+		cr.Log.Error(err, "failed to list SympoziumInstances")
 		return
 	}
 
-	var inst *kubeclawv1alpha1.ClawInstance
+	var inst *sympoziumv1alpha1.SympoziumInstance
 	for i := range instances.Items {
 		if instances.Items[i].Name == msg.InstanceName {
 			inst = &instances.Items[i]
@@ -115,11 +115,11 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		}
 	}
 	if inst == nil {
-		cr.Log.Info("ClawInstance not found for channel message", "instance", msg.InstanceName)
+		cr.Log.Info("SympoziumInstance not found for channel message", "instance", msg.InstanceName)
 		return
 	}
 
-	// Resolve model configuration from the ClawInstance (same logic as TUI).
+	// Resolve model configuration from the SympoziumInstance (same logic as TUI).
 	provider := resolveProvider(inst)
 	authSecret := ""
 	if len(inst.Spec.AuthRefs) > 0 {
@@ -127,28 +127,28 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	}
 
 	// Create an AgentRun for the inbound message.
-	run := &kubeclawv1alpha1.AgentRun{
+	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: msg.InstanceName + "-ch-",
 			Namespace:    inst.Namespace,
 			Labels: map[string]string{
-				"kubeclaw.io/instance":       msg.InstanceName,
-				"kubeclaw.io/source":         "channel",
-				"kubeclaw.io/source-channel": msg.Channel,
+				"sympozium.ai/instance":       msg.InstanceName,
+				"sympozium.ai/source":         "channel",
+				"sympozium.ai/source-channel": msg.Channel,
 			},
 			Annotations: map[string]string{
-				"kubeclaw.io/reply-channel": msg.Channel,
-				"kubeclaw.io/reply-chat-id": msg.ChatID,
-				"kubeclaw.io/sender-name":   msg.SenderName,
-				"kubeclaw.io/sender-id":     msg.SenderID,
+				"sympozium.ai/reply-channel": msg.Channel,
+				"sympozium.ai/reply-chat-id": msg.ChatID,
+				"sympozium.ai/sender-name":   msg.SenderName,
+				"sympozium.ai/sender-id":     msg.SenderID,
 			},
 		},
-		Spec: kubeclawv1alpha1.AgentRunSpec{
+		Spec: sympoziumv1alpha1.AgentRunSpec{
 			InstanceRef: msg.InstanceName,
 			AgentID:     "primary",
 			SessionKey:  fmt.Sprintf("channel-%s-%s-%d", msg.Channel, msg.ChatID, time.Now().UnixNano()),
 			Task:        msg.Text,
-			Model: kubeclawv1alpha1.ModelSpec{
+			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:      provider,
 				Model:         inst.Spec.Agents.Default.Model,
 				BaseURL:       inst.Spec.Agents.Default.BaseURL,
@@ -190,15 +190,15 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 	}
 
 	// Find the AgentRun to check if it originated from a channel.
-	var runs kubeclawv1alpha1.AgentRunList
+	var runs sympoziumv1alpha1.AgentRunList
 	if err := cr.Client.List(ctx, &runs, client.MatchingLabels{
-		"kubeclaw.io/source": "channel",
+		"sympozium.ai/source": "channel",
 	}); err != nil {
 		cr.Log.Error(err, "failed to list channel-sourced AgentRuns")
 		return
 	}
 
-	var run *kubeclawv1alpha1.AgentRun
+	var run *sympoziumv1alpha1.AgentRun
 	for i := range runs.Items {
 		if runs.Items[i].Name == agentRunID {
 			run = &runs.Items[i]
@@ -220,8 +220,8 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		return
 	}
 
-	replyChannel := run.Annotations["kubeclaw.io/reply-channel"]
-	replyChatID := run.Annotations["kubeclaw.io/reply-chat-id"]
+	replyChannel := run.Annotations["sympozium.ai/reply-channel"]
+	replyChatID := run.Annotations["sympozium.ai/reply-chat-id"]
 
 	if replyChannel == "" {
 		return

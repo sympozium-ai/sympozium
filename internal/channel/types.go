@@ -1,4 +1,4 @@
-// Package channel provides base types and interfaces for KubeClaw channel implementations.
+// Package channel provides base types and interfaces for Sympozium channel implementations.
 // Each channel type (Telegram, WhatsApp, Discord, Slack) runs as its own pod
 // and uses this framework to connect to the event bus.
 package channel
@@ -6,7 +6,7 @@ package channel
 import (
 	"context"
 
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // InboundMessage represents a message received from an external channel.

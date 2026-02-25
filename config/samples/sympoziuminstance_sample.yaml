@@ -1,0 +1,37 @@
+---
+# Example SympoziumInstance with Telegram and Slack channels
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
+metadata:
+  name: alice
+  namespace: default
+spec:
+  channels:
+    - type: telegram
+      secretRef: alice-telegram-secret
+    - type: slack
+      secretRef: alice-slack-secret
+  agents:
+    default:
+      model: gpt-4o
+      image: ghcr.io/alexsjones/sympozium/agent-codex:v0.0.29
+      maxTokens: 128000
+    sandbox:
+      enabled: true
+      image: ghcr.io/alexsjones/sympozium/sandbox:v0.0.29
+      resourceLimits:
+        cpu: "2"
+        memory: 4Gi
+    subagents:
+      maxDepth: 3
+      maxConcurrent: 5
+  skills:
+    - skillPackRef: k8s-ops
+    - name: code-review
+    - name: security-audit
+  policyRef: default-policy
+  authRefs:
+    - provider: github
+      secretName: alice-github-token
+    - provider: openai
+      secretName: alice-openai-key

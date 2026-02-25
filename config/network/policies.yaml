@@ -5,15 +5,15 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: kubeclaw-agent-deny-all
-  namespace: kubeclaw-system
+  name: sympozium-agent-deny-all
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      kubeclaw.io/role: agent
+      sympozium.ai/role: agent
   policyTypes:
     - Ingress
     - Egress
@@ -24,15 +24,15 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: kubeclaw-agent-allow-eventbus
-  namespace: kubeclaw-system
+  name: sympozium-agent-allow-eventbus
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      kubeclaw.io/role: agent
+      sympozium.ai/role: agent
   policyTypes:
     - Egress
   egress:
@@ -56,16 +56,16 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: kubeclaw-sandbox-restricted
-  namespace: kubeclaw-system
+  name: sympozium-sandbox-restricted
+  namespace: sympozium-system
   labels:
-    app.kubernetes.io/name: kubeclaw
+    app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      kubeclaw.io/role: agent
-      kubeclaw.io/sandbox: "true"
+      sympozium.ai/role: agent
+      sympozium.ai/sandbox: "true"
   policyTypes:
     - Ingress
     - Egress
@@ -82,4 +82,4 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              kubeclaw.io/role: agent
+              sympozium.ai/role: agent

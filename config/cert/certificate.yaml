@@ -1,29 +1,29 @@
 ---
-# Self-signed issuer for KubeClaw webhook TLS
+# Self-signed issuer for Sympozium webhook TLS
 # Requires cert-manager to be installed:
 #   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: kubeclaw-selfsigned
-  namespace: kubeclaw-system
+  name: sympozium-selfsigned
+  namespace: sympozium-system
 spec:
   selfSigned: {}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: kubeclaw-webhook-cert
-  namespace: kubeclaw-system
+  name: sympozium-webhook-cert
+  namespace: sympozium-system
 spec:
-  secretName: kubeclaw-webhook-cert
+  secretName: sympozium-webhook-cert
   issuerRef:
-    name: kubeclaw-selfsigned
+    name: sympozium-selfsigned
     kind: Issuer
   dnsNames:
-    - kubeclaw-webhook-service
-    - kubeclaw-webhook-service.kubeclaw-system
-    - kubeclaw-webhook-service.kubeclaw-system.svc
-    - kubeclaw-webhook-service.kubeclaw-system.svc.cluster.local
+    - sympozium-webhook-service
+    - sympozium-webhook-service.sympozium-system
+    - sympozium-webhook-service.sympozium-system.svc
+    - sympozium-webhook-service.sympozium-system.svc.cluster.local
   duration: 8760h   # 1 year
   renewBefore: 720h # 30 days

@@ -13,10 +13,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 )
 
-const skillPackFinalizer = "kubeclaw.io/skillpack-finalizer"
+const skillPackFinalizer = "sympozium.ai/skillpack-finalizer"
 
 // SkillPackReconciler reconciles SkillPack objects.
 // It generates ConfigMaps from SkillPack CRDs that are then projected
@@ -27,16 +27,16 @@ type SkillPackReconciler struct {
 	Log    logr.Logger
 }
 
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=skillpacks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=skillpacks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=kubeclaw.io,resources=skillpacks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=sympozium.ai,resources=skillpacks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=sympozium.ai,resources=skillpacks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=sympozium.ai,resources=skillpacks/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles SkillPack create/update/delete events.
 func (r *SkillPackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("skillpack", req.NamespacedName)
 
-	skillPack := &kubeclawv1alpha1.SkillPack{}
+	skillPack := &sympoziumv1alpha1.SkillPack{}
 	if err := r.Get(ctx, req.NamespacedName, skillPack); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -74,7 +74,7 @@ func (r *SkillPackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // reconcileDelete handles SkillPack deletion.
-func (r *SkillPackReconciler) reconcileDelete(ctx context.Context, log logr.Logger, skillPack *kubeclawv1alpha1.SkillPack) (ctrl.Result, error) {
+func (r *SkillPackReconciler) reconcileDelete(ctx context.Context, log logr.Logger, skillPack *sympoziumv1alpha1.SkillPack) (ctrl.Result, error) {
 	log.Info("Reconciling SkillPack deletion")
 
 	// Delete the ConfigMap
@@ -93,7 +93,7 @@ func (r *SkillPackReconciler) reconcileDelete(ctx context.Context, log logr.Logg
 }
 
 // reconcileConfigMap creates or updates the ConfigMap for a SkillPack.
-func (r *SkillPackReconciler) reconcileConfigMap(ctx context.Context, log logr.Logger, skillPack *kubeclawv1alpha1.SkillPack) error {
+func (r *SkillPackReconciler) reconcileConfigMap(ctx context.Context, log logr.Logger, skillPack *sympoziumv1alpha1.SkillPack) error {
 	// Build ConfigMap data from skills
 	data := make(map[string]string)
 	for _, skill := range skillPack.Spec.Skills {
@@ -110,8 +110,8 @@ func (r *SkillPackReconciler) reconcileConfigMap(ctx context.Context, log logr.L
 			Name:      skillPack.Name,
 			Namespace: skillPack.Namespace,
 			Labels: map[string]string{
-				"kubeclaw.io/component": "skillpack",
-				"kubeclaw.io/skillpack": skillPack.Name,
+				"sympozium.ai/component": "skillpack",
+				"sympozium.ai/skillpack": skillPack.Name,
 			},
 		},
 		Data: data,
@@ -141,7 +141,7 @@ func (r *SkillPackReconciler) reconcileConfigMap(ctx context.Context, log logr.L
 // SetupWithManager sets up the controller with the Manager.
 func (r *SkillPackReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&kubeclawv1alpha1.SkillPack{}).
+		For(&sympoziumv1alpha1.SkillPack{}).
 		Owns(&corev1.ConfigMap{}).
 		Complete(r)
 }

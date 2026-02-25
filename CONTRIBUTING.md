@@ -1,4 +1,4 @@
-# Contributing to KubeClaw
+# Contributing to Sympozium
 
 Thanks for your interest in contributing! This document covers how we work, what we expect from PRs, and how to get started.
 
@@ -6,11 +6,11 @@ Thanks for your interest in contributing! This document covers how we work, what
 
 ## Where to Start
 
-1. **Issues** — Check [GitHub Issues](https://github.com/AlexsJones/kubeclaw/issues) for open bugs, feature requests, and `good first issue` labels.
-2. **Roadmap** — The project roadmap lives in [GitHub Projects](https://github.com/AlexsJones/kubeclaw/projects). Pick items from the current milestone.
+1. **Issues** — Check [GitHub Issues](https://github.com/AlexsJones/sympozium/issues) for open bugs, feature requests, and `good first issue` labels.
+2. **Roadmap** — The project roadmap lives in [GitHub Projects](https://github.com/AlexsJones/sympozium/projects). Pick items from the current milestone.
 3. **AGENTS.md** — If you're an AI coding agent (Copilot, Cursor, etc.), read [`AGENTS.md`](AGENTS.md) for repo layout, build instructions, and common task recipes.
 4. **Documentation** — Architecture and guides live in [`docs/`](docs/):
-   - [`kubeclaw-design.md`](docs/kubeclaw-design.md) — Full architecture and CRD schemas
+   - [`sympozium-design.md`](docs/sympozium-design.md) — Full architecture and CRD schemas
    - [`writing-tools.md`](docs/writing-tools.md) — How to add agent tools
    - [`writing-skills.md`](docs/writing-skills.md) — How to create SkillPack CRDs
    - [`writing-integration-tests.md`](docs/writing-integration-tests.md) — Integration test patterns
@@ -42,7 +42,7 @@ Every push and PR runs the following checks via GitHub Actions (`.github/workflo
 | **go test -race -short** | Unit tests with the race detector enabled |
 | **Docker build** | All 10 component images build successfully |
 
-PRs must pass all checks before merging. On merge to `main`, images are automatically built and pushed to `ghcr.io/alexsjones/kubeclaw/`.
+PRs must pass all checks before merging. On merge to `main`, images are automatically built and pushed to `ghcr.io/alexsjones/sympozium/`.
 
 Run checks locally before pushing:
 
@@ -57,7 +57,7 @@ go build ./...  # quick compile check
 
 ## Multi-Architecture Builds
 
-KubeClaw supports `linux/amd64` and `linux/arm64` (darwin for the CLI).
+Sympozium supports `linux/amd64` and `linux/arm64` (darwin for the CLI).
 
 - **Docker images** are built with Docker Buildx + `docker/build-push-action@v6` with GitHub Actions cache (`type=gha`).
 - **CLI releases** are cross-compiled for `linux/amd64`, `linux/arm64`, `darwin/amd64`, and `darwin/arm64` via the release workflow (`.github/workflows/release.yaml`).
@@ -112,7 +112,7 @@ chore(deps): bump gorilla/websocket to v1.5.1
 
 ## Semantic Versioning
 
-KubeClaw follows [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATCH`):
+Sympozium follows [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATCH`):
 
 - **PATCH** (`v0.0.31` → `v0.0.32`) — Bug fixes, docs, minor improvements
 - **MINOR** (`v0.1.0`) — New features, new CRD fields (backward-compatible)
@@ -152,7 +152,7 @@ While in `v0.x.x`, the API is not yet stable and breaking changes may occur in m
 - **Go** — Follow standard Go conventions. Run `make fmt` and `make vet`.
 - **Error handling** — Return errors, don't panic. Use `fmt.Errorf("context: %w", err)` for wrapping.
 - **Logging** — Use the structured logger (`log.Info`, `log.Error`) with key-value pairs, not `fmt.Printf`.
-- **Naming** — CRD types use PascalCase (`ClawInstance`). Tool names use snake_case (`execute_command`). NATS topics use dot-separated (`agent.run.completed`).
+- **Naming** — CRD types use PascalCase (`SympoziumInstance`). Tool names use snake_case (`execute_command`). NATS topics use dot-separated (`agent.run.completed`).
 - **IPC protocol** — New IPC-based tools must follow the JSON file drop pattern: write to `/ipc/<dir>/`, bridge watches with fsnotify, publishes to NATS.
 
 ---

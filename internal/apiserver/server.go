@@ -1,4 +1,4 @@
-// Package apiserver provides the HTTP + WebSocket API server for KubeClaw.
+// Package apiserver provides the HTTP + WebSocket API server for Sympozium.
 package apiserver
 
 import (
@@ -16,11 +16,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
-// Server is the KubeClaw API server.
+// Server is the Sympozium API server.
 type Server struct {
 	client   client.Client
 	eventBus eventbus.EventBus
@@ -94,7 +94,7 @@ func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var list kubeclawv1alpha1.ClawInstanceList
+	var list sympoziumv1alpha1.SympoziumInstanceList
 	if err := s.client.List(r.Context(), &list, client.InNamespace(ns)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -110,7 +110,7 @@ func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var inst kubeclawv1alpha1.ClawInstance
+	var inst sympoziumv1alpha1.SympoziumInstance
 	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &inst); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -126,7 +126,7 @@ func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	inst := &kubeclawv1alpha1.ClawInstance{
+	inst := &sympoziumv1alpha1.SympoziumInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 	}
 	if err := s.client.Delete(r.Context(), inst); err != nil {
@@ -145,7 +145,7 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var list kubeclawv1alpha1.AgentRunList
+	var list sympoziumv1alpha1.AgentRunList
 	if err := s.client.List(r.Context(), &list, client.InNamespace(ns)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -161,7 +161,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var run kubeclawv1alpha1.AgentRun
+	var run sympoziumv1alpha1.AgentRun
 	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &run); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -207,12 +207,12 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		req.Timeout = "5m"
 	}
 
-	run := &kubeclawv1alpha1.AgentRun{
+	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: req.InstanceRef + "-",
 			Namespace:    ns,
 		},
-		Spec: kubeclawv1alpha1.AgentRunSpec{
+		Spec: sympoziumv1alpha1.AgentRunSpec{
 			InstanceRef: req.InstanceRef,
 			AgentID:     req.AgentID,
 			SessionKey:  req.SessionKey,
@@ -221,7 +221,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Model != "" {
-		run.Spec.Model = kubeclawv1alpha1.ModelSpec{
+		run.Spec.Model = sympoziumv1alpha1.ModelSpec{
 			Model: req.Model,
 		}
 	}
@@ -243,7 +243,7 @@ func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var list kubeclawv1alpha1.ClawPolicyList
+	var list sympoziumv1alpha1.SympoziumPolicyList
 	if err := s.client.List(r.Context(), &list, client.InNamespace(ns)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -259,7 +259,7 @@ func (s *Server) getPolicy(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var pol kubeclawv1alpha1.ClawPolicy
+	var pol sympoziumv1alpha1.SympoziumPolicy
 	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &pol); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -276,7 +276,7 @@ func (s *Server) listSkills(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var list kubeclawv1alpha1.SkillPackList
+	var list sympoziumv1alpha1.SkillPackList
 	if err := s.client.List(r.Context(), &list, client.InNamespace(ns)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -292,7 +292,7 @@ func (s *Server) getSkill(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 
-	var sk kubeclawv1alpha1.SkillPack
+	var sk sympoziumv1alpha1.SkillPack
 	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &sk); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

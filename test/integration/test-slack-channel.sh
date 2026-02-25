@@ -4,7 +4,7 @@
 # This test has two modes:
 #
 # Mode 1 (no SLACK_BOT_TOKEN): Deployment pipeline only
-#   - Creates a ClawInstance with a slack channel
+#   - Creates a SympoziumInstance with a slack channel
 #   - Verifies the controller creates a channel-slack Deployment
 #   - Checks the Deployment has the correct image, labels, and config
 #   - Verifies the pod is created (may restart without real tokens)
@@ -15,7 +15,7 @@
 #   - Verifies the message appears in the agent result
 #
 # Prerequisites:
-#   - Kind cluster running with KubeClaw installed
+#   - Kind cluster running with Sympozium installed
 #   - channel-slack image available in the cluster
 #   - (Mode 2) SLACK_BOT_TOKEN, SLACK_APP_TOKEN, and SLACK_CHANNEL_ID set
 #
@@ -56,10 +56,10 @@ fi
 cleanup() {
     info "Cleaning up test resources..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    # Wait for the controller to clean up channel deployments (owned by ClawInstance)
+    kubectl delete sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    # Wait for the controller to clean up channel deployments (owned by SympoziumInstance)
     sleep 3
     kubectl delete deployment "$INSTANCE_NAME-channel-slack" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
     kubectl delete secret "$SLACK_SECRET_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
@@ -73,13 +73,13 @@ else
     info "Set SLACK_BOT_TOKEN + SLACK_APP_TOKEN + SLACK_CHANNEL_ID for full E2E test"
 fi
 
-if ! kubectl get crd agentruns.kubeclaw.io >/dev/null 2>&1; then
-    fail "KubeClaw CRDs not installed."
+if ! kubectl get crd agentruns.sympozium.ai >/dev/null 2>&1; then
+    fail "Sympozium CRDs not installed."
     exit 1
 fi
 
-if ! kubectl get deployment kubeclaw-controller-manager -n kubeclaw-system >/dev/null 2>&1; then
-    fail "KubeClaw controller not running."
+if ! kubectl get deployment sympozium-controller-manager -n sympozium-system >/dev/null 2>&1; then
+    fail "Sympozium controller not running."
     exit 1
 fi
 
@@ -112,7 +112,7 @@ sleep 2
 # ============================================================
 # Part 1: Channel Deployment Pipeline
 # ============================================================
-info "Creating ClawInstance with slack channel: $INSTANCE_NAME"
+info "Creating SympoziumInstance with slack channel: $INSTANCE_NAME"
 
 # Build the channel config — use real or dummy tokens
 if $FULL_MODE; then
@@ -126,8 +126,8 @@ else
 fi
 
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
@@ -179,9 +179,9 @@ fi
 # Check labels
 if $deploy_found; then
     channel_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.kubeclaw\.io/channel}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.io/channel}' 2>/dev/null || echo "")
     instance_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.kubeclaw\.io/instance}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.io/instance}' 2>/dev/null || echo "")
     if [[ "$channel_label" == "slack" && "$instance_label" == "$INSTANCE_NAME" ]]; then
         pass "Deployment labels correct (channel=slack, instance=$INSTANCE_NAME)"
     else
@@ -202,13 +202,13 @@ if $deploy_found; then
     fi
 fi
 
-# Verify ClawInstance status shows the channel
-channel_status=$(kubectl get clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" \
+# Verify SympoziumInstance status shows the channel
+channel_status=$(kubectl get sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" \
     -o jsonpath='{.status.channels[0].type}' 2>/dev/null || echo "")
 if [[ "$channel_status" == "slack" ]]; then
-    pass "ClawInstance status shows slack channel"
+    pass "SympoziumInstance status shows slack channel"
 else
-    info "ClawInstance channel status: $channel_status (may need reconcile)"
+    info "SympoziumInstance channel status: $channel_status (may need reconcile)"
 fi
 
 # Wait for pod to start (or at least be created)
@@ -225,7 +225,7 @@ if $deploy_found; then
         fi
         # Even without a real token, check if the pod at least started
         pod_phase=$(kubectl get pods -n "$NAMESPACE" \
-            -l "kubeclaw.io/channel=slack,kubeclaw.io/instance=$INSTANCE_NAME" \
+            -l "sympozium.ai/channel=slack,sympozium.ai/instance=$INSTANCE_NAME" \
             -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
         if [[ "$pod_phase" == "Running" ]]; then
             pod_started=true
@@ -245,7 +245,7 @@ if $deploy_found; then
             info "Channel pod not running (expected with dummy token — SLACK_BOT_TOKEN exits immediately)"
             # Still check the pod was at least created
             pod_exists=$(kubectl get pods -n "$NAMESPACE" \
-                -l "kubeclaw.io/channel=slack,kubeclaw.io/instance=$INSTANCE_NAME" \
+                -l "sympozium.ai/channel=slack,sympozium.ai/instance=$INSTANCE_NAME" \
                 -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
             if [[ -n "$pod_exists" ]]; then
                 pass "Channel pod was created: $pod_exists"
@@ -263,17 +263,17 @@ if $FULL_MODE; then
     echo ""
     info "=== Part 2: Full E2E — agent sends Slack message ==="
 
-    MARKER_TEXT="kubeclaw-slack-test-$(date +%s)"
+    MARKER_TEXT="sympozium-slack-test-$(date +%s)"
 
     info "Creating AgentRun: $RUN_NAME"
     cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: ${RUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kubeclaw.io/instance: ${INSTANCE_NAME}
+    sympozium.ai/instance: ${INSTANCE_NAME}
 spec:
   instanceRef: ${INSTANCE_NAME}
   agentId: default
@@ -300,7 +300,7 @@ EOF
             -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
         if [[ -z "$pod" ]]; then
             pod=$(kubectl get pods -n "$NAMESPACE" \
-                -l "kubeclaw.io/agentrun=$RUN_NAME" \
+                -l "sympozium.ai/agentrun=$RUN_NAME" \
                 -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
             if [[ -n "$pod" ]]; then
                 info "Pod found: $pod"
@@ -342,7 +342,7 @@ EOF
 
     # Check channel pod logs for outbound delivery
     slack_pod=$(kubectl get pods -n "$NAMESPACE" \
-        -l "kubeclaw.io/channel=slack,kubeclaw.io/instance=$INSTANCE_NAME" \
+        -l "sympozium.ai/channel=slack,sympozium.ai/instance=$INSTANCE_NAME" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [[ -n "$slack_pod" ]]; then
         slack_logs=$(kubectl logs "$slack_pod" -n "$NAMESPACE" 2>/dev/null | tail -30 || echo "")

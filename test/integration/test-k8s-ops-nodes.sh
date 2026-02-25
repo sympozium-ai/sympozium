@@ -2,15 +2,15 @@
 # Integration test: verify the k8s-ops skill works end-to-end.
 #
 # What it does:
-#   1. Creates a test ClawInstance + AgentRun with the k8s-ops skill
+#   1. Creates a test SympoziumInstance + AgentRun with the k8s-ops skill
 #   2. The AgentRun task tells the LLM to run "kubectl get nodes"
 #   3. Waits for the AgentRun to complete
 #   4. Checks the result contains node information (e.g. "Ready", "kind-control-plane")
 #   5. Cleans up test resources
 #
 # Prerequisites:
-#   - Kind cluster running with KubeClaw installed
-#   - k8s-ops SkillPack CRD applied (kubectl get skillpack k8s-ops -n kubeclaw-system)
+#   - Kind cluster running with Sympozium installed
+#   - k8s-ops SkillPack CRD applied (kubectl get skillpack k8s-ops -n sympozium-system)
 #   - An OpenAI API key in the environment (OPENAI_API_KEY) or an existing
 #     secret named "inttest-openai-key" in the default namespace
 #
@@ -41,26 +41,26 @@ failures=0
 cleanup() {
     info "Cleaning up test resources..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete clawinstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete sympoziuminstance "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 # --- Pre-flight checks ---
 info "Running integration test: k8s-ops skill (get nodes)"
 
-if ! kubectl get crd agentruns.kubeclaw.io >/dev/null 2>&1; then
-    fail "KubeClaw CRDs not installed. Is the cluster set up?"
+if ! kubectl get crd agentruns.sympozium.ai >/dev/null 2>&1; then
+    fail "Sympozium CRDs not installed. Is the cluster set up?"
     exit 1
 fi
 
-if ! kubectl get deployment kubeclaw-controller-manager -n kubeclaw-system >/dev/null 2>&1; then
-    fail "KubeClaw controller not running."
+if ! kubectl get deployment sympozium-controller-manager -n sympozium-system >/dev/null 2>&1; then
+    fail "Sympozium controller not running."
     exit 1
 fi
 
-if ! kubectl get skillpack k8s-ops -n kubeclaw-system >/dev/null 2>&1; then
-    fail "k8s-ops SkillPack not found in kubeclaw-system."
+if ! kubectl get skillpack k8s-ops -n sympozium-system >/dev/null 2>&1; then
+    fail "k8s-ops SkillPack not found in sympozium-system."
     echo "  Apply it: kubectl apply -f config/skills/k8s-ops.yaml"
     exit 1
 fi
@@ -91,11 +91,11 @@ info "Cluster node: $EXPECTED_NODE"
 cleanup 2>/dev/null || true
 sleep 2
 
-# --- Create test ClawInstance with k8s-ops skill ---
-info "Creating ClawInstance: $INSTANCE_NAME (with k8s-ops skill)"
+# --- Create test SympoziumInstance with k8s-ops skill ---
+info "Creating SympoziumInstance: $INSTANCE_NAME (with k8s-ops skill)"
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
-kind: ClawInstance
+apiVersion: sympozium.ai/v1alpha1
+kind: SympoziumInstance
 metadata:
   name: ${INSTANCE_NAME}
   namespace: ${NAMESPACE}
@@ -112,13 +112,13 @@ EOF
 # --- Create test AgentRun ---
 info "Creating AgentRun: $RUN_NAME"
 cat <<EOF | kubectl apply -f -
-apiVersion: kubeclaw.io/v1alpha1
+apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: ${RUN_NAME}
   namespace: ${NAMESPACE}
   labels:
-    kubeclaw.io/instance: ${INSTANCE_NAME}
+    sympozium.ai/instance: ${INSTANCE_NAME}
 spec:
   instanceRef: ${INSTANCE_NAME}
   agentId: default
@@ -145,7 +145,7 @@ while [[ $elapsed -lt $TIMEOUT ]]; do
     phase=$(kubectl get agentrun "$RUN_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
     # Capture pod name early
     if [[ -z "$pod" ]]; then
-        pod=$(kubectl get pods -n "$NAMESPACE" -l "kubeclaw.io/agentrun=$RUN_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        pod=$(kubectl get pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         if [[ -n "$pod" ]]; then
             info "Pod found: $pod"
         fi

@@ -16,8 +16,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/kubeclaw/kubeclaw/internal/channel"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	"github.com/alexsjones/sympozium/internal/channel"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // DiscordChannel implements the Discord Gateway channel via discordgo.
@@ -33,7 +33,7 @@ func main() {
 	var botToken string
 	var listenAddr string
 
-	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "ClawInstance name")
+	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "SympoziumInstance name")
 	flag.StringVar(&eventBusURL, "event-bus-url", os.Getenv("EVENT_BUS_URL"), "Event bus URL")
 	flag.StringVar(&botToken, "bot-token", os.Getenv("DISCORD_BOT_TOKEN"), "Discord bot token")
 	flag.StringVar(&listenAddr, "addr", ":8080", "Listen address for health endpoint")

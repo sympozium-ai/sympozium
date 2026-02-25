@@ -1,7 +1,7 @@
 // Package controller contains the schedule router which handles agent-initiated
 // schedule requests. When an agent calls the schedule_task tool, the IPC bridge
 // publishes a schedule.upsert event to NATS. This router subscribes to those
-// events and creates, updates, suspends, resumes, or deletes ClawSchedule CRDs.
+// events and creates, updates, suspends, resumes, or deletes SympoziumSchedule CRDs.
 package controller
 
 import (
@@ -14,12 +14,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kubeclawv1alpha1 "github.com/kubeclaw/kubeclaw/api/v1alpha1"
-	"github.com/kubeclaw/kubeclaw/internal/eventbus"
+	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	"github.com/alexsjones/sympozium/internal/eventbus"
 )
 
 // ScheduleRouter subscribes to schedule.upsert events from the IPC bridge
-// and creates/modifies ClawSchedule CRDs so agents can set their own heartbeats.
+// and creates/modifies SympoziumSchedule CRDs so agents can set their own heartbeats.
 type ScheduleRouter struct {
 	Client   client.Client
 	EventBus eventbus.EventBus
@@ -72,7 +72,7 @@ func (sr *ScheduleRouter) handleScheduleEvent(ctx context.Context, event *eventb
 	// Resolve namespace from the instance.
 	namespace := "default"
 	if instanceName != "" {
-		var instances kubeclawv1alpha1.ClawInstanceList
+		var instances sympoziumv1alpha1.SympoziumInstanceList
 		if err := sr.Client.List(ctx, &instances); err == nil {
 			for i := range instances.Items {
 				if instances.Items[i].Name == instanceName {
@@ -109,18 +109,18 @@ func (sr *ScheduleRouter) handleScheduleEvent(ctx context.Context, event *eventb
 	}
 }
 
-// createSchedule creates a new ClawSchedule CR.
+// createSchedule creates a new SympoziumSchedule CR.
 func (sr *ScheduleRouter) createSchedule(ctx context.Context, namespace, name, instanceName string, req scheduleRequest) {
-	schedule := &kubeclawv1alpha1.ClawSchedule{
+	schedule := &sympoziumv1alpha1.SympoziumSchedule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"kubeclaw.io/instance": instanceName,
-				"kubeclaw.io/source":   "agent",
+				"sympozium.ai/instance": instanceName,
+				"sympozium.ai/source":   "agent",
 			},
 		},
-		Spec: kubeclawv1alpha1.ClawScheduleSpec{
+		Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
 			InstanceRef:       instanceName,
 			Schedule:          req.Schedule,
 			Task:              req.Task,
@@ -136,25 +136,25 @@ func (sr *ScheduleRouter) createSchedule(ctx context.Context, namespace, name, i
 			sr.updateSchedule(ctx, namespace, name, req)
 			return
 		}
-		sr.Log.Error(err, "failed to create ClawSchedule", "name", name)
+		sr.Log.Error(err, "failed to create SympoziumSchedule", "name", name)
 		return
 	}
 
-	sr.Log.Info("Created ClawSchedule from agent request",
+	sr.Log.Info("Created SympoziumSchedule from agent request",
 		"name", name,
 		"schedule", req.Schedule,
 		"instance", instanceName,
 	)
 }
 
-// updateSchedule patches an existing ClawSchedule with new schedule/task.
+// updateSchedule patches an existing SympoziumSchedule with new schedule/task.
 func (sr *ScheduleRouter) updateSchedule(ctx context.Context, namespace, name string, req scheduleRequest) {
-	existing := &kubeclawv1alpha1.ClawSchedule{}
+	existing := &sympoziumv1alpha1.SympoziumSchedule{}
 	if err := sr.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, existing); err != nil {
 		if errors.IsNotFound(err) {
 			sr.Log.Info("Schedule not found for update", "name", name)
 		} else {
-			sr.Log.Error(err, "failed to get ClawSchedule for update", "name", name)
+			sr.Log.Error(err, "failed to get SympoziumSchedule for update", "name", name)
 		}
 		return
 	}
@@ -169,28 +169,28 @@ func (sr *ScheduleRouter) updateSchedule(ctx context.Context, namespace, name st
 	existing.Spec.Suspend = false
 
 	if err := sr.Client.Update(ctx, existing); err != nil {
-		sr.Log.Error(err, "failed to update ClawSchedule", "name", name)
+		sr.Log.Error(err, "failed to update SympoziumSchedule", "name", name)
 		return
 	}
 
-	sr.Log.Info("Updated ClawSchedule from agent request", "name", name)
+	sr.Log.Info("Updated SympoziumSchedule from agent request", "name", name)
 }
 
-// suspendSchedule sets or clears the Suspend flag on a ClawSchedule.
+// suspendSchedule sets or clears the Suspend flag on a SympoziumSchedule.
 func (sr *ScheduleRouter) suspendSchedule(ctx context.Context, namespace, name string, suspend bool) {
-	existing := &kubeclawv1alpha1.ClawSchedule{}
+	existing := &sympoziumv1alpha1.SympoziumSchedule{}
 	if err := sr.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, existing); err != nil {
 		if errors.IsNotFound(err) {
 			sr.Log.Info("Schedule not found for suspend/resume", "name", name)
 		} else {
-			sr.Log.Error(err, "failed to get ClawSchedule", "name", name)
+			sr.Log.Error(err, "failed to get SympoziumSchedule", "name", name)
 		}
 		return
 	}
 
 	existing.Spec.Suspend = suspend
 	if err := sr.Client.Update(ctx, existing); err != nil {
-		sr.Log.Error(err, "failed to suspend/resume ClawSchedule", "name", name, "suspend", suspend)
+		sr.Log.Error(err, "failed to suspend/resume SympoziumSchedule", "name", name, "suspend", suspend)
 		return
 	}
 
@@ -198,25 +198,25 @@ func (sr *ScheduleRouter) suspendSchedule(ctx context.Context, namespace, name s
 	if suspend {
 		action = "suspended"
 	}
-	sr.Log.Info("ClawSchedule "+action, "name", name)
+	sr.Log.Info("SympoziumSchedule "+action, "name", name)
 }
 
-// deleteSchedule removes a ClawSchedule CR.
+// deleteSchedule removes a SympoziumSchedule CR.
 func (sr *ScheduleRouter) deleteSchedule(ctx context.Context, namespace, name string) {
-	existing := &kubeclawv1alpha1.ClawSchedule{}
+	existing := &sympoziumv1alpha1.SympoziumSchedule{}
 	if err := sr.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, existing); err != nil {
 		if errors.IsNotFound(err) {
 			sr.Log.Info("Schedule not found for deletion", "name", name)
 		} else {
-			sr.Log.Error(err, "failed to get ClawSchedule for deletion", "name", name)
+			sr.Log.Error(err, "failed to get SympoziumSchedule for deletion", "name", name)
 		}
 		return
 	}
 
 	if err := sr.Client.Delete(ctx, existing); err != nil {
-		sr.Log.Error(err, "failed to delete ClawSchedule", "name", name)
+		sr.Log.Error(err, "failed to delete SympoziumSchedule", "name", name)
 		return
 	}
 
-	sr.Log.Info("Deleted ClawSchedule", "name", name)
+	sr.Log.Info("Deleted SympoziumSchedule", "name", name)
 }
