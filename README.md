@@ -23,26 +23,7 @@
 </p>
 
 ---
-### Install
-
-#### Control Plane (Kubernetes)
-
-Deploy the Sympozium control plane to your cluster using Helm:
-
-```bash
-helm install sympozium ./charts/sympozium
-```
-
-**Prerequisites:** [cert-manager](https://cert-manager.io/) (for webhook TLS):
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
-```
-
-See [`charts/sympozium/values.yaml`](charts/sympozium/values.yaml) for all configuration options (replicas, resources, external NATS, network policies, etc.).
-
-#### CLI (local machine)
-
-The CLI connects to an existing Sympozium control plane. Install it separately:
+### Quick Install (macOS / Linux)
 
 **Homebrew:**
 ```bash
@@ -55,9 +36,7 @@ brew install sympozium
 curl -fsSL https://deploy.sympozium.ai/install.sh | sh
 ```
 
-#### All-in-one (CLI + control plane)
-
-The CLI can also bootstrap the control plane directly — ideal for quick starts and local development:
+Then deploy to your cluster and onboard your first agent:
 
 ```bash
 sympozium install
@@ -65,6 +44,34 @@ sympozium onboard
 ```
 
 📖 **New here?** See the [Getting Started guide](docs/getting-started.md) — install, deploy, onboard your first agent, and learn the TUI and CLI commands.
+
+### Advanced: Helm Chart
+
+For production and GitOps workflows, you can deploy the control plane separately using Helm and install the CLI independently.
+
+#### Control Plane
+
+**Prerequisites:** [cert-manager](https://cert-manager.io/) (for webhook TLS):
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
+```
+
+Deploy the Sympozium control plane:
+```bash
+helm install sympozium ./charts/sympozium
+```
+
+See [`charts/sympozium/values.yaml`](charts/sympozium/values.yaml) for configuration options (replicas, resources, external NATS, network policies, etc.).
+
+#### CLI
+
+Install the CLI on your local machine to connect to the cluster:
+
+```bash
+brew tap AlexsJones/sympozium && brew install sympozium
+# or
+curl -fsSL https://deploy.sympozium.ai/install.sh | sh
+```
 
 ## Why Sympozium?
 
