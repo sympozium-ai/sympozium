@@ -24,11 +24,34 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not formatted:"
+            echo "$unformatted"
+            echo ""
+            echo "Run 'gofmt -s -w .' to fix."
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 
+      - name: Build
+        run: go build ./...
+
       - name: Test
         run: go test -race -short ./...
+
+      - name: Check generated code is up to date
+        run: |
+          make generate
+          if ! git diff --quiet; then
+            echo "::error::Generated code is out of date. Run 'make generate' and commit the changes."
+            git diff --stat
+            exit 1
+          fi
 
       - name: Check Helm chart CRDs in sync
         run: make helm-sync-check
