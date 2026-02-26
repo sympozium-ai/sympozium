@@ -1764,16 +1764,16 @@ const (
 	wizStepDone                    // auto — show result
 
 	// Persona wizard steps
-	wizStepPersonaPick             // menu: select a persona pack
-	wizStepPersonaProvider         // menu 1-6: provider
-	wizStepPersonaBaseURL          // text: base URL
-	wizStepPersonaAPIKey           // text: API key
-	wizStepPersonaModel            // text: model name
-	wizStepPersonaChannels         // multi-toggle: channels to bind
-	wizStepPersonaChannelToken     // text: channel token (per selected channel)
-	wizStepPersonaConfirm          // y/n: confirm summary
-	wizStepPersonaApplying         // auto — patch pack + create resources
-	wizStepPersonaDone             // auto — show result
+	wizStepPersonaPick         // menu: select a persona pack
+	wizStepPersonaProvider     // menu 1-6: provider
+	wizStepPersonaBaseURL      // text: base URL
+	wizStepPersonaAPIKey       // text: API key
+	wizStepPersonaModel        // text: model name
+	wizStepPersonaChannels     // multi-toggle: channels to bind
+	wizStepPersonaChannelToken // text: channel token (per selected channel)
+	wizStepPersonaConfirm      // y/n: confirm summary
+	wizStepPersonaApplying     // auto — patch pack + create resources
+	wizStepPersonaDone         // auto — show result
 )
 
 type wizardState struct {
@@ -1811,10 +1811,10 @@ type wizardState struct {
 	scrollOffset int
 
 	// Persona wizard state
-	personaMode       bool   // true when running persona wizard instead of onboard
-	personaPackName   string // which pack we're installing
+	personaMode       bool                   // true when running persona wizard instead of onboard
+	personaPackName   string                 // which pack we're installing
 	personaChannels   []personaChannelChoice // channels the user is toggling
-	personaChannelIdx int    // which channel we're collecting a token for
+	personaChannelIdx int                    // which channel we're collecting a token for
 }
 
 func (w *wizardState) reset() {
@@ -1885,19 +1885,23 @@ type tuiModel struct {
 	deleteFunc         func() (string, error) // the actual delete function
 
 	// Edit modal
-	showEditModal    bool
-	editTab          int // 0=Memory, 1=Heartbeat
-	editInstanceName string
-	editScheduleName string // non-empty when editing an existing schedule
-	editField        int    // which field is selected in the current tab
-	editMemory       editMemoryForm
-	editHeartbeat    editHeartbeatForm
-	editTaskInput    bool            // sub-modal for task text entry
-	editTaskTI       textinput.Model // text input for task sub-modal
+	showEditModal       bool
+	editTab             int // 0=Memory, 1=Heartbeat
+	editInstanceName    string
+	editScheduleName    string // non-empty when editing an existing schedule
+	editField           int    // which field is selected in the current tab
+	editMemory          editMemoryForm
+	editHeartbeat       editHeartbeatForm
+	editTaskInput       bool              // sub-modal for task text entry
+	editTaskTI          textinput.Model   // text input for task sub-modal
+	editChannelTokenInput bool            // sub-modal for channel token entry
+	editChannelTokenTI    textinput.Model // text input for channel token sub-modal
+	editChannelTokenIdx   int             // index into editChannels being configured
+	editChannelNewTokens  map[int]string  // idx → token for channels needing secret creation
 	editSkills          []editSkillItem   // toggleable skills list
 	editChannels        []editChannelItem // channel bindings
-	editPersonaPackName string             // non-empty when editing a PersonaPack
-	editPersonas        []editPersonaItem  // toggleable personas list
+	editPersonaPackName string            // non-empty when editing a PersonaPack
+	editPersonas        []editPersonaItem // toggleable personas list
 
 	// Detail pane
 	detailPane       detailPaneState // collapsed, panel, or fullscreen
@@ -1935,6 +1939,7 @@ type editChannelItem struct {
 	chType    string // telegram, slack, discord, whatsapp
 	enabled   bool   // whether channel is bound to the instance
 	secretRef string // secret name for credentials
+	tokenKey  string // env var name for the token (e.g. TELEGRAM_BOT_TOKEN)
 }
 
 // editPersonaItem represents a toggleable persona in the PersonaPack edit modal.
@@ -1950,6 +1955,20 @@ var editMemoryFieldCount = 3    // enabled, maxSizeKB, systemPrompt
 var editHeartbeatFieldCount = 6 // schedule, task, type, concurrencyPolicy, includeMemory, suspend
 var editTabNames = []string{"Memory", "Heartbeat", "Skills", "Channels"}
 var availableChannelTypes = []string{"telegram", "slack", "discord", "whatsapp"}
+
+// channelTokenKeyFor returns the env var name used in the channel secret for the given type.
+func channelTokenKeyFor(chType string) string {
+	switch chType {
+	case "telegram":
+		return "TELEGRAM_BOT_TOKEN"
+	case "slack":
+		return "SLACK_BOT_TOKEN"
+	case "discord":
+		return "DISCORD_BOT_TOKEN"
+	default:
+		return "" // whatsapp uses QR pairing, no token
+	}
+}
 
 const maxLogLines = 200
 
@@ -2298,6 +2317,36 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+			// Channel token sub-modal text input — intercept keys first.
+			if m.editChannelTokenInput {
+				switch msg.Type {
+				case tea.KeyEsc:
+					// Cancel — revert the toggle
+					m.editChannels[m.editChannelTokenIdx].enabled = false
+					m.editChannelTokenInput = false
+					return m, nil
+				case tea.KeyEnter:
+					token := m.editChannelTokenTI.Value()
+					idx := m.editChannelTokenIdx
+					if token != "" {
+						secretName := fmt.Sprintf("%s-%s-secret", m.editInstanceName, m.editChannels[idx].chType)
+						m.editChannels[idx].secretRef = secretName
+						if m.editChannelNewTokens == nil {
+							m.editChannelNewTokens = make(map[int]string)
+						}
+						m.editChannelNewTokens[idx] = token
+					} else {
+						// No token entered — revert toggle
+						m.editChannels[idx].enabled = false
+					}
+					m.editChannelTokenInput = false
+					return m, nil
+				default:
+					m.editChannelTokenTI, tiCmd = m.editChannelTokenTI.Update(msg)
+					return m, tiCmd
+				}
+			}
+
 			switch msg.String() {
 			case "esc":
 				m.showEditModal = false
@@ -2361,7 +2410,22 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				} else if m.editTab == 3 {
 					if m.editField >= 0 && m.editField < len(m.editChannels) {
-						m.editChannels[m.editField].enabled = !m.editChannels[m.editField].enabled
+						ch := &m.editChannels[m.editField]
+						if ch.enabled {
+							ch.enabled = false
+						} else {
+							ch.enabled = true
+							if ch.secretRef == "" && ch.tokenKey != "" {
+								m.editChannelTokenInput = true
+								m.editChannelTokenIdx = m.editField
+								m.editChannelTokenTI = textinput.New()
+								m.editChannelTokenTI.Placeholder = fmt.Sprintf("Enter %s token...", ch.chType)
+								m.editChannelTokenTI.CharLimit = 256
+								m.editChannelTokenTI.Width = 50
+								m.editChannelTokenTI.EchoMode = textinput.EchoPassword
+								m.editChannelTokenTI.Focus()
+							}
+						}
 					}
 				}
 				return m, nil
@@ -2441,7 +2505,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				} else if m.editTab == 3 {
 					if m.editField >= 0 && m.editField < len(m.editChannels) {
-						m.editChannels[m.editField].enabled = !m.editChannels[m.editField].enabled
+						ch := &m.editChannels[m.editField]
+						if ch.enabled {
+							// Toggling OFF — just disable
+							ch.enabled = false
+						} else {
+							// Toggling ON — prompt for token if needed
+							ch.enabled = true
+							if ch.secretRef == "" && ch.tokenKey != "" {
+								m.editChannelTokenInput = true
+								m.editChannelTokenIdx = m.editField
+								m.editChannelTokenTI = textinput.New()
+								m.editChannelTokenTI.Placeholder = fmt.Sprintf("Enter %s token...", ch.chType)
+								m.editChannelTokenTI.CharLimit = 256
+								m.editChannelTokenTI.Width = 50
+								m.editChannelTokenTI.EchoMode = textinput.EchoPassword
+								m.editChannelTokenTI.Focus()
+							}
+						}
 					}
 				}
 				return m, nil
@@ -3462,11 +3543,13 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 			boundChannels[ch.Type] = ch.ConfigRef.Secret
 		}
 		m.editChannels = nil
+		m.editChannelNewTokens = nil
 		for _, ct := range availableChannelTypes {
 			m.editChannels = append(m.editChannels, editChannelItem{
 				chType:    ct,
 				enabled:   boundChannels[ct] != "",
 				secretRef: boundChannels[ct],
+				tokenKey:  channelTokenKeyFor(ct),
 			})
 		}
 		m.showEditModal = true
@@ -3532,6 +3615,7 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 						chType:    ct,
 						enabled:   boundChannels[ct] != "",
 						secretRef: boundChannels[ct],
+						tokenKey:  channelTokenKeyFor(ct),
 					})
 				}
 				break
@@ -3583,9 +3667,36 @@ func (m tuiModel) applyEditModal() tea.Cmd {
 	copy(skills, m.editSkills)
 	channels := make([]editChannelItem, len(m.editChannels))
 	copy(channels, m.editChannels)
+	newTokens := make(map[int]string)
+	for k, v := range m.editChannelNewTokens {
+		newTokens[k] = v
+	}
 	return func() tea.Msg {
 		ctx := context.Background()
 		var msgs []string
+
+		// Create K8s secrets for channels that were newly enabled with tokens.
+		for idx, token := range newTokens {
+			if idx < 0 || idx >= len(channels) {
+				continue
+			}
+			ch := channels[idx]
+			if !ch.enabled || ch.secretRef == "" || ch.tokenKey == "" {
+				continue
+			}
+			existing := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: ch.secretRef, Namespace: ns}, existing); err == nil {
+				_ = k8sClient.Delete(ctx, existing)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: ch.secretRef, Namespace: ns},
+				StringData: map[string]string{ch.tokenKey: token},
+			}
+			if err := k8sClient.Create(ctx, secret); err != nil {
+				return cmdResultMsg{err: fmt.Errorf("create channel secret %q: %w", ch.secretRef, err)}
+			}
+			msgs = append(msgs, fmt.Sprintf("Created secret: %s", ch.secretRef))
+		}
 
 		// Apply memory, skills, and channel changes to SympoziumInstance.
 		if instName != "" {
@@ -3651,6 +3762,22 @@ func (m tuiModel) applyEditModal() tea.Cmd {
 				updateParts = append(updateParts, fmt.Sprintf("%d channel(s)", chEnabled))
 			}
 			msgs = append(msgs, fmt.Sprintf("%s updated on %s", strings.Join(updateParts, " + "), instName))
+
+			// If WhatsApp was enabled, wait for the channel pod and report its name.
+			for _, ch := range channels {
+				if ch.chType == "whatsapp" && ch.enabled {
+					podName := waitForWhatsAppPod(ns, instName)
+					if podName != "" {
+						msgs = append(msgs, fmt.Sprintf("WhatsApp pod ready: %s", podName))
+						msgs = append(msgs, fmt.Sprintf("Link your device: kubectl logs -f %s -n %s", podName, ns))
+					} else {
+						deployName := fmt.Sprintf("%s-channel-whatsapp", instName)
+						msgs = append(msgs, fmt.Sprintf("WhatsApp deployment created: %s (pod starting...)", deployName))
+						msgs = append(msgs, fmt.Sprintf("Watch for the pod: kubectl get pods -l sympozium.ai/instance=%s,sympozium.ai/channel=whatsapp -n %s -w", instName, ns))
+					}
+					break
+				}
+			}
 		}
 
 		// Apply heartbeat/schedule changes.
@@ -6012,20 +6139,23 @@ func (m tuiModel) renderEditModal(base string) string {
 		if len(m.editChannels) == 0 {
 			content.WriteString(tuiDimStyle.Render("  No channel types available.") + "\n")
 		} else {
-			content.WriteString(tuiDimStyle.Render("  Toggle channels on/off with space or enter:") + "\n")
-			content.WriteString(tuiDimStyle.Render("  Channels require a credentials secret in the cluster.") + "\n\n")
+			content.WriteString(tuiDimStyle.Render("  Toggle channels on/off — you'll be prompted for a bot token:") + "\n\n")
 			for i, ch := range m.editChannels {
 				tog := "○"
 				if ch.enabled {
 					tog = "●"
 				}
-				secret := tuiDimStyle.Render("no secret")
-				if ch.secretRef != "" {
-					secret = ch.secretRef
+				var detail string
+				if ch.chType == "whatsapp" {
+					detail = tuiDimStyle.Render("QR pairing — link against the pod after saving")
+				} else if ch.secretRef != "" {
+					detail = ch.secretRef
+				} else {
+					detail = tuiDimStyle.Render("no secret")
 				}
-				lbl := fmt.Sprintf("  %s %s  %s", tog, ch.chType, secret)
+				lbl := fmt.Sprintf("  %s %s  %s", tog, ch.chType, detail)
 				if m.editField == i {
-					lbl = highlight.Render(fmt.Sprintf("▸ %s %s  %s", tog, ch.chType, secret))
+					lbl = highlight.Render(fmt.Sprintf("▸ %s %s  %s", tog, ch.chType, detail))
 				} else {
 					lbl = value.Render(lbl)
 				}
@@ -6040,6 +6170,18 @@ func (m tuiModel) renderEditModal(base string) string {
 		content.WriteString(tuiModalTitleStyle.Render("  Task Description"))
 		content.WriteString("\n")
 		tiView := m.editTaskTI.View()
+		content.WriteString("  " + tiView)
+		content.WriteString("\n")
+		content.WriteString(tuiDimStyle.Render("  enter confirm · esc cancel"))
+	} else if m.editChannelTokenInput {
+		chName := ""
+		if m.editChannelTokenIdx >= 0 && m.editChannelTokenIdx < len(m.editChannels) {
+			chName = m.editChannels[m.editChannelTokenIdx].chType
+		}
+		content.WriteString("\n")
+		content.WriteString(tuiModalTitleStyle.Render(fmt.Sprintf("  %s Bot Token", strings.ToUpper(chName[:1])+chName[1:])))
+		content.WriteString("\n")
+		tiView := m.editChannelTokenTI.View()
 		content.WriteString("  " + tiView)
 		content.WriteString("\n")
 		content.WriteString(tuiDimStyle.Render("  enter confirm · esc cancel"))
@@ -6084,23 +6226,18 @@ func tuiCreateRun(ns, instance, task string) (string, error) {
 		return "", fmt.Errorf("instance %q not found: %w", instance, err)
 	}
 
-	// Resolve provider from instance — check if a known provider name is
-	// embedded in the auth secret name, otherwise default to the model name
-	// pattern.  The onboard wizard names secrets like "<inst>-openai-key".
-	provider := "openai"
-	for _, ref := range inst.Spec.AuthRefs {
-		for _, p := range []string{"anthropic", "azure-openai", "ollama", "openai"} {
-			if strings.Contains(ref.Secret, p) {
-				provider = p
-				break
-			}
-		}
-	}
-
-	// Resolve auth secret from instance — first AuthRef wins.
+	// Resolve auth secret and provider from instance — first AuthRef wins.
 	authSecret := ""
+	provider := "openai"
 	if len(inst.Spec.AuthRefs) > 0 {
 		authSecret = inst.Spec.AuthRefs[0].Secret
+		if inst.Spec.AuthRefs[0].Provider != "" {
+			provider = inst.Spec.AuthRefs[0].Provider
+		}
+	}
+	if authSecret == "" {
+		return "", fmt.Errorf("instance %q has no API key configured (authRefs is empty) — "+
+			"activate the persona pack through the TUI onboarding wizard or add an authRef manually", instance)
 	}
 
 	runName := fmt.Sprintf("%s-run-%d", instance, time.Now().Unix())
@@ -6634,6 +6771,25 @@ func pollWhatsAppQRCmd(ns, instanceName string) tea.Cmd {
 	}
 }
 
+// waitForWhatsAppPod polls for the WhatsApp channel pod to become available.
+// Returns the pod name if found within ~30s, or empty string on timeout.
+func waitForWhatsAppPod(ns, instanceName string) string {
+	selector := fmt.Sprintf("sympozium.ai/instance=%s,sympozium.ai/channel=whatsapp,sympozium.ai/component=channel", instanceName)
+	for i := 0; i < 10; i++ {
+		time.Sleep(3 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cmd := exec.CommandContext(ctx, "kubectl", "get", "pods", "-l", selector, "-n", ns,
+			"-o", "jsonpath={.items[0].metadata.name}")
+		out, err := cmd.CombinedOutput()
+		cancel()
+		podName := strings.TrimSpace(string(out))
+		if err == nil && podName != "" && podName != "{}" {
+			return podName
+		}
+	}
+	return ""
+}
+
 func tuiDescribeResource(ns, kind, name string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -6970,16 +7126,9 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		w.err = ""
 		w.personaPackName = val
 
-		// Check if already activated (has authRefs set).
+		// If already activated, allow re-running the wizard to change auth/model settings.
 		if len(pack.Spec.AuthRefs) > 0 && pack.Status.Phase == "Ready" {
-			w.err = fmt.Sprintf("PersonaPack %q is already activated (%d/%d personas installed)",
-				val, pack.Status.InstalledCount, pack.Status.PersonaCount)
-			w.active = false
-			m.inputFocused = false
-			m.input.Blur()
-			m.input.Placeholder = "Type / for commands or press ? for help..."
-			m.addLog(tuiErrorStyle.Render("✗ " + w.err))
-			return m, nil
+			m.addLog(tuiDimStyle.Render(fmt.Sprintf("PersonaPack %q is already activated — re-running wizard to update auth/model settings", val)))
 		}
 
 		w.step = wizStepPersonaProvider
@@ -7750,10 +7899,17 @@ func tuiPersonaApply(ns string, w *wizardState) (string, error) {
 
 	// Update each persona with the chosen model and channel bindings.
 	var enabledChannels []string
+	channelConfigs := make(map[string]string)
 	for _, ch := range w.personaChannels {
 		if ch.enabled {
 			enabledChannels = append(enabledChannels, ch.chType)
+			if ch.token != "" {
+				channelConfigs[ch.chType] = fmt.Sprintf("%s-%s-secret", w.personaPackName, ch.chType)
+			}
 		}
+	}
+	if len(channelConfigs) > 0 {
+		pack.Spec.ChannelConfigs = channelConfigs
 	}
 	for i := range pack.Spec.Personas {
 		pack.Spec.Personas[i].Model = w.modelName

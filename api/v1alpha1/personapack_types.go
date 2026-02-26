@@ -35,6 +35,12 @@ type PersonaPackSpec struct {
 	// +optional
 	ExcludePersonas []string `json:"excludePersonas,omitempty"`
 
+	// ChannelConfigs maps channel types to their credential secret names.
+	// Populated during persona onboarding when users provide channel tokens.
+	// The controller uses this to set ConfigRef on generated instances.
+	// +optional
+	ChannelConfigs map[string]string `json:"channelConfigs,omitempty"`
+
 	// PolicyRef references the SympoziumPolicy to apply to all generated instances.
 	// +optional
 	PolicyRef string `json:"policyRef,omitempty"`

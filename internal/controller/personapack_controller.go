@@ -121,8 +121,66 @@ func (r *PersonaPackReconciler) reconcilePersona(
 		}
 	} else if err != nil {
 		return ip, fmt.Errorf("get instance %s: %w", instanceName, err)
+	} else {
+		// Update pack-level settings on existing instances — authRefs, model,
+		// and channels are owned by the pack, not per-instance configuration.
+		needsUpdate := false
+
+		// Propagate authRefs changes.
+		if !authRefsEqual(existingInst.Spec.AuthRefs, pack.Spec.AuthRefs) {
+			existingInst.Spec.AuthRefs = pack.Spec.AuthRefs
+			needsUpdate = true
+		}
+
+		// Propagate model changes from persona definition.
+		if persona.Model != "" && existingInst.Spec.Agents.Default.Model != persona.Model {
+			existingInst.Spec.Agents.Default.Model = persona.Model
+			needsUpdate = true
+		}
+
+		// Propagate channel list changes from persona definition.
+		wantChannels := make(map[string]bool)
+		for _, ch := range persona.Channels {
+			wantChannels[ch] = true
+		}
+		haveChannels := make(map[string]bool)
+		for _, ch := range existingInst.Spec.Channels {
+			haveChannels[ch.Type] = true
+		}
+		if len(persona.Channels) > 0 && !channelSetsEqual(wantChannels, haveChannels) {
+			var channelSpecs []sympoziumv1alpha1.ChannelSpec
+			for _, ch := range persona.Channels {
+				cs := sympoziumv1alpha1.ChannelSpec{Type: ch}
+				if pack.Spec.ChannelConfigs != nil {
+					if secretName, ok := pack.Spec.ChannelConfigs[ch]; ok && secretName != "" {
+						cs.ConfigRef = sympoziumv1alpha1.SecretRef{Secret: secretName}
+					}
+				}
+				channelSpecs = append(channelSpecs, cs)
+			}
+			existingInst.Spec.Channels = channelSpecs
+			needsUpdate = true
+		}
+
+		// Propagate channel ConfigRef secrets from pack ChannelConfigs.
+		if pack.Spec.ChannelConfigs != nil {
+			for i := range existingInst.Spec.Channels {
+				ch := &existingInst.Spec.Channels[i]
+				if secret, ok := pack.Spec.ChannelConfigs[ch.Type]; ok && ch.ConfigRef.Secret != secret {
+					ch.ConfigRef.Secret = secret
+					needsUpdate = true
+				}
+			}
+		}
+
+		if needsUpdate {
+			log.Info("Updating pack-level settings on existing instance", "instance", instanceName)
+			if err := r.Update(ctx, existingInst); err != nil {
+				return ip, fmt.Errorf("update instance %s: %w", instanceName, err)
+			}
+		}
 	}
-	// Don't update existing instances — users own them after creation.
+	// Instance is now up to date — users own other fields after creation.
 
 	// --- Memory seeds ---
 	if persona.Memory != nil && len(persona.Memory.Seeds) > 0 {
@@ -201,9 +259,18 @@ func (r *PersonaPackReconciler) buildInstance(
 
 	// Channels
 	for _, ch := range persona.Channels {
-		inst.Spec.Channels = append(inst.Spec.Channels, sympoziumv1alpha1.ChannelSpec{
+		cs := sympoziumv1alpha1.ChannelSpec{
 			Type: ch,
-		})
+		}
+		// Look up the credential secret from the pack's ChannelConfigs.
+		if pack.Spec.ChannelConfigs != nil {
+			if secretName, ok := pack.Spec.ChannelConfigs[ch]; ok && secretName != "" {
+				cs.ConfigRef = sympoziumv1alpha1.SecretRef{
+					Secret: secretName,
+				}
+			}
+		}
+		inst.Spec.Channels = append(inst.Spec.Channels, cs)
 	}
 
 	// Policy — use the pack's policy ref if set.
@@ -399,6 +466,32 @@ func (r *PersonaPackReconciler) reconcileDelete(
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// authRefsEqual returns true if two SecretRef slices are equivalent.
+func authRefsEqual(a, b []sympoziumv1alpha1.SecretRef) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Provider != b[i].Provider || a[i].Secret != b[i].Secret {
+			return false
+		}
+	}
+	return true
+}
+
+// channelSetsEqual returns true if two channel sets contain the same types.
+func channelSetsEqual(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
 }
 
 // SetupWithManager registers the controller.

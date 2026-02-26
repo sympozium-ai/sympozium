@@ -80,6 +80,14 @@ spec:
                 description: Category classifies this persona pack (e.g. "platform",
                   "security", "devops").
                 type: string
+              channelConfigs:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ChannelConfigs maps channel types to their credential secret names.
+                  Populated during persona onboarding when users provide channel tokens.
+                  The controller uses this to set ConfigRef on generated instances.
+                type: object
               description:
                 description: Description is a human-readable summary of this persona
                   pack.
