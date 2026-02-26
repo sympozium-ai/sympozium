@@ -15,6 +15,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.enabled
+      name: Enabled
+      type: boolean
     - jsonPath: .status.personaCount
       name: Personas
       type: integer
@@ -92,6 +95,12 @@ spec:
                 description: Description is a human-readable summary of this persona
                   pack.
                 type: string
+              enabled:
+                description: |-
+                  Enabled controls whether the controller stamps out resources for this pack.
+                  PersonaPacks default to disabled (catalog-only) and must be explicitly
+                  activated — for example via the TUI or kubectl patch.
+                type: boolean
               excludePersonas:
                 description: |-
                   ExcludePersonas lists persona names to skip during reconciliation.

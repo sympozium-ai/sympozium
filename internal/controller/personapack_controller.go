@@ -57,6 +57,25 @@ func (r *PersonaPackReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	// If the pack is not enabled, clean up any previously created
+	// resources and mark the pack as Inactive (catalog-only).
+	if !pack.Spec.Enabled {
+		log.Info("PersonaPack is not enabled, cleaning up any existing resources")
+		for _, persona := range pack.Spec.Personas {
+			if err := r.cleanupPersona(ctx, log, pack, &persona); err != nil {
+				log.Error(err, "Failed to clean up persona for disabled pack", "persona", persona.Name)
+			}
+		}
+		pack.Status.Phase = "Inactive"
+		pack.Status.PersonaCount = len(pack.Spec.Personas)
+		pack.Status.InstalledCount = 0
+		pack.Status.InstalledPersonas = nil
+		if err := r.Status().Update(ctx, pack); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Reconcile each persona → instance + schedule + memory
 	var installed []sympoziumv1alpha1.InstalledPersona
 	var installErr error

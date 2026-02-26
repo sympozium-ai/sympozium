@@ -8,6 +8,12 @@ import (
 // Installing a PersonaPack stamps out SympoziumInstances, SympoziumSchedules,
 // and optionally seeds memory for each persona.
 type PersonaPackSpec struct {
+	// Enabled controls whether the controller stamps out resources for this pack.
+	// PersonaPacks default to disabled (catalog-only) and must be explicitly
+	// activated — for example via the TUI or kubectl patch.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
 	// Description is a human-readable summary of this persona pack.
 	// +optional
 	Description string `json:"description,omitempty"`
@@ -165,6 +171,7 @@ type PersonaPackStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Enabled",type="boolean",JSONPath=".spec.enabled"
 // +kubebuilder:printcolumn:name="Personas",type="integer",JSONPath=".status.personaCount"
 // +kubebuilder:printcolumn:name="Installed",type="integer",JSONPath=".status.installedCount"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"

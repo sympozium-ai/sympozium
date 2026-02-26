@@ -1663,17 +1663,38 @@ func fetchProviderModels(provider, apiKey, baseURL string) ([]string, error) {
 
 // filterChatModels keeps only models likely useful for chat/completion tasks.
 // Strips embedding, tts, whisper, dall-e, moderation, and other non-chat models.
+// Uses targeted prefix/suffix checks to avoid accidentally excluding valid chat
+// models that happen to contain common substrings.
 func filterChatModels(models []string) []string {
 	var filtered []string
 	for _, m := range models {
 		lower := strings.ToLower(m)
+
+		// Exact-prefix exclusions: models whose name starts with a non-chat family.
+		skipPrefixes := []string{
+			"text-embedding", "text-search", "text-similarity", "text-davinci",
+			"text-curie", "text-babbage", "text-ada", "text-moderation",
+			"tts-", "whisper-", "dall-e-", "davinci", "babbage", "curie", "ada",
+			"code-davinci", "code-cushman",
+			"canary-", "ftjob-", "ft:",
+		}
 		skip := false
-		for _, exclude := range []string{
-			"embed", "tts", "whisper", "dall-e", "davinci", "babbage",
-			"moderation", "realtime", "audio", "search", "similarity",
-			"code-", "text-", "curie", "ada",
-		} {
-			if strings.Contains(lower, exclude) {
+		for _, prefix := range skipPrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
+		// Substring exclusions: non-chat capabilities that appear in model names.
+		skipSubstrings := []string{
+			"embedding", "moderation",
+		}
+		for _, sub := range skipSubstrings {
+			if strings.Contains(lower, sub) {
 				skip = true
 				break
 			}
@@ -7889,6 +7910,9 @@ func tuiPersonaApply(ns string, w *wizardState) (string, error) {
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: w.personaPackName, Namespace: ns}, &pack); err != nil {
 		return "", fmt.Errorf("get PersonaPack: %w", err)
 	}
+
+	// Enable the pack — this is the explicit activation step.
+	pack.Spec.Enabled = true
 
 	// On first activation, enable all personas by default.
 	// On re-activation (updating auth/model), preserve the user's exclusion choices.
