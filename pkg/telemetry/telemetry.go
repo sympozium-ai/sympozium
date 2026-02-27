@@ -22,12 +22,15 @@ import (
 	"os"
 	"time"
 
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -83,12 +86,13 @@ func (c *Config) applyDefaults() {
 
 // Telemetry holds initialized OTel providers and offers typed accessors.
 type Telemetry struct {
-	tracerProvider *sdktrace.TracerProvider
-	meterProvider  *sdkmetric.MeterProvider
-	tracer         trace.Tracer
-	meter          metric.Meter
-	logger         *slog.Logger
-	enabled        bool
+	tracerProvider  *sdktrace.TracerProvider
+	meterProvider   *sdkmetric.MeterProvider
+	loggerProvider  *sdklog.LoggerProvider
+	tracer          trace.Tracer
+	meter           metric.Meter
+	logger          *slog.Logger
+	enabled         bool
 	shutdownTimeout time.Duration
 }
 
@@ -127,15 +131,36 @@ func Init(ctx context.Context, cfg Config) (*Telemetry, error) {
 		return nil, err
 	}
 
+	lp, err := initLoggerProvider(ctx, cfg, res)
+	if err != nil {
+		_ = tp.Shutdown(ctx)
+		_ = mp.Shutdown(ctx)
+		return nil, err
+	}
+
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
+
+	// Create an slog handler that fans out to both stderr (for pod logs)
+	// and the OTel log bridge (for OTLP export with trace correlation).
+	stderrHandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	otelHandler := otelslog.NewHandler(cfg.ServiceName,
+		otelslog.WithLoggerProvider(lp),
+	)
+	logger := slog.New(&fanoutHandler{
+		handlers: []slog.Handler{stderrHandler, otelHandler},
+	})
+	slog.SetDefault(logger)
 
 	tel := &Telemetry{
 		tracerProvider:  tp,
 		meterProvider:   mp,
+		loggerProvider:  lp,
 		tracer:          tp.Tracer(cfg.ServiceName),
 		meter:           mp.Meter(cfg.ServiceName),
-		logger:          slog.Default(),
+		logger:          logger,
 		enabled:         true,
 		shutdownTimeout: cfg.ShutdownTimeout,
 	}
@@ -195,6 +220,27 @@ func initMeterProvider(ctx context.Context, cfg Config, res *resource.Resource) 
 	return mp, nil
 }
 
+// initLoggerProvider creates a LoggerProvider with OTLP gRPC exporter.
+// Log records sent through the OTel slog bridge automatically include
+// trace_id and span_id from the context, enabling log→trace correlation.
+func initLoggerProvider(ctx context.Context, cfg Config, res *resource.Resource) (*sdklog.LoggerProvider, error) {
+	exporter, err := otlploggrpc.New(ctx, otlploggrpc.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+
+	lp := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(exporter,
+				sdklog.WithExportTimeout(cfg.BatchTimeout),
+			),
+		),
+		sdklog.WithResource(res),
+	)
+
+	return lp, nil
+}
+
 // Shutdown flushes pending telemetry and shuts down all providers.
 // It blocks up to ShutdownTimeout. Must be called before process exit.
 func (t *Telemetry) Shutdown(ctx context.Context) error {
@@ -215,6 +261,12 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 
 	if t.meterProvider != nil {
 		if err := t.meterProvider.Shutdown(shutdownCtx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if t.loggerProvider != nil {
+		if err := t.loggerProvider.Shutdown(shutdownCtx); err != nil {
 			errs = append(errs, err)
 		}
 	}

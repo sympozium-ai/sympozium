@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -1176,6 +1177,21 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympozium
 		agentDurationHist.Record(ctx, float64(usage.DurationMs), runAttrs)
 	}
 
+	logAttrs := []any{
+		"agent_run", agentRun.Name,
+		"instance", agentRun.Spec.InstanceRef,
+		"status", "succeeded",
+	}
+	if usage != nil {
+		logAttrs = append(logAttrs,
+			"input_tokens", usage.InputTokens,
+			"output_tokens", usage.OutputTokens,
+			"tool_calls", usage.ToolCalls,
+			"duration_ms", usage.DurationMs,
+		)
+	}
+	slog.InfoContext(ctx, "agent.run.succeeded", logAttrs...)
+
 	return ctrl.Result{}, r.Status().Update(ctx, agentRun)
 }
 
@@ -1394,6 +1410,12 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 		attribute.String("error.type", "agent_run_failed"),
 		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
 	))
+
+	slog.ErrorContext(ctx, "agent.run.failed",
+		"agent_run", agentRun.Name,
+		"instance", agentRun.Spec.InstanceRef,
+		"error", reason,
+	)
 
 	return r.Status().Update(ctx, agentRun)
 }

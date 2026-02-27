@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +18,7 @@ func loadSkills(skillsDir string) string {
 
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
-		log.Printf("No skills directory at %s: %v", skillsDir, err)
+		slog.Info("skills.dir.not_found", "dir", skillsDir, "error", err)
 		return ""
 	}
 
@@ -33,7 +33,7 @@ func loadSkills(skillsDir string) string {
 		path := filepath.Join(skillsDir, entry.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
-			log.Printf("Failed to read skill file %s: %v", path, err)
+			slog.Warn("skills.file.read_failed", "path", path, "error", err)
 			continue
 		}
 		content := strings.TrimSpace(string(data))
@@ -48,7 +48,7 @@ func loadSkills(skillsDir string) string {
 	}
 
 	if count > 0 {
-		log.Printf("Loaded %d skill file(s) from %s", count, skillsDir)
+		slog.Info("skills.loaded", "count", count, "dir", skillsDir)
 	}
 	return sb.String()
 }
