@@ -243,12 +243,12 @@ func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
 
 // CreateInstanceRequest is the request body for creating a new SympoziumInstance.
 type CreateInstanceRequest struct {
-	Name      string `json:"name"`
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
-	BaseURL   string `json:"baseURL,omitempty"`
+	Name       string `json:"name"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	BaseURL    string `json:"baseURL,omitempty"`
 	SecretName string `json:"secretName,omitempty"`
-	PolicyRef string `json:"policyRef,omitempty"`
+	PolicyRef  string `json:"policyRef,omitempty"`
 }
 
 func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {

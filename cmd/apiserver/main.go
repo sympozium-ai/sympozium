@@ -59,9 +59,11 @@ func main() {
 
 	// Connect to event bus (retry in background if unavailable).
 	var bus eventbus.EventBus
-	bus, err = eventbus.NewNATSEventBus(eventBusURL)
+	natsbus, err := eventbus.NewNATSEventBus(eventBusURL)
 	if err != nil {
 		log.Error(err, "event bus not available, starting without streaming support")
+	} else {
+		bus = natsbus
 	}
 
 	// Create and start API server

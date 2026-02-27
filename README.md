@@ -46,11 +46,14 @@ Then deploy to your cluster and activate your first agents:
 ```bash
 sympozium install          # deploys CRDs, controllers, and built-in PersonaPacks
 sympozium                  # launch the TUI — go to Personas tab, press Enter to onboard
+sympozium serve            # open the web dashboard (port-forwards to the in-cluster UI)
 ```
 
 Sympozium ships with **PersonaPacks** — pre-configured bundles of agents that you activate with a few keypresses. No YAML required. See [PersonaPacks](#personapacks) below.
 
-📖 **New here?** See the [Getting Started guide](docs/getting-started.md) — install, deploy, onboard your first agent, and learn the TUI and CLI commands.
+Choose your interface: a **k9s-style terminal UI** (`sympozium`) or a **full web dashboard** (`sympozium serve`). Both support all operations.
+
+📖 **New here?** See the [Getting Started guide](docs/getting-started.md) — install, deploy, onboard your first agent, and learn the TUI, web UI, and CLI commands.
 
 ### Advanced: Helm Chart
 
@@ -121,7 +124,7 @@ This means you can give an agent full `kubectl` access for a troubleshooting run
 | **Multi-tenancy** | Single-instance file lock | **Namespaced CRDs**, RBAC, NetworkPolicy |
 | **Scaling** | Vertical only | **Horizontal** — stateless control plane, HPA |
 | **Channel connections** | In-process per channel | Dedicated **Deployment** per channel type |
-| **Observability** | Application logs | `kubectl logs`, events, conditions, **k9s-style TUI** |
+| **Observability** | Application logs | `kubectl logs`, events, conditions, **k9s-style TUI**, **web dashboard** |
 
 The result: every concept that OpenClaw manages in application code, Sympozium expresses as a Kubernetes resource — then adds the ability to point agents at the cluster itself. Declarative, reconcilable, observable, and scalable.
 
@@ -133,6 +136,7 @@ The result: every concept that OpenClaw manages in application code, Sympozium e
 sympozium install          # CRDs, controllers, webhook, NATS, RBAC, network policies
 sympozium onboard          # interactive setup wizard — instance, provider, channel
 sympozium                  # launch the interactive TUI (default command)
+sympozium serve            # open the web dashboard in your browser
 sympozium uninstall        # clean removal
 ```
 
@@ -206,7 +210,7 @@ graph TB
     end
 
     USER(["User / Chat Client"]) -- "Telegram · Slack<br/>Discord · WhatsApp" --> CH
-    ADMIN(["Operator / SRE"]) -- "sympozium TUI<br/>kubectl · k9s" --> CP
+    ADMIN(["Operator / SRE"]) -- "sympozium TUI · Web UI<br/>kubectl · k9s" --> CP
 
     style K8S fill:#0d1117,stroke:#30363d,color:#c9d1d9
     style CP fill:#1a1a2e,stroke:#e94560,color:#fff
@@ -227,7 +231,7 @@ graph TB
 2. **The controller creates an AgentRun CR**, which reconciles into an ephemeral K8s Job — an agent container + IPC bridge sidecar + optional sandbox + skill sidecars (with auto-provisioned RBAC).
 3. **The agent container** calls the configured LLM provider (OpenAI, Anthropic, Azure, Ollama, or any OpenAI-compatible endpoint), with skills mounted as files, persistent memory injected from a ConfigMap, and tool sidecars providing runtime capabilities like `kubectl`.
 4. **Results flow back** through the IPC bridge → NATS → channel pod → user. The controller extracts structured results and memory updates from pod logs.
-5. **Everything is a Kubernetes resource** — instances, runs, policies, skills, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI gives you k9s-style visibility into the entire system.
+5. **Everything is a Kubernetes resource** — instances, runs, policies, skills, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
 
 ---
 
@@ -451,6 +455,26 @@ spec:
 
 Concurrency policies (`Forbid`, `Allow`, `Replace`) work like `CronJob.spec.concurrencyPolicy` — a natural extension of Kubernetes semantics.
 
+## Web Dashboard
+
+Sympozium includes a full **web dashboard** embedded in the API server pod. Access it locally with:
+
+```bash
+sympozium serve
+```
+
+This port-forwards the in-cluster API server to `http://127.0.0.1:8080` and prints the authentication token. The dashboard provides a graphical interface for all Sympozium operations — instances, runs, policies, skills, schedules, personas, and real-time streaming.
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `8080` | Local port to forward to |
+| `--open` | `false` | Automatically open a browser |
+| `--service-namespace` | `sympozium-system` | Namespace of the apiserver service |
+
+The token is auto-generated during `sympozium install` and stored in a Kubernetes Secret. You can also set it explicitly via Helm (`apiserver.webUI.token`) or by creating a `sympozium-ui-token` Secret.
+
 ## Interactive TUI
 
 Running `sympozium` with no arguments launches a **k9s-style interactive terminal UI** for full cluster-wide agentic management.
@@ -565,11 +589,23 @@ The wizard walks you through five steps:
 
 ### 4. Launch Sympozium
 
+**Terminal UI:**
+
 ```bash
 sympozium
 ```
 
 The interactive TUI gives you full visibility — browse instances, runs, schedules, and channels; view logs and describe output inline; submit agent runs with `/run <task>`; check memory with `/memory <instance>`.
+
+**Web dashboard:**
+
+```bash
+sympozium serve
+```
+
+Opens the web dashboard at `http://127.0.0.1:8080`. The token is printed in the terminal — use it to log in.
+
+**CLI:**
 
 ```bash
 sympozium instances list                              # list instances
@@ -592,10 +628,11 @@ sympozium/
 ├── cmd/                    # Binary entry points
 │   ├── agent-runner/       # LLM agent runner (runs inside agent pods)
 │   ├── controller/         # Controller manager (reconciles all CRDs)
-│   ├── apiserver/          # HTTP + WebSocket API server
+│   ├── apiserver/          # HTTP + WebSocket API server (+ embedded web UI)
 │   ├── ipc-bridge/         # IPC bridge sidecar (fsnotify → NATS)
 │   ├── webhook/            # Admission webhook (policy enforcement)
 │   └── sympozium/            # CLI + interactive TUI
+├── web/                    # Web dashboard (React + TypeScript + Vite)
 ├── internal/               # Internal packages
 │   ├── controller/         # Kubernetes controllers (6 reconcilers incl. PersonaPack)
 │   ├── orchestrator/       # Agent pod builder & spawner
