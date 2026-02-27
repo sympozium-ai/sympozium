@@ -33,7 +33,7 @@ IMAGES = controller apiserver ipc-bridge webhook agent-runner \
          channel-telegram channel-whatsapp channel-discord channel-slack \
          skill-k8s-ops
 
-.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-clean web-install setup-hooks
+.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks
 
 all: build
 
@@ -107,6 +107,16 @@ web-build: web-install ## Build the frontend for embedding
 
 web-dev: ## Start the frontend dev server (hot-reload, proxy to :8080)
 	cd web && npm run dev
+
+web-dev-serve: ## Vite hot-reload + port-forward to in-cluster apiserver (no rebuild needed)
+	@echo "==> Port-forwarding sympozium-apiserver to localhost:8080"
+	@echo "==> Vite dev server on http://localhost:$(VITE_PORT) (proxies /api + /ws to :8080)"
+	@echo "==> Edit web/src/ and changes hot-reload instantly."
+	@echo ""
+	@trap 'kill 0' EXIT; \
+		kubectl port-forward -n $(SYMPOZIUM_NAMESPACE) svc/sympozium-apiserver 8080:8080 & \
+		cd web && npx vite --port $(VITE_PORT); \
+		wait
 
 web-clean: ## Remove frontend build artifacts
 	rm -rf web/dist web/node_modules
