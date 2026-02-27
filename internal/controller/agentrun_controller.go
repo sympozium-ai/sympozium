@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,14 @@ import (
 )
 
 var controllerTracer = otel.Tracer("sympozium.ai/controller")
+var controllerMeter = otel.Meter("sympozium.ai/controller")
+
+// Controller metric instruments.
+var (
+	agentRunsTotal, _    = controllerMeter.Int64Counter("sympozium.agent.runs", metric.WithUnit("{run}"), metric.WithDescription("Agent runs completed"))
+	agentDurationHist, _ = controllerMeter.Float64Histogram("sympozium.agent.duration_ms", metric.WithUnit("ms"), metric.WithDescription("Agent run duration"))
+	controllerErrors, _  = controllerMeter.Int64Counter("sympozium.errors", metric.WithUnit("{error}"), metric.WithDescription("Errors encountered"))
+)
 
 const agentRunFinalizer = "sympozium.ai/agentrun-finalizer"
 const systemNamespace = "sympozium-system"
@@ -1156,6 +1165,17 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympozium
 	agentRun.Status.CompletedAt = &now
 	agentRun.Status.Result = result
 	agentRun.Status.TokenUsage = usage
+
+	// Record run metrics.
+	runAttrs := metric.WithAttributes(
+		attribute.String("sympozium.agent.status", "succeeded"),
+		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
+	)
+	agentRunsTotal.Add(ctx, 1, runAttrs)
+	if usage != nil && usage.DurationMs > 0 {
+		agentDurationHist.Record(ctx, float64(usage.DurationMs), runAttrs)
+	}
+
 	return ctrl.Result{}, r.Status().Update(ctx, agentRun)
 }
 
@@ -1363,6 +1383,18 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
 	agentRun.Status.CompletedAt = &now
 	agentRun.Status.Error = reason
+
+	// Record failure metrics.
+	failAttrs := metric.WithAttributes(
+		attribute.String("sympozium.agent.status", "failed"),
+		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
+	)
+	agentRunsTotal.Add(ctx, 1, failAttrs)
+	controllerErrors.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("error.type", "agent_run_failed"),
+		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
+	))
+
 	return r.Status().Update(ctx, agentRun)
 }
 
