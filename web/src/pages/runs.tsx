@@ -80,7 +80,7 @@ export function RunsPage() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button size="sm">
+            <Button size="sm" className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0">
               <Plus className="mr-2 h-4 w-4" /> New Run
             </Button>
           </DialogTrigger>
@@ -147,7 +147,7 @@ export function RunsPage() {
                 </div>
               </div>
               <Button
-                className="w-full"
+                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0"
                 onClick={handleCreate}
                 disabled={
                   !form.instanceRef || !form.task || createRun.isPending

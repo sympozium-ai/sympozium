@@ -27,7 +27,7 @@ export function Header() {
   };
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-card px-6">
+    <header className="flex h-14 items-center justify-between border-b border-border/50 bg-card px-6">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Namespace:</span>
@@ -41,14 +41,28 @@ export function Header() {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {/* Connection status indicator */}
+        <div
+          className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium border ${
+            connected
+              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+              : "bg-red-500/10 text-red-400 border-red-500/20"
+          }`}
+        >
           {connected ? (
             <>
-              <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Stream</span>
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              <Wifi className="h-3.5 w-3.5" />
+              <span>Stream Connected</span>
             </>
           ) : (
             <>
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-400" />
+              </span>
               <WifiOff className="h-3.5 w-3.5" />
               <span>Offline</span>
             </>

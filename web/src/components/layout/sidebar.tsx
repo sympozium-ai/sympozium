@@ -23,14 +23,14 @@ const navItems = [
 
 export function AppSidebar() {
   return (
-    <aside className="flex h-full w-60 flex-col border-r bg-card">
-      {/* Logo */}
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold text-sm">
+    <aside className="flex h-full w-60 flex-col border-r border-border/50 bg-card">
+      {/* Logo — matches website branding */}
+      <div className="flex h-14 items-center gap-2.5 border-b border-border/50 px-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-indigo-500/20">
           S
         </div>
-        <span className="text-base font-semibold tracking-tight">
-          Sympozium
+        <span className="text-base font-bold tracking-tight text-white">
+          Sympo<span className="text-orange-500">zium</span>
         </span>
       </div>
 
@@ -45,8 +45,8 @@ export function AppSidebar() {
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"
                 )
               }
             >
@@ -58,7 +58,7 @@ export function AppSidebar() {
       </ScrollArea>
 
       {/* Footer */}
-      <div className="border-t px-4 py-3">
+      <div className="border-t border-border/50 px-4 py-3">
         <p className="text-xs text-muted-foreground">
           Kubernetes-native AI agents
         </p>

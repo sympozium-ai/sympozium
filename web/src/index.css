@@ -1,28 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 240 6% 7%;
-    --foreground: 226 64% 88%;
-    --card: 240 6% 10%;
-    --card-foreground: 226 64% 88%;
-    --popover: 240 6% 10%;
-    --popover-foreground: 226 64% 88%;
-    --primary: 350 65% 52%;
+    --background: 222 47% 11%;
+    --foreground: 214 32% 91%;
+    --card: 217 33% 17%;
+    --card-foreground: 214 32% 91%;
+    --popover: 217 33% 17%;
+    --popover-foreground: 214 32% 91%;
+    --primary: 239 84% 67%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 226 64% 88%;
-    --muted: 240 4% 16%;
-    --muted-foreground: 233 10% 55%;
-    --accent: 199 76% 69%;
-    --accent-foreground: 240 6% 7%;
-    --destructive: 0 72% 51%;
+    --secondary: 215 25% 27%;
+    --secondary-foreground: 214 32% 91%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 214 32% 91%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
-    --ring: 350 65% 52%;
+    --border: 215 19% 22%;
+    --input: 215 19% 22%;
+    --ring: 239 84% 67%;
     --radius: 0.5rem;
   }
 }
@@ -33,24 +35,28 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
   }
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: hsl(217 33% 17%);
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(240 4% 20%);
-  border-radius: 3px;
+  background: hsl(215 19% 35%);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(240 4% 28%);
+  background: hsl(215 16% 47%);
 }
 
 /* Phase tag colors */
@@ -68,4 +74,26 @@
 }
 .phase-ready {
   @apply bg-emerald-500/20 text-emerald-400 border-emerald-500/30;
+}
+
+/* Glow effects matching website */
+.glow-primary {
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.3), 0 0 80px rgba(99, 102, 241, 0.1);
+}
+
+/* Connection status indicator */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Grid background pattern (matches website) */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
 }

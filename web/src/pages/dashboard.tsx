@@ -55,7 +55,7 @@ export function DashboardPage() {
       value: instances.data?.length ?? "—",
       icon: Server,
       to: "/instances",
-      color: "text-blue-400",
+      color: "text-indigo-400",
     },
     {
       label: "Active Runs",
@@ -69,7 +69,7 @@ export function DashboardPage() {
       value: policies.data?.length ?? "—",
       icon: Shield,
       to: "/policies",
-      color: "text-amber-400",
+      color: "text-cyan-400",
     },
     {
       label: "Skills",
@@ -83,21 +83,21 @@ export function DashboardPage() {
       value: schedules.data?.length ?? "—",
       icon: Clock,
       to: "/schedules",
-      color: "text-purple-400",
+      color: "text-violet-400",
     },
     {
       label: "Persona Packs",
       value: personaPacks.data?.length ?? "—",
       icon: Users,
       to: "/personas",
-      color: "text-pink-400",
+      color: "text-purple-400",
     },
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
           Overview of your Sympozium cluster
         </p>
@@ -107,7 +107,7 @@ export function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map((stat) => (
           <Link key={stat.label} to={stat.to}>
-            <Card className="transition-colors hover:bg-muted/50">
+            <Card className="transition-all hover:bg-white/[0.03] hover:border-white/10">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {stat.label}
@@ -191,8 +191,13 @@ export function DashboardPage() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Activity className="h-4 w-4" />
               Event Stream
-              {connected && (
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              {connected ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                </span>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-red-400" />
               )}
             </CardTitle>
             <span className="text-xs text-muted-foreground">
@@ -200,7 +205,7 @@ export function DashboardPage() {
             </span>
           </CardHeader>
           <CardContent>
-            <div className="h-64 space-y-1 overflow-auto rounded bg-muted/30 p-3 font-mono text-xs">
+            <div className="h-64 space-y-1 overflow-auto rounded-lg bg-background/50 border border-border/50 p-3 font-mono text-xs">
               {events.length === 0 ? (
                 <p className="text-muted-foreground">
                   {connected
@@ -213,10 +218,10 @@ export function DashboardPage() {
                   .reverse()
                   .map((evt, i) => (
                     <div key={i} className="text-muted-foreground">
-                      <span className="text-emerald-400">
+                      <span className="text-emerald-400/80">
                         {new Date(evt.timestamp).toLocaleTimeString()}
                       </span>{" "}
-                      <span className="text-blue-400">{evt.topic}</span>{" "}
+                      <span className="text-indigo-400">{evt.topic}</span>{" "}
                       {typeof evt.data === "string"
                         ? truncate(evt.data, 80)
                         : truncate(JSON.stringify(evt.data), 80)}
