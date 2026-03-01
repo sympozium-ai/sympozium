@@ -207,15 +207,13 @@ type socketEnvelope struct {
 
 // readSocketMode reads messages from the WebSocket until an error or ctx cancel.
 func (sc *SlackChannel) readSocketMode(ctx context.Context, conn *websocket.Conn) error {
-	const readTimeout = 120 * time.Second
-
+	// Handle WebSocket pings from Slack to keep the connection alive.
 	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return nil
 	})
-
 	conn.SetPingHandler(func(msg string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return conn.WriteControl(websocket.PongMessage, []byte(msg), time.Now().Add(10*time.Second))
 	})
 
@@ -226,7 +224,7 @@ func (sc *SlackChannel) readSocketMode(ctx context.Context, conn *websocket.Conn
 		default:
 		}
 
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			return err
