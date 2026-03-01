@@ -111,6 +111,12 @@ web-dev: ## Start the frontend dev server (hot-reload, proxy to :8080)
 web-dev-serve: ## Vite hot-reload + port-forward to in-cluster apiserver (no rebuild needed)
 	@echo "==> Port-forwarding sympozium-apiserver to localhost:8080"
 	@echo "==> Vite dev server on http://localhost:$(VITE_PORT) (proxies /api + /ws to :8080)"
+	@TOKEN="$$(kubectl get secret sympozium-ui-token -n $(SYMPOZIUM_NAMESPACE) -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || true)"; \
+	if [ -n "$$TOKEN" ]; then \
+		echo "==> API token: $$TOKEN"; \
+	else \
+		echo "==> API token: (not found; run: kubectl get secret sympozium-ui-token -n $(SYMPOZIUM_NAMESPACE) -o jsonpath='{.data.token}' | base64 -d)"; \
+	fi
 	@echo "==> Edit web/src/ and changes hot-reload instantly."
 	@echo ""
 	@trap 'kill 0' EXIT; \

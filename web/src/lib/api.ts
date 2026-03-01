@@ -320,6 +320,13 @@ export interface PersonaPack {
   status?: PersonaPackStatus;
 }
 
+export interface InstallDefaultPersonaPacksResponse {
+  sourceNamespace: string;
+  targetNamespace: string;
+  copied: string[];
+  alreadyPresent: string[];
+}
+
 // ── Pod info (returned by /api/v1/pods) ──────────────────────────────────────
 
 export interface PodInfo {
@@ -522,6 +529,13 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+    installDefaults: () =>
+      apiFetch<InstallDefaultPersonaPacksResponse>(
+        "/api/v1/personapacks/install-defaults",
+        {
+          method: "POST",
+        }
+      ),
   },
 
   pods: {

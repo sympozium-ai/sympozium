@@ -1144,7 +1144,7 @@ func runInstall(ver, imageTag string) error {
 	personasDir := filepath.Join(tmpDir, "config/personas/")
 	if _, err := os.Stat(personasDir); err == nil {
 		fmt.Println("  Installing default PersonaPacks...")
-		if err := kubectl("apply", "--server-side", "--force-conflicts", "-f", personasDir); err != nil {
+		if err := kubectl("apply", "--server-side", "--force-conflicts", "-n", "sympozium-system", "-f", personasDir); err != nil {
 			// Non-fatal — persona packs are optional.
 			fmt.Printf("  Warning: failed to install default persona packs: %v\n", err)
 		}

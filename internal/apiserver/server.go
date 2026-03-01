@@ -107,6 +107,7 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 
 	// PersonaPack endpoints
 	mux.HandleFunc("GET /api/v1/personapacks", s.listPersonaPacks)
+	mux.HandleFunc("POST /api/v1/personapacks/install-defaults", s.installDefaultPersonaPacks)
 	mux.HandleFunc("GET /api/v1/personapacks/{name}", s.getPersonaPack)
 	mux.HandleFunc("PATCH /api/v1/personapacks/{name}", s.patchPersonaPack)
 	mux.HandleFunc("DELETE /api/v1/personapacks/{name}", s.deletePersonaPack)
@@ -703,6 +704,72 @@ func (s *Server) listPersonaPacks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, list.Items)
+}
+
+// InstallDefaultPersonaPacksResponse describes what was copied from the source namespace.
+type InstallDefaultPersonaPacksResponse struct {
+	SourceNamespace string   `json:"sourceNamespace"`
+	TargetNamespace string   `json:"targetNamespace"`
+	Copied          []string `json:"copied"`
+	AlreadyPresent  []string `json:"alreadyPresent"`
+}
+
+func (s *Server) installDefaultPersonaPacks(w http.ResponseWriter, r *http.Request) {
+	targetNS := r.URL.Query().Get("namespace")
+	if targetNS == "" {
+		targetNS = "default"
+	}
+	sourceNS := "sympozium-system"
+
+	var sourceList sympoziumv1alpha1.PersonaPackList
+	if err := s.client.List(r.Context(), &sourceList, client.InNamespace(sourceNS)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := InstallDefaultPersonaPacksResponse{
+		SourceNamespace: sourceNS,
+		TargetNamespace: targetNS,
+		Copied:          []string{},
+		AlreadyPresent:  []string{},
+	}
+
+	for _, src := range sourceList.Items {
+		var existing sympoziumv1alpha1.PersonaPack
+		err := s.client.Get(r.Context(), types.NamespacedName{Name: src.Name, Namespace: targetNS}, &existing)
+		switch {
+		case err == nil:
+			resp.AlreadyPresent = append(resp.AlreadyPresent, src.Name)
+			continue
+		case err != nil && !k8serrors.IsNotFound(err):
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		pack := &sympoziumv1alpha1.PersonaPack{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        src.Name,
+				Namespace:   targetNS,
+				Labels:      src.Labels,
+				Annotations: src.Annotations,
+			},
+			Spec: src.Spec,
+		}
+		// Always copy packs in disabled state for safe namespace onboarding.
+		pack.Spec.Enabled = false
+
+		if err := s.client.Create(r.Context(), pack); err != nil {
+			if k8serrors.IsAlreadyExists(err) {
+				resp.AlreadyPresent = append(resp.AlreadyPresent, src.Name)
+				continue
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp.Copied = append(resp.Copied, src.Name)
+	}
+
+	writeJSON(w, resp)
 }
 
 func (s *Server) getPersonaPack(w http.ResponseWriter, r *http.Request) {

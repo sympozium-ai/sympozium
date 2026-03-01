@@ -231,6 +231,24 @@ export function useActivatePersonaPack() {
   });
 }
 
+export function useInstallDefaultPersonaPacks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.personaPacks.installDefaults,
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["personaPacks"] });
+      const copied = result.copied.length;
+      const existing = result.alreadyPresent.length;
+      toast.success(
+        copied > 0
+          ? `Installed ${copied} default pack${copied === 1 ? "" : "s"} (${existing} already present)`
+          : `No packs installed (${existing} already present)`
+      );
+    },
+    onError: toastError,
+  });
+}
+
 // ── Pods ─────────────────────────────────────────────────────────────────────
 
 export function usePods() {
