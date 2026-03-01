@@ -76,6 +76,14 @@ export function InstanceDetailPage() {
                 <Row label="Phase" value={inst.status?.phase} />
                 <Row label="Active Pods" value={String(inst.status?.activeAgentPods ?? 0)} />
                 <Row label="Total Runs" value={String(inst.status?.totalAgentRuns ?? 0)} />
+                <Row
+                  label="Tokens (in/out/total)"
+                  value={
+                    inst.status?.tokenUsage
+                      ? `${inst.status.tokenUsage.inputTokens.toLocaleString()} / ${inst.status.tokenUsage.outputTokens.toLocaleString()} / ${inst.status.tokenUsage.totalTokens.toLocaleString()}`
+                      : "—"
+                  }
+                />
               </CardContent>
             </Card>
 

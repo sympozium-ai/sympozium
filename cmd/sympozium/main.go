@@ -1812,6 +1812,7 @@ type wizardStep int
 const (
 	wizStepNone               wizardStep = iota
 	wizStepCheckCluster                  // auto — verify CRDs
+	wizStepNamespace                     // text/menu: target namespace
 	wizStepInstanceName                  // text: instance name
 	wizStepProvider                      // menu 1-6: provider
 	wizStepModel                         // text: model name
@@ -1846,6 +1847,8 @@ type wizardState struct {
 	resultMsgs []string
 
 	// Collected values
+	namespaceName   string
+	namespaceList   []string
 	instanceName    string
 	providerChoice  string // "1"–"6"
 	providerName    string
@@ -1883,6 +1886,14 @@ type wizardState struct {
 
 func (w *wizardState) reset() {
 	*w = wizardState{}
+}
+
+func (w *wizardState) onboardNamespace(fallback string) string {
+	ns := strings.TrimSpace(w.namespaceName)
+	if ns == "" {
+		return fallback
+	}
+	return ns
 }
 
 func (w *wizardState) personaHasEnabledChannel(chType string) bool {
@@ -2734,9 +2745,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case tea.KeyEsc:
 					// During WhatsApp QR step, Esc skips pairing but keeps results
 					if m.wizard.step == wizStepWhatsAppQR {
+						qrNS := m.wizard.onboardNamespace(m.namespace)
 						m.wizard.step = wizStepDone
 						m.wizard.resultMsgs = append(m.wizard.resultMsgs,
-							tuiDimStyle.Render("⚠ WhatsApp QR pairing skipped — scan later via: kubectl logs -l sympozium.ai/channel=whatsapp,sympozium.ai/instance="+m.wizard.instanceName+" -n "+m.namespace))
+							tuiDimStyle.Render("⚠ WhatsApp QR pairing skipped — scan later via: kubectl logs -l sympozium.ai/channel=whatsapp,sympozium.ai/instance="+m.wizard.instanceName+" -n "+qrNS))
 						m.input.Placeholder = "Press Enter to return"
 						return m, nil
 					}
@@ -3127,13 +3139,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Parse result messages from output (newline-separated).
 			m.wizard.resultMsgs = strings.Split(msg.output, "\n")
+			m.namespace = m.wizard.onboardNamespace(m.namespace)
 
 			// If WhatsApp channel, transition to QR pairing step
 			if m.wizard.channelType == "whatsapp" {
 				m.wizard.step = wizStepWhatsAppQR
 				m.wizard.qrStatus = "waiting"
 				m.input.Placeholder = "Waiting for WhatsApp pod... (press Esc to skip)"
-				return m, pollWhatsAppQRCmd(m.namespace, m.wizard.instanceName)
+				return m, pollWhatsAppQRCmd(m.wizard.onboardNamespace(m.namespace), m.wizard.instanceName)
 			}
 
 			m.wizard.step = wizStepDone
@@ -3178,7 +3191,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.wizard.qrErr = msg.err.Error()
 				m.wizard.qrStatus = "error"
 				// Retry despite error
-				return m, pollWhatsAppQRCmd(m.namespace, m.wizard.instanceName)
+				return m, pollWhatsAppQRCmd(m.wizard.onboardNamespace(m.namespace), m.wizard.instanceName)
 			}
 			m.wizard.qrStatus = msg.status
 			if len(msg.qrLines) > 0 {
@@ -3193,7 +3206,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// Keep polling
-			return m, pollWhatsAppQRCmd(m.namespace, m.wizard.instanceName)
+			return m, pollWhatsAppQRCmd(m.wizard.onboardNamespace(m.namespace), m.wizard.instanceName)
 		}
 		return m, nil
 
@@ -3951,6 +3964,16 @@ func (m tuiModel) applyPersonaPackEdit(packName string) tea.Cmd {
 			}
 		}
 		pack.Spec.ExcludePersonas = excludes
+
+		// If every persona is disabled, treat as pack disable and clean up auth secrets.
+		if len(personas) > 0 && len(excludes) == len(personas) {
+			pack.Spec.Enabled = false
+			if err := k8sClient.Update(ctx, &pack); err != nil {
+				return cmdResultMsg{err: fmt.Errorf("update PersonaPack %q: %w", packName, err)}
+			}
+			result := tuiSuccessStyle.Render(fmt.Sprintf("✓ PersonaPack %s disabled: 0/%d personas enabled", packName, len(personas)))
+			return cmdResultMsg{output: result}
+		}
 
 		if err := k8sClient.Update(ctx, &pack); err != nil {
 			return cmdResultMsg{err: fmt.Errorf("update PersonaPack %q: %w", packName, err)}
@@ -6748,6 +6771,9 @@ func tuiDisableAllPackPersonas(ns, packName string, personaNames []string) (stri
 	for name := range excluded {
 		pack.Spec.ExcludePersonas = append(pack.Spec.ExcludePersonas, name)
 	}
+	// Mark pack disabled; controller will clean up instances/schedules first,
+	// then remove managed auth secrets.
+	pack.Spec.Enabled = false
 
 	if err := k8sClient.Update(ctx, &pack); err != nil {
 		return "", fmt.Errorf("update PersonaPack %q: %w", packName, err)
@@ -6996,6 +7022,34 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		w.err = ""
+		w.namespaceName = m.namespace
+		w.namespaceList = nil
+		for _, ns := range fetchNamespaceSuggestions("") {
+			w.namespaceList = append(w.namespaceList, ns.text)
+		}
+		sort.Strings(w.namespaceList)
+		w.step = wizStepNamespace
+		m.input.Placeholder = fmt.Sprintf("Namespace [name or number] (default: %s)", w.namespaceName)
+		return m, nil
+
+	case wizStepNamespace:
+		if val == "" {
+			val = w.onboardNamespace(m.namespace)
+		}
+		if idx, err := strconv.Atoi(val); err == nil && idx >= 1 && idx <= len(w.namespaceList) {
+			val = w.namespaceList[idx-1]
+		}
+		val = strings.TrimSpace(val)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		var ns corev1.Namespace
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: val}, &ns); err != nil {
+			w.err = fmt.Sprintf("namespace %q not found or inaccessible", val)
+			m.input.Placeholder = fmt.Sprintf("Namespace [name or number] (default: %s)", w.onboardNamespace(m.namespace))
+			return m, nil
+		}
+		w.err = ""
+		w.namespaceName = val
 		w.step = wizStepInstanceName
 		m.input.Placeholder = "Instance name (default: my-agent)"
 		return m, nil
@@ -7166,8 +7220,9 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 	case wizStepChannelActionToken:
 		w.channelToken = val
 		w.step = wizStepApplying
+		onboardNS := w.onboardNamespace(m.namespace)
 		return m, m.asyncCmd(func() (string, error) {
-			return tuiOnboardApply(m.namespace, w)
+			return tuiOnboardApply(onboardNS, w)
 		})
 
 	case wizStepPolicy:
@@ -7219,8 +7274,9 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		w.step = wizStepApplying
+		onboardNS := w.onboardNamespace(m.namespace)
 		return m, m.asyncCmd(func() (string, error) {
-			return tuiOnboardApply(m.namespace, w)
+			return tuiOnboardApply(onboardNS, w)
 		})
 
 	case wizStepDone:
@@ -7492,6 +7548,10 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, "")
 	}
 
+	if w.step > wizStepNamespace {
+		stepNum = 2
+		lines = append(lines, hintStyle.Render("  Namespace: ")+valueStyle.Render(w.onboardNamespace(m.namespace)))
+	}
 	if w.step > wizStepInstanceName {
 		stepNum = 2
 		lines = append(lines, hintStyle.Render("  Instance: ")+valueStyle.Render(w.instanceName))
@@ -7542,16 +7602,37 @@ func (m tuiModel) renderWizardPanel(h int) string {
 	// Show current step prompt.
 	switch w.step {
 	case wizStepCheckCluster:
-		lines = append(lines, stepStyle.Render("  📋 Step 1/6 — Checking cluster..."))
+		lines = append(lines, stepStyle.Render("  📋 Preflight — Checking cluster..."))
+
+	case wizStepNamespace:
+		lines = append(lines, stepStyle.Render("  📋 Step 1/7 — Choose Namespace"))
+		lines = append(lines, menuStyle.Render("  Select where onboarding resources should be created."))
+		lines = append(lines, hintStyle.Render("  Current: ")+valueStyle.Render(m.namespace))
+		if len(w.namespaceList) > 0 {
+			lines = append(lines, "")
+			show := len(w.namespaceList)
+			if show > 12 {
+				show = 12
+			}
+			for i := 0; i < show; i++ {
+				ns := w.namespaceList[i]
+				lines = append(lines, menuNumStyle.Render(fmt.Sprintf("  %d)", i+1))+menuStyle.Render(" "+ns))
+			}
+			if len(w.namespaceList) > show {
+				lines = append(lines, hintStyle.Render(fmt.Sprintf("  ...and %d more", len(w.namespaceList)-show)))
+			}
+		}
+		lines = append(lines, "")
+		lines = append(lines, labelStyle.Render("  Enter namespace name or number:"))
 
 	case wizStepInstanceName:
-		lines = append(lines, stepStyle.Render("  📋 Step 1/6 — Create your SympoziumInstance"))
+		lines = append(lines, stepStyle.Render("  📋 Step 2/7 — Create your SympoziumInstance"))
 		lines = append(lines, menuStyle.Render("  An instance represents you (or a tenant) in the system."))
 		lines = append(lines, "")
 		lines = append(lines, labelStyle.Render("  Enter instance name:"))
 
 	case wizStepProvider:
-		lines = append(lines, stepStyle.Render("  📋 Step 2/6 — AI Provider"))
+		lines = append(lines, stepStyle.Render("  📋 Step 3/7 — AI Provider"))
 		lines = append(lines, menuStyle.Render("  Which model provider do you want to use?"))
 		lines = append(lines, "")
 		lines = append(lines, menuNumStyle.Render("  1)")+menuStyle.Render(" OpenAI"))
@@ -7561,11 +7642,11 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" Other / OpenAI-compatible"))
 
 	case wizStepBaseURL:
-		lines = append(lines, stepStyle.Render("  📋 Step 2/6 — AI Provider (continued)"))
+		lines = append(lines, stepStyle.Render("  📋 Step 3/7 — AI Provider (continued)"))
 		lines = append(lines, labelStyle.Render("  Enter base URL:"))
 
 	case wizStepAPIKey:
-		lines = append(lines, stepStyle.Render("  📋 Step 2/6 — AI Provider (continued)"))
+		lines = append(lines, stepStyle.Render("  📋 Step 3/7 — AI Provider (continued)"))
 		lines = append(lines, labelStyle.Render(fmt.Sprintf("  Paste your %s:", w.secretEnvKey)))
 		envVal := os.Getenv(w.secretEnvKey)
 		if envVal != "" {
@@ -7576,7 +7657,7 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, hintStyle.Render("  (providing a key lets us fetch your available models)"))
 
 	case wizStepModel:
-		lines = append(lines, stepStyle.Render("  📋 Step 2/6 — Select Model"))
+		lines = append(lines, stepStyle.Render("  📋 Step 3/7 — Select Model"))
 		if len(w.fetchedModels) > 0 {
 			lines = append(lines, menuStyle.Render(fmt.Sprintf("  Found %d models from your %s account:", len(w.fetchedModels), w.providerName)))
 			lines = append(lines, "")
@@ -7641,7 +7722,7 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		}
 
 	case wizStepChannel:
-		lines = append(lines, stepStyle.Render("  📋 Step 3/6 — Connect a Channel (optional)"))
+		lines = append(lines, stepStyle.Render("  📋 Step 4/7 — Connect a Channel (optional)"))
 		lines = append(lines, menuStyle.Render("  Channels let your agent receive messages from external platforms."))
 		lines = append(lines, "")
 		lines = append(lines, menuNumStyle.Render("  1)")+menuStyle.Render(" Telegram  — easiest, just talk to @BotFather"))
@@ -7656,12 +7737,12 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, hintStyle.Render("  Press Enter to skip and configure it later."))
 
 	case wizStepPolicy:
-		lines = append(lines, stepStyle.Render("  📋 Step 4/6 — Default Policy"))
+		lines = append(lines, stepStyle.Render("  📋 Step 5/7 — Default Policy"))
 		lines = append(lines, menuStyle.Render("  A SympoziumPolicy controls what tools agents can use, sandboxing, etc."))
 		lines = append(lines, labelStyle.Render("  Apply the default policy?"))
 
 	case wizStepHeartbeat:
-		lines = append(lines, stepStyle.Render("  📋 Step 5/6 — Heartbeat Schedule"))
+		lines = append(lines, stepStyle.Render("  📋 Step 6/7 — Heartbeat Schedule"))
 		lines = append(lines, menuStyle.Render("  A heartbeat lets your agent wake up periodically to review memory"))
 		lines = append(lines, menuStyle.Render("  and note anything that needs attention."))
 		lines = append(lines, "")
@@ -7672,13 +7753,13 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" Disabled — no heartbeat"))
 
 	case wizStepConfirm:
-		lines = append(lines, stepStyle.Render("  📋 Step 6/6 — Confirm"))
+		lines = append(lines, stepStyle.Render("  📋 Step 7/7 — Confirm"))
 		lines = append(lines, "")
 		lines = append(lines, tuiSepStyle.Render("  "+strings.Repeat("━", 50)))
 		lines = append(lines, labelStyle.Render("  Summary"))
 		lines = append(lines, tuiSepStyle.Render("  "+strings.Repeat("━", 50)))
 		lines = append(lines, hintStyle.Render("  Instance:  ")+valueStyle.Render(w.instanceName)+
-			hintStyle.Render("  (namespace: ")+valueStyle.Render(m.namespace)+hintStyle.Render(")"))
+			hintStyle.Render("  (namespace: ")+valueStyle.Render(w.onboardNamespace(m.namespace))+hintStyle.Render(")"))
 		lines = append(lines, hintStyle.Render("  Provider:  ")+valueStyle.Render(w.providerName)+
 			hintStyle.Render("  (model: ")+valueStyle.Render(w.modelName)+hintStyle.Render(")"))
 		if w.baseURL != "" {
@@ -8177,7 +8258,14 @@ func tuiPersonaApply(ns string, w *wizardState) (string, error) {
 			_ = k8sClient.Delete(ctx, existing)
 		}
 		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: ns},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "sympozium",
+					"sympozium.ai/persona-pack":    w.personaPackName,
+				},
+			},
 			StringData: map[string]string{w.secretEnvKey: w.apiKey},
 		}
 		if err := k8sClient.Create(ctx, secret); err != nil {

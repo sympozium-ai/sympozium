@@ -206,6 +206,45 @@ func (s *Server) spaHandler(frontendFS fs.FS) http.HandlerFunc {
 
 // --- Instance handlers ---
 
+type InstanceStatusWithUsage struct {
+	sympoziumv1alpha1.SympoziumInstanceStatus `json:",inline"`
+	TokenUsage                                *sympoziumv1alpha1.TokenUsage `json:"tokenUsage,omitempty"`
+}
+
+type InstanceWithUsage struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              sympoziumv1alpha1.SympoziumInstanceSpec `json:"spec,omitempty"`
+	Status            InstanceStatusWithUsage                 `json:"status,omitempty"`
+}
+
+func aggregateTokenUsageByInstance(runs []sympoziumv1alpha1.AgentRun) map[string]*sympoziumv1alpha1.TokenUsage {
+	agg := make(map[string]*sympoziumv1alpha1.TokenUsage)
+	for i := range runs {
+		run := runs[i]
+		if run.Spec.InstanceRef == "" || run.Status.TokenUsage == nil {
+			continue
+		}
+		curr, ok := agg[run.Spec.InstanceRef]
+		if !ok {
+			agg[run.Spec.InstanceRef] = &sympoziumv1alpha1.TokenUsage{
+				InputTokens:  run.Status.TokenUsage.InputTokens,
+				OutputTokens: run.Status.TokenUsage.OutputTokens,
+				TotalTokens:  run.Status.TokenUsage.TotalTokens,
+				ToolCalls:    run.Status.TokenUsage.ToolCalls,
+				DurationMs:   run.Status.TokenUsage.DurationMs,
+			}
+			continue
+		}
+		curr.InputTokens += run.Status.TokenUsage.InputTokens
+		curr.OutputTokens += run.Status.TokenUsage.OutputTokens
+		curr.TotalTokens += run.Status.TokenUsage.TotalTokens
+		curr.ToolCalls += run.Status.TokenUsage.ToolCalls
+		curr.DurationMs += run.Status.TokenUsage.DurationMs
+	}
+	return agg
+}
+
 func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 	ns := r.URL.Query().Get("namespace")
 	if ns == "" {
@@ -218,7 +257,28 @@ func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, list.Items)
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := s.client.List(r.Context(), &runs, client.InNamespace(ns)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	usageByInstance := aggregateTokenUsageByInstance(runs.Items)
+
+	out := make([]InstanceWithUsage, 0, len(list.Items))
+	for i := range list.Items {
+		inst := list.Items[i]
+		out = append(out, InstanceWithUsage{
+			TypeMeta:   inst.TypeMeta,
+			ObjectMeta: inst.ObjectMeta,
+			Spec:       inst.Spec,
+			Status: InstanceStatusWithUsage{
+				SympoziumInstanceStatus: inst.Status,
+				TokenUsage:              usageByInstance[inst.Name],
+			},
+		})
+	}
+
+	writeJSON(w, out)
 }
 
 func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +294,22 @@ func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, inst)
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := s.client.List(r.Context(), &runs, client.InNamespace(ns)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	usageByInstance := aggregateTokenUsageByInstance(runs.Items)
+
+	writeJSON(w, InstanceWithUsage{
+		TypeMeta:   inst.TypeMeta,
+		ObjectMeta: inst.ObjectMeta,
+		Spec:       inst.Spec,
+		Status: InstanceStatusWithUsage{
+			SympoziumInstanceStatus: inst.Status,
+			TokenUsage:              usageByInstance[name],
+		},
+	})
 }
 
 func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {

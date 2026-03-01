@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +27,57 @@ type PersonaPackReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Log    logr.Logger
+}
+
+func isManagedPersonaAuthSecret(packName, secretName string, labels map[string]string) bool {
+	if strings.TrimSpace(secretName) == "" {
+		return false
+	}
+	if labels != nil && labels["sympozium.ai/persona-pack"] == packName {
+		return true
+	}
+	if secretName == packName+"-credentials" {
+		return true
+	}
+	// TUI-created naming convention: <pack>-<provider>-key
+	if strings.HasPrefix(secretName, packName+"-") && strings.HasSuffix(secretName, "-key") {
+		return true
+	}
+	return false
+}
+
+func (r *PersonaPackReconciler) deleteManagedAuthSecrets(ctx context.Context, pack *sympoziumv1alpha1.PersonaPack) (int, error) {
+	if pack == nil {
+		return 0, nil
+	}
+	seen := make(map[string]struct{}, len(pack.Spec.AuthRefs))
+	deleted := 0
+	for _, ref := range pack.Spec.AuthRefs {
+		name := strings.TrimSpace(ref.Secret)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+
+		sec := &corev1.Secret{}
+		if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: pack.Namespace}, sec); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			return deleted, err
+		}
+		if !isManagedPersonaAuthSecret(pack.Name, name, sec.Labels) {
+			continue
+		}
+		if err := r.Delete(ctx, sec); err != nil && !errors.IsNotFound(err) {
+			return deleted, err
+		}
+		deleted++
+	}
+	return deleted, nil
 }
 
 // +kubebuilder:rbac:groups=sympozium.ai,resources=personapacks,verbs=get;list;watch;create;update;patch;delete
@@ -66,6 +118,36 @@ func (r *PersonaPackReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				log.Error(err, "Failed to clean up persona for disabled pack", "persona", persona.Name)
 			}
 		}
+
+		// Wait for stamped resources to actually disappear before deleting auth secrets.
+		var instList sympoziumv1alpha1.SympoziumInstanceList
+		if err := r.List(ctx, &instList, client.InNamespace(pack.Namespace), client.MatchingLabels{"sympozium.ai/persona-pack": pack.Name}); err != nil {
+			return ctrl.Result{}, err
+		}
+		var schedList sympoziumv1alpha1.SympoziumScheduleList
+		if err := r.List(ctx, &schedList, client.InNamespace(pack.Namespace), client.MatchingLabels{"sympozium.ai/persona-pack": pack.Name}); err != nil {
+			return ctrl.Result{}, err
+		}
+		if len(instList.Items) > 0 || len(schedList.Items) > 0 {
+			log.Info("Waiting for persona resources to terminate before auth secret cleanup",
+				"instancesRemaining", len(instList.Items),
+				"schedulesRemaining", len(schedList.Items))
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+		if len(pack.Spec.AuthRefs) > 0 {
+			deleted, err := r.deleteManagedAuthSecrets(ctx, pack)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			pack.Spec.AuthRefs = nil
+			if err := r.Update(ctx, pack); err != nil {
+				return ctrl.Result{}, err
+			}
+			if deleted > 0 {
+				log.Info("Deleted managed PersonaPack auth secrets", "count", deleted)
+			}
+		}
+
 		pack.Status.Phase = "Inactive"
 		pack.Status.PersonaCount = len(pack.Spec.Personas)
 		pack.Status.InstalledCount = 0

@@ -103,6 +103,7 @@ export function InstancesPage() {
               <TableHead>Channels</TableHead>
               <TableHead>Phase</TableHead>
               <TableHead>Runs</TableHead>
+              <TableHead>Tokens</TableHead>
               <TableHead>Age</TableHead>
               <TableHead className="w-20" />
             </TableRow>
@@ -136,6 +137,11 @@ export function InstancesPage() {
                 </TableCell>
                 <TableCell className="text-sm">
                   {inst.status?.totalAgentRuns ?? 0}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {inst.status?.tokenUsage
+                    ? inst.status.tokenUsage.totalTokens.toLocaleString()
+                    : "—"}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {formatAge(inst.metadata.creationTimestamp)}

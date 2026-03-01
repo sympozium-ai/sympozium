@@ -73,6 +73,7 @@ export interface SympoziumInstanceStatus {
   channels?: ChannelStatus[];
   activeAgentPods?: number;
   totalAgentRuns?: number;
+  tokenUsage?: TokenUsage;
   conditions?: Condition[];
 }
 
