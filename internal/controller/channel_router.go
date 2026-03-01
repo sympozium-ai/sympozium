@@ -80,6 +80,16 @@ func resolveProvider(inst *sympoziumv1alpha1.SympoziumInstance) string {
 	return "openai"
 }
 
+// resolveAuthSecret returns the first non-empty auth secret reference.
+func resolveAuthSecret(inst *sympoziumv1alpha1.SympoziumInstance) string {
+	for _, ref := range inst.Spec.AuthRefs {
+		if strings.TrimSpace(ref.Secret) != "" {
+			return ref.Secret
+		}
+	}
+	return ""
+}
+
 // handleInbound processes an inbound channel message by creating an AgentRun.
 func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Event) {
 	var msg channelpkg.InboundMessage
@@ -121,10 +131,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 
 	// Resolve model configuration from the SympoziumInstance (same logic as TUI).
 	provider := resolveProvider(inst)
-	authSecret := ""
-	if len(inst.Spec.AuthRefs) > 0 {
-		authSecret = inst.Spec.AuthRefs[0].Secret
-	}
+	authSecret := resolveAuthSecret(inst)
 
 	// Create an AgentRun for the inbound message.
 	run := &sympoziumv1alpha1.AgentRun{

@@ -158,6 +158,7 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			Task:        task,
 			AgentID:     fmt.Sprintf("schedule-%s", schedule.Name),
 			Model: sympoziumv1alpha1.ModelSpec{
+				Provider: resolveProvider(instance),
 				Model: instance.Spec.Agents.Default.Model,
 			},
 		},
@@ -171,10 +172,8 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		agentRun.Spec.Model.Thinking = instance.Spec.Agents.Default.Thinking
 	}
 
-	// Resolve auth secret.
-	if len(instance.Spec.AuthRefs) > 0 {
-		agentRun.Spec.Model.AuthSecretRef = instance.Spec.AuthRefs[0].Secret
-	}
+	// Resolve auth secret from the instance.
+	agentRun.Spec.Model.AuthSecretRef = resolveAuthSecret(instance)
 
 	// Copy skill refs.
 	agentRun.Spec.Skills = instance.Spec.Skills
