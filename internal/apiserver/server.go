@@ -393,7 +393,7 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-create a K8s Secret when the user provides a raw API key.
 	if req.Provider != "" && req.APIKey != "" && req.SecretName == "" {
-		req.SecretName = req.Name + "-credentials"
+		req.SecretName = defaultProviderSecretName(req.Name, req.Provider)
 		envKey := providerEnvKey(req.Provider)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -426,6 +426,17 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "failed to update credentials secret: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
+		}
+	}
+	if req.Provider != "" && req.SecretName != "" {
+		existing := &corev1.Secret{}
+		if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.SecretName, Namespace: ns}, existing); err != nil {
+			if k8serrors.IsNotFound(err) {
+				http.Error(w, fmt.Sprintf("secret %q not found in namespace %q", req.SecretName, ns), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to get secret: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -1535,7 +1546,7 @@ func (s *Server) patchPersonaPack(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-create a K8s Secret when the user provides a raw API key.
 	if req.Provider != "" && req.APIKey != "" && req.SecretName == "" {
-		req.SecretName = name + "-credentials"
+		req.SecretName = defaultProviderSecretName(name, req.Provider)
 		envKey := providerEnvKey(req.Provider)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1568,6 +1579,17 @@ func (s *Server) patchPersonaPack(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "failed to update credentials secret: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
+		}
+	}
+	if req.Provider != "" && req.SecretName != "" {
+		existing := &corev1.Secret{}
+		if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.SecretName, Namespace: ns}, existing); err != nil {
+			if k8serrors.IsNotFound(err) {
+				http.Error(w, fmt.Sprintf("secret %q not found in namespace %q", req.SecretName, ns), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to get secret: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -1726,6 +1748,14 @@ func providerEnvKey(provider string) string {
 	default:
 		return "PROVIDER_API_KEY"
 	}
+}
+
+func defaultProviderSecretName(resourceName, provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if provider == "" {
+		return resourceName + "-credentials"
+	}
+	return fmt.Sprintf("%s-%s-key", resourceName, provider)
 }
 
 func (s *Server) listNamespaces(w http.ResponseWriter, r *http.Request) {
