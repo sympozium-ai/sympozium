@@ -83,6 +83,9 @@ func TestSympoziumScheduleReconcile_CopiesProviderAndAuthSecretToRun(t *testing.
 	}, run); err != nil {
 		t.Fatalf("get created run: %v", err)
 	}
+	if len(run.OwnerReferences) != 0 {
+		t.Fatalf("expected scheduled run to have no owner references, got %d", len(run.OwnerReferences))
+	}
 
 	if run.Spec.Model.Provider != "anthropic" {
 		t.Fatalf("provider = %q, want anthropic", run.Spec.Model.Provider)

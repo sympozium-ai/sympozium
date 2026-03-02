@@ -178,12 +178,6 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Copy skill refs.
 	agentRun.Spec.Skills = instance.Spec.Skills
 
-	// Set owner reference so the schedule owns the AgentRun.
-	if err := controllerutil.SetControllerReference(schedule, agentRun, r.Scheme); err != nil {
-		log.Error(err, "failed to set owner reference")
-		return ctrl.Result{}, err
-	}
-
 	if err := r.Create(ctx, agentRun); err != nil {
 		if !errors.IsAlreadyExists(err) {
 			log.Error(err, "failed to create AgentRun")
