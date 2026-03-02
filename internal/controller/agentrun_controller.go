@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -89,6 +90,14 @@ func resolveOTelEndpoint(instance *sympoziumv1alpha1.SympoziumInstance) string {
 
 // formatTraceparent returns a W3C traceparent string from a span context,
 // or empty string if the span context is invalid.
+// extractTraceparent parses a W3C traceparent string and returns a context
+// with the remote span context set, so new spans become children of it.
+func extractTraceparent(ctx context.Context, tp string) context.Context {
+	prop := propagation.TraceContext{}
+	carrier := propagation.MapCarrier{"traceparent": tp}
+	return prop.Extract(ctx, carrier)
+}
+
 func formatTraceparent(sc trace.SpanContext) string {
 	if !sc.IsValid() {
 		return ""
@@ -120,31 +129,32 @@ func formatTraceparent(sc trace.SpanContext) string {
 // Reconcile handles AgentRun create/update/delete events.
 func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reconcileStart := time.Now()
-	ctx, span := controllerTracer.Start(ctx, "agentrun.reconcile",
-		trace.WithAttributes(
-			attribute.String("agentrun.name", req.Name),
-			attribute.String("namespace", req.Namespace),
-		),
-	)
-	defer span.End()
-
 	log := r.Log.WithValues("agentrun", req.NamespacedName)
 
-	// Fetch the AgentRun
+	// Fetch the AgentRun first so we can extract traceparent.
 	agentRun := &sympoziumv1alpha1.AgentRun{}
 	if err := r.Get(ctx, req.NamespacedName, agentRun); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "fetch agentrun failed")
 		return ctrl.Result{}, err
 	}
 
-	span.SetAttributes(
-		attribute.String("agentrun.phase", string(agentRun.Status.Phase)),
-		attribute.String("instance.name", agentRun.Spec.InstanceRef),
+	// If the AgentRun carries a traceparent annotation (set by channel router),
+	// use it as parent context so this span joins the original trace.
+	if tp := agentRun.Annotations["otel.dev/traceparent"]; tp != "" {
+		ctx = extractTraceparent(ctx, tp)
+	}
+
+	ctx, span := controllerTracer.Start(ctx, "agentrun.reconcile",
+		trace.WithAttributes(
+			attribute.String("agentrun.name", req.Name),
+			attribute.String("namespace", req.Namespace),
+			attribute.String("agentrun.phase", string(agentRun.Status.Phase)),
+			attribute.String("instance.name", agentRun.Spec.InstanceRef),
+		),
 	)
+	defer span.End()
 
 	// Handle deletion
 	if !agentRun.DeletionTimestamp.IsZero() {
