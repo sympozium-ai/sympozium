@@ -33,7 +33,7 @@ IMAGES = controller apiserver ipc-bridge webhook agent-runner \
          channel-telegram channel-whatsapp channel-discord channel-slack \
 		 skill-k8s-ops skill-sre-observability skill-github-gitops
 
-.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks
+.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks integration-tests
 
 all: build
 
@@ -67,6 +67,16 @@ test-integration: ## Run integration tests (requires Kind cluster + API keys)
 	./test/integration/test-k8s-ops-nodes.sh
 	./test/integration/test-telegram-channel.sh
 	./test/integration/test-slack-channel.sh
+
+integration-tests: ## Run API smoke regression tests (PersonaPacks, ad-hoc Instances, Skills, Policies, Schedules)
+	bash ./test/integration/test-api-smoke.sh
+	bash ./test/integration/test-api-personapack-provider-switch.sh
+	bash ./test/integration/test-api-personapack-adhoc-correctness.sh
+	bash ./test/integration/test-api-agentrun-container-shape.sh
+	bash ./test/integration/test-api-personapack-provisioning.sh
+	bash ./test/integration/test-api-schedule-dispatch.sh
+	bash ./test/integration/test-api-observability.sh
+	bash ./test/integration/test-api-capabilities.sh
 
 vet: ## Run go vet
 	$(GOVET) ./...

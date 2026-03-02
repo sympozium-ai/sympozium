@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -292,23 +293,56 @@ func (r *PersonaPackReconciler) reconcilePersona(
 	}
 
 	// --- SympoziumSchedule ---
+	schedName := instanceName + "-schedule"
 	if persona.Schedule != nil {
-		schedName := instanceName + "-schedule"
 		ip.ScheduleName = schedName
 
+		desired := r.buildSchedule(pack, persona, instanceName, schedName)
 		existingSched := &sympoziumv1alpha1.SympoziumSchedule{}
 		err := r.Get(ctx, client.ObjectKey{Name: schedName, Namespace: pack.Namespace}, existingSched)
 		if errors.IsNotFound(err) {
-			sched := r.buildSchedule(pack, persona, instanceName, schedName)
-			if err := ctrl.SetControllerReference(pack, sched, r.Scheme); err != nil {
+			if err := ctrl.SetControllerReference(pack, desired, r.Scheme); err != nil {
 				return ip, fmt.Errorf("set owner ref on schedule: %w", err)
 			}
 			log.Info("Creating SympoziumSchedule for persona", "schedule", schedName, "persona", persona.Name)
-			if err := r.Create(ctx, sched); err != nil {
+			if err := r.Create(ctx, desired); err != nil {
 				return ip, fmt.Errorf("create schedule %s: %w", schedName, err)
 			}
 		} else if err != nil {
 			return ip, fmt.Errorf("get schedule %s: %w", schedName, err)
+		} else {
+			needsUpdate := false
+			if !reflect.DeepEqual(existingSched.Spec, desired.Spec) {
+				existingSched.Spec = desired.Spec
+				needsUpdate = true
+			}
+			if existingSched.Labels == nil {
+				existingSched.Labels = map[string]string{}
+			}
+			for k, v := range desired.Labels {
+				if existingSched.Labels[k] != v {
+					existingSched.Labels[k] = v
+					needsUpdate = true
+				}
+			}
+			if needsUpdate {
+				log.Info("Updating SympoziumSchedule for persona", "schedule", schedName, "persona", persona.Name)
+				if err := r.Update(ctx, existingSched); err != nil {
+					return ip, fmt.Errorf("update schedule %s: %w", schedName, err)
+				}
+			}
+		}
+	} else {
+		// Persona no longer has a schedule configured — remove any stale one.
+		existingSched := &sympoziumv1alpha1.SympoziumSchedule{}
+		err := r.Get(ctx, client.ObjectKey{Name: schedName, Namespace: pack.Namespace}, existingSched)
+		if err == nil {
+			log.Info("Deleting stale SympoziumSchedule for persona", "schedule", schedName, "persona", persona.Name)
+			if err := r.Delete(ctx, existingSched); err != nil && !errors.IsNotFound(err) {
+				return ip, fmt.Errorf("delete stale schedule %s: %w", schedName, err)
+			}
+		} else if !errors.IsNotFound(err) {
+			return ip, fmt.Errorf("get stale schedule %s: %w", schedName, err)
 		}
 	}
 

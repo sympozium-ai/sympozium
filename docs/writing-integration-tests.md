@@ -15,6 +15,14 @@ Unlike unit tests, they exercise the full pipeline: controller → Job → agent
 # Run all integration tests
 make test-integration
 
+# Run API smoke regressions (fast, no LLM execution)
+make integration-tests
+
+# Optional capability validation (same target, token-gated checks)
+# CLAUDE_TOKEN validates Anthropic provider wiring
+# GITHUB_TOKEN validates github-gitops token endpoint + secret persistence
+CLAUDE_TOKEN=... GITHUB_TOKEN=... make integration-tests
+
 # Run with a specific model
 TEST_MODEL=gpt-5.2 ./test/integration/test-write-file.sh
 
@@ -246,6 +254,14 @@ not after it completes. The Job/pod is cleaned up quickly after the agent finish
 
 | Test | File | What it verifies |
 |---|---|---|
+| API smoke | `test/integration/test-api-smoke.sh` | API-only CRUD/list/get coverage for PersonaPacks, ad-hoc Instances, Skills, Policies, and Schedules |
+| API PersonaPack provider switch | `test/integration/test-api-personapack-provider-switch.sh` | Verifies OpenAI→Anthropic PersonaPack updates propagate to stamped instances and subsequent AgentRuns (provider/auth/model/skills) |
+| API PersonaPack + ad-hoc correctness | `test/integration/test-api-personapack-adhoc-correctness.sh` | Verifies PersonaPack propagation (authRef/provider/model/skills), ad-hoc parity, and that disabling a PersonaPack removes stamped instances |
+| API AgentRun container shape | `test/integration/test-api-agentrun-container-shape.sh` | Validates container count/names for AgentRun pods from plain instances (agent+ipc-bridge) and skill-backed instances (agent+ipc-bridge+skill sidecar) |
+| API PersonaPack provisioning | `test/integration/test-api-personapack-provisioning.sh` | Enabling a PersonaPack via API stamps out PersonaPack-labeled Instances and Schedules |
+| API schedule dispatch | `test/integration/test-api-schedule-dispatch.sh` | Creating a schedule via API results in dispatched AgentRuns (`status.totalRuns` / `lastRunName`) |
+| API observability | `test/integration/test-api-observability.sh` | OTEL collector deployment health + `/api/v1/observability/metrics` correctness (`collectorReachable`, payload sanity) |
+| API capabilities (optional) | `test/integration/test-api-capabilities.sh` | Token-gated checks for Anthropic provider wiring (`CLAUDE_TOKEN`) and GitHub token endpoint/secret persistence (`GITHUB_TOKEN`) |
 | write_file | `test/integration/test-write-file.sh` | Agent uses `write_file` tool to create a file with specific content |
 | k8s-ops nodes | `test/integration/test-k8s-ops-nodes.sh` | Agent uses `execute_command` with k8s-ops skill to run `kubectl get nodes` |
 | telegram | `test/integration/test-telegram-channel.sh` | Channel deployment pipeline + optional full E2E with real bot |
