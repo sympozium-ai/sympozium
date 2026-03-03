@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
 import { useInstances, useCreateRun, useRuns } from "@/hooks/use-api";
 import { useWebSocket, type StreamEvent } from "@/hooks/use-websocket";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -371,8 +372,12 @@ function FeedBubble({ item }: { item: FeedItem }) {
             <Loader2 className="h-3 w-3 animate-spin" />
             {item.text}
           </span>
-        ) : (
+        ) : isUser ? (
           <p className="whitespace-pre-wrap break-words">{item.text}</p>
+        ) : (
+          <div className="prose prose-sm prose-invert prose-feed break-words max-w-none">
+            <ReactMarkdown>{item.text}</ReactMarkdown>
+          </div>
         )}
         {item.meta && (
           <p className="mt-1 text-[10px] opacity-50">{item.meta}</p>

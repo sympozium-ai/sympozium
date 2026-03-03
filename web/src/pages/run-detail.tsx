@@ -1,4 +1,5 @@
 import { useParams, Link } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import { useRun } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -121,9 +122,9 @@ export function RunDetailPage() {
           <Card>
             <CardContent className="pt-6">
               {run.status?.result ? (
-                <pre className="whitespace-pre-wrap text-sm">
-                  {run.status.result}
-                </pre>
+                <div className="prose prose-sm prose-invert max-w-none">
+                  <ReactMarkdown>{run.status.result}</ReactMarkdown>
+                </div>
               ) : run.status?.error ? (
                 <div className="space-y-2">
                   <Badge variant="destructive">Error</Badge>
