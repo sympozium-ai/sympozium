@@ -35,6 +35,28 @@ pass() { echo -e "${GREEN}✓ $*${NC}"; }
 fail() { echo -e "${RED}✗ $*${NC}"; }
 info() { echo -e "${YELLOW}● $*${NC}"; }
 
+stop_port_forward() {
+  if [[ -n "${PF_PID}" ]] && kill -0 "${PF_PID}" >/dev/null 2>&1; then
+    kill "${PF_PID}" >/dev/null 2>&1 || true
+    for _ in {1..5}; do
+      if ! kill -0 "${PF_PID}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${PF_PID}" >/dev/null 2>&1; then
+      kill -9 "${PF_PID}" >/dev/null 2>&1 || true
+    fi
+    wait "${PF_PID}" >/dev/null 2>&1 || true
+  fi
+
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "kubectl port-forward -n ${APISERVER_NAMESPACE} svc/sympozium-apiserver ${PORT_FORWARD_LOCAL_PORT}:8080" >/dev/null 2>&1 || true
+  fi
+
+  PF_PID=""
+}
+
 on_error() {
   local exit_code=$?
   fail "Provider-switch test failed at line ${1}: ${2} (exit=${exit_code})"
@@ -51,7 +73,7 @@ cleanup() {
   kubectl delete personapack "$PACK_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete secret "$OPENAI_SECRET" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete secret "$ANTHROPIC_SECRET" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-  [[ -n "$PF_PID" ]] && kill "$PF_PID" >/dev/null 2>&1 || true
+  stop_port_forward
 }
 trap cleanup EXIT
 

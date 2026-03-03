@@ -28,13 +28,35 @@ pass() { echo -e "${GREEN}✓ $*${NC}"; }
 fail() { echo -e "${RED}✗ $*${NC}"; }
 info() { echo -e "${YELLOW}● $*${NC}"; }
 
+stop_port_forward() {
+  if [[ -n "${PF_PID}" ]] && kill -0 "${PF_PID}" >/dev/null 2>&1; then
+    kill "${PF_PID}" >/dev/null 2>&1 || true
+    for _ in {1..5}; do
+      if ! kill -0 "${PF_PID}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${PF_PID}" >/dev/null 2>&1; then
+      kill -9 "${PF_PID}" >/dev/null 2>&1 || true
+    fi
+    wait "${PF_PID}" >/dev/null 2>&1 || true
+  fi
+
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "kubectl port-forward -n ${APISERVER_NAMESPACE} svc/sympozium-apiserver ${PORT_FORWARD_LOCAL_PORT}:8080" >/dev/null 2>&1 || true
+  fi
+
+  PF_PID=""
+}
+
 cleanup() {
   info "Cleaning up AgentRun container-shape resources..."
   [[ -n "$PLAIN_RUN" ]] && api_request DELETE "/api/v1/runs/${PLAIN_RUN}" >/dev/null 2>&1 || true
   [[ -n "$SKILL_RUN" ]] && api_request DELETE "/api/v1/runs/${SKILL_RUN}" >/dev/null 2>&1 || true
   api_request DELETE "/api/v1/instances/${PLAIN_INSTANCE}" >/dev/null 2>&1 || true
   api_request DELETE "/api/v1/instances/${SKILL_INSTANCE}" >/dev/null 2>&1 || true
-  [[ -n "$PF_PID" ]] && kill "$PF_PID" >/dev/null 2>&1 || true
+  stop_port_forward
 }
 trap cleanup EXIT
 

@@ -31,15 +31,35 @@ info() { echo -e "${YELLOW}● $*${NC}"; }
 PF_PID=""
 APISERVER_TOKEN="${APISERVER_TOKEN:-}"
 
+stop_port_forward() {
+  if [[ -n "${PF_PID}" ]] && kill -0 "${PF_PID}" >/dev/null 2>&1; then
+    kill "${PF_PID}" >/dev/null 2>&1 || true
+    for _ in {1..5}; do
+      if ! kill -0 "${PF_PID}" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    if kill -0 "${PF_PID}" >/dev/null 2>&1; then
+      kill -9 "${PF_PID}" >/dev/null 2>&1 || true
+    fi
+    wait "${PF_PID}" >/dev/null 2>&1 || true
+  fi
+
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "kubectl port-forward -n ${APISERVER_NAMESPACE} svc/sympozium-apiserver ${PORT_FORWARD_LOCAL_PORT}:8080" >/dev/null 2>&1 || true
+  fi
+
+  PF_PID=""
+}
+
 cleanup() {
   info "Cleaning up smoke-test resources..."
   # Best effort cleanup via API
   api_delete "/api/v1/schedules/${SCHEDULE_NAME}" >/dev/null 2>&1 || true
   api_delete "/api/v1/instances/${INSTANCE_NAME}" >/dev/null 2>&1 || true
 
-  if [[ -n "${PF_PID}" ]]; then
-    kill "${PF_PID}" >/dev/null 2>&1 || true
-  fi
+  stop_port_forward
 }
 trap cleanup EXIT
 
