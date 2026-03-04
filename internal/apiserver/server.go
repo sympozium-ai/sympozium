@@ -314,6 +314,12 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 				Enabled:   true,
 				MaxSizeKB: 256,
 			},
+			Observability: &sympoziumv1alpha1.ObservabilitySpec{
+				Enabled:      true,
+				OTLPEndpoint: "sympozium-otel-collector.sympozium-system.svc:4317",
+				OTLPProtocol: "grpc",
+				ServiceName:  "sympozium",
+			},
 		},
 	}
 
