@@ -759,12 +759,12 @@ func (s *Server) getPersonaPack(w http.ResponseWriter, r *http.Request) {
 
 // PatchPersonaPackRequest represents a partial update to a PersonaPack.
 type PatchPersonaPackRequest struct {
-	Enabled        *bool             `json:"enabled,omitempty"`
-	Provider       string            `json:"provider,omitempty"`
-	SecretName     string            `json:"secretName,omitempty"`
-	APIKey         string            `json:"apiKey,omitempty"`
-	Model          string            `json:"model,omitempty"`
-	BaseURL        string            `json:"baseURL,omitempty"`
+	Enabled           *bool             `json:"enabled,omitempty"`
+	Provider          string            `json:"provider,omitempty"`
+	SecretName        string            `json:"secretName,omitempty"`
+	APIKey            string            `json:"apiKey,omitempty"`
+	Model             string            `json:"model,omitempty"`
+	BaseURL           string            `json:"baseURL,omitempty"`
 	ChannelConfigs    map[string]string `json:"channelConfigs,omitempty"`
 	PolicyRef         string            `json:"policyRef,omitempty"`
 	HeartbeatInterval string            `json:"heartbeatInterval,omitempty"`

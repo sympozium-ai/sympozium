@@ -2153,11 +2153,11 @@ type tuiModel struct {
 	githubAuthStatus     string // "pending" | "done" | "error"
 	githubAuthMessage    string // success note or error detail
 
-	editSkills          []editSkillItem   // toggleable skills list
-	editChannels        []editChannelItem // channel bindings
-	editPersonaPackName      string            // non-empty when editing a PersonaPack
-	editPersonas             []editPersonaItem // toggleable personas list
-	editPersonaHeartbeatIdx  int               // index into personaHeartbeatOptions
+	editSkills              []editSkillItem   // toggleable skills list
+	editChannels            []editChannelItem // channel bindings
+	editPersonaPackName     string            // non-empty when editing a PersonaPack
+	editPersonas            []editPersonaItem // toggleable personas list
+	editPersonaHeartbeatIdx int               // index into personaHeartbeatOptions
 
 	// Detail pane
 	detailPane       detailPaneState // collapsed, panel, or fullscreen
