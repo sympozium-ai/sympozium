@@ -85,11 +85,10 @@ type ObservabilitySpec struct {
 	// +optional
 	HeadersSecretRef string `json:"headersSecretRef,omitempty"`
 
-	// SamplingRatio is the trace sampling probability (0.0 to 1.0).
+	// SamplingRatio is the trace sampling probability as a string ("0.0" to "1.0").
+	// Parsed to float64 at runtime. String type avoids controller-gen float issues.
 	// +optional
-	// +kubebuilder:validation:Minimum=0.0
-	// +kubebuilder:validation:Maximum=1.0
-	SamplingRatio *float64 `json:"samplingRatio,omitempty"`
+	SamplingRatio string `json:"samplingRatio,omitempty"`
 
 	// ResourceAttributes are additional OTel resource attributes (key/value).
 	// +optional
