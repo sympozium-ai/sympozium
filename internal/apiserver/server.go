@@ -270,15 +270,16 @@ func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
 
 // CreateInstanceRequest is the request body for creating a new SympoziumInstance.
 type CreateInstanceRequest struct {
-	Name       string                          `json:"name"`
-	Provider   string                          `json:"provider"`
-	Model      string                          `json:"model"`
-	BaseURL    string                          `json:"baseURL,omitempty"`
-	SecretName string                          `json:"secretName,omitempty"`
-	APIKey     string                          `json:"apiKey,omitempty"`
-	PolicyRef  string                          `json:"policyRef,omitempty"`
-	Skills     []sympoziumv1alpha1.SkillRef    `json:"skills,omitempty"`
-	Channels   []sympoziumv1alpha1.ChannelSpec `json:"channels,omitempty"`
+	Name              string                          `json:"name"`
+	Provider          string                          `json:"provider"`
+	Model             string                          `json:"model"`
+	BaseURL           string                          `json:"baseURL,omitempty"`
+	SecretName        string                          `json:"secretName,omitempty"`
+	APIKey            string                          `json:"apiKey,omitempty"`
+	PolicyRef         string                          `json:"policyRef,omitempty"`
+	Skills            []sympoziumv1alpha1.SkillRef    `json:"skills,omitempty"`
+	Channels          []sympoziumv1alpha1.ChannelSpec `json:"channels,omitempty"`
+	HeartbeatInterval string                          `json:"heartbeatInterval,omitempty"`
 }
 
 func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
@@ -391,8 +392,66 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-create a heartbeat schedule when an interval is provided.
+	if req.HeartbeatInterval != "" {
+		cron := intervalToCronExpr(req.HeartbeatInterval)
+		sched := &sympoziumv1alpha1.SympoziumSchedule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.Name + "-heartbeat",
+				Namespace: ns,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "sympozium",
+					"sympozium.ai/instance":        req.Name,
+				},
+			},
+			Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+				InstanceRef:       req.Name,
+				Schedule:          cron,
+				Task:              "heartbeat",
+				Type:              "heartbeat",
+				ConcurrencyPolicy: "Forbid",
+				IncludeMemory:     true,
+			},
+		}
+		if err := s.client.Create(r.Context(), sched); err != nil && !k8serrors.IsAlreadyExists(err) {
+			// Log but don't fail the instance creation.
+			s.log.Error(err, "failed to create heartbeat schedule", "instance", req.Name)
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, inst)
+}
+
+// intervalToCronExpr converts a human-readable interval (e.g. "1h", "30m") to a cron expression.
+func intervalToCronExpr(interval string) string {
+	switch strings.ToLower(strings.TrimSpace(interval)) {
+	case "1m", "1min":
+		return "* * * * *"
+	case "5m", "5min":
+		return "*/5 * * * *"
+	case "10m", "10min":
+		return "*/10 * * * *"
+	case "15m":
+		return "*/15 * * * *"
+	case "30m":
+		return "*/30 * * * *"
+	case "1h":
+		return "0 * * * *"
+	case "2h":
+		return "0 */2 * * *"
+	case "6h":
+		return "0 */6 * * *"
+	case "12h":
+		return "0 */12 * * *"
+	case "24h", "1d":
+		return "0 0 * * *"
+	default:
+		if strings.Contains(interval, " ") {
+			return interval
+		}
+		return "0 * * * *"
+	}
 }
 
 // --- Run handlers ---

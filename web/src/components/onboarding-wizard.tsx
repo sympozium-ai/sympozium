@@ -54,13 +54,19 @@ const CHANNELS = [
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-const HEARTBEAT_OPTIONS = [
-  { value: "", label: "Pack default" },
+const HEARTBEAT_INTERVALS = [
   { value: "30m", label: "Every 30 minutes" },
   { value: "1h", label: "Every hour" },
   { value: "6h", label: "Every 6 hours" },
   { value: "24h", label: "Once a day" },
 ];
+
+function heartbeatOptions(mode: "instance" | "persona") {
+  return [
+    { value: "", label: mode === "persona" ? "Pack default" : "No heartbeat" },
+    ...HEARTBEAT_INTERVALS,
+  ];
+}
 
 export interface WizardResult {
   name: string;
@@ -99,7 +105,7 @@ type WizardStep = "name" | "provider" | "apikey" | "model" | "skills" | "heartbe
 
 function stepsForMode(mode: "instance" | "persona"): WizardStep[] {
   if (mode === "instance") {
-    return ["name", "provider", "apikey", "model", "skills", "channels", "confirm", "channelAction"];
+    return ["name", "provider", "apikey", "model", "skills", "heartbeat", "channels", "confirm", "channelAction"];
   }
   return ["provider", "apikey", "model", "skills", "heartbeat", "channels", "confirm", "channelAction"];
 }
@@ -569,13 +575,15 @@ export function OnboardingWizard({
           </div>
         )}
 
-        {/* ── Heartbeat step (persona mode only) ────────────────────── */}
+        {/* ── Heartbeat step ──────────────────────────────────────── */}
         {step === "heartbeat" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              How often should personas wake up? This overrides each persona's default schedule.
+              {mode === "persona"
+                ? "How often should personas wake up? This overrides each persona's default schedule."
+                : "How often should this instance wake up on a heartbeat schedule?"}
             </p>
-            {HEARTBEAT_OPTIONS.map((opt) => (
+            {heartbeatOptions(mode).map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -682,11 +690,11 @@ export function OnboardingWizard({
                   <span>{personaCount}</span>
                 </div>
               )}
-              {mode === "persona" && (
+              {form.heartbeatInterval && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Heartbeat</span>
                   <span>
-                    {HEARTBEAT_OPTIONS.find((o) => o.value === form.heartbeatInterval)?.label || "Pack default"}
+                    {HEARTBEAT_INTERVALS.find((o) => o.value === form.heartbeatInterval)?.label || form.heartbeatInterval}
                   </span>
                 </div>
               )}

@@ -48,6 +48,7 @@ export function InstancesPage() {
             ? { provider: "", secret: result.channelConfigs[type] }
             : undefined,
         })),
+        heartbeatInterval: result.heartbeatInterval || undefined,
       },
       {
         onSuccess: () => {
