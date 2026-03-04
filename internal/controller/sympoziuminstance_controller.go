@@ -4,6 +4,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -175,7 +176,11 @@ func (r *SympoziumInstanceReconciler) buildChannelDeployment(
 	if tag == "" {
 		tag = "latest"
 	}
-	image := fmt.Sprintf("ghcr.io/alexsjones/sympozium/channel-%s:%s", ch.Type, tag)
+	registry := os.Getenv("SYMPOZIUM_IMAGE_REGISTRY")
+	if registry == "" {
+		registry = "ghcr.io/alexsjones/sympozium"
+	}
+	image := fmt.Sprintf("%s/channel-%s:%s", registry, ch.Type, tag)
 
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -213,6 +218,9 @@ func (r *SympoziumInstanceReconciler) buildChannelDeployment(
 							Env: []corev1.EnvVar{
 								{Name: "INSTANCE_NAME", Value: instance.Name},
 								{Name: "EVENT_BUS_URL", Value: "nats://nats.sympozium-system.svc:4222"},
+								{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: resolveOTelEndpoint(instance)},
+								{Name: "OTEL_EXPORTER_OTLP_PROTOCOL", Value: "grpc"},
+								{Name: "OTEL_SERVICE_NAME", Value: fmt.Sprintf("sympozium-channel-%s", ch.Type)},
 							},
 						},
 					},

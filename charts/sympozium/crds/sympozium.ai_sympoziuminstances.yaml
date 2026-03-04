@@ -238,14 +238,25 @@ spec:
                 - enabled
                 type: object
               observability:
-                description: Observability configures OpenTelemetry exports for runs
-                  of this instance.
+                description: |-
+                  Observability configures OpenTelemetry for agent pods spawned by this instance.
+                  When nil, inherits from Helm chart global values.
                 properties:
                   enabled:
                     default: false
                     description: Enabled turns OpenTelemetry tracing/metrics on for
                       this instance.
                     type: boolean
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: Headers are additional OTLP export headers (e.g.,
+                      auth tokens).
+                    type: object
+                  headersSecretRef:
+                    description: HeadersSecretRef references a Secret containing OTLP
+                      export headers.
+                    type: string
                   otlpEndpoint:
                     description: |-
                       OTLPEndpoint is the collector endpoint (for example:
@@ -264,6 +275,11 @@ spec:
                     description: ResourceAttributes are additional OTel resource attributes
                       (key/value).
                     type: object
+                  samplingRatio:
+                    description: |-
+                      SamplingRatio is the trace sampling probability as a string ("0.0" to "1.0").
+                      Parsed to float64 at runtime. String type avoids controller-gen float issues.
+                    type: string
                   serviceName:
                     description: 'ServiceName overrides the OTel service name (default:
                       "sympozium-agent-runner").'

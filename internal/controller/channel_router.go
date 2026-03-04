@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -18,6 +22,8 @@ import (
 	channelpkg "github.com/alexsjones/sympozium/internal/channel"
 	"github.com/alexsjones/sympozium/internal/eventbus"
 )
+
+var routerTracer = otel.Tracer("sympozium.ai/channel-router")
 
 // ChannelRouter subscribes to channel.message.received on the event bus,
 // creates AgentRuns for inbound messages, and routes completed responses
@@ -92,6 +98,11 @@ func resolveAuthSecret(inst *sympoziumv1alpha1.SympoziumInstance) string {
 
 // handleInbound processes an inbound channel message by creating an AgentRun.
 func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Event) {
+	// Use trace context propagated via NATS headers from the channel pod.
+	if event.Ctx != nil {
+		ctx = event.Ctx
+	}
+
 	var msg channelpkg.InboundMessage
 	if err := json.Unmarshal(event.Data, &msg); err != nil {
 		cr.Log.Error(err, "failed to unmarshal inbound message")
@@ -102,6 +113,15 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		cr.Log.Info("Skipping empty inbound message", "instance", msg.InstanceName)
 		return
 	}
+
+	ctx, span := routerTracer.Start(ctx, "channel_router.handle_inbound",
+		trace.WithAttributes(
+			attribute.String("sympozium.channel", msg.Channel),
+			attribute.String("sympozium.instance", msg.InstanceName),
+			attribute.String("sympozium.sender.id", msg.SenderID),
+		),
+	)
+	defer span.End()
 
 	cr.Log.Info("Received channel message",
 		"channel", msg.Channel,
@@ -166,12 +186,22 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		},
 	}
 
+	// Propagate trace context via annotation so the controller reconciler
+	// can link its span to this trace.
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if sc.HasTraceID() && sc.HasSpanID() {
+		run.Annotations["otel.dev/traceparent"] = fmt.Sprintf("00-%s-%s-01", sc.TraceID().String(), sc.SpanID().String())
+	}
+
 	if err := cr.Client.Create(ctx, run); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		cr.Log.Error(err, "failed to create AgentRun from channel message",
 			"instance", msg.InstanceName, "channel", msg.Channel)
 		return
 	}
 
+	span.SetAttributes(attribute.String("sympozium.agentrun.name", run.Name))
 	cr.Log.Info("Created AgentRun from channel message",
 		"run", run.Name,
 		"instance", msg.InstanceName,
@@ -189,12 +219,24 @@ type agentResult struct {
 // handleCompleted processes a completed AgentRun and routes the response
 // back through the originating channel if it came from one.
 func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Event) {
+	if event.Ctx != nil {
+		ctx = event.Ctx
+	}
+
 	agentRunID := event.Metadata["agentRunID"]
 	instanceName := event.Metadata["instanceName"]
 
 	if agentRunID == "" {
 		return
 	}
+
+	ctx, span := routerTracer.Start(ctx, "channel_router.handle_completed",
+		trace.WithAttributes(
+			attribute.String("sympozium.agentrun.id", agentRunID),
+			attribute.String("sympozium.instance", instanceName),
+		),
+	)
+	defer span.End()
 
 	// Find the AgentRun to check if it originated from a channel.
 	var runs sympoziumv1alpha1.AgentRunList

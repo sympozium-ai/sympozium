@@ -27,11 +27,17 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/alexsjones/sympozium/internal/channel"
 	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/alexsjones/sympozium/pkg/telemetry"
 )
+
+var slackTracer = otel.Tracer("sympozium.ai/channel-slack")
 
 // SlackChannel implements the Slack channel using Socket Mode or the Events API.
 type SlackChannel struct {
@@ -86,6 +92,14 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Initialize OpenTelemetry.
+	tel, telErr := telemetry.Init(ctx, telemetry.Config{})
+	if telErr != nil {
+		log.Error(telErr, "failed to init telemetry, continuing without")
+	} else {
+		defer tel.Shutdown(context.Background())
+	}
 
 	// Health server (runs in all modes)
 	go func() {
@@ -193,15 +207,13 @@ type socketEnvelope struct {
 
 // readSocketMode reads messages from the WebSocket until an error or ctx cancel.
 func (sc *SlackChannel) readSocketMode(ctx context.Context, conn *websocket.Conn) error {
-	const readTimeout = 120 * time.Second
-
+	// Handle WebSocket pings from Slack to keep the connection alive.
 	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return nil
 	})
-
 	conn.SetPingHandler(func(msg string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return conn.WriteControl(websocket.PongMessage, []byte(msg), time.Now().Add(10*time.Second))
 	})
 
@@ -212,7 +224,7 @@ func (sc *SlackChannel) readSocketMode(ctx context.Context, conn *websocket.Conn
 		default:
 		}
 
-		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			return err
@@ -272,6 +284,18 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 		return
 	}
 
+	// Start the root span for the entire message processing trace.
+	ctx, span := slackTracer.Start(ctx, "slack.message.received",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("sympozium.channel", "slack"),
+			attribute.String("sympozium.sender.id", inner.Event.User),
+			attribute.String("messaging.system", "slack"),
+			attribute.String("messaging.destination.name", inner.Event.Channel),
+		),
+	)
+	defer span.End()
+
 	msg := channel.InboundMessage{
 		SenderID: inner.Event.User,
 		ChatID:   inner.Event.Channel,
@@ -282,7 +306,9 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 		},
 	}
 
+	// PublishInbound propagates trace context through NATS headers.
 	if err := sc.PublishInbound(ctx, msg); err != nil {
+		span.RecordError(err)
 		sc.log.Error(err, "failed to publish inbound from Socket Mode")
 	}
 }

@@ -70,6 +70,7 @@ func NewNATSEventBus(url string) (*NATSEventBus, error) {
 }
 
 // Publish sends an event to the NATS JetStream stream.
+// Trace context from ctx is automatically injected into NATS message headers.
 func (n *NATSEventBus) Publish(ctx context.Context, topic string, event *Event) error {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -77,7 +78,14 @@ func (n *NATSEventBus) Publish(ctx context.Context, topic string, event *Event) 
 	}
 
 	subject := topicToSubject(topic)
-	_, err = n.js.Publish(ctx, subject, data)
+	msg := &nats.Msg{
+		Subject: subject,
+		Data:    data,
+		Header:  nats.Header{},
+	}
+	InjectTraceContext(ctx, msg.Header)
+
+	_, err = n.js.PublishMsg(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("publishing to %s: %w", subject, err)
 	}
@@ -119,6 +127,10 @@ func (n *NATSEventBus) Subscribe(ctx context.Context, topic string) (<-chan *Eve
 					msg.Nak()
 					continue
 				}
+
+				// Extract trace context from NATS message headers so consumers
+				// can continue the distributed trace started by the publisher.
+				event.Ctx = ExtractTraceContext(ctx, msg.Headers())
 
 				select {
 				case ch <- &event:

@@ -11,6 +11,10 @@ import (
 
 // Event represents a message on the event bus.
 type Event struct {
+	// Ctx carries trace context extracted from NATS message headers.
+	// Not serialized to JSON. Consumers can use this to continue a trace.
+	Ctx context.Context `json:"-"`
+
 	// Topic is the event topic (e.g., "agent.run.completed").
 	Topic string `json:"topic"`
 

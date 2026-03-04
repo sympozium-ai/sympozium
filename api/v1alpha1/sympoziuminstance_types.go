@@ -33,7 +33,8 @@ type SympoziumInstanceSpec struct {
 	// +optional
 	Memory *MemorySpec `json:"memory,omitempty"`
 
-	// Observability configures OpenTelemetry exports for runs of this instance.
+	// Observability configures OpenTelemetry for agent pods spawned by this instance.
+	// When nil, inherits from Helm chart global values.
 	// +optional
 	Observability *ObservabilitySpec `json:"observability,omitempty"`
 }
@@ -75,6 +76,19 @@ type ObservabilitySpec struct {
 	// ServiceName overrides the OTel service name (default: "sympozium-agent-runner").
 	// +optional
 	ServiceName string `json:"serviceName,omitempty"`
+
+	// Headers are additional OTLP export headers (e.g., auth tokens).
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+
+	// HeadersSecretRef references a Secret containing OTLP export headers.
+	// +optional
+	HeadersSecretRef string `json:"headersSecretRef,omitempty"`
+
+	// SamplingRatio is the trace sampling probability as a string ("0.0" to "1.0").
+	// Parsed to float64 at runtime. String type avoids controller-gen float issues.
+	// +optional
+	SamplingRatio string `json:"samplingRatio,omitempty"`
 
 	// ResourceAttributes are additional OTel resource attributes (key/value).
 	// +optional

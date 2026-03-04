@@ -34,6 +34,40 @@ spec:
           env:
             - name: NATS_URL
               value: {{ include "sympozium.natsUrl" . }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- if .Values.observability.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.observability.protocol | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "{{ .Values.observability.serviceNamePrefix }}-controller"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.observability.samplingRatio | quote }}
+            - name: SYMPOZIUM_OTEL_BATCH_TIMEOUT
+              value: {{ .Values.observability.controller.batchTimeout | quote }}
+            {{- if .Values.observability.headers }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: {{ include "sympozium.otelHeaders" . | quote }}
+            {{- end }}
+            {{- if .Values.observability.resourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: {{ include "sympozium.otelResourceAttrs" . | quote }}
+            {{- end }}
+            {{- end }}
           ports:
             - containerPort: 8081
               name: health

@@ -5,24 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/alexsjones/sympozium/pkg/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -45,183 +37,51 @@ var obs = &agentObservability{
 	shutdown: func(context.Context) error { return nil },
 }
 
+// initObservability initialises the OTel SDK via pkg/telemetry, which is the
+// shared init path used by all Sympozium components. Agent-specific span
+// helpers and metric instruments are layered on top.
 func initObservability(ctx context.Context) *agentObservability {
 	enabled := strings.EqualFold(getEnv("SYMPOZIUM_OTEL_ENABLED", ""), "true")
 	if !enabled {
 		return obs
 	}
 
+	// Resolve endpoint from SYMPOZIUM_OTEL_* or standard OTEL_* env vars.
+	endpoint := firstNonEmpty(
+		getEnv("SYMPOZIUM_OTEL_OTLP_ENDPOINT", ""),
+		getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+	)
+	if endpoint == "" {
+		log.Println("observability enabled but no OTLP endpoint set; skipping OTel bootstrap")
+		return obs
+	}
+	// pkg/telemetry.Init reads OTEL_EXPORTER_OTLP_ENDPOINT from the environment.
+	os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint)
+
 	serviceName := firstNonEmpty(
 		getEnv("SYMPOZIUM_OTEL_SERVICE_NAME", ""),
 		getEnv("OTEL_SERVICE_NAME", ""),
 		"sympozium-agent-runner",
 	)
-	endpoint := firstNonEmpty(
-		getEnv("SYMPOZIUM_OTEL_OTLP_ENDPOINT", ""),
-		getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
-	)
-	protocol := strings.ToLower(firstNonEmpty(
-		getEnv("SYMPOZIUM_OTEL_OTLP_PROTOCOL", ""),
-		getEnv("OTEL_EXPORTER_OTLP_PROTOCOL", ""),
-		"grpc",
-	))
-	resAttrStr := firstNonEmpty(
-		getEnv("SYMPOZIUM_OTEL_RESOURCE_ATTRIBUTES", ""),
-		getEnv("OTEL_RESOURCE_ATTRIBUTES", ""),
-	)
 
-	if endpoint == "" {
-		log.Println("observability enabled but no OTLP endpoint set; skipping OTel bootstrap")
-		return obs
-	}
-
-	res := buildOTelResource(serviceName, resAttrStr)
-	tracerProvider, meterProvider, err := buildProviders(ctx, protocol, endpoint, res)
+	tel, err := telemetry.Init(ctx, telemetry.Config{
+		ServiceName:     serviceName,
+		BatchTimeout:    1 * time.Second,
+		ShutdownTimeout: 10 * time.Second,
+	})
 	if err != nil {
-		log.Printf("failed to initialize OTel exporters: %v", err)
+		log.Printf("failed to initialize OTel via pkg/telemetry: %v", err)
 		return obs
 	}
-
-	otel.SetTracerProvider(tracerProvider)
-	otel.SetMeterProvider(meterProvider)
 
 	o := &agentObservability{
-		enabled: true,
-		tracer:  otel.Tracer("sympozium/agent-runner"),
-		shutdown: func(ctx context.Context) error {
-			var firstErr error
-			if err := tracerProvider.Shutdown(ctx); err != nil {
-				firstErr = err
-			}
-			if err := meterProvider.Shutdown(ctx); err != nil && firstErr == nil {
-				firstErr = err
-			}
-			return firstErr
-		},
+		enabled:  true,
+		tracer:   tel.Tracer(),
+		shutdown: tel.Shutdown,
 	}
 	o.initMetrics()
 	obs = o
 	return o
-}
-
-func buildOTelResource(serviceName, attrsCSV string) *resource.Resource {
-	attrs := []attribute.KeyValue{
-		semconv.ServiceName(serviceName),
-		attribute.String("service.namespace", "sympozium"),
-	}
-	for k, v := range parseResourceAttributes(attrsCSV) {
-		attrs = append(attrs, attribute.String(k, v))
-	}
-	res, err := resource.New(context.Background(),
-		resource.WithAttributes(attrs...),
-		resource.WithHost(),
-		resource.WithOS(),
-		resource.WithProcess(),
-	)
-	if err != nil {
-		log.Printf("failed building OTel resource, using defaults: %v", err)
-		return resource.Default()
-	}
-	return res
-}
-
-func buildProviders(
-	ctx context.Context,
-	protocol string,
-	endpoint string,
-	res *resource.Resource,
-) (*sdktrace.TracerProvider, *sdkmetric.MeterProvider, error) {
-	cleanEndpoint, insecure := normalizeEndpoint(endpoint)
-
-	var (
-		traceExp sdktrace.SpanExporter
-		metricRM sdkmetric.Reader
-		err      error
-	)
-
-	switch protocol {
-	case "http/protobuf":
-		traceOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cleanEndpoint)}
-		metricOpts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(cleanEndpoint)}
-		if insecure {
-			traceOpts = append(traceOpts, otlptracehttp.WithInsecure())
-			metricOpts = append(metricOpts, otlpmetrichttp.WithInsecure())
-		}
-		traceExp, err = otlptracehttp.New(ctx, traceOpts...)
-		if err != nil {
-			return nil, nil, err
-		}
-		metricExp, err := otlpmetrichttp.New(ctx, metricOpts...)
-		if err != nil {
-			return nil, nil, err
-		}
-		metricRM = sdkmetric.NewPeriodicReader(metricExp)
-	default:
-		traceOpts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(cleanEndpoint)}
-		metricOpts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(cleanEndpoint)}
-		if insecure {
-			traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
-			metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
-		}
-		traceExp, err = otlptracegrpc.New(ctx, traceOpts...)
-		if err != nil {
-			return nil, nil, err
-		}
-		metricExp, err := otlpmetricgrpc.New(ctx, metricOpts...)
-		if err != nil {
-			return nil, nil, err
-		}
-		metricRM = sdkmetric.NewPeriodicReader(metricExp)
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(traceExp),
-		sdktrace.WithResource(res),
-	)
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(metricRM),
-		sdkmetric.WithResource(res),
-	)
-	return tp, mp, nil
-}
-
-func normalizeEndpoint(endpoint string) (string, bool) {
-	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" {
-		return "", true
-	}
-	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
-		u, err := url.Parse(endpoint)
-		if err == nil && u.Host != "" {
-			return u.Host, u.Scheme != "https"
-		}
-	}
-	return endpoint, true
-}
-
-func parseResourceAttributes(csv string) map[string]string {
-	out := map[string]string{}
-	if strings.TrimSpace(csv) == "" {
-		return out
-	}
-	parts := strings.Split(csv, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		k := strings.TrimSpace(kv[0])
-		v := strings.TrimSpace(kv[1])
-		if k == "" || v == "" {
-			continue
-		}
-		out[k] = v
-	}
-	return out
 }
 
 func (o *agentObservability) initMetrics() {

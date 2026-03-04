@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/alexsjones/sympozium/internal/controller"
 	"github.com/alexsjones/sympozium/internal/eventbus"
 	"github.com/alexsjones/sympozium/internal/orchestrator"
+	"github.com/alexsjones/sympozium/pkg/telemetry"
 )
 
 var (
@@ -50,6 +52,15 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	// Initialize OpenTelemetry SDK. Falls back to noop if OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+	tel, err := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName: "sympozium-controller",
+	})
+	if err != nil {
+		setupLog.Error(err, "OTel init failed, continuing without telemetry")
+	}
+	defer tel.Shutdown(context.Background())
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,

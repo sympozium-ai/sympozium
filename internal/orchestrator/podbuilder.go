@@ -58,6 +58,10 @@ type AgentPodConfig struct {
 	SandboxImage   string
 	SpawnDepth     int
 	Skills         []SkillMount
+
+	// OTel fields — set by the controller when observability is enabled.
+	Traceparent  string // W3C traceparent value to inject as TRACEPARENT env var
+	OTelEndpoint string // OTLP collector endpoint to inject as OTEL_EXPORTER_OTLP_ENDPOINT
 }
 
 // SkillMount describes a skill ConfigMap to mount.
@@ -82,16 +86,7 @@ func (pb *PodBuilder) BuildAgentContainer(config AgentPodConfig) corev1.Containe
 				Drop: []corev1.Capability{"ALL"},
 			},
 		},
-		Env: []corev1.EnvVar{
-			{Name: "AGENT_RUN_ID", Value: config.RunID},
-			{Name: "AGENT_ID", Value: config.AgentID},
-			{Name: "SESSION_KEY", Value: config.SessionKey},
-			{Name: "INSTANCE_NAME", Value: config.InstanceName},
-			{Name: "MODEL_PROVIDER", Value: config.ModelProvider},
-			{Name: "MODEL_NAME", Value: config.ModelName},
-			{Name: "THINKING_MODE", Value: config.ThinkingMode},
-			{Name: "SPAWN_DEPTH", Value: fmt.Sprintf("%d", config.SpawnDepth)},
-		},
+		Env: buildAgentEnv(config),
 		EnvFrom: []corev1.EnvFromSource{
 			{
 				SecretRef: &corev1.SecretEnvSource{
@@ -122,15 +117,26 @@ func (pb *PodBuilder) BuildAgentContainer(config AgentPodConfig) corev1.Containe
 
 // BuildIPCBridgeContainer creates the IPC bridge sidecar container spec.
 func (pb *PodBuilder) BuildIPCBridgeContainer(config AgentPodConfig) corev1.Container {
+	env := []corev1.EnvVar{
+		{Name: "AGENT_RUN_ID", Value: config.RunID},
+		{Name: "INSTANCE_NAME", Value: config.InstanceName},
+		{Name: "EVENT_BUS_URL", Value: pb.EventBusURL},
+	}
+	if config.Traceparent != "" {
+		env = append(env, corev1.EnvVar{Name: "TRACEPARENT", Value: config.Traceparent})
+	}
+	if config.OTelEndpoint != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: config.OTelEndpoint},
+			corev1.EnvVar{Name: "OTEL_SERVICE_NAME", Value: "sympozium-ipc-bridge"},
+		)
+	}
+
 	return corev1.Container{
 		Name:            "ipc-bridge",
 		Image:           pb.DefaultIPCBridgeImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Env: []corev1.EnvVar{
-			{Name: "AGENT_RUN_ID", Value: config.RunID},
-			{Name: "INSTANCE_NAME", Value: config.InstanceName},
-			{Name: "EVENT_BUS_URL", Value: pb.EventBusURL},
-		},
+		Env:             env,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "ipc", MountPath: "/ipc"},
 		},
@@ -145,6 +151,31 @@ func (pb *PodBuilder) BuildIPCBridgeContainer(config AgentPodConfig) corev1.Cont
 			},
 		},
 	}
+}
+
+// buildAgentEnv constructs the env var list for the agent container,
+// including optional OTel env vars when observability is configured.
+func buildAgentEnv(config AgentPodConfig) []corev1.EnvVar {
+	env := []corev1.EnvVar{
+		{Name: "AGENT_RUN_ID", Value: config.RunID},
+		{Name: "AGENT_ID", Value: config.AgentID},
+		{Name: "SESSION_KEY", Value: config.SessionKey},
+		{Name: "INSTANCE_NAME", Value: config.InstanceName},
+		{Name: "MODEL_PROVIDER", Value: config.ModelProvider},
+		{Name: "MODEL_NAME", Value: config.ModelName},
+		{Name: "THINKING_MODE", Value: config.ThinkingMode},
+		{Name: "SPAWN_DEPTH", Value: fmt.Sprintf("%d", config.SpawnDepth)},
+	}
+	if config.Traceparent != "" {
+		env = append(env, corev1.EnvVar{Name: "TRACEPARENT", Value: config.Traceparent})
+	}
+	if config.OTelEndpoint != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: config.OTelEndpoint},
+			corev1.EnvVar{Name: "OTEL_SERVICE_NAME", Value: "sympozium-agent-runner"},
+		)
+	}
+	return env
 }
 
 // BuildSandboxContainer creates the sandbox sidecar container spec.

@@ -352,6 +352,12 @@ spec:
                 - toolCalls
                 - totalTokens
                 type: object
+              traceID:
+                description: |-
+                  TraceID is the OTel trace ID for this agent run, if instrumentation is enabled.
+                  Enables operators to look up the full distributed trace in their backend.
+                  Set by the controller when creating the Job.
+                type: string
             type: object
         type: object
     served: true

@@ -20,6 +20,7 @@ import (
 	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 	"github.com/alexsjones/sympozium/internal/apiserver"
 	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/alexsjones/sympozium/pkg/telemetry"
 	webui "github.com/alexsjones/sympozium/web"
 )
 
@@ -46,6 +47,15 @@ func main() {
 
 	log := zap.New(zap.UseDevMode(true))
 	ctrl.SetLogger(log)
+
+	// Initialize OpenTelemetry SDK. Falls back to noop if OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+	tel, err := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName: "sympozium-apiserver",
+	})
+	if err != nil {
+		log.Error(err, "OTel init failed, continuing without telemetry")
+	}
+	defer tel.Shutdown(context.Background())
 
 	// Build Kubernetes client
 	cfg := ctrl.GetConfigOrDie()

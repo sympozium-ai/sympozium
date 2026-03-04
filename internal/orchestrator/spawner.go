@@ -6,12 +6,18 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
 )
+
+var spawnerTracer = otel.Tracer("sympozium.ai/spawner")
 
 // Spawner handles sub-agent spawn requests by creating AgentRun CRs.
 type Spawner struct {
@@ -63,6 +69,15 @@ type SpawnResult struct {
 
 // Spawn creates a new AgentRun CR for a sub-agent.
 func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
+	ctx, span := spawnerTracer.Start(ctx, "sympozium.pod.create",
+		trace.WithAttributes(
+			attribute.String("parent.run", req.ParentRunName),
+			attribute.String("instance.name", req.InstanceName),
+			attribute.Int("spawn.depth", req.CurrentDepth+1),
+		),
+	)
+	defer span.End()
+
 	log := s.Log.WithValues(
 		"parentRun", req.ParentRunName,
 		"instance", req.InstanceName,
@@ -72,6 +87,7 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 	runName := fmt.Sprintf("sub-%s-%d", req.ParentRunName, req.CurrentDepth+1)
 	sessionKey := fmt.Sprintf("%s:sub:%s", req.ParentSessionKey, runName)
 
+	span.SetAttributes(attribute.String("run.name", runName))
 	log.Info("Spawning sub-agent", "runName", runName)
 
 	agentRun := &sympoziumv1alpha1.AgentRun{
@@ -103,6 +119,8 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 	}
 
 	if err := s.Client.Create(ctx, agentRun); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "create agentrun failed")
 		return &SpawnResult{Error: err.Error()}, err
 	}
 

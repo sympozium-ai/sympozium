@@ -17,6 +17,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -149,12 +150,19 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 		mux.HandleFunc("/", s.spaHandler(frontendFS))
 	}
 
+	// Wrap the mux with otelhttp for automatic HTTP span instrumentation.
+	handler := otelhttp.NewHandler(mux, "sympozium-apiserver",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return "sympozium.api." + r.Method
+		}),
+	)
+
 	// Wrap with auth middleware if a token is configured.
 	if token != "" {
-		return authMiddleware(token, mux)
+		return authMiddleware(token, handler)
 	}
 
-	return mux
+	return handler
 }
 
 // authMiddleware returns an http.Handler that checks for a valid Bearer token

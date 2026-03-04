@@ -97,3 +97,25 @@ Namespace helper.
 {{- define "sympozium.namespace" -}}
 {{- .Values.namespace | default "sympozium-system" }}
 {{- end }}
+
+{{/*
+OTel headers: convert map to comma-separated "key=value" pairs.
+*/}}
+{{- define "sympozium.otelHeaders" -}}
+{{- $pairs := list -}}
+{{- range $k, $v := .Values.observability.headers -}}
+{{- $pairs = append $pairs (printf "%s=%s" $k $v) -}}
+{{- end -}}
+{{- join "," $pairs -}}
+{{- end }}
+
+{{/*
+OTel resource attributes: convert map to comma-separated "key=value" pairs.
+*/}}
+{{- define "sympozium.otelResourceAttrs" -}}
+{{- $pairs := list -}}
+{{- range $k, $v := .Values.observability.resourceAttributes -}}
+{{- $pairs = append $pairs (printf "%s=%s" $k $v) -}}
+{{- end -}}
+{{- join "," $pairs -}}
+{{- end }}

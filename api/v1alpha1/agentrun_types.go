@@ -200,6 +200,12 @@ type AgentRunStatus struct {
 	// +optional
 	TokenUsage *TokenUsage `json:"tokenUsage,omitempty"`
 
+	// TraceID is the OTel trace ID for this agent run, if instrumentation is enabled.
+	// Enables operators to look up the full distributed trace in their backend.
+	// Set by the controller when creating the Job.
+	// +optional
+	TraceID string `json:"traceID,omitempty"`
+
 	// Conditions represent the latest available observations.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
