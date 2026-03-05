@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useGatewayConfig, usePatchGatewayConfig, useCreateGatewayConfig, useInstances } from "@/hooks/use-api";
+import { useGatewayConfig, usePatchGatewayConfig, useCreateGatewayConfig, useInstances, useGatewayMetrics } from "@/hooks/use-api";
 import {
   Card,
   CardHeader,
@@ -13,6 +13,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+
+type RangeKey = "1h" | "24h" | "7d";
+
+function formatUptime(seconds: number): string {
+  if (seconds <= 0) return "—";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function linePath(points: Array<{ x: number; y: number }>) {
+  if (!points.length) return "";
+  return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+}
 
 export function GatewayPage() {
   const { data, isLoading } = useGatewayConfig();
@@ -113,6 +130,9 @@ export function GatewayPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Observability */}
+      <GatewayMetricsCard />
 
       {/* Configuration */}
       <Card>
@@ -251,6 +271,282 @@ export function GatewayPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function GatewayMetricsCard() {
+  const [range, setRange] = useState<RangeKey>("24h");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const { data: metrics, isLoading } = useGatewayMetrics(range);
+
+  const buckets = metrics?.buckets ?? [];
+  const totalRequests = metrics?.totalRequests ?? 0;
+  const successCount = metrics?.successCount ?? 0;
+  const errorCount = metrics?.errorCount ?? 0;
+  const avgDurationSec = metrics?.avgDurationSec ?? 0;
+  const uptimeSec = metrics?.uptimeSec ?? 0;
+  const servingInstances = metrics?.servingInstances ?? 0;
+  const successRate = totalRequests > 0 ? (successCount / totalRequests) * 100 : 0;
+
+  const chartW = 760;
+  const chartH = 220;
+  const padX = 32;
+  const padY = 20;
+  const innerW = chartW - padX * 2;
+  const innerH = chartH - padY * 2;
+  const maxRequests = Math.max(1, ...buckets.map((b) => b.requests));
+  const maxDuration = Math.max(0.1, ...buckets.map((b) => b.avgDurationSec));
+  const barW = Math.max(3, Math.min(14, (buckets.length > 0 ? innerW / buckets.length : 8) * 0.7));
+  const xFor = (idx: number) =>
+    padX + (buckets.length <= 1 ? innerW / 2 : (idx / (buckets.length - 1)) * innerW);
+  const yForRequests = (value: number) => padY + innerH - (value / maxRequests) * innerH;
+  const yForDuration = (value: number) => padY + innerH - (value / maxDuration) * innerH;
+  const durationPoints = buckets.map((b, i) => ({ x: xFor(i), y: yForDuration(b.avgDurationSec) }));
+  const activePoint = hoverIdx !== null ? buckets[hoverIdx] : null;
+  const activeX = hoverIdx !== null ? xFor(hoverIdx) : null;
+
+  const stats = [
+    { label: "Total Requests", value: totalRequests.toLocaleString(), color: "text-indigo-400" },
+    { label: "Success Rate", value: totalRequests > 0 ? `${successRate.toFixed(1)}%` : "—", color: "text-emerald-400" },
+    { label: "Errors", value: errorCount.toLocaleString(), color: errorCount > 0 ? "text-red-400" : "text-muted-foreground" },
+    { label: "Uptime", value: formatUptime(uptimeSec), color: "text-cyan-400" },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <CardTitle className="text-sm">Web Endpoint Activity</CardTitle>
+          <CardDescription>
+            Request volume, errors, and latency for web-proxy endpoints
+          </CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          {(["1h", "24h", "7d"] as RangeKey[]).map((r) => (
+            <Button
+              key={r}
+              size="sm"
+              variant={range === r ? "default" : "outline"}
+              className="h-7 text-xs"
+              onClick={() => setRange(r)}
+            >
+              {r === "1h" ? "1h" : r === "24h" ? "24hr" : "7 days"}
+            </Button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Stats row */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label} className="rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-6 w-12" />
+              ) : (
+                <div className={`text-xl font-bold leading-tight ${s.color}`}>{s.value}</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Serving instances badge */}
+        {!isLoading && servingInstances > 0 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary" className="text-xs">
+              {servingInstances} serving
+            </Badge>
+            <span>instance{servingInstances !== 1 ? "s" : ""} active</span>
+          </div>
+        )}
+
+        {/* Chart */}
+        {isLoading ? (
+          <Skeleton className="h-[220px] w-full" />
+        ) : buckets.length === 0 ? (
+          <div className="flex h-[220px] items-center justify-center rounded-lg border border-border/50 bg-background/40">
+            <p className="text-sm text-muted-foreground">No web endpoint data yet</p>
+          </div>
+        ) : (
+          <div className="relative h-[220px] w-full rounded-lg border border-border/50 bg-background/40 p-2">
+            <svg
+              viewBox={`0 0 ${chartW} ${chartH}`}
+              className="h-full w-full"
+              onMouseLeave={() => setHoverIdx(null)}
+            >
+              {/* Grid lines */}
+              {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+                const y = padY + innerH - innerH * t;
+                return (
+                  <line
+                    key={t}
+                    x1={padX}
+                    x2={chartW - padX}
+                    y1={y}
+                    y2={y}
+                    stroke="currentColor"
+                    className="text-border/60"
+                    strokeWidth={1}
+                  />
+                );
+              })}
+
+              {/* Hover crosshair */}
+              {activeX !== null && (
+                <line
+                  x1={activeX}
+                  x2={activeX}
+                  y1={padY}
+                  y2={chartH - padY}
+                  stroke="currentColor"
+                  className="text-indigo-300/60"
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                />
+              )}
+
+              {/* Request bars */}
+              {buckets.map((b, i) => {
+                const successH = ((b.requests - b.errors) / maxRequests) * innerH;
+                const errorH = (b.errors / maxRequests) * innerH;
+                return (
+                  <g key={b.ts}>
+                    {/* Success portion */}
+                    <rect
+                      x={xFor(i) - barW / 2}
+                      y={padY + innerH - successH - errorH}
+                      width={barW}
+                      height={successH}
+                      className="fill-emerald-400/70"
+                      rx={1}
+                    />
+                    {/* Error portion stacked on top */}
+                    {b.errors > 0 && (
+                      <rect
+                        x={xFor(i) - barW / 2}
+                        y={padY + innerH - errorH}
+                        width={barW}
+                        height={errorH}
+                        className="fill-red-400/80"
+                        rx={1}
+                      />
+                    )}
+                    {/* Hover zone */}
+                    <rect
+                      x={xFor(i) - barW}
+                      y={padY}
+                      width={barW * 2}
+                      height={innerH}
+                      fill="transparent"
+                      className="cursor-pointer"
+                      onMouseEnter={() => setHoverIdx(i)}
+                    />
+                  </g>
+                );
+              })}
+
+              {/* Duration line */}
+              <path
+                d={linePath(durationPoints)}
+                fill="none"
+                stroke="currentColor"
+                className="text-indigo-400"
+                strokeWidth={2}
+              />
+
+              {/* Duration dots */}
+              {buckets.map((b, i) => (
+                <circle
+                  key={`dot-${b.ts}`}
+                  cx={xFor(i)}
+                  cy={yForDuration(b.avgDurationSec)}
+                  r={hoverIdx === i ? 4.5 : 2.5}
+                  className="fill-indigo-400"
+                />
+              ))}
+
+              {/* Tooltip */}
+              {activePoint && activeX !== null && hoverIdx !== null && (
+                <g>
+                  <rect
+                    x={activeX + (hoverIdx > buckets.length / 2 ? -140 : 10)}
+                    y={padY}
+                    width={130}
+                    height={62}
+                    rx={6}
+                    className="fill-background/95 stroke-border"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={activeX + (hoverIdx > buckets.length / 2 ? -75 : 75)}
+                    y={padY + 16}
+                    textAnchor="middle"
+                    className="fill-foreground text-[10px]"
+                  >
+                    {new Date(activePoint.ts).toLocaleString(undefined, {
+                      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </text>
+                  <text
+                    x={activeX + (hoverIdx > buckets.length / 2 ? -130 : 20)}
+                    y={padY + 32}
+                    className="fill-emerald-400 text-[10px]"
+                  >
+                    {activePoint.requests - activePoint.errors} ok
+                  </text>
+                  <text
+                    x={activeX + (hoverIdx > buckets.length / 2 ? -70 : 80)}
+                    y={padY + 32}
+                    className="fill-red-400 text-[10px]"
+                  >
+                    {activePoint.errors} err
+                  </text>
+                  <text
+                    x={activeX + (hoverIdx > buckets.length / 2 ? -130 : 20)}
+                    y={padY + 48}
+                    className="fill-indigo-400 text-[10px]"
+                  >
+                    avg {activePoint.avgDurationSec.toFixed(1)}s
+                  </text>
+                </g>
+              )}
+
+              {/* Y-axis labels */}
+              <text x={padX - 4} y={padY + 4} textAnchor="end" className="fill-muted-foreground text-[9px]">
+                {maxRequests}
+              </text>
+              <text x={padX - 4} y={padY + innerH + 4} textAnchor="end" className="fill-muted-foreground text-[9px]">
+                0
+              </text>
+
+              {/* Legend */}
+              <rect x={chartW - padX - 120} y={padY - 2} width={8} height={8} rx={1} className="fill-emerald-400/70" />
+              <text x={chartW - padX - 108} y={padY + 6} className="fill-muted-foreground text-[9px]">requests</text>
+              <rect x={chartW - padX - 60} y={padY - 2} width={8} height={8} rx={1} className="fill-indigo-400" />
+              <text x={chartW - padX - 48} y={padY + 6} className="fill-muted-foreground text-[9px]">latency</text>
+            </svg>
+          </div>
+        )}
+
+        {/* Summary line */}
+        {!isLoading && totalRequests > 0 && (
+          <div className="flex flex-wrap items-center gap-4 text-xs">
+            <span className="text-muted-foreground">
+              Total: <span className="text-foreground font-semibold">{totalRequests}</span>
+            </span>
+            <span className="text-emerald-400">
+              Success: <span className="font-semibold">{successCount}</span>
+            </span>
+            <span className="text-red-400">
+              Errors: <span className="font-semibold">{errorCount}</span>
+            </span>
+            <span className="text-indigo-400">
+              Avg latency: <span className="font-semibold">{avgDurationSec.toFixed(1)}s</span>
+            </span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

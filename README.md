@@ -215,6 +215,12 @@ graph TB
             WA["WhatsApp"]
         end
 
+        subgraph WE["Web Endpoints  ·  long-lived Deployments"]
+            WP["Web Proxy<br/><small>OpenAI-compat API + MCP</small>"]
+            GW["Envoy Gateway<br/><small>HTTPRoute per instance</small>"]
+            GW -- "routes traffic" --> WP
+        end
+
         subgraph AP["Agent Pod  ·  ephemeral K8s Job"]
             direction LR
             A1["Agent Container<br/><small>LLM provider agnostic</small>"]
@@ -235,6 +241,10 @@ graph TB
         SKS -- "uses" --> SCR
         CM -- "creates / deletes" --> SEC
 
+        WP -- "creates per-request<br/>AgentRun Jobs" --> CM
+        WP --- NATS
+        CM -- "creates Deployment<br/>+ Service + HTTPRoute" --> WE
+
         subgraph MEM["Persistent Memory"]
             MCM[("ConfigMap<br/><small>&lt;instance&gt;-memory</small>")]
             A1 -- "reads /memory<br/>MEMORY.md" --> MCM
@@ -254,18 +264,21 @@ graph TB
     end
 
     USER(["User / Chat Client"]) -- "Telegram · Slack<br/>Discord · WhatsApp" --> CH
+    HTTPUSER(["HTTP / API Client"]) -- "REST · MCP<br/>OpenAI-compat" --> GW
     ADMIN(["Operator / SRE"]) -- "sympozium TUI · Web UI<br/>kubectl · k9s" --> CP
 
     style K8S fill:#0d1117,stroke:#30363d,color:#c9d1d9
     style CP fill:#1a1a2e,stroke:#e94560,color:#fff
     style SCHED fill:#1a1a2e,stroke:#f5a623,color:#fff
     style CH fill:#16213e,stroke:#0f3460,color:#fff
+    style WE fill:#16213e,stroke:#f5a623,color:#fff
     style AP fill:#0f3460,stroke:#53354a,color:#fff
     style MEM fill:#1c2333,stroke:#7c3aed,color:#fff
     style SEC fill:#1c2333,stroke:#238636,color:#fff
     style DATA fill:#161b22,stroke:#30363d,color:#c9d1d9
     style NATS fill:#e94560,stroke:#fff,color:#fff
     style USER fill:#238636,stroke:#fff,color:#fff
+    style HTTPUSER fill:#f5a623,stroke:#fff,color:#000
     style ADMIN fill:#1f6feb,stroke:#fff,color:#fff
 ```
 
@@ -275,7 +288,8 @@ graph TB
 2. **The controller creates an AgentRun CR**, which reconciles into an ephemeral K8s Job — an agent container + IPC bridge sidecar + optional sandbox + skill sidecars (with auto-provisioned RBAC).
 3. **The agent container** calls the configured LLM provider (OpenAI, Anthropic, Azure, Ollama, or any OpenAI-compatible endpoint), with skills mounted as files, persistent memory injected from a ConfigMap, and tool sidecars providing runtime capabilities like `kubectl`.
 4. **Results flow back** through the IPC bridge → NATS → channel pod → user. The controller extracts structured results and memory updates from pod logs.
-5. **Everything is a Kubernetes resource** — instances, runs, policies, skills, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
+5. **Web endpoints** expose agents as HTTP APIs. When an instance has the `web-endpoint` skill, the controller creates a long-lived Deployment (serving mode) with a web-proxy sidecar. The proxy accepts OpenAI-compatible (`/v1/chat/completions`) and MCP (`/sse`, `/message`) requests, creating per-request AgentRun Jobs. An Envoy Gateway with per-instance HTTPRoutes provides external access with TLS.
+6. **Everything is a Kubernetes resource** — instances, runs, policies, skills, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
 
 ---
 

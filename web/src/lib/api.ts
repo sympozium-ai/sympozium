@@ -291,6 +291,23 @@ export interface ObservabilityMetricsResponse {
   rawMetricNames?: string[];
 }
 
+export interface GatewayBucket {
+  ts: number;
+  requests: number;
+  errors: number;
+  avgDurationSec: number;
+}
+
+export interface GatewayMetricsResponse {
+  totalRequests: number;
+  successCount: number;
+  errorCount: number;
+  avgDurationSec: number;
+  uptimeSec: number;
+  servingInstances: number;
+  buckets: GatewayBucket[];
+}
+
 export interface SkillPackSpec {
   skills: Skill[];
   category?: string;
@@ -667,6 +684,10 @@ export const api = {
       }),
     delete: () =>
       apiFetch<void>("/api/v1/gateway", { method: "DELETE" }),
+    metrics: (range?: string) =>
+      apiFetch<GatewayMetricsResponse>(
+        `/api/v1/gateway/metrics${range ? `?range=${range}` : ""}`,
+      ),
   },
 
   githubAuth: {

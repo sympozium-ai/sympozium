@@ -134,6 +134,7 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	mux.HandleFunc("POST /api/v1/gateway", s.createGatewayConfig)
 	mux.HandleFunc("PATCH /api/v1/gateway", s.patchGatewayConfig)
 	mux.HandleFunc("DELETE /api/v1/gateway", s.deleteGatewayConfig)
+	mux.HandleFunc("GET /api/v1/gateway/metrics", s.getGatewayMetrics)
 
 	// Namespace listing
 	mux.HandleFunc("GET /api/v1/namespaces", s.listNamespaces)
@@ -1836,6 +1837,146 @@ func applyGatewayPatch(gw *sympoziumv1alpha1.GatewaySpec, req *PatchGatewayConfi
 			gw.TLS.SecretName = *req.TLSSecretName
 		}
 	}
+}
+
+// GatewayMetricsResponse is the response for the gateway metrics endpoint.
+type GatewayMetricsResponse struct {
+	TotalRequests    int             `json:"totalRequests"`
+	SuccessCount     int             `json:"successCount"`
+	ErrorCount       int             `json:"errorCount"`
+	AvgDurationSec   float64         `json:"avgDurationSec"`
+	UptimeSec        int64           `json:"uptimeSec"`
+	ServingInstances int             `json:"servingInstances"`
+	Buckets          []GatewayBucket `json:"buckets"`
+}
+
+// GatewayBucket is a single time bucket in the gateway metrics timeseries.
+type GatewayBucket struct {
+	Timestamp   int64   `json:"ts"`
+	Requests    int     `json:"requests"`
+	Errors      int     `json:"errors"`
+	AvgDuration float64 `json:"avgDurationSec"`
+}
+
+func (s *Server) getGatewayMetrics(w http.ResponseWriter, r *http.Request) {
+	ns := r.URL.Query().Get("namespace")
+	if ns == "" {
+		ns = "default"
+	}
+	rangeParam := r.URL.Query().Get("range")
+	if rangeParam == "" {
+		rangeParam = "24h"
+	}
+
+	var window time.Duration
+	var bucketSize time.Duration
+	switch rangeParam {
+	case "1h":
+		window = 1 * time.Hour
+		bucketSize = 5 * time.Minute
+	case "7d":
+		window = 7 * 24 * time.Hour
+		bucketSize = 24 * time.Hour
+	default: // "24h"
+		window = 24 * time.Hour
+		bucketSize = 1 * time.Hour
+	}
+
+	now := time.Now().UTC()
+	cutoff := now.Add(-window)
+
+	// List web-proxy AgentRuns.
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := s.client.List(r.Context(), &runs,
+		client.InNamespace(ns),
+		client.MatchingLabels{"sympozium.ai/source": "web-proxy"},
+	); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Initialize buckets.
+	numBuckets := int(window / bucketSize)
+	buckets := make([]GatewayBucket, numBuckets)
+	bucketDurTotal := make([]float64, numBuckets)
+	bucketDurCount := make([]int, numBuckets)
+	for i := range buckets {
+		buckets[i].Timestamp = cutoff.Add(time.Duration(i) * bucketSize).UnixMilli()
+	}
+
+	resp := GatewayMetricsResponse{Buckets: buckets}
+	var durTotal float64
+	var durCount int
+
+	for i := range runs.Items {
+		run := &runs.Items[i]
+		created := run.CreationTimestamp.Time
+		if created.Before(cutoff) {
+			continue
+		}
+
+		resp.TotalRequests++
+		isFailed := run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed
+		if isFailed {
+			resp.ErrorCount++
+		} else {
+			resp.SuccessCount++
+		}
+
+		var durSec float64
+		if run.Status.TokenUsage != nil && run.Status.TokenUsage.DurationMs > 0 {
+			durSec = float64(run.Status.TokenUsage.DurationMs) / 1000.0
+			durTotal += durSec
+			durCount++
+		}
+
+		// Place into bucket.
+		idx := int(created.Sub(cutoff) / bucketSize)
+		if idx >= numBuckets {
+			idx = numBuckets - 1
+		}
+		if idx >= 0 {
+			buckets[idx].Requests++
+			if isFailed {
+				buckets[idx].Errors++
+			}
+			if durSec > 0 {
+				bucketDurTotal[idx] += durSec
+				bucketDurCount[idx]++
+			}
+		}
+	}
+
+	// Compute bucket averages.
+	for i := range buckets {
+		if bucketDurCount[i] > 0 {
+			buckets[i].AvgDuration = bucketDurTotal[i] / float64(bucketDurCount[i])
+		}
+	}
+
+	if durCount > 0 {
+		resp.AvgDurationSec = durTotal / float64(durCount)
+	}
+
+	// Count serving instances and compute uptime.
+	var allRuns sympoziumv1alpha1.AgentRunList
+	if err := s.client.List(r.Context(), &allRuns,
+		client.InNamespace(ns),
+		client.MatchingLabels{"sympozium.ai/source": "web-proxy"},
+	); err == nil {
+		for i := range allRuns.Items {
+			run := &allRuns.Items[i]
+			if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseServing {
+				resp.ServingInstances++
+				uptime := int64(now.Sub(run.CreationTimestamp.Time).Seconds())
+				if uptime > resp.UptimeSec {
+					resp.UptimeSec = uptime
+				}
+			}
+		}
+	}
+
+	writeJSON(w, resp)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

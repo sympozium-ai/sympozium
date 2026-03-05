@@ -304,3 +304,11 @@ export function useObservabilityMetrics() {
     refetchInterval: 10000,
   });
 }
+
+export function useGatewayMetrics(range_?: string) {
+  return useQuery({
+    queryKey: ["gateway", "metrics", range_],
+    queryFn: () => api.gateway.metrics(range_),
+    refetchInterval: 10000,
+  });
+}
