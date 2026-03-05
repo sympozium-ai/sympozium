@@ -23,6 +23,7 @@ cmd/
   apiserver/            # HTTP + WebSocket API server
   controller/           # Controller manager (all reconcilers + routers)
   ipc-bridge/           # IPC bridge sidecar (fsnotify → NATS)
+  web-proxy/            # Web proxy (OpenAI-compat API + MCP gateway)
   sympozium/             # CLI + TUI (Bubble Tea)
   webhook/              # Admission webhook server
 channels/
@@ -49,6 +50,7 @@ internal/
   orchestrator/         # Pod builder + spawner for agent Jobs
   session/              # Session store
   webhook/              # Policy enforcer
+  webproxy/             # Web proxy handlers (OpenAI, MCP, rate limiting)
 migrations/             # PostgreSQL schema migrations
 test/integration/       # Integration test scripts (shell)
 docs/                   # Design & contributor documentation
@@ -99,7 +101,7 @@ make install
 make docker-build TAG=v0.0.32
 
 # Load images into Kind (all components)
-for img in controller apiserver ipc-bridge webhook agent-runner \
+for img in controller apiserver ipc-bridge webhook agent-runner web-proxy \
            channel-telegram channel-slack channel-discord channel-whatsapp \
            skill-k8s-ops skill-sre-observability skill-llmfit; do
   kind load docker-image ghcr.io/alexsjones/sympozium/$img:v0.0.32 --name kind
@@ -174,6 +176,7 @@ TEST_MODEL=gpt-5.2 TEST_TIMEOUT=180 ./test/integration/test-write-file.sh
 | `test-llmfit-cluster-fit.sh` | `llmfit` skill — agent runs node-level llmfit placement probe workflow |
 | `test-telegram-channel.sh` | Telegram channel deployment + message flow |
 | `test-slack-channel.sh` | Slack channel deployment (Socket Mode) |
+| `test-web-proxy-api.sh` | Web proxy API — healthz, auth, models, chat completions (blocking + streaming), MCP SSE |
 
 ### Writing New Tests
 
@@ -243,6 +246,8 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 | Writing tools | `docs/writing-tools.md` | How to add new agent tools |
 | Writing skills | `docs/writing-skills.md` | How to create SkillPack CRDs |
 | Writing integration tests | `docs/writing-integration-tests.md` | Test patterns and templates |
+| Web endpoint skill | `docs/skill-web-endpoint.md` | How to expose agents as HTTP APIs (OpenAI-compat + MCP) |
+| Serving mode | `docs/serving-mode.md` | How serving mode works for long-lived agent deployments |
 | Sample CRs | `config/samples/` | Example SympoziumInstance, AgentRun, SympoziumPolicy, SympoziumSchedule, SkillPack |
 | CRD definitions | `api/v1alpha1/` | Go type definitions for all CRDs |
 | Built-in PersonaPacks | `config/personas/` | Pre-configured agent bundles (platform-team, devops-essentials) |

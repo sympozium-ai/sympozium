@@ -451,7 +451,7 @@ iteration without approval gates.
 
 ## Built-in SkillPacks
 
-Sympozium ships with four built-in SkillPacks. Enable them on any
+Sympozium ships with six built-in SkillPacks. Enable them on any
 SympoziumInstance:
 
 | SkillPack | Category | What it includes |
@@ -460,6 +460,8 @@ SympoziumInstance:
 | **sre-observability** | SRE | Observability triage with Prometheus queries, Loki/kubectl log analysis, and event correlation. Comes with a sidecar and read-only observability RBAC. |
 | **incident-response** | SRE | Structured incident triage, log analysis, rollback procedures. |
 | **code-review** | Development | Code review checklist, security anti-patterns, Go-specific review patterns. |
+| **llmfit** | SRE | Node-level model placement analysis. Runs llmfit probes per node and ranks best nodes for requested models. Comes with a sidecar containing `llmfit`, `kubectl`, and `jq`. |
+| **web-endpoint** | Connectivity | Expose agents as HTTP APIs — OpenAI-compatible chat completions and MCP protocol. Deploys a long-lived web-proxy sidecar with bearer-token auth and rate limiting. See [Web Endpoint Skill](skill-web-endpoint.md). |
 
 Apply them from the `config/skills/` directory:
 
@@ -606,6 +608,7 @@ activate it with your API key — the controller does the rest.
 
 ## What's next
 
+- **Expose agents as HTTP APIs** — see [Web Endpoint Skill](skill-web-endpoint.md)
 - **Write a custom SkillPack** — see [Writing Skills](writing-skills.md)
 - **Add a new tool** — see [Writing Tools](writing-tools.md)
 - **Write integration tests** — see [Writing Integration Tests](writing-integration-tests.md)

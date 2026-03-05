@@ -320,6 +320,7 @@ Skills are mounted as files into agent pods and optionally inject sidecar contai
 | `llmfit` | SRE | ✅ `llmfit`, `kubectl`, `jq` | Node-level model placement analysis. Runs llmfit probes per node and ranks best nodes for requested models. | **Alpha** |
 | `incident-response` | SRE | ✅ | Structured incident triage — gather context, diagnose root cause, suggest remediation. | **Alpha** |
 | `code-review` | Development | — | Code review guidelines and best practices for pull request analysis. | **Alpha** |
+| `web-endpoint` | Connectivity | ✅ `web-proxy` | Expose agents as HTTP APIs — OpenAI-compatible chat completions (`/v1/chat/completions`) and MCP (`/sse`, `/message`). Deploys a long-lived web-proxy sidecar with bearer-token auth and token-bucket rate limiting. | **Alpha** |
 
 ### Channels
 
@@ -726,6 +727,7 @@ sympozium/
 │   ├── controller/         # Controller manager (reconciles all CRDs)
 │   ├── apiserver/          # HTTP + WebSocket API server (+ embedded web UI)
 │   ├── ipc-bridge/         # IPC bridge sidecar (fsnotify → NATS)
+│   ├── web-proxy/          # Web proxy (OpenAI-compat API + MCP gateway)
 │   ├── webhook/            # Admission webhook (policy enforcement)
 │   └── sympozium/            # CLI + interactive TUI
 ├── web/                    # Web dashboard (React + TypeScript + Vite)
@@ -736,6 +738,7 @@ sympozium/
 │   ├── eventbus/           # NATS JetStream event bus
 │   ├── ipc/                # IPC bridge (fsnotify + NATS)
 │   ├── webhook/            # Policy enforcement webhooks
+│   ├── webproxy/           # Web proxy handlers (OpenAI, MCP, rate limiting)
 │   ├── session/            # Session persistence (PostgreSQL)
 │   └── channel/            # Channel base types
 ├── channels/               # Channel pod implementations (Telegram, Slack, Discord, WhatsApp)
