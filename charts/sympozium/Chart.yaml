@@ -3,7 +3,7 @@ name: sympozium
 description: Sympozium — run a fleet of AI agents on Kubernetes
 type: application
 version: 0.1.0
-appVersion: "0.0.100"
+appVersion: "0.0.101"
 home: https://github.com/AlexsJones/sympozium
 sources:
   - https://github.com/AlexsJones/sympozium
