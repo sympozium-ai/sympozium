@@ -1,38 +1,40 @@
 ---
 # Default deny-all for agent pods (design doc section 5.3)
 # Each agent pod runs with network restrictions; only allowed
-# egress is to the event bus and control plane.
+# egress is to the event bus, LLM providers, and control plane.
+#
+# NOTE: These policies are namespace-scoped. They must be applied to
+# every namespace where AgentRun pods are created (typically the same
+# namespace as the SympoziumInstance CR).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: sympozium-agent-deny-all
-  namespace: sympozium-system
   labels:
     app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      sympozium.ai/role: agent
+      sympozium.ai/component: agent-run
   policyTypes:
     - Ingress
     - Egress
   ingress: []   # Deny all inbound
   egress: []    # Deny all outbound
 ---
-# Allow agent pods to reach the event bus (NATS) and DNS
+# Allow agent pods to reach the event bus (NATS), DNS, and LLM providers
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: sympozium-agent-allow-eventbus
-  namespace: sympozium-system
+  name: sympozium-agent-allow-egress
   labels:
     app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      sympozium.ai/role: agent
+      sympozium.ai/component: agent-run
   policyTypes:
     - Egress
   egress:
@@ -43,28 +45,106 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Allow NATS event bus
+    # Allow NATS event bus (cross-namespace)
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sympozium-system
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: nats
       ports:
         - protocol: TCP
           port: 4222
+    # Allow HTTPS egress to cloud LLM providers (OpenAI, Anthropic, Azure, etc.)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow Ollama / local LLM provider (default port 11434)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 11434
 ---
-# Restrict agent pods with sandbox enabled — more restrictive
+# Same egress rules for server-mode agent pods (Deployments)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: sympozium-sandbox-restricted
-  namespace: sympozium-system
+  name: sympozium-agent-server-deny-all
   labels:
     app.kubernetes.io/name: sympozium
     app.kubernetes.io/component: network-policy
 spec:
   podSelector:
     matchLabels:
-      sympozium.ai/role: agent
+      sympozium.ai/component: agent-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inbound from web-proxy and gateway
+    - ports:
+        - protocol: TCP
+          port: 8080
+  egress: []    # Deny all outbound (allow rules below)
+---
+# Allow server-mode agent pods the same egress as task-mode
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sympozium-agent-server-allow-egress
+  labels:
+    app.kubernetes.io/name: sympozium
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      sympozium.ai/component: agent-server
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow NATS event bus (cross-namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sympozium-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Allow HTTPS egress to cloud LLM providers
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow Ollama / local LLM provider
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 11434
+---
+# Restrict agent pods with sandbox enabled — more restrictive
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sympozium-sandbox-restricted
+  labels:
+    app.kubernetes.io/name: sympozium
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      sympozium.ai/component: agent-run
       sympozium.ai/sandbox: "true"
   policyTypes:
     - Ingress
@@ -82,4 +162,4 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              sympozium.ai/role: agent
+              sympozium.ai/component: agent-run

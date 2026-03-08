@@ -137,6 +137,15 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	provider := resolveProvider(inst)
 	authSecret := resolveAuthSecret(inst)
 
+	// Filter out the web-endpoint skill so child AgentRuns don't inherit
+	// requiresServer=true (which would make them Deployments instead of Jobs).
+	var childSkills []sympoziumv1alpha1.SkillRef
+	for _, s := range inst.Spec.Skills {
+		if s.SkillPackRef != "web-endpoint" {
+			childSkills = append(childSkills, s)
+		}
+	}
+
 	// Create AgentRun
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
@@ -159,7 +168,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				BaseURL:       inst.Spec.Agents.Default.BaseURL,
 				AuthSecretRef: authSecret,
 			},
-			Skills:  inst.Spec.Skills,
+			Skills:  childSkills,
 			Timeout: &metav1.Duration{Duration: 10 * time.Minute},
 		},
 	}

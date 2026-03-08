@@ -268,8 +268,12 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		// If the AgentRun has no skills, inherit from the SympoziumInstance.
 		// This is a safety net — tuiCreateRun and the schedule controller
 		// should already copy skills, but older runs or manual CRs may not.
+		// Skip inheritance for web-proxy child runs — they intentionally omit
+		// server-mode skills (like web-endpoint) to run as one-shot Jobs.
 		if len(agentRun.Spec.Skills) == 0 && len(instance.Spec.Skills) > 0 {
-			agentRun.Spec.Skills = instance.Spec.Skills
+			if agentRun.Labels["sympozium.ai/source"] != "web-proxy" {
+				agentRun.Spec.Skills = instance.Spec.Skills
+			}
 		}
 	}
 
