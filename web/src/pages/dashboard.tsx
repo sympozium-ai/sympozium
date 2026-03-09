@@ -366,11 +366,50 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Overview of your Sympozium cluster
-        </p>
+      <div className="flex items-center justify-between gap-6">
+        <div className="shrink-0">
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Overview of your Sympozium cluster
+          </p>
+        </div>
+        <div className="flex flex-1 items-center gap-6 rounded-lg border border-border/40 bg-card/50 px-5 py-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 font-medium text-white shrink-0">
+            <Activity className="h-4 w-4 text-emerald-400" />
+            Cluster Status
+          </div>
+          <div className="h-8 w-px bg-border/60 shrink-0" />
+          <div className="flex flex-1 items-center justify-around gap-4">
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Instances</div>
+              <div className="text-lg font-semibold text-foreground">{instances.data?.length ?? "—"}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Active Runs</div>
+              <div className="text-lg font-semibold text-foreground">{activeRuns.length}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Skills</div>
+              <div className="text-lg font-semibold text-foreground">{skills.data?.length ?? "—"}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Policies</div>
+              <div className="text-lg font-semibold text-foreground">{policies.data?.length ?? "—"}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Failure Rate</div>
+              <div className={`text-lg font-semibold ${failureRate > 10 ? "text-red-400" : "text-foreground"}`}>
+                {totalInRange > 0 ? `${failureRate.toFixed(1)}%` : "—"}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">Avg Duration</div>
+              <div className="text-lg font-semibold text-foreground">
+                {avgDurationSecInRange > 0 ? `${avgDurationSecInRange.toFixed(1)}s` : "—"}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Card className="overflow-hidden">
