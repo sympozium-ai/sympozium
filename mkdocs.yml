@@ -11,15 +11,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: pink
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: pink
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
@@ -60,6 +60,9 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
+
+extra_css:
+  - stylesheets/extra.css
 
 extra:
   social:
