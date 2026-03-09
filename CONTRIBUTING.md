@@ -25,7 +25,7 @@ See [`AGENTS.md`](AGENTS.md) for the full setup guide. The short version:
 # Prerequisites: Go 1.25+, Docker, Kind, kubectl
 kind create cluster --name kind
 make install                          # Install CRDs
-make docker-build TAG=v0.0.32        # Build all images
+make docker-build TAG=v0.1.0         # Build all images
 # Load images into Kind (see AGENTS.md for the full loop)
 kubectl apply -k config/             # Deploy control plane
 ```
@@ -169,8 +169,8 @@ chore(deps): bump gorilla/websocket to v1.5.1
 
 Sympozium follows [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATCH`):
 
-- **PATCH** (`v0.0.31` → `v0.0.32`) — Bug fixes, docs, minor improvements
-- **MINOR** (`v0.1.0`) — New features, new CRD fields (backward-compatible)
+- **PATCH** (`v0.1.0` → `v0.1.1`) — Bug fixes, docs, minor improvements
+- **MINOR** (`v0.1.0` → `v0.2.0`) — New features, new CRD fields (backward-compatible)
 - **MAJOR** (`v1.0.0`) — Breaking API/CRD changes
 
 ### Releasing
@@ -178,8 +178,8 @@ Sympozium follows [Semantic Versioning](https://semver.org/) (`vMAJOR.MINOR.PATC
 1. Ensure all changes are committed and pushed to `main`.
 2. Create and push a tag:
    ```bash
-   git tag v0.0.33
-   git push origin v0.0.33
+   git tag v0.1.1
+   git push origin v0.1.1
    ```
 3. The release workflow automatically:
    - Builds CLI binaries for all platforms

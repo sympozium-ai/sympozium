@@ -98,13 +98,13 @@ kind create cluster --name kind
 make install
 
 # Build all images
-make docker-build TAG=v0.0.32
+make docker-build TAG=v0.1.0
 
 # Load images into Kind (all components)
 for img in controller apiserver ipc-bridge webhook agent-runner web-proxy \
            channel-telegram channel-slack channel-discord channel-whatsapp \
            skill-k8s-ops skill-sre-observability skill-llmfit; do
-  kind load docker-image ghcr.io/alexsjones/sympozium/$img:v0.0.32 --name kind
+  kind load docker-image ghcr.io/alexsjones/sympozium/$img:v0.1.0 --name kind
 done
 
 # Deploy the control plane
@@ -123,8 +123,8 @@ make build
 make test
 
 # Build specific image + reload into Kind
-make docker-build-agent-runner TAG=v0.0.32
-kind load docker-image ghcr.io/alexsjones/sympozium/agent-runner:v0.0.32 --name kind
+make docker-build-agent-runner TAG=v0.1.0
+kind load docker-image ghcr.io/alexsjones/sympozium/agent-runner:v0.1.0 --name kind
 
 # Restart the controller to pick up new images
 kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
@@ -141,7 +141,7 @@ make vet                # go vet
 make fmt                # gofmt
 make tidy               # go mod tidy
 make docker-build       # Build all Docker images
-make docker-build-<name> TAG=v0.0.32   # Build a specific image
+make docker-build-<name> TAG=v0.1.0   # Build a specific image
 make generate           # Regenerate deepcopy + CRD manifests
 make manifests          # Regenerate CRD YAML only
 make clean              # Remove build artifacts
@@ -288,10 +288,10 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 go build ./...
 
 # Rebuild affected images
-make docker-build-<component> TAG=v0.0.32
+make docker-build-<component> TAG=v0.1.0
 
 # Load into Kind
-kind load docker-image ghcr.io/alexsjones/sympozium/<component>:v0.0.32 --name kind
+kind load docker-image ghcr.io/alexsjones/sympozium/<component>:v0.1.0 --name kind
 
 # Restart controller if controller/ipc-bridge/agent-runner changed
 kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
