@@ -160,7 +160,6 @@ func (pe *PolicyEnforcer) validateFeatureGates(run *sympoziumv1alpha1.AgentRun, 
 	return nil
 }
 
-
 // MutatingPolicyEnforcer is a mutating webhook that injects defaults based on SympoziumPolicy.
 type MutatingPolicyEnforcer struct {
 	Client  client.Client
@@ -279,7 +278,6 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledRun)
 }
-
 
 // BuildAgentPodSecurityContext returns a restricted SecurityContext for agent pods.
 func BuildAgentPodSecurityContext() *corev1.SecurityContext {
