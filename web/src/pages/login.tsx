@@ -17,14 +17,36 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = token.trim();
-    if (trimmed) {
-      // Strip non-ASCII characters that would break HTTP headers (Firefox ByteString error)
-      const safeToken = trimmed.replace(/[^\x20-\x7E]/g, "");
+    if (!trimmed) return;
+
+    // Strip non-ASCII characters that would break HTTP headers (Firefox ByteString error)
+    const safeToken = trimmed.replace(/[^\x20-\x7E]/g, "");
+
+    setError("");
+    setLoading(true);
+    try {
+      // Validate the token against the API before saving it.
+      const res = await fetch("/api/v1/instances?namespace=default", {
+        headers: { Authorization: `Bearer ${safeToken}` },
+      });
+      if (res.status === 401) {
+        setError("Invalid token. Check the token printed by the server at startup.");
+        return;
+      }
       login(safeToken);
       navigate("/dashboard");
+    } catch {
+      // Network error — server might not be ready yet; allow login anyway.
+      login(safeToken);
+      navigate("/dashboard");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -60,8 +82,11 @@ export function LoginPage() {
                 autoFocus
               />
             </div>
-            <Button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0 shadow-lg shadow-indigo-500/20" disabled={!token.trim()}>
-              Sign In
+            {error && (
+              <p className="text-sm text-destructive text-center">{error}</p>
+            )}
+            <Button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0 shadow-lg shadow-indigo-500/20" disabled={!token.trim() || loading}>
+              {loading ? "Verifying…" : "Sign In"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               Provide the token used with{" "}

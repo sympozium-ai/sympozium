@@ -181,7 +181,7 @@ web-clean: ## Remove frontend build artifacts
 
 ##@ Local Development
 
-SYMPOZIUM_TOKEN ?= dev-token
+SYMPOZIUM_TOKEN ?= $(shell t=$$(kubectl get secret -n sympozium-system -l app.kubernetes.io/component=apiserver -o jsonpath='{.items[0].data.token}' 2>/dev/null | base64 -d 2>/dev/null); [ -n "$$t" ] && echo "$$t" || echo dev-token)
 SYMPOZIUM_NAMESPACE ?= sympozium-system
 API_ADDR ?= :8080
 VITE_PORT ?= 5173
@@ -192,6 +192,18 @@ port-forward-nats: ## Port-forward NATS from the cluster to localhost:4222
 	kubectl port-forward -n sympozium-system svc/nats $(NATS_LOCAL_PORT):4222
 
 serve-api: build-apiserver ## Run the API server locally (connects to current kubeconfig cluster)
+	@PID=$$(lsof -ti tcp:$(subst :,,$(API_ADDR)) 2>/dev/null); \
+	if [ -n "$$PID" ]; then \
+		echo "==> Killing stale process on port $(API_ADDR) (pid $$PID)"; \
+		kill $$PID 2>/dev/null; sleep 1; \
+		kill -9 $$PID 2>/dev/null || true; \
+	fi
+	@echo "==> Waiting for NATS on localhost:$(NATS_LOCAL_PORT)..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		nc -z localhost $(NATS_LOCAL_PORT) 2>/dev/null && break; \
+		sleep 1; \
+	done
+	@echo "==> API server token: $(SYMPOZIUM_TOKEN)"
 	SYMPOZIUM_UI_TOKEN=$(SYMPOZIUM_TOKEN) $(BIN_DIR)/apiserver \
 		--addr $(API_ADDR) \
 		--namespace $(SYMPOZIUM_NAMESPACE) \
@@ -205,12 +217,60 @@ serve-api-ui: web-build build-apiserver ## Run the API server with embedded UI (
 		--serve-ui=true \
 		--event-bus-url nats://localhost:$(NATS_LOCAL_PORT)
 
+run-controller: build-controller ## Run the controller manager locally against the current kubeconfig cluster
+	@echo "==> Scaling down in-cluster controller so local one takes over..."
+	@kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
+	@echo "==> Starting local controller manager (metrics :9090, health :9091)"
+	@cleanup() { \
+		echo ""; \
+		echo "==> Restoring in-cluster controller..."; \
+		kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
+		echo "==> Done."; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	$(BIN_DIR)/controller \
+		--metrics-bind-address :9090 \
+		--health-probe-bind-address :9091 \
+		--nats-url nats://localhost:$(NATS_LOCAL_PORT)
+
 dev: ## Start API server, Vite dev server, and NATS port-forward for rapid local iteration
 	@echo "==> Starting API server on $(API_ADDR), Vite dev server on :$(VITE_PORT), NATS port-forward on :$(NATS_LOCAL_PORT)"
 	@echo "==> Open http://localhost:$(VITE_PORT) in your browser"
 	@echo "==> API token: $(SYMPOZIUM_TOKEN)"
 	@echo ""
 	$(MAKE) -j3 port-forward-nats serve-api web-dev
+
+dev-all: ## Start everything locally: controller, API server, Vite, and NATS port-forward
+	@echo ""
+	@echo "============================================"
+	@echo "  Sympozium Local Development"
+	@echo "============================================"
+	@echo "  UI:        http://localhost:$(VITE_PORT)"
+	@echo "  API:       http://localhost$(API_ADDR)"
+	@echo "  UI Token:  $(SYMPOZIUM_TOKEN)"
+	@echo "============================================"
+	@echo ""
+	@echo "==> Ensuring NATS is running..."
+	@kubectl scale deploy/nats -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true
+	@kubectl rollout status deploy/nats -n $(SYMPOZIUM_NAMESPACE) --timeout=60s 2>/dev/null || true
+	@echo "==> Scaling down in-cluster controller and apiserver..."
+	@kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
+	@kubectl scale deploy/sympozium-apiserver -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
+	@cleanup() { \
+		echo ""; \
+		echo "==> Restoring in-cluster deployments..."; \
+		kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
+		kubectl scale deploy/sympozium-apiserver -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
+		echo "==> Done."; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	$(MAKE) -j4 port-forward-nats serve-api web-dev run-controller-inner
+
+run-controller-inner: build-controller
+	@$(BIN_DIR)/controller \
+		--metrics-bind-address :9090 \
+		--health-probe-bind-address :9091 \
+		--nats-url nats://localhost:$(NATS_LOCAL_PORT)
 
 ##@ Docker
 

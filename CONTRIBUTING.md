@@ -32,6 +32,61 @@ kubectl apply -k config/             # Deploy control plane
 
 ---
 
+## Local Development (no Docker build/push cycle)
+
+For day-to-day development you can run the controller and API server as local processes against a remote (or local) cluster. This skips the Docker build → image load → rollout cycle entirely, which is especially helpful on low-bandwidth connections or when iterating quickly on controller logic.
+
+All you need is a running cluster with CRDs installed and a valid kubeconfig.
+
+### Run everything locally
+
+```bash
+make dev-all
+```
+
+This starts four services in parallel:
+
+| Service | Address | What it does |
+|---------|---------|-------------|
+| Controller | `:9090` (metrics), `:9091` (health) | All CRD reconcilers running locally |
+| API server | `:8080` | REST API for the UI |
+| Vite dev server | `:5173` | Frontend with hot-reload |
+| NATS port-forward | `:4222` | Forwards cluster NATS to localhost |
+
+The in-cluster controller deployment is automatically scaled to zero so there's no conflict. When you Ctrl+C, the in-cluster controller is restored to 1 replica.
+
+Open `http://localhost:5173` in your browser. The API token is `dev-token` (override with `SYMPOZIUM_TOKEN`).
+
+### Run just the controller locally
+
+If you're only working on controller logic and already have `make dev` running for the UI:
+
+```bash
+make run-controller
+```
+
+This builds and runs the controller manager locally, scaling down the in-cluster one. On exit it restores the in-cluster deployment.
+
+### Run just the API server + UI
+
+If you're only working on the API or frontend and want the in-cluster controller to keep running:
+
+```bash
+make dev
+```
+
+### Undeploy cluster workloads (keep CRDs)
+
+To stop all in-cluster Sympozium deployments while keeping CRDs and their instances intact:
+
+```bash
+kubectl scale deploy -n sympozium-system --replicas=0 --all
+```
+
+This is useful when you want the local processes to be the only thing running, or when switching between local and cluster-based development.
+
+---
+
 ## GitHub Checks
 
 Every push and PR runs the following checks via GitHub Actions (`.github/workflows/build.yaml`):

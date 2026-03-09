@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   Dialog,
@@ -8,11 +8,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Loader2, ExternalLink, Copy, Check, ShieldCheck } from "lucide-react";
-
-type AuthState = "starting" | "pending" | "complete" | "expired" | "error";
+import { Loader2, ShieldCheck } from "lucide-react";
 
 interface GithubAuthDialogProps {
   open: boolean;
@@ -20,112 +17,47 @@ interface GithubAuthDialogProps {
 }
 
 export function GithubAuthDialog({ open, onClose }: GithubAuthDialogProps) {
-  const [state, setState] = useState<AuthState>("starting");
-  const [userCode, setUserCode] = useState("");
-  const [verifyUrl, setVerifyUrl] = useState("");
+  const [status, setStatus] = useState<"idle" | "complete" | "saving" | "error">("idle");
+  const [token, setToken] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [manualToken, setManualToken] = useState("");
-  const [manualTokenError, setManualTokenError] = useState("");
-  const [savingManualToken, setSavingManualToken] = useState(false);
 
-  const startFlow = useCallback(async () => {
-    setState("starting");
+  // Check existing status on open
+  useEffect(() => {
+    if (!open) return;
+    setToken("");
     setErrorMsg("");
-    setCopied(false);
-    setManualTokenError("");
-    try {
-      const res = await api.githubAuth.start();
-      if (res.status === "complete") {
-        setState("complete");
-        return;
-      }
-      setUserCode(res.userCode);
-      setVerifyUrl(res.verificationUri);
-      setState("pending");
-    } catch (err) {
-      setState("error");
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  // Start the flow on open
-  useEffect(() => {
-    if (open) {
-      startFlow();
-    }
-    return () => {
-      setState("starting");
-      setUserCode("");
-      setVerifyUrl("");
-      setErrorMsg("");
-      setCopied(false);
-      setManualToken("");
-      setManualTokenError("");
-      setSavingManualToken(false);
-    };
-  }, [open, startFlow]);
-
-  // Poll for completion
-  useEffect(() => {
-    if (!open || state !== "pending") return;
     let cancelled = false;
-
-    const poll = async () => {
+    const check = async () => {
       try {
         const res = await api.githubAuth.status();
-        if (cancelled) return;
-        if (res.status === "complete") {
-          setState("complete");
-        } else if (res.status === "expired" || res.status === "error") {
-          setState("error");
-          setErrorMsg(
-            res.status === "expired"
-              ? "Authorization timed out. Please try again."
-              : "Authorization failed.",
-          );
-        }
+        if (!cancelled && res.status === "complete") setStatus("complete");
+        else if (!cancelled) setStatus("idle");
       } catch {
-        // ignore polling errors — retry on next tick
+        if (!cancelled) setStatus("idle");
       }
     };
+    check();
+    return () => { cancelled = true; };
+  }, [open]);
 
-    const interval = setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [open, state]);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(userCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard API may not be available
-    }
-  };
-
-  const handleManualTokenSave = async () => {
-    setManualTokenError("");
-    if (!manualToken.trim()) {
-      setManualTokenError("Please paste a GitHub token.");
+  const handleSave = async () => {
+    setErrorMsg("");
+    if (!token.trim()) {
+      setErrorMsg("Please paste a GitHub token.");
       return;
     }
-
-    setSavingManualToken(true);
+    setStatus("saving");
     try {
-      const res = await api.githubAuth.setToken(manualToken.trim());
+      const res = await api.githubAuth.setToken(token.trim());
       if (res.status === "complete") {
-        setState("complete");
+        setStatus("complete");
       } else {
-        setManualTokenError("Token saved, but auth status is not complete yet.");
+        setStatus("error");
+        setErrorMsg("Token saved, but auth status is not complete yet.");
       }
     } catch (err) {
-      setManualTokenError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingManualToken(false);
+      setStatus("error");
+      setErrorMsg(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -145,61 +77,13 @@ export function GithubAuthDialog({ open, onClose }: GithubAuthDialogProps) {
             Connect GitHub
           </DialogTitle>
           <DialogDescription>
-            Authorize Sympozium to create Issues and Pull Requests on your
-            behalf.
+            Paste a GitHub personal access token with <code>repo</code> scope to
+            allow Sympozium to create issues and pull requests on your behalf.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {state === "starting" && (
-            <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span>Starting authorization…</span>
-            </div>
-          )}
-
-          {state === "pending" && (
-            <>
-              <div className="rounded-lg border bg-muted/30 p-4 text-center space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Enter this code at GitHub:
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <code className="text-3xl font-bold tracking-widest font-mono">
-                    {userCode}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleCopy}
-                  >
-                    {copied ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => window.open(verifyUrl, "_blank")}
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Open {verifyUrl}
-              </Button>
-
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Waiting for authorization…
-              </div>
-            </>
-          )}
-
-          {state === "complete" && (
+          {status === "complete" ? (
             <div className="flex flex-col items-center gap-3 py-6">
               <ShieldCheck className="h-10 w-10 text-green-500" />
               <p className="text-sm font-medium">
@@ -212,47 +96,36 @@ export function GithubAuthDialog({ open, onClose }: GithubAuthDialogProps) {
                 Done
               </Button>
             </div>
-          )}
-
-          {state === "error" && (
-            <div className="flex flex-col items-center gap-3 py-6">
-              <Badge variant="destructive" className="text-sm">
-                Error
-              </Badge>
-              <p className="text-sm text-muted-foreground text-center">
-                {errorMsg || "Something went wrong."}
-              </p>
-              <Button variant="outline" onClick={startFlow}>
-                Try Again
-              </Button>
-            </div>
-          )}
-
-          {(state === "pending" || state === "error") && (
-            <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-              <p className="text-sm font-medium">Use personal access token instead</p>
-              <p className="text-xs text-muted-foreground">
-                Paste a GitHub token with repo access. It will be stored as
-                <code className="mx-1">GH_TOKEN</code> in the cluster secret used by the
-                github-gitops skill.
-              </p>
+          ) : (
+            <div className="space-y-3">
               <Input
                 type="password"
-                value={manualToken}
-                onChange={(e) => setManualToken(e.target.value)}
-                placeholder="github_pat_..."
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="github_pat_... or ghp_..."
+                onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
-              {manualTokenError && (
-                <p className="text-xs text-destructive">{manualTokenError}</p>
+              {errorMsg && (
+                <p className="text-xs text-destructive">{errorMsg}</p>
               )}
               <Button
                 className="w-full"
-                variant="secondary"
-                onClick={handleManualTokenSave}
-                disabled={savingManualToken}
+                onClick={handleSave}
+                disabled={status === "saving"}
               >
-                {savingManualToken ? "Saving token…" : "Save token"}
+                {status === "saving" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving token…
+                  </>
+                ) : (
+                  "Save token"
+                )}
               </Button>
+              <p className="text-xs text-muted-foreground">
+                The token is stored as a Kubernetes Secret (<code>github-gitops-token</code>)
+                and mounted into agent pods via the github-gitops skill sidecar.
+              </p>
             </div>
           )}
         </div>

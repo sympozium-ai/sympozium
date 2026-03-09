@@ -44,7 +44,7 @@ spec:
           - send_channel_message
       schedule:
         type: scheduled
-        interval: "2h"
+        interval: "5m"
         task: "Review all open PRs in the repository — approve those that are ready, request changes where needed. Triage any new unassigned issues by adding role labels (backend, frontend, qa, devops, docs) and complexity estimates. Create sub-issues for any work items that are too large. Merge approved PRs that have passed CI checks."
       memory:
         enabled: true
@@ -84,7 +84,7 @@ spec:
           - fetch_url
       schedule:
         type: sweep
-        interval: "1h"
+        interval: "5m"
         task: "Check for open issues labelled 'backend' or 'api' that are unassigned. Pick the highest priority one, clone the repo, implement the fix or feature, write tests, and open a PR. If no backend issues exist, review recent PRs from other developers for backend-related concerns."
       memory:
         enabled: true
@@ -123,7 +123,7 @@ spec:
           - fetch_url
       schedule:
         type: sweep
-        interval: "1h"
+        interval: "5m"
         task: "Check for open issues labelled 'frontend' or 'ui' that are unassigned. Pick the highest priority one, clone the repo, implement the UI changes, write tests, and open a PR. If no frontend issues exist, review the UI for consistency and accessibility improvements."
       memory:
         enabled: true
@@ -168,7 +168,7 @@ spec:
           - fetch_url
       schedule:
         type: sweep
-        interval: "45m"
+        interval: "5m"
         task: "Review recent PRs for test coverage gaps — if tests are missing, open a follow-up PR adding them. Run the existing test suite and report any failures as issues. Check for untested edge cases in recently changed code. Label all findings appropriately."
       memory:
         enabled: true
@@ -215,7 +215,7 @@ spec:
           - write_file
       schedule:
         type: sweep
-        interval: "30m"
+        interval: "5m"
         task: "List all open PRs in the repository that have no reviews yet. For each one, read the diff, check for correctness, security issues, performance problems, and missing tests. Leave a detailed review — approve if ready, request changes if not. Prioritise PRs that have been open longest."
       memory:
         enabled: true
@@ -255,7 +255,7 @@ spec:
           - fetch_url
       schedule:
         type: sweep
-        interval: "2h"
+        interval: "5m"
         task: "Check the CI/CD pipeline status — investigate and fix any failing workflows. Review Dockerfiles and deployment configs for security updates, base image patches, and optimisation opportunities. Check for dependency updates that address known CVEs. Open PRs for any improvements found."
       memory:
         enabled: true
@@ -299,7 +299,7 @@ spec:
           - fetch_url
       schedule:
         type: scheduled
-        cron: "0 18 * * 1-5"
+        interval: "5m"
         task: "Review all PRs merged since your last run. For each, check if documentation needs updating — README, API docs, changelog, inline comments. Open a PR with any documentation updates needed. Also check for undocumented features or configuration options in the codebase."
       memory:
         enabled: true

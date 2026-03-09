@@ -258,14 +258,6 @@ export interface PatchGatewayConfigRequest {
   tlsSecretName?: string;
 }
 
-export interface GithubAuthStartResponse {
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-  interval: number;
-  status: string;
-}
-
 export interface GithubAuthStatusResponse {
   status: string;
 }
@@ -695,10 +687,6 @@ export const api = {
   },
 
   githubAuth: {
-    start: () =>
-      apiFetch<GithubAuthStartResponse>("/api/v1/skills/github-gitops/auth", {
-        method: "POST",
-      }),
     setToken: (token: string) =>
       apiFetch<GithubAuthStatusResponse>("/api/v1/skills/github-gitops/auth/token", {
         method: "POST",

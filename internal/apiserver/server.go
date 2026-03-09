@@ -111,8 +111,7 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	mux.HandleFunc("GET /api/v1/skills", s.listSkills)
 	mux.HandleFunc("GET /api/v1/skills/{name}", s.getSkill)
 
-	// GitHub GitOps skill auth endpoints (device-flow OAuth)
-	mux.HandleFunc("POST /api/v1/skills/github-gitops/auth", s.handleGithubAuth)
+	// GitHub GitOps skill auth endpoints (PAT token)
 	mux.HandleFunc("POST /api/v1/skills/github-gitops/auth/token", s.handleGithubAuthToken)
 	mux.HandleFunc("GET /api/v1/skills/github-gitops/auth/status", s.handleGithubAuthStatus)
 
