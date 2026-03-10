@@ -234,7 +234,7 @@ type SecretRef struct {
 
 // SympoziumInstanceStatus defines the observed state of SympoziumInstance.
 type SympoziumInstanceStatus struct {
-	// Phase is the current phase (Pending, Running, Error).
+	// Phase is the current phase (Pending, Running, Serving, Error).
 	// +optional
 	Phase string `json:"phase,omitempty"`
 

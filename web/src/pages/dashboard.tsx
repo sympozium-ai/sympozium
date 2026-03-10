@@ -270,7 +270,7 @@ export function DashboardPage() {
     .slice(0, 8);
 
   const activeRuns = (runs.data || []).filter(
-    (r) => r.status?.phase === "Running" || r.status?.phase === "Pending"
+    (r) => r.status?.phase === "Running" || r.status?.phase === "Pending" || r.status?.phase === "Serving"
   );
   const activity = useMemo(
     () => buildActivityBuckets(runs.data || [], instances.data || [], range),

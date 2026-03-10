@@ -729,59 +729,23 @@ func TestBuildContainers_NonPrivilegedSidecarNoSeccompOverride(t *testing.T) {
 
 // ── Server-mode detection tests ───────────────────────────────────────────────
 
-func TestServerModeDetection_RequiresServerSidecar(t *testing.T) {
-	sidecars := []resolvedSidecar{
-		{
-			skillPackName: "web-endpoint",
-			sidecar: sympoziumv1alpha1.SkillSidecar{
-				Image:          "ghcr.io/alexsjones/sympozium/web-proxy:latest",
-				RequiresServer: true,
-				MountWorkspace: false,
-				Ports: []sympoziumv1alpha1.SidecarPort{
-					{Name: "http", ContainerPort: 8080},
-				},
-			},
-		},
+func TestServerMode_ExplicitModeOnly(t *testing.T) {
+	// Server mode requires explicit Spec.Mode="server" — RequiresServer
+	// sidecars alone do NOT auto-promote to server mode.
+	run := newTestRun()
+	run.Spec.Mode = "" // defaults to task
+
+	if run.Spec.Mode == "server" {
+		t.Error("empty mode should not be server")
 	}
 
-	effectiveMode := "task"
-	for _, sc := range sidecars {
-		if sc.sidecar.RequiresServer {
-			effectiveMode = "server"
-			break
-		}
-	}
-
-	if effectiveMode != "server" {
-		t.Errorf("effective mode = %q, want server", effectiveMode)
+	run.Spec.Mode = "server"
+	if run.Spec.Mode != "server" {
+		t.Errorf("explicit mode = %q, want server", run.Spec.Mode)
 	}
 }
 
-func TestServerModeDetection_NoRequiresServer(t *testing.T) {
-	sidecars := []resolvedSidecar{
-		{
-			skillPackName: "k8s-ops",
-			sidecar: sympoziumv1alpha1.SkillSidecar{
-				Image:          "ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest",
-				MountWorkspace: true,
-			},
-		},
-	}
-
-	effectiveMode := "task"
-	for _, sc := range sidecars {
-		if sc.sidecar.RequiresServer {
-			effectiveMode = "server"
-			break
-		}
-	}
-
-	if effectiveMode != "task" {
-		t.Errorf("effective mode = %q, want task", effectiveMode)
-	}
-}
-
-func TestServerModeDetection_MixedSidecars(t *testing.T) {
+func TestTaskMode_FiltersRequiresServerSidecars(t *testing.T) {
 	sidecars := []resolvedSidecar{
 		{
 			skillPackName: "k8s-ops",
@@ -802,16 +766,19 @@ func TestServerModeDetection_MixedSidecars(t *testing.T) {
 		},
 	}
 
-	effectiveMode := "task"
+	// Task-mode runs should filter out RequiresServer sidecars.
+	taskSidecars := make([]resolvedSidecar, 0, len(sidecars))
 	for _, sc := range sidecars {
-		if sc.sidecar.RequiresServer {
-			effectiveMode = "server"
-			break
+		if !sc.sidecar.RequiresServer {
+			taskSidecars = append(taskSidecars, sc)
 		}
 	}
 
-	if effectiveMode != "server" {
-		t.Errorf("effective mode = %q, want server (web-endpoint has RequiresServer)", effectiveMode)
+	if len(taskSidecars) != 1 {
+		t.Errorf("expected 1 task sidecar, got %d", len(taskSidecars))
+	}
+	if taskSidecars[0].skillPackName != "k8s-ops" {
+		t.Errorf("expected k8s-ops sidecar, got %s", taskSidecars[0].skillPackName)
 	}
 }
 

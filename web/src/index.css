@@ -75,6 +75,9 @@
 .phase-ready {
   @apply bg-emerald-500/20 text-emerald-400 border-emerald-500/30;
 }
+.phase-serving {
+  @apply bg-yellow-500/20 text-yellow-400 border-yellow-500/30;
+}
 
 /* Glow effects matching website */
 .glow-primary {

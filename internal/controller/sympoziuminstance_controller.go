@@ -104,14 +104,18 @@ func (r *SympoziumInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Count active agent pods
-	activeCount, err := r.countActiveAgentPods(ctx, &instance)
+	activeCount, hasServing, err := r.countActiveAgentPods(ctx, &instance)
 	if err != nil {
 		log.Error(err, "failed to count agent pods")
 	}
 
 	// Update status
 	statusBase := instance.DeepCopy()
-	instance.Status.Phase = "Running"
+	if hasServing {
+		instance.Status.Phase = "Serving"
+	} else {
+		instance.Status.Phase = "Running"
+	}
 	instance.Status.ActiveAgentPods = activeCount
 	if err := r.Status().Patch(ctx, &instance, client.MergeFrom(statusBase)); err != nil {
 		return ctrl.Result{}, err
@@ -335,22 +339,27 @@ func (r *SympoziumInstanceReconciler) cleanupChannelDeployments(ctx context.Cont
 }
 
 // countActiveAgentPods counts running agent pods for this instance.
-func (r *SympoziumInstanceReconciler) countActiveAgentPods(ctx context.Context, instance *sympoziumv1alpha1.SympoziumInstance) (int, error) {
+func (r *SympoziumInstanceReconciler) countActiveAgentPods(ctx context.Context, instance *sympoziumv1alpha1.SympoziumInstance) (int, bool, error) {
 	var runs sympoziumv1alpha1.AgentRunList
 	if err := r.List(ctx, &runs,
 		client.InNamespace(instance.Namespace),
 		client.MatchingLabels{"sympozium.ai/instance": instance.Name},
 	); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
 	count := 0
+	hasServing := false
 	for _, run := range runs.Items {
-		if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseRunning {
+		if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseRunning ||
+			run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseServing {
 			count++
 		}
+		if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseServing {
+			hasServing = true
+		}
 	}
-	return count, nil
+	return count, hasServing, nil
 }
 
 // reconcileMemoryConfigMap ensures the memory ConfigMap exists when memory is

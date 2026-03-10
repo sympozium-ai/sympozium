@@ -289,20 +289,25 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// Resolve skill sidecars from SkillPack CRDs.
 	sidecars := r.resolveSkillSidecars(ctx, log, agentRun)
 
-	// Detect server mode: if any sidecar has RequiresServer, switch to server mode.
-	effectiveMode := agentRun.Spec.Mode
-	if effectiveMode == "" {
-		effectiveMode = "task"
-	}
-	for _, sc := range sidecars {
-		if sc.sidecar.RequiresServer {
-			effectiveMode = "server"
-			break
-		}
-	}
-	if effectiveMode == "server" {
+	// Server mode is only used when explicitly set on the spec (e.g. by the
+	// web-endpoint reconciler).  Do not auto-promote task runs to server mode
+	// just because a RequiresServer sidecar is attached — feed/one-shot runs
+	// inherit all instance skills and must remain task-scoped.
+	if agentRun.Spec.Mode == "server" {
 		return r.reconcilePendingServer(ctx, log, agentRun, sidecars)
 	}
+
+	// Filter out server-only sidecars (RequiresServer) — they are not
+	// meaningful in a task-mode Job and would waste resources.
+	taskSidecars := make([]resolvedSidecar, 0, len(sidecars))
+	for _, sc := range sidecars {
+		if sc.sidecar.RequiresServer {
+			log.V(1).Info("Skipping server-only sidecar in task mode", "skillPack", sc.skillPackName)
+			continue
+		}
+		taskSidecars = append(taskSidecars, sc)
+	}
+	sidecars = taskSidecars
 
 	// Mirror skill ConfigMaps from sympozium-system into the agent namespace
 	// so projected volumes can reference them (ConfigMaps are namespace-local).
