@@ -449,7 +449,8 @@ spec:
                   type: object
                 type: array
               phase:
-                description: Phase is the current phase (Pending, Running, Error).
+                description: Phase is the current phase (Pending, Running, Serving,
+                  Error).
                 type: string
               totalAgentRuns:
                 description: TotalAgentRuns is the total number of agent runs for
