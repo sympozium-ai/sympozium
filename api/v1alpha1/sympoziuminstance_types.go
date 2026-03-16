@@ -38,11 +38,58 @@ type SympoziumInstanceSpec struct {
 	// +optional
 	Observability *ObservabilitySpec `json:"observability,omitempty"`
 
+	// MCPServers configures remote MCP (Model Context Protocol) servers
+	// that agents in this instance can access via the mcp-bridge sidecar.
+	// +optional
+	MCPServers []MCPServerRef `json:"mcpServers,omitempty"`
+
 	// Deprecated: Use the "web-endpoint" SkillPack in Skills instead.
 	// WebEndpoint exposes this agent as an HTTP API (OpenAI-compatible + MCP).
 	// When nil or Enabled is false, no web-proxy infrastructure is deployed.
 	// +optional
 	WebEndpoint *WebEndpointSpec `json:"webEndpoint,omitempty"`
+}
+
+// MCPServerRef references a remote MCP server for tool integration.
+type MCPServerRef struct {
+	// Name is a unique identifier for this MCP server connection.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// URL is the MCP server's Streamable HTTP endpoint. Optional if an MCPServer CR with this name exists.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// ToolsPrefix is prepended to tool names from this server to avoid collisions.
+	// Must be unique across all configured servers.
+	// +kubebuilder:validation:MinLength=1
+	ToolsPrefix string `json:"toolsPrefix"`
+
+	// Timeout is the per-request timeout in seconds for this server.
+	// +kubebuilder:default=30
+	// +optional
+	Timeout int `json:"timeout,omitempty"`
+
+	// AuthSecret references a Kubernetes Secret containing auth credentials.
+	// The key specified by AuthKey (default "token") is used as a Bearer token.
+	// +optional
+	AuthSecret string `json:"authSecret,omitempty"`
+
+	// AuthKey is the key within AuthSecret to use. Defaults to "token".
+	// +optional
+	AuthKey string `json:"authKey,omitempty"`
+
+	// Headers are additional HTTP headers to send with every request.
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+
+	// ToolsAllow lists tool names (without prefix) to expose. If set, only these tools are registered.
+	// +optional
+	ToolsAllow []string `json:"toolsAllow,omitempty"`
+
+	// ToolsDeny lists tool names (without prefix) to hide. Applied after toolsAllow.
+	// +optional
+	ToolsDeny []string `json:"toolsDeny,omitempty"`
 }
 
 // MemorySpec configures persistent memory for a SympoziumInstance.

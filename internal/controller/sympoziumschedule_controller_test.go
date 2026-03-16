@@ -94,7 +94,7 @@ func TestSympoziumScheduleReconcile_CopiesProviderAndAuthSecretToRun(t *testing.
 		t.Fatalf("authSecretRef = %q, want inst-a-anthropic-key", run.Spec.Model.AuthSecretRef)
 	}
 
-	agentContainers := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil)
+	agentContainers, _ := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil, nil)
 	if len(agentContainers) == 0 || len(agentContainers[0].EnvFrom) == 0 || agentContainers[0].EnvFrom[0].SecretRef == nil {
 		t.Fatalf("expected scheduled run auth secret to be mounted via envFrom")
 	}

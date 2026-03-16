@@ -40,7 +40,7 @@ func newTestRun() *sympoziumv1alpha1.AgentRun {
 func TestBuildJob_BasicMetadata(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 
 	if job.Name != "test-run" {
 		t.Errorf("name = %q, want test-run", job.Name)
@@ -53,7 +53,7 @@ func TestBuildJob_BasicMetadata(t *testing.T) {
 func TestBuildJob_Labels(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 
 	labels := job.Spec.Template.Labels
 	if labels["sympozium.ai/instance"] != "my-instance" {
@@ -69,7 +69,7 @@ func TestBuildJob_Labels(t *testing.T) {
 
 func TestBuildJob_TTLAndBackoff(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != 300 {
 		t.Error("TTL should be 300")
@@ -81,7 +81,7 @@ func TestBuildJob_TTLAndBackoff(t *testing.T) {
 
 func TestBuildJob_DeadlineDefault(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 600 {
 		t.Errorf("deadline = %v, want 600", job.Spec.ActiveDeadlineSeconds)
@@ -92,7 +92,7 @@ func TestBuildJob_DeadlineWithTimeout(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 	run.Spec.Timeout = &metav1.Duration{Duration: 5 * time.Minute}
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 
 	// 5min = 300s + 60 = 360
 	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 360 {
@@ -102,7 +102,7 @@ func TestBuildJob_DeadlineWithTimeout(t *testing.T) {
 
 func TestBuildJob_ServiceAccount(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	if job.Spec.Template.Spec.ServiceAccountName != "sympozium-agent" {
 		t.Errorf("SA = %q, want sympozium-agent", job.Spec.Template.Spec.ServiceAccountName)
@@ -111,7 +111,7 @@ func TestBuildJob_ServiceAccount(t *testing.T) {
 
 func TestBuildJob_PodSecurityContext(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	psc := job.Spec.Template.Spec.SecurityContext
 	if psc == nil {
@@ -127,7 +127,7 @@ func TestBuildJob_PodSecurityContext(t *testing.T) {
 
 func TestBuildJob_RestartPolicy(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	if job.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyNever {
 		t.Errorf("restart = %q, want Never", job.Spec.Template.Spec.RestartPolicy)
@@ -136,7 +136,7 @@ func TestBuildJob_RestartPolicy(t *testing.T) {
 
 func TestBuildJob_DefaultSeccompProfile(t *testing.T) {
 	r := &AgentRunReconciler{}
-	job := r.buildJob(newTestRun(), false, nil, nil)
+	job := r.buildJob(newTestRun(), false, nil, nil, nil)
 
 	psc := job.Spec.Template.Spec.SecurityContext
 	if psc == nil {
@@ -161,7 +161,7 @@ func TestBuildJob_CustomSeccompProfile(t *testing.T) {
 			},
 		},
 	}
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 
 	psc := job.Spec.Template.Spec.SecurityContext
 	if psc.SeccompProfile == nil {
@@ -176,7 +176,7 @@ func TestBuildJob_CustomSeccompProfile(t *testing.T) {
 
 func TestBuildContainers_BasicCount(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 	// agent + ipc-bridge = 2
 	if len(cs) != 2 {
 		t.Fatalf("container count = %d, want 2", len(cs))
@@ -185,7 +185,7 @@ func TestBuildContainers_BasicCount(t *testing.T) {
 
 func TestBuildContainers_AgentImage(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 	// agent container should reference agent-runner image
 	if cs[0].Name != "agent" {
 		t.Fatalf("first container name = %q, want agent", cs[0].Name)
@@ -197,7 +197,7 @@ func TestBuildContainers_AgentImage(t *testing.T) {
 
 func TestBuildContainers_IPCBridgeImage(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 	if cs[1].Name != "ipc-bridge" {
 		t.Fatalf("second container name = %q, want ipc-bridge", cs[1].Name)
 	}
@@ -209,7 +209,7 @@ func TestBuildContainers_IPCBridgeImage(t *testing.T) {
 func TestBuildContainers_AgentEnvVars(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 
 	envMap := map[string]string{}
 	for _, e := range cs[0].Env {
@@ -229,7 +229,7 @@ func TestBuildContainers_AgentEnvVars(t *testing.T) {
 func TestBuildContainers_AuthSecretRef(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 
 	if len(cs[0].EnvFrom) == 0 {
 		t.Fatal("expected envFrom for auth secret")
@@ -243,7 +243,7 @@ func TestBuildContainers_NoAuthSecretRef(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 	run.Spec.Model.AuthSecretRef = ""
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 
 	if len(cs[0].EnvFrom) != 0 {
 		t.Errorf("envFrom should be empty for no-auth providers, got %d", len(cs[0].EnvFrom))
@@ -252,7 +252,7 @@ func TestBuildContainers_NoAuthSecretRef(t *testing.T) {
 
 func TestBuildContainers_AgentSecurityContext(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 
 	sc := cs[0].SecurityContext
 	if sc == nil {
@@ -265,7 +265,7 @@ func TestBuildContainers_AgentSecurityContext(t *testing.T) {
 
 func TestBuildContainers_AgentVolumeMounts(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 
 	mounts := map[string]bool{}
 	for _, m := range cs[0].VolumeMounts {
@@ -280,7 +280,7 @@ func TestBuildContainers_AgentVolumeMounts(t *testing.T) {
 
 func TestBuildContainers_AgentResources(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 
 	req := cs[0].Resources.Requests
 	if req.Cpu().Cmp(resource.MustParse("250m")) != 0 {
@@ -294,7 +294,7 @@ func TestBuildContainers_AgentResources(t *testing.T) {
 func TestBuildContainers_IPCBridgeEnvVars(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 
 	envMap := map[string]string{}
 	for _, e := range cs[1].Env {
@@ -312,7 +312,7 @@ func TestBuildContainers_WithSandbox(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 	run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{Enabled: true}
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 	// agent + ipc-bridge + sandbox = 3
 	if len(cs) != 3 {
 		t.Fatalf("container count = %d, want 3", len(cs))
@@ -329,7 +329,7 @@ func TestBuildContainers_SandboxCustomImage(t *testing.T) {
 		Enabled: true,
 		Image:   "my-sandbox:v1",
 	}
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 	if cs[2].Image != "my-sandbox:v1" {
 		t.Errorf("sandbox image = %q, want my-sandbox:v1", cs[2].Image)
 	}
@@ -339,7 +339,7 @@ func TestBuildContainers_SandboxDisabled(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 	run.Spec.Sandbox = &sympoziumv1alpha1.AgentRunSandboxSpec{Enabled: false}
-	cs := r.buildContainers(run, false, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 	if len(cs) != 2 {
 		t.Errorf("container count = %d, want 2 (sandbox disabled)", len(cs))
 	}
@@ -349,7 +349,7 @@ func TestBuildContainers_SandboxDisabled(t *testing.T) {
 
 func TestBuildVolumes_DefaultVolumes(t *testing.T) {
 	r := &AgentRunReconciler{}
-	vols := r.buildVolumes(newTestRun(), false, nil)
+	vols := r.buildVolumes(newTestRun(), false, nil, nil)
 
 	names := map[string]bool{}
 	for _, v := range vols {
@@ -364,7 +364,7 @@ func TestBuildVolumes_DefaultVolumes(t *testing.T) {
 
 func TestBuildVolumes_IPCUsesMemory(t *testing.T) {
 	r := &AgentRunReconciler{}
-	vols := r.buildVolumes(newTestRun(), false, nil)
+	vols := r.buildVolumes(newTestRun(), false, nil, nil)
 
 	for _, v := range vols {
 		if v.Name == "ipc" {
@@ -446,7 +446,7 @@ func TestBuildVolumes_SkillsWithRefs(t *testing.T) {
 	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
 		{ConfigMapRef: "my-skills"},
 	}
-	vols := r.buildVolumes(run, false, nil)
+	vols := r.buildVolumes(run, false, nil, nil)
 
 	for _, v := range vols {
 		if v.Name == "skills" {
@@ -463,7 +463,7 @@ func TestBuildVolumes_SkillsEmptyWhenNoRefs(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 	run.Spec.Skills = nil
-	vols := r.buildVolumes(run, false, nil)
+	vols := r.buildVolumes(run, false, nil, nil)
 
 	for _, v := range vols {
 		if v.Name == "skills" {
@@ -479,7 +479,7 @@ func TestBuildVolumes_SkillsEmptyWhenNoRefs(t *testing.T) {
 func TestBuildVolumes_MemoryEnabled(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	vols := r.buildVolumes(run, true, nil)
+	vols := r.buildVolumes(run, true, nil, nil)
 
 	for _, v := range vols {
 		if v.Name == "memory" {
@@ -499,7 +499,7 @@ func TestBuildVolumes_MemoryEnabled(t *testing.T) {
 func TestBuildVolumes_MemoryDisabled(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	vols := r.buildVolumes(run, false, nil)
+	vols := r.buildVolumes(run, false, nil, nil)
 
 	for _, v := range vols {
 		if v.Name == "memory" {
@@ -512,7 +512,7 @@ func TestBuildVolumes_MemoryDisabled(t *testing.T) {
 func TestBuildContainers_MemoryMount(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
-	cs := r.buildContainers(run, true, nil, nil)
+	cs, _ := r.buildContainers(run, true, nil, nil, nil)
 
 	agent := cs[0]
 	var hasMount bool
@@ -555,7 +555,7 @@ func TestBuildContainers_SkillSidecarInjected(t *testing.T) {
 			},
 		},
 	}
-	cs := r.buildContainers(newTestRun(), false, nil, sidecars)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 	// agent + ipc-bridge + skill sidecar = 3
 	if len(cs) != 3 {
 		t.Fatalf("container count = %d, want 3", len(cs))
@@ -591,7 +591,7 @@ func TestBuildContainers_SkillSidecarDefaultCommand(t *testing.T) {
 			},
 		},
 	}
-	cs := r.buildContainers(newTestRun(), false, nil, sidecars)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 	sc := cs[2]
 	// When no command is specified in the SkillPack, the container should
 	// have no Command override so the image's default CMD runs.
@@ -622,7 +622,7 @@ func TestBuildContainers_MultipleSkillSidecars(t *testing.T) {
 		{skillPackName: "skill-a", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "a:latest", MountWorkspace: true}},
 		{skillPackName: "skill-b", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "b:latest", MountWorkspace: true}},
 	}
-	cs := r.buildContainers(newTestRun(), false, nil, sidecars)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 	// agent + ipc-bridge + 2 sidecars = 4
 	if len(cs) != 4 {
 		t.Fatalf("container count = %d, want 4", len(cs))
@@ -640,7 +640,7 @@ func TestBuildJob_WithSkillSidecars(t *testing.T) {
 	sidecars := []resolvedSidecar{
 		{skillPackName: "k8s-ops", sidecar: sympoziumv1alpha1.SkillSidecar{Image: "k8s:latest", MountWorkspace: true}},
 	}
-	job := r.buildJob(newTestRun(), false, nil, sidecars)
+	job := r.buildJob(newTestRun(), false, nil, sidecars, nil)
 	containers := job.Spec.Template.Spec.Containers
 	if len(containers) != 3 {
 		t.Fatalf("job container count = %d, want 3", len(containers))
@@ -660,7 +660,7 @@ func TestBuildContainers_ObservabilityEnv(t *testing.T) {
 		},
 	}
 
-	cs := r.buildContainers(run, false, obs, nil)
+	cs, _ := r.buildContainers(run, false, obs, nil, nil)
 
 	agentEnv := map[string]string{}
 	for _, e := range cs[0].Env {
@@ -694,7 +694,7 @@ func TestBuildContainers_PrivilegedSidecarUnconfinedSeccomp(t *testing.T) {
 			},
 		},
 	}
-	cs := r.buildContainers(newTestRun(), false, nil, sidecars)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 
 	sidecar := cs[2] // agent, ipc-bridge, then skill sidecar
 	if sidecar.SecurityContext == nil {
@@ -719,7 +719,7 @@ func TestBuildContainers_NonPrivilegedSidecarNoSeccompOverride(t *testing.T) {
 			},
 		},
 	}
-	cs := r.buildContainers(newTestRun(), false, nil, sidecars)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 
 	sidecar := cs[2]
 	if sidecar.SecurityContext != nil {
@@ -822,7 +822,7 @@ func TestServerMode_StatusFields(t *testing.T) {
 
 func TestBuildContainers_IPCBridgeSecurityContext(t *testing.T) {
 	r := &AgentRunReconciler{}
-	cs := r.buildContainers(newTestRun(), false, nil, nil)
+	cs, _ := r.buildContainers(newTestRun(), false, nil, nil, nil)
 
 	ipc := cs[1]
 	if ipc.SecurityContext == nil {
@@ -848,7 +848,7 @@ func TestBuildJob_NodeSelector(t *testing.T) {
 		"kubernetes.io/hostname": "gpu-node-1",
 	}
 
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 	ns := job.Spec.Template.Spec.NodeSelector
 
 	if ns == nil {
@@ -864,7 +864,7 @@ func TestBuildJob_NoNodeSelector(t *testing.T) {
 	run := newTestRun()
 	// No NodeSelector set.
 
-	job := r.buildJob(run, false, nil, nil)
+	job := r.buildJob(run, false, nil, nil, nil)
 	ns := job.Spec.Template.Spec.NodeSelector
 
 	if ns != nil {

@@ -20,6 +20,9 @@ type PodBuilder struct {
 	// DefaultSandboxImage is the default sandbox sidecar image.
 	DefaultSandboxImage string
 
+	// DefaultMCPBridgeImage is the default MCP bridge sidecar image.
+	DefaultMCPBridgeImage string
+
 	// EventBusURL is the URL of the event bus (NATS).
 	EventBusURL string
 
@@ -39,6 +42,7 @@ func NewPodBuilder(tag string) *PodBuilder {
 		DefaultAgentImage:     fmt.Sprintf("%s/agent-runner:%s", imageRegistry, tag),
 		DefaultIPCBridgeImage: fmt.Sprintf("%s/ipc-bridge:%s", imageRegistry, tag),
 		DefaultSandboxImage:   fmt.Sprintf("%s/sandbox:%s", imageRegistry, tag),
+		DefaultMCPBridgeImage: fmt.Sprintf("%s/mcp-bridge:%s", imageRegistry, tag),
 		EventBusURL:           "nats://nats.sympozium-system.svc:4222",
 		ImageTag:              tag,
 	}

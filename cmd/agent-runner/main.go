@@ -19,6 +19,8 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // maxToolIterations is the maximum number of tool-call round-trips before
@@ -94,6 +96,36 @@ func main() {
 	var tools []ToolDef
 	if toolsEnabled {
 		tools = defaultTools()
+		// Load MCP tools from manifest if the mcp-bridge sidecar is running
+		if mcpTools := loadMCPTools("/ipc/tools/mcp-tools.json"); len(mcpTools) > 0 {
+			tools = append(tools, mcpTools...)
+
+			// Group tools by server prefix
+			serverTools := make(map[string][]string)
+			for _, t := range mcpTools {
+				parts := strings.SplitN(t.Name, "_", 2)
+				prefix := parts[0]
+				serverTools[prefix] = append(serverTools[prefix], t.Name)
+			}
+
+			var sb strings.Builder
+			sb.WriteString("\n\n## Specialized MCP Tools\n\n")
+			sb.WriteString(fmt.Sprintf("You have access to %d specialized MCP tools. ", len(mcpTools)))
+			sb.WriteString("ALWAYS prefer MCP tools over execute_command when a relevant MCP tool exists.\n\n")
+			sb.WriteString("### Diagnostic Methodology\n")
+			sb.WriteString("1. **Start targeted**: Use the most specific MCP tool for the problem first\n")
+			sb.WriteString("2. **Don't shotgun**: Avoid calling many tools to 'gather info' — diagnose step by step\n")
+			sb.WriteString("3. **Read results carefully**: Each MCP tool returns structured diagnostic data. Analyze it before calling more tools.\n")
+			sb.WriteString("4. **gRPC != HTTP**: For gRPC issues, check port naming (grpc-*), appProtocol, H2 settings, DestinationRules — NOT path routing\n")
+			sb.WriteString("5. **Only fall back to execute_command** for tasks no MCP tool covers (e.g., reading app logs)\n\n")
+
+			sb.WriteString("### Available Tool Groups\n")
+			for prefix, tools := range serverTools {
+				sb.WriteString(fmt.Sprintf("- **%s** (%d tools): %s\n", prefix, len(tools), strings.Join(tools, ", ")))
+			}
+
+			systemPrompt += sb.String()
+		}
 		log.Printf("tools enabled: %d tool(s) registered", len(tools))
 	}
 
@@ -144,6 +176,18 @@ func main() {
 			log.Printf("failed to shutdown OTel providers: %v", err)
 		}
 	}()
+
+	// Extract TRACEPARENT from env so the runner trace joins the controller trace.
+	if tp := os.Getenv("TRACEPARENT"); tp != "" {
+		log.Printf("TRACEPARENT env var found: %s", tp)
+		prop := propagation.TraceContext{}
+		carrier := propagation.MapCarrier{"traceparent": tp}
+		ctx = prop.Extract(ctx, carrier)
+		sc := oteltrace.SpanContextFromContext(ctx)
+		log.Printf("after extraction: traceID=%s spanID=%s remote=%v valid=%v", sc.TraceID(), sc.SpanID(), sc.IsRemote(), sc.IsValid())
+	} else {
+		log.Println("TRACEPARENT env var not set")
+	}
 
 	ctx, runSpan := obs.startRunSpan(ctx,
 		attribute.String("instance", getEnv("INSTANCE_NAME", "")),

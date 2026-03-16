@@ -42,7 +42,7 @@ func defaultTools() []ToolDef {
 			Description: "Execute a shell command in the Kubernetes skill sidecar container. " +
 				"Use this to run kubectl, bash scripts, curl, jq, and other CLI tools. " +
 				"Commands execute in /workspace by default. " +
-				"Always prefer this tool when the user asks you to inspect or manage Kubernetes resources.",
+				"If specialized MCP tools are available for the task, prefer those instead.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -218,6 +218,10 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 	case ToolScheduleTask:
 		return scheduleTaskTool(args)
 	default:
+		// Check if this is an MCP tool from the manifest
+		if mcpTool, ok := lookupMCPTool(name); ok {
+			return executeMCPTool(ctx, mcpTool, argsJSON)
+		}
 		return fmt.Sprintf("Unknown tool: %s", name)
 	}
 }
@@ -249,8 +253,8 @@ func readFileTool(args map[string]any) string {
 	}
 
 	content := string(data)
-	if len(content) > 100_000 {
-		content = content[:100_000] + fmt.Sprintf("\n... (truncated, file is %d bytes)", len(data))
+	if len(content) > 8_000 {
+		content = content[:8_000] + fmt.Sprintf("\n... (truncated, file is %d bytes)", len(data))
 	}
 	return content
 }
@@ -720,8 +724,8 @@ func formatExecResult(r execResult) string {
 	if output == "" {
 		output = "(no output)"
 	}
-	if len(output) > 50_000 {
-		output = output[:50_000] + "\n... (output truncated)"
+	if len(output) > 8_000 {
+		output = output[:8_000] + "\n... (output truncated)"
 	}
 	return output
 }

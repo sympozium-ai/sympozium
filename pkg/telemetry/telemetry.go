@@ -20,6 +20,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -114,24 +115,27 @@ func Init(ctx context.Context, cfg Config) (*Telemetry, error) {
 		return initNoop(cfg), nil
 	}
 
+	// Strip http:// or https:// scheme - gRPC exporter expects host:port only.
+	endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+
 	res, err := buildResource(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	tp, err := initTracerProvider(ctx, cfg, res)
+	tp, err := initTracerProvider(ctx, cfg, res, endpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	mp, err := initMeterProvider(ctx, cfg, res)
+	mp, err := initMeterProvider(ctx, cfg, res, endpoint)
 	if err != nil {
 		// Clean up already-created trace provider.
 		_ = tp.Shutdown(ctx)
 		return nil, err
 	}
 
-	lp, err := initLoggerProvider(ctx, cfg, res)
+	lp, err := initLoggerProvider(ctx, cfg, res, endpoint)
 	if err != nil {
 		_ = tp.Shutdown(ctx)
 		_ = mp.Shutdown(ctx)
@@ -180,8 +184,8 @@ func initNoop(cfg Config) *Telemetry {
 }
 
 // initTracerProvider creates a TracerProvider with OTLP gRPC exporter.
-func initTracerProvider(ctx context.Context, cfg Config, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure())
+func initTracerProvider(ctx context.Context, cfg Config, res *resource.Resource, endpoint string) (*sdktrace.TracerProvider, error) {
+	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint(endpoint))
 	if err != nil {
 		return nil, err
 	}
@@ -202,8 +206,8 @@ func initTracerProvider(ctx context.Context, cfg Config, res *resource.Resource)
 }
 
 // initMeterProvider creates a MeterProvider with OTLP gRPC exporter.
-func initMeterProvider(ctx context.Context, cfg Config, res *resource.Resource) (*sdkmetric.MeterProvider, error) {
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure())
+func initMeterProvider(ctx context.Context, cfg Config, res *resource.Resource, endpoint string) (*sdkmetric.MeterProvider, error) {
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint(endpoint))
 	if err != nil {
 		return nil, err
 	}
@@ -223,8 +227,8 @@ func initMeterProvider(ctx context.Context, cfg Config, res *resource.Resource) 
 // initLoggerProvider creates a LoggerProvider with OTLP gRPC exporter.
 // Log records sent through the OTel slog bridge automatically include
 // trace_id and span_id from the context, enabling log→trace correlation.
-func initLoggerProvider(ctx context.Context, cfg Config, res *resource.Resource) (*sdklog.LoggerProvider, error) {
-	exporter, err := otlploggrpc.New(ctx, otlploggrpc.WithInsecure())
+func initLoggerProvider(ctx context.Context, cfg Config, res *resource.Resource, endpoint string) (*sdklog.LoggerProvider, error) {
+	exporter, err := otlploggrpc.New(ctx, otlploggrpc.WithInsecure(), otlploggrpc.WithEndpoint(endpoint))
 	if err != nil {
 		return nil, err
 	}

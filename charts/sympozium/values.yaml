@@ -187,6 +187,8 @@ observability:
     shutdownTimeout: "10s"
   apiServer:
     batchTimeout: "5s"
+  mcpBridge:
+    batchTimeout: "1s"
   # -- Built-in OpenTelemetry collector
   collector:
     image:
@@ -277,6 +279,16 @@ nodeProbe:
   tolerations:
     - operator: Exists
   affinity: {}
+
+# -- MCP Bridge (sidecar that connects agents to remote MCP tool servers)
+mcpBridge:
+  image:
+    repository: ""  # defaults to {{ .Values.image.registry }}/mcp-bridge
+    tag: ""
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
 
 # -- ServiceMonitor for Prometheus (requires prometheus-operator)
 serviceMonitor:
