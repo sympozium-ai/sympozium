@@ -494,7 +494,7 @@ func runOnboard() error {
 	fmt.Println("    2) Anthropic")
 	fmt.Println("    3) Azure OpenAI")
 	fmt.Println("    4) Ollama          (local, no API key needed)")
-	fmt.Println("    5) LM Studio       (local, no API key needed)")
+	fmt.Println("    5) LM Studio       (local, optional API key)")
 	fmt.Println("    6) Other / OpenAI-compatible")
 	providerChoice := prompt(reader, "  Choice [1-6]", "1")
 
@@ -2065,39 +2065,41 @@ type podRow struct {
 type wizardStep int
 
 const (
-	wizStepNone         wizardStep = iota
-	wizStepCheckCluster            // auto — verify CRDs
-	wizStepNamespace               // text: target namespace
-	wizStepInstanceName            // text: instance name
-	wizStepProvider                // menu 1-6: provider
-	wizStepModel                   // text: model name
-	wizStepBaseURL                 // text: base URL (some providers)
-	wizStepAPIKey                  // text: API key (non-ollama)
-	wizStepGithubRepo              // text: GitHub repo (owner/repo)
-	wizStepTeamTask                // text: team-level task/instructions
-	wizStepChannel                 // menu 1-5: channel type
-	wizStepChannelToken            // text: channel bot token
-	wizStepPolicy                  // y/n: apply default policy
-	wizStepHeartbeat               // menu 1-5: heartbeat interval
-	wizStepConfirm                 // y/n: confirm summary
-	wizStepApplying                // auto — create resources
-	wizStepWhatsAppQR              // auto — stream QR from pod logs
-	wizStepDone                    // auto — show result
+	wizStepNone                   wizardStep = iota
+	wizStepCheckCluster                      // auto — verify CRDs
+	wizStepNamespace                         // text: target namespace
+	wizStepInstanceName                      // text: instance name
+	wizStepProvider                          // menu 1-6: provider
+	wizStepModel                             // text: model name
+	wizStepBaseURL                           // text: base URL (some providers)
+	wizStepAPIKey                            // text: API key (non-ollama)
+	wizStepGithubRepo                        // text: GitHub repo (owner/repo)
+	wizStepTeamTask                          // text: team-level task/instructions
+	wizStepChannel                           // menu 1-5: channel type
+	wizStepChannelToken                      // text: channel bot token
+	wizStepPolicy                            // y/n: apply default policy
+	wizStepHeartbeat                         // menu 1-5: heartbeat interval
+	wizStepConfirm                           // y/n: confirm summary
+	wizStepApplying                          // auto — create resources
+	wizStepWhatsAppQR                        // auto — stream QR from pod logs
+	wizStepDone                              // auto — show result
+	wizStepLMStudioAPIKeyRequired            // y/n: LM Studio requires API key?
 
 	// Persona wizard steps
-	wizStepPersonaPick         // menu: select a persona pack
-	wizStepPersonaProvider     // menu 1-6: provider
-	wizStepPersonaBaseURL      // text: base URL
-	wizStepPersonaAPIKey       // text: API key
-	wizStepPersonaModel        // text: model name
-	wizStepPersonaGithubRepo   // text: GitHub repo (owner/repo)
-	wizStepPersonaTeamTask     // text: team-level task/instructions
-	wizStepPersonaChannels     // multi-toggle: channels to bind
-	wizStepPersonaChannelToken // text: channel token (per selected channel)
-	wizStepPersonaHeartbeat    // menu 1-5: heartbeat interval override
-	wizStepPersonaConfirm      // y/n: confirm summary
-	wizStepPersonaApplying     // auto — patch pack + create resources
-	wizStepPersonaDone         // auto — show result
+	wizStepPersonaPick                   // menu: select a persona pack
+	wizStepPersonaProvider               // menu 1-6: provider
+	wizStepPersonaBaseURL                // text: base URL
+	wizStepPersonaLMStudioAPIKeyRequired // y/n: LM Studio requires API key?
+	wizStepPersonaAPIKey                 // text: API key
+	wizStepPersonaModel                  // text: model name
+	wizStepPersonaGithubRepo             // text: GitHub repo (owner/repo)
+	wizStepPersonaTeamTask               // text: team-level task/instructions
+	wizStepPersonaChannels               // multi-toggle: channels to bind
+	wizStepPersonaChannelToken           // text: channel token (per selected channel)
+	wizStepPersonaHeartbeat              // menu 1-5: heartbeat interval override
+	wizStepPersonaConfirm                // y/n: confirm summary
+	wizStepPersonaApplying               // auto — patch pack + create resources
+	wizStepPersonaDone                   // auto — show result
 )
 
 type wizardState struct {
@@ -8089,6 +8091,12 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			val = "http://localhost:1234/v1"
 		}
 		w.baseURL = val
+		if w.providerName == "lm-studio" {
+			// LM Studio — ask if API key is required.
+			w.step = wizStepLMStudioAPIKeyRequired
+			m.input.Placeholder = "Does LM Studio require an API key? [Y/n]"
+			return m, nil
+		}
 		if w.secretEnvKey == "" {
 			// Ollama — no API key, go straight to model.
 			w.step = wizStepModel
@@ -8098,6 +8106,21 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		// Providers that need a key after base URL (azure, custom).
 		w.step = wizStepAPIKey
 		m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+		return m, nil
+
+	case wizStepLMStudioAPIKeyRequired:
+		w.step = wizStepModel // default fallback
+		switch strings.ToLower(val) {
+		case "y", "yes":
+			w.secretEnvKey = "API_KEY"
+			w.step = wizStepAPIKey
+			m.input.Placeholder = "Please enter the API key for LM Studio:"
+		default:
+			// User skips API key - show warning
+			m.addLog(tuiErrorStyle.Render("⚠  Warning: Ensure your LM Studio server is running without authentication"))
+			w.step = wizStepModel
+			m.input.Placeholder = "Model name (default: llama3)"
+		}
 		return m, nil
 
 	case wizStepAPIKey:
@@ -8367,6 +8390,12 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			val = "http://localhost:1234/v1"
 		}
 		w.baseURL = val
+		if w.providerName == "lm-studio" {
+			// LM Studio — ask if API key is required.
+			w.step = wizStepPersonaLMStudioAPIKeyRequired
+			m.input.Placeholder = "Does LM Studio require an API key? [Y/n]"
+			return m, nil
+		}
 		if w.secretEnvKey == "" {
 			// Ollama — no key needed, skip to model.
 			w.step = wizStepPersonaModel
@@ -8375,6 +8404,21 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		}
 		w.step = wizStepPersonaAPIKey
 		m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+		return m, nil
+
+	case wizStepPersonaLMStudioAPIKeyRequired:
+		w.step = wizStepPersonaModel // default fallback
+		switch strings.ToLower(val) {
+		case "y", "yes":
+			w.secretEnvKey = "API_KEY"
+			w.step = wizStepPersonaAPIKey
+			m.input.Placeholder = "Please enter the API key for LM Studio:"
+		default:
+			// User skips API key - show warning
+			m.addLog(tuiErrorStyle.Render("⚠  Warning: Ensure your LM Studio server is running without authentication"))
+			w.step = wizStepPersonaModel
+			m.input.Placeholder = "Model name (default: llama3)"
+		}
 		return m, nil
 
 	case wizStepPersonaAPIKey:
@@ -8691,7 +8735,7 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, menuNumStyle.Render("  2)")+menuStyle.Render(" Anthropic"))
 		lines = append(lines, menuNumStyle.Render("  3)")+menuStyle.Render(" Azure OpenAI"))
 		lines = append(lines, menuNumStyle.Render("  4)")+menuStyle.Render(" Ollama          (local, no API key needed)"))
-		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" LM Studio       (local, no API key needed)"))
+		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" LM Studio       (local, optional API key)"))
 		lines = append(lines, menuNumStyle.Render("  6)")+menuStyle.Render(" Other / OpenAI-compatible"))
 
 	case wizStepBaseURL:
@@ -9962,7 +10006,7 @@ the login URL.`,
 				}
 			}
 
-			listenAddr := fmt.Sprintf("127.0.0.1:%s", localPort)
+			listenAddr := fmt.Sprintf("localhost:%s", localPort)
 
 			fmt.Printf("\n  Starting port-forward to svc/sympozium-apiserver in namespace %s...\n", ns)
 			fmt.Printf("  ➜  Web UI:  http://%s\n", listenAddr)
@@ -10001,6 +10045,7 @@ the login URL.`,
 			for {
 				pf := exec.CommandContext(ctx, "kubectl", "port-forward",
 					"-n", ns,
+					"--address", "127.0.0.1",
 					"svc/sympozium-apiserver",
 					fmt.Sprintf("%s:8080", localPort),
 				)

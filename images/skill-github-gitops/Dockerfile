@@ -2,7 +2,7 @@ FROM alpine:3.21
 
 ARG GH_VERSION=2.65.0
 ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 
 RUN apk add --no-cache \
     bash \

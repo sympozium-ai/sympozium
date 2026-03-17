@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
+const apiPort = process.env.API_LOCAL_PORT || "8081";
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -11,10 +13,13 @@ export default defineConfig({
   },
   server: {
     host: true,
+    fs: {
+      allow: [".", "/opt/homebrew"],
+    },
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": `http://localhost:${apiPort}`,
       "/ws": {
-        target: "ws://localhost:8080",
+        target: `ws://localhost:${apiPort}`,
         ws: true,
       },
     },

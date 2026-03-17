@@ -137,8 +137,8 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 		fi; \
 	fi; \
 	if [ -z "$$APISERVER_TOKEN" ]; then APISERVER_TOKEN="(not set)"; fi; \
-	echo "==> Port-forwarding sympozium-apiserver to localhost:8080"; \
-	echo "==> Vite dev server on http://localhost:$(VITE_PORT) (proxies /api + /ws to :8080)"; \
+	echo "==> Port-forwarding sympozium-apiserver to localhost:$(API_LOCAL_PORT)"; \
+	echo "==> Vite dev server on http://localhost:$(VITE_PORT) (proxies /api + /ws to :$(API_LOCAL_PORT))"; \
 	echo "==> API token (from apiserver): $$APISERVER_TOKEN"; \
 	echo "==> Edit web/src/ and changes hot-reload instantly."; \
 	echo ""; \
@@ -149,7 +149,7 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 	PF_LOG=/tmp/sympozium-web-dev-serve-portforward.log; \
 	rm -f $$PF_LOG; \
 	trap 'kill 0' EXIT; \
-	kubectl port-forward -n $(SYMPOZIUM_NAMESPACE) svc/sympozium-apiserver 8080:8080 >$$PF_LOG 2>&1 & \
+	kubectl port-forward -n $(SYMPOZIUM_NAMESPACE) --address 127.0.0.1 svc/sympozium-apiserver $(API_LOCAL_PORT):8080 >$$PF_LOG 2>&1 & \
 	PF_PID=$$!; \
 	READY=0; \
 	for i in $$(seq 1 30); do \
@@ -160,21 +160,21 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 			echo "--------------------------"; \
 			exit 1; \
 		fi; \
-		if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then \
+		if curl -fsS http://127.0.0.1:$(API_LOCAL_PORT)/healthz >/dev/null 2>&1; then \
 			READY=1; \
 			break; \
 		fi; \
 		sleep 1; \
 	done; \
 	if [ $$READY -ne 1 ]; then \
-		echo "ERROR: Timed out waiting for apiserver on localhost:8080."; \
+		echo "ERROR: Timed out waiting for apiserver on localhost:$(API_LOCAL_PORT)."; \
 		echo "---- port-forward log ----"; \
 		cat $$PF_LOG; \
 		echo "--------------------------"; \
 		exit 1; \
 	fi; \
-	echo "==> Port-forward ready (localhost:8080)."; \
-	cd web && npm run dev -- --port $(VITE_PORT)
+	echo "==> Port-forward ready (localhost:$(API_LOCAL_PORT))."; \
+	cd web && API_LOCAL_PORT=$(API_LOCAL_PORT) npm run dev -- --port $(VITE_PORT)
 
 web-clean: ## Remove frontend build artifacts
 	rm -rf web/dist web/node_modules
@@ -186,10 +186,11 @@ SYMPOZIUM_NAMESPACE ?= sympozium-system
 API_ADDR ?= :8080
 VITE_PORT ?= 5173
 
+API_LOCAL_PORT ?= 8081
 NATS_LOCAL_PORT ?= 4222
 
 port-forward-nats: ## Port-forward NATS from the cluster to localhost:4222
-	kubectl port-forward -n sympozium-system svc/nats $(NATS_LOCAL_PORT):4222
+	kubectl port-forward -n sympozium-system --address 127.0.0.1 svc/nats $(NATS_LOCAL_PORT):4222
 
 serve-api: build-apiserver ## Run the API server locally (connects to current kubeconfig cluster)
 	@PID=$$(lsof -ti tcp:$(subst :,,$(API_ADDR)) 2>/dev/null); \
@@ -274,10 +275,17 @@ run-controller-inner: build-controller
 
 ##@ Docker
 
-docker-build: $(addprefix docker-build-,$(IMAGES)) ## Build all Docker images
+DOCKER_PLATFORMS ?= linux/amd64,linux/arm64
 
-docker-build-%: ## Build a specific Docker image
-	docker build --build-arg IMAGE_TAG=$(TAG) -t $(REGISTRY)/$*:$(TAG) -f images/$*/Dockerfile .
+docker-build: $(addprefix docker-build-,$(IMAGES)) ## Build all Docker images (native arch)
+
+docker-build-%: ## Build a specific Docker image (native arch)
+	docker buildx build --build-arg IMAGE_TAG=$(TAG) --load -t $(REGISTRY)/$*:$(TAG) -f images/$*/Dockerfile .
+
+docker-buildx: $(addprefix docker-buildx-,$(IMAGES)) ## Build all Docker images for amd64+arm64
+
+docker-buildx-%: ## Build and push a specific multi-arch image (e.g., make docker-buildx-controller)
+	docker buildx build --build-arg IMAGE_TAG=$(TAG) --platform $(DOCKER_PLATFORMS) --push -t $(REGISTRY)/$*:$(TAG) -f images/$*/Dockerfile .
 
 docker-push: $(addprefix docker-push-,$(IMAGES)) ## Push all Docker images
 

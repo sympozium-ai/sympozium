@@ -4,7 +4,7 @@
 FROM alpine:3.20
 
 ARG KUBECTL_VERSION=v1.31.4
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 
 RUN apk add --no-cache \
     bash \
