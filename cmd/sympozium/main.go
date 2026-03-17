@@ -7389,7 +7389,19 @@ func tuiCreateRun(ns, instance, task string) (string, error) {
 			provider = inst.Spec.AuthRefs[0].Provider
 		}
 	}
-	if authSecret == "" {
+	// Infer provider from baseURL for keyless local providers (e.g., Ollama, LM Studio).
+	if len(inst.Spec.AuthRefs) == 0 && inst.Spec.Agents.Default.BaseURL != "" {
+		if strings.Contains(inst.Spec.Agents.Default.BaseURL, "ollama") || strings.Contains(inst.Spec.Agents.Default.BaseURL, ":11434") {
+			provider = "ollama"
+		} else if strings.Contains(inst.Spec.Agents.Default.BaseURL, "lm-studio") || strings.Contains(inst.Spec.Agents.Default.BaseURL, ":1234") {
+			provider = "lm-studio"
+		} else {
+			provider = "custom"
+		}
+	}
+
+	// Cloud providers require an API key; local providers with a baseURL do not.
+	if authSecret == "" && inst.Spec.Agents.Default.BaseURL == "" {
 		return "", fmt.Errorf("instance %q has no API key configured (authRefs is empty) — "+
 			"activate the persona pack through the TUI onboarding wizard or add an authRef manually", instance)
 	}

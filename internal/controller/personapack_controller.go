@@ -240,6 +240,12 @@ func (r *PersonaPackReconciler) reconcilePersona(
 			needsUpdate = true
 		}
 
+		// Propagate baseURL changes (e.g. switching to/from a local provider).
+		if existingInst.Spec.Agents.Default.BaseURL != pack.Spec.BaseURL {
+			existingInst.Spec.Agents.Default.BaseURL = pack.Spec.BaseURL
+			needsUpdate = true
+		}
+
 		// Propagate channel list changes from persona definition.
 		wantChannels := make(map[string]bool)
 		for _, ch := range persona.Channels {
@@ -372,7 +378,8 @@ func (r *PersonaPackReconciler) buildInstance(
 		Spec: sympoziumv1alpha1.SympoziumInstanceSpec{
 			Agents: sympoziumv1alpha1.AgentsSpec{
 				Default: sympoziumv1alpha1.AgentConfig{
-					Model: model,
+					Model:   model,
+					BaseURL: pack.Spec.BaseURL,
 				},
 			},
 			// Copy auth refs from the pack (set during install via TUI).

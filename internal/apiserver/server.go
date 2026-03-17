@@ -1118,6 +1118,10 @@ func (s *Server) patchPersonaPack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.BaseURL != "" {
+		pp.Spec.BaseURL = req.BaseURL
+	}
+
 	if len(req.Channels) > 0 {
 		for i := range pp.Spec.Personas {
 			pp.Spec.Personas[i].Channels = req.Channels

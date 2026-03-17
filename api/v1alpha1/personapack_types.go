@@ -51,6 +51,12 @@ type PersonaPackSpec struct {
 	// +optional
 	PolicyRef string `json:"policyRef,omitempty"`
 
+	// BaseURL overrides the provider's default API endpoint for all generated instances.
+	// Set during onboarding for local providers (e.g. Ollama, LM Studio) that do not
+	// require authentication.
+	// +optional
+	BaseURL string `json:"baseURL,omitempty"`
+
 	// SkillParams provides per-skill parameters applied to all generated instances.
 	// The outer key is the SkillPack name (e.g. "github-gitops"), and the inner map
 	// holds key/value pairs injected as SKILL_<KEY> environment variables.
