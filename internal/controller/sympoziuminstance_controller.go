@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 const sympoziumInstanceFinalizer = "sympozium.ai/finalizer"
@@ -209,7 +209,7 @@ func (r *SympoziumInstanceReconciler) buildChannelDeployment(
 	}
 	registry := os.Getenv("SYMPOZIUM_IMAGE_REGISTRY")
 	if registry == "" {
-		registry = "ghcr.io/alexsjones/sympozium"
+		registry = "ghcr.io/sympozium-ai/sympozium"
 	}
 	image := fmt.Sprintf("%s/channel-%s:%s", registry, ch.Type, tag)
 

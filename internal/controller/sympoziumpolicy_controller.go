@@ -10,7 +10,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 // SympoziumPolicyReconciler reconciles a SympoziumPolicy object.

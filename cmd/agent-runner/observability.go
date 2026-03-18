@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alexsjones/sympozium/pkg/telemetry"
+	"github.com/sympozium-ai/sympozium/pkg/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

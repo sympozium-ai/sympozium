@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 env:
-  REGISTRY: ghcr.io/alexsjones/sympozium
+  REGISTRY: ghcr.io/sympozium-ai/sympozium
 
 jobs:
   release-cli:
@@ -66,7 +66,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           echo "Stamping image tags with ${TAG}..."
           find config/ -name '*.yaml' -exec \
-            sed -i "s|ghcr.io/alexsjones/sympozium/\([^:]*\):latest|ghcr.io/alexsjones/sympozium/\1:${TAG}|g" {} +
+            sed -i "s|ghcr.io/sympozium-ai/sympozium/\([^:]*\):latest|ghcr.io/sympozium-ai/sympozium/\1:${TAG}|g" {} +
 
       - name: Package install manifests
         run: |
@@ -192,7 +192,7 @@ jobs:
       - name: Checkout tap
         uses: actions/checkout@v4
         with:
-          repository: AlexsJones/homebrew-sympozium
+          repository: sympozium-ai/homebrew-sympozium
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
@@ -204,7 +204,7 @@ jobs:
 
           declare -A SHAS
           for platform in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
-            URL="https://github.com/AlexsJones/sympozium/releases/download/${TAG}/sympozium-${platform}.tar.gz"
+            URL="https://github.com/sympozium-ai/sympozium/releases/download/${TAG}/sympozium-${platform}.tar.gz"
             echo "Hashing ${URL}..."
             SHA=$(curl -fsSL "${URL}" | shasum -a 256 | awk '{print $1}')
             SHAS[$platform]="${SHA}"
@@ -216,26 +216,26 @@ jobs:
           cat > homebrew-tap/Formula/sympozium.rb << RUBY
           class Sympozium < Formula
             desc "Kubernetes-native AI agent orchestration platform CLI"
-            homepage "https://github.com/AlexsJones/sympozium"
+            homepage "https://github.com/sympozium-ai/sympozium"
             version "${VERSION}"
             license "Apache-2.0"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-darwin-arm64.tar.gz"
+                url "https://github.com/sympozium-ai/sympozium/releases/download/v#{version}/sympozium-darwin-arm64.tar.gz"
                 sha256 "${SHAS[darwin-arm64]}"
               else
-                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-darwin-amd64.tar.gz"
+                url "https://github.com/sympozium-ai/sympozium/releases/download/v#{version}/sympozium-darwin-amd64.tar.gz"
                 sha256 "${SHAS[darwin-amd64]}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-linux-arm64.tar.gz"
+                url "https://github.com/sympozium-ai/sympozium/releases/download/v#{version}/sympozium-linux-arm64.tar.gz"
                 sha256 "${SHAS[linux-arm64]}"
               else
-                url "https://github.com/AlexsJones/sympozium/releases/download/v#{version}/sympozium-linux-amd64.tar.gz"
+                url "https://github.com/sympozium-ai/sympozium/releases/download/v#{version}/sympozium-linux-amd64.tar.gz"
                 sha256 "${SHAS[linux-amd64]}"
               end
             end

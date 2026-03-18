@@ -17,7 +17,7 @@ DevOps workflows.
 ### Homebrew (macOS / Linux)
 
 ```bash
-brew install AlexsJones/sympozium/sympozium
+brew install sympozium-ai/sympozium/sympozium
 ```
 
 ### Shell installer
@@ -29,7 +29,7 @@ curl -fsSL https://sympozium.com/install.sh | sh
 ### From source
 
 ```bash
-go install github.com/alexsjones/sympozium/cmd/sympozium@latest
+go install github.com/sympozium-ai/sympozium/cmd/sympozium@latest
 ```
 
 Verify the install:
@@ -633,7 +633,7 @@ networkPolicies:
 Then upgrade:
 
 ```bash
-helm upgrade sympozium oci://ghcr.io/alexsjones/sympozium/charts/sympozium \
+helm upgrade sympozium oci://ghcr.io/sympozium-ai/sympozium/charts/sympozium \
   -n sympozium-system -f values.yaml
 ```
 

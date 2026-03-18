@@ -30,7 +30,7 @@ type PodBuilder struct {
 	ImageTag string
 }
 
-const imageRegistry = "ghcr.io/alexsjones/sympozium"
+const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
 
 // NewPodBuilder creates a PodBuilder with default settings.
 // The tag parameter sets the image tag for all Sympozium images (e.g. "v0.0.25").

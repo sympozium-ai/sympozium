@@ -359,7 +359,7 @@ spec:
         # Resource Management
         ...
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest
+    image: ghcr.io/sympozium-ai/sympozium/skill-k8s-ops:latest
     command: ["sleep", "infinity"]
     mountWorkspace: true
     resources:

@@ -81,7 +81,7 @@ spec:
         | hostname          | Custom hostname for HTTPRoute        | auto    |
         | auth_secret_ref   | Name of Secret with `api-key` key    | auto    |
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/web-proxy:latest
+    image: ghcr.io/sympozium-ai/sympozium/web-proxy:latest
     requiresServer: true
     mountWorkspace: false
     ports:

@@ -8,7 +8,7 @@
 
 set -e
 
-REPO="AlexsJones/sympozium"
+REPO="sympozium-ai/sympozium"
 BINARY="sympozium"
 LOCAL_INSTALL=""
 

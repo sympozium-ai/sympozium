@@ -83,7 +83,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {!collapsed && (
         <div className="border-t border-border/50 px-4 py-3 space-y-2">
           <a
-            href="https://github.com/AlexsJones/sympozium"
+            href="https://github.com/sympozium-ai/sympozium"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"
@@ -92,7 +92,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
             Star on GitHub
           </a>
           <a
-            href="https://github.com/AlexsJones/sympozium/blob/main/CONTRIBUTING.md"
+            href="https://github.com/sympozium-ai/sympozium/blob/main/CONTRIBUTING.md"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"

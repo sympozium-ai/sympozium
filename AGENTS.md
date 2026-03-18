@@ -9,7 +9,7 @@ This file helps AI coding agents (Copilot, Cursor, Cline, etc.) understand the S
 Sympozium is a **Kubernetes-native agent orchestration platform** written in Go. Every AI agent runs as an ephemeral Kubernetes pod (Job), with policy enforcement via CRDs, admission webhooks, and RBAC. Communication flows through NATS JetStream and a filesystem-based IPC bridge.
 
 - **Language:** Go 1.25+
-- **Module:** `github.com/alexsjones/sympozium`
+- **Module:** `github.com/sympozium-ai/sympozium`
 - **K8s API version:** `sympozium.ai/v1alpha1`
 
 ---
@@ -105,7 +105,7 @@ make docker-build TAG=v0.1.0
 for img in controller apiserver ipc-bridge webhook agent-runner web-proxy \
            channel-telegram channel-slack channel-discord channel-whatsapp \
            skill-k8s-ops skill-sre-observability skill-llmfit; do
-  kind load docker-image ghcr.io/alexsjones/sympozium/$img:v0.1.0 --name kind
+  kind load docker-image ghcr.io/sympozium-ai/sympozium/$img:v0.1.0 --name kind
 done
 
 # Deploy the control plane
@@ -125,7 +125,7 @@ make test
 
 # Build specific image + reload into Kind
 make docker-build-agent-runner TAG=v0.1.0
-kind load docker-image ghcr.io/alexsjones/sympozium/agent-runner:v0.1.0 --name kind
+kind load docker-image ghcr.io/sympozium-ai/sympozium/agent-runner:v0.1.0 --name kind
 
 # Restart the controller to pick up new images
 kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
@@ -292,7 +292,7 @@ go build ./...
 make docker-build-<component> TAG=v0.1.0
 
 # Load into Kind
-kind load docker-image ghcr.io/alexsjones/sympozium/<component>:v0.1.0 --name kind
+kind load docker-image ghcr.io/sympozium-ai/sympozium/<component>:v0.1.0 --name kind
 
 # Restart controller if controller/ipc-bridge/agent-runner changed
 kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system

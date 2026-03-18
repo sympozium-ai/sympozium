@@ -2,8 +2,8 @@ site_name: Sympozium
 site_url: https://deploy.sympozium.ai/docs/
 site_description: Kubernetes-native AI Agent Management Platform
 site_author: Alex Jones
-repo_url: https://github.com/AlexsJones/sympozium
-repo_name: AlexsJones/sympozium
+repo_url: https://github.com/sympozium-ai/sympozium
+repo_name: sympozium-ai/sympozium
 edit_uri: edit/main/docs/
 
 theme:
@@ -67,7 +67,7 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/AlexsJones/sympozium
+      link: https://github.com/sympozium-ai/sympozium
 
 copyright: Copyright &copy; 2024-2026 Alex Jones — Apache License 2.0
 

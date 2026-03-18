@@ -132,7 +132,7 @@ spec:
     minCPU: 150m
 
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/skill-llmfit:latest
+    image: ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest
     mountWorkspace: true
     hostAccess:
       enabled: true
@@ -156,7 +156,7 @@ spec:
       memory: "256Mi"
     env:
       - name: LLMFIT_PROBE_IMAGE
-        value: ghcr.io/alexsjones/sympozium/skill-llmfit:latest
+        value: ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest
       - name: LLMFIT_HOST_PROC
         value: /host/proc
       - name: LLMFIT_HOST_SYS

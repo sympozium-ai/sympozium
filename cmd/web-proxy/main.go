@@ -20,9 +20,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
-	"github.com/alexsjones/sympozium/internal/eventbus"
-	"github.com/alexsjones/sympozium/internal/webproxy"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/webproxy"
 )
 
 var scheme = runtime.NewScheme()

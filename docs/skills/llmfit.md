@@ -12,7 +12,7 @@ It uses your `llmfit` project (`github.com/AlexsJones/llmfit`) inside a skill si
 ## What it installs
 
 - SkillPack manifest: `config/skills/llmfit.yaml`
-- Sidecar image: `ghcr.io/alexsjones/sympozium/skill-llmfit:latest`
+- Sidecar image: `ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest`
 - Sidecar build context: `images/skill-llmfit/`
   - `Dockerfile`
   - `tool-executor.sh`

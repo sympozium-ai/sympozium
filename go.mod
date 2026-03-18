@@ -1,4 +1,4 @@
-module github.com/alexsjones/sympozium
+module github.com/sympozium-ai/sympozium
 
 go 1.25.0
 

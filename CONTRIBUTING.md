@@ -6,8 +6,8 @@ Thanks for your interest in contributing! This document covers how we work, what
 
 ## Where to Start
 
-1. **Issues** — Check [GitHub Issues](https://github.com/AlexsJones/sympozium/issues) for open bugs, feature requests, and `good first issue` labels.
-2. **Roadmap** — The project roadmap lives in [GitHub Projects](https://github.com/AlexsJones/sympozium/projects). Pick items from the current milestone.
+1. **Issues** — Check [GitHub Issues](https://github.com/sympozium-ai/sympozium/issues) for open bugs, feature requests, and `good first issue` labels.
+2. **Roadmap** — The project roadmap lives in [GitHub Projects](https://github.com/sympozium-ai/sympozium/projects). Pick items from the current milestone.
 3. **AGENTS.md** — If you're an AI coding agent (Copilot, Cursor, etc.), read [`AGENTS.md`](AGENTS.md) for repo layout, build instructions, and common task recipes.
 4. **Documentation** — Architecture and guides live in [`docs/`](docs/):
    - [`sympozium-design.md`](docs/sympozium-design.md) — Full architecture and CRD schemas
@@ -97,7 +97,7 @@ Every push and PR runs the following checks via GitHub Actions (`.github/workflo
 | **go test -race -short** | Unit tests with the race detector enabled |
 | **Docker build** | All 10 component images build successfully |
 
-PRs must pass all checks before merging. On merge to `main`, images are automatically built and pushed to `ghcr.io/alexsjones/sympozium/`.
+PRs must pass all checks before merging. On merge to `main`, images are automatically built and pushed to `ghcr.io/sympozium-ai/sympozium/`.
 
 Run checks locally before pushing:
 

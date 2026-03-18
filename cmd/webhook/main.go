@@ -14,8 +14,8 @@ import (
 	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
-	"github.com/alexsjones/sympozium/internal/webhook"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/webhook"
 )
 
 var scheme = runtime.NewScheme()

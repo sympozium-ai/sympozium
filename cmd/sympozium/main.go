@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 var (
@@ -547,7 +547,7 @@ func newVersionCmd() *cobra.Command {
 }
 
 const (
-	ghRepo            = "AlexsJones/sympozium"
+	ghRepo            = "sympozium-ai/sympozium"
 	manifestAsset     = "sympozium-manifests.tar.gz"
 	gatewayAPICRDsURL = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
 )
@@ -1056,7 +1056,7 @@ spec:
     maxConcurrent: 5
   sandboxPolicy:
     required: false
-    defaultImage: ghcr.io/alexsjones/sympozium/sandbox:latest
+    defaultImage: ghcr.io/sympozium-ai/sympozium/sandbox:latest
     maxCPU: "4"
     maxMemory: 8Gi
   featureGates:
@@ -1212,7 +1212,7 @@ func runInstall(ver, imageTag string) error {
 		fmt.Printf("  Rewriting image tags to :%s...\n", imageTag)
 		sed := exec.Command("find", filepath.Join(tmpDir, "config"), "-name", "*.yaml", "-exec",
 			"sed", "-i",
-			fmt.Sprintf(`s|ghcr.io/alexsjones/sympozium/\([^:]*\):[^ ]*|ghcr.io/alexsjones/sympozium/\1:%s|g`, imageTag),
+			fmt.Sprintf(`s|ghcr.io/sympozium-ai/sympozium/\([^:]*\):[^ ]*|ghcr.io/sympozium-ai/sympozium/\1:%s|g`, imageTag),
 			"{}", "+")
 		sed.Stderr = os.Stderr
 		if err := sed.Run(); err != nil {
@@ -9749,7 +9749,7 @@ func tuiOnboardApply(ns string, w *wizardState) (string, error) {
 				},
 				SandboxPolicy: &sympoziumv1alpha1.SandboxPolicySpec{
 					Required:     false,
-					DefaultImage: "ghcr.io/alexsjones/sympozium/sandbox:latest",
+					DefaultImage: "ghcr.io/sympozium-ai/sympozium/sandbox:latest",
 					MaxCPU:       "4",
 					MaxMemory:    "8Gi",
 				},

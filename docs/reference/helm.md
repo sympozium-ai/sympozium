@@ -16,7 +16,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 helm install sympozium ./charts/sympozium
 ```
 
-See [`charts/sympozium/values.yaml`](https://github.com/AlexsJones/sympozium/blob/main/charts/sympozium/values.yaml) for all configuration options (replicas, resources, external NATS, network policies, etc.).
+See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/blob/main/charts/sympozium/values.yaml) for all configuration options (replicas, resources, external NATS, network policies, etc.).
 
 ## Observability
 

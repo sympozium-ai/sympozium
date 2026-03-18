@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
 // IPCDir layout constants matching the design doc protocol.

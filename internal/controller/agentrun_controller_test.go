@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 // helper builds a minimal AgentRun for testing.
@@ -546,7 +546,7 @@ func TestBuildContainers_SkillSidecarInjected(t *testing.T) {
 		{
 			skillPackName: "k8s-ops",
 			sidecar: sympoziumv1alpha1.SkillSidecar{
-				Image:          "ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest",
+				Image:          "ghcr.io/sympozium-ai/sympozium/skill-k8s-ops:latest",
 				MountWorkspace: true,
 				Resources: &sympoziumv1alpha1.SidecarResources{
 					CPU:    "100m",
@@ -564,7 +564,7 @@ func TestBuildContainers_SkillSidecarInjected(t *testing.T) {
 	if sc.Name != "skill-k8s-ops" {
 		t.Errorf("sidecar name = %q, want skill-k8s-ops", sc.Name)
 	}
-	if sc.Image != "ghcr.io/alexsjones/sympozium/skill-k8s-ops:latest" {
+	if sc.Image != "ghcr.io/sympozium-ai/sympozium/skill-k8s-ops:latest" {
 		t.Errorf("sidecar image = %q", sc.Image)
 	}
 	// Should have workspace mount

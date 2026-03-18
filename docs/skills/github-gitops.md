@@ -674,7 +674,7 @@ spec:
         <description of the YAML change made>
 
         ---
-        *Opened automatically by [Sympozium](https://github.com/AlexsJones/sympozium)
+        *Opened automatically by [Sympozium](https://github.com/sympozium-ai/sympozium)
         AgentRun: $AGENTRUN_NAME*
         EOF
         )" \
@@ -745,7 +745,7 @@ spec:
          confidence is below the auto-PR threshold>
 
         ---
-        *Opened automatically by [Sympozium](https://github.com/AlexsJones/sympozium)
+        *Opened automatically by [Sympozium](https://github.com/sympozium-ai/sympozium)
         AgentRun: $AGENTRUN_NAME*
         EOF
         )" \
@@ -808,7 +808,7 @@ spec:
           - bash
 
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/skill-github-gitops:latest
+    image: ghcr.io/sympozium-ai/sympozium/skill-github-gitops:latest
     command: ["/usr/local/bin/tool-executor.sh"]
     mountWorkspace: true
     secretRef: github-gitops-token
@@ -972,7 +972,7 @@ IMAGES := controller apiserver ipc-bridge webhook agent-runner \
 # Specific target
 docker-build-skill-github-gitops:
 	docker build -f images/skill-github-gitops/Dockerfile \
-	  -t ghcr.io/alexsjones/sympozium/skill-github-gitops:$(TAG) .
+	  -t ghcr.io/sympozium-ai/sympozium/skill-github-gitops:$(TAG) .
 ```
 
 ---

@@ -47,4 +47,4 @@ Next steps:
      kubectl get secret {{ include "sympozium.fullname" . }}-ui-token -n {{ include "sympozium.namespace" . }} -o jsonpath='{.data.token}' | base64 -d
 {{- end }}
 
-📖 Docs: https://github.com/AlexsJones/sympozium
+📖 Docs: https://github.com/sympozium-ai/sympozium

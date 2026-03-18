@@ -181,7 +181,7 @@ spec:
           - list_directory
 
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/skill-github-gitops:latest
+    image: ghcr.io/sympozium-ai/sympozium/skill-github-gitops:latest
     command:
       - /usr/local/bin/tool-executor.sh
     mountWorkspace: true

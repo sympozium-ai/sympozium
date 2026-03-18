@@ -157,7 +157,7 @@ spec:
     minMemory: 256Mi
     minCPU: 100m
   sidecar:
-    image: ghcr.io/alexsjones/sympozium/skill-sre-observability:latest
+    image: ghcr.io/sympozium-ai/sympozium/skill-sre-observability:latest
     mountWorkspace: true
     resources:
       cpu: "100m"

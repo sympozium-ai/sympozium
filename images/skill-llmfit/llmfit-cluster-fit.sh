@@ -17,7 +17,7 @@ LIMIT="5"
 MIN_FIT="good"
 USE_CASE=""
 TIMEOUT_SECONDS="180"
-PROBE_IMAGE="${LLMFIT_PROBE_IMAGE:-ghcr.io/alexsjones/sympozium/skill-llmfit:latest}"
+PROBE_IMAGE="${LLMFIT_PROBE_IMAGE:-ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest}"
 
 usage() {
   cat <<'EOF'
@@ -31,7 +31,7 @@ Options:
   --min-fit <level>      perfect|good|marginal|too_tight (default: good)
   --use-case <name>      general|coding|reasoning|chat|multimodal|embedding
   --timeout <seconds>    Wait timeout per probe pod (default: 180)
-  --probe-image <image>  Image to run on each node (default: ghcr.io/alexsjones/sympozium/skill-llmfit:latest)
+  --probe-image <image>  Image to run on each node (default: ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest)
   -h, --help             Show this help
 
 Examples:

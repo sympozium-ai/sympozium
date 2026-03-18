@@ -36,8 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
-	"github.com/alexsjones/sympozium/internal/orchestrator"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"gopkg.in/yaml.v3"
 )
 
@@ -75,7 +75,7 @@ type AgentRunReconciler struct {
 	RunHistoryLimit int    // max completed runs to keep per instance (0 = use default)
 }
 
-const imageRegistry = "ghcr.io/alexsjones/sympozium"
+const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
 
 // imageRef returns a fully qualified image reference using the reconciler's tag.
 func (r *AgentRunReconciler) imageRef(name string) string {

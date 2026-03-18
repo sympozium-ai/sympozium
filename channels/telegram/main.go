@@ -15,8 +15,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/alexsjones/sympozium/internal/channel"
-	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/channel"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
 // TelegramChannel implements the Telegram Bot API channel.

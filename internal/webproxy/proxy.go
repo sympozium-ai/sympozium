@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/alexsjones/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
 // Config holds configuration for the web proxy.

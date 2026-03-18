@@ -17,11 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
-	"github.com/alexsjones/sympozium/internal/apiserver"
-	"github.com/alexsjones/sympozium/internal/eventbus"
-	"github.com/alexsjones/sympozium/pkg/telemetry"
-	webui "github.com/alexsjones/sympozium/web"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/apiserver"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/pkg/telemetry"
+	webui "github.com/sympozium-ai/sympozium/web"
 )
 
 var scheme = runtime.NewScheme()

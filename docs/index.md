@@ -17,7 +17,7 @@ Multi-tenant. Horizontally scalable. Safe by design.
 === "Homebrew"
 
     ```bash
-    brew tap AlexsJones/sympozium
+    brew tap sympozium-ai/sympozium
     brew install sympozium
     ```
 
@@ -85,6 +85,6 @@ Sympozium takes the agentic control model and rebuilds it on Kubernetes primitiv
 
 ## Project Links
 
-- [GitHub Repository](https://github.com/AlexsJones/sympozium)
-- [Releases](https://github.com/AlexsJones/sympozium/releases)
-- [License](https://github.com/AlexsJones/sympozium/blob/main/LICENSE) — Apache 2.0
+- [GitHub Repository](https://github.com/sympozium-ai/sympozium)
+- [Releases](https://github.com/sympozium-ai/sympozium/releases)
+- [License](https://github.com/sympozium-ai/sympozium/blob/main/LICENSE) — Apache 2.0

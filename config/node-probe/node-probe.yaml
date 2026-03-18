@@ -95,7 +95,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: node-probe
-          image: ghcr.io/alexsjones/sympozium/node-probe:latest
+          image: ghcr.io/sympozium-ai/sympozium/node-probe:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: NODE_NAME

@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 var configMeter = otel.Meter("sympozium.ai/config-controller")

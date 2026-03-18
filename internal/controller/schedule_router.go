@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	sympoziumv1alpha1 "github.com/alexsjones/sympozium/api/v1alpha1"
-	"github.com/alexsjones/sympozium/internal/eventbus"
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
 // ScheduleRouter subscribes to schedule.upsert events from the IPC bridge

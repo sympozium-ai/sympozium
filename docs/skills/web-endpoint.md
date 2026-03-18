@@ -9,7 +9,7 @@ It deploys a web-proxy sidecar as a long-running Deployment that accepts incomin
 ## What it installs
 
 - SkillPack manifest: `config/skills/web-endpoint.yaml`
-- Sidecar image: `ghcr.io/alexsjones/sympozium/web-proxy:latest`
+- Sidecar image: `ghcr.io/sympozium-ai/sympozium/web-proxy:latest`
 - Sidecar source: `cmd/web-proxy/` + `internal/webproxy/`
 
 Helm bundled copy:
