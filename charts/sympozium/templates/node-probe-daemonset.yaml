@@ -1,0 +1,102 @@
+{{- if .Values.nodeProbe.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sympozium-node-probe-config
+  namespace: {{ include "sympozium.namespace" . }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node-probe
+data:
+  config.yaml: |
+    probeInterval: {{ .Values.nodeProbe.config.probeInterval | default "30s" }}
+    targets:
+    {{- range .Values.nodeProbe.config.targets }}
+      - name: {{ .name }}
+        host: {{ .host | default "localhost" }}
+        port: {{ .port }}
+        healthPath: {{ .healthPath | default "/" }}
+        modelsPath: {{ .modelsPath | default "" }}
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sympozium-node-probe
+  namespace: {{ include "sympozium.namespace" . }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node-probe
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: node-probe
+      app.kubernetes.io/name: sympozium
+  template:
+    metadata:
+      labels:
+        {{- include "sympozium.labels" . | nindent 8 }}
+        app.kubernetes.io/component: node-probe
+    spec:
+      serviceAccountName: sympozium-node-probe
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.nodeProbe.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeProbe.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeProbe.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: node-probe
+          image: {{ include "sympozium.nodeProbeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CONFIG_PATH
+              value: /etc/node-probe/config.yaml
+          ports:
+            - name: health
+              containerPort: 9473
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.nodeProbe.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/node-probe
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: sympozium-node-probe-config
+{{- end }}
