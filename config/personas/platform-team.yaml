@@ -62,7 +62,7 @@ spec:
           - send_channel_message
       schedule:
         type: heartbeat
-        interval: "5m"
+        interval: "15m"
         task: "Check cluster health: failing pods (CrashLoopBackOff, ImagePullBackOff, OOMKilled), resource pressure (CPU/memory >80%), pending PVCs, and unhealthy nodes. Report any issues found."
       memory:
         enabled: true

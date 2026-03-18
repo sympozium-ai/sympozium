@@ -32,7 +32,7 @@ spec:
           - send_channel_message
       schedule:
         type: sweep
-        interval: "15m"
+        interval: "3h"
         task: "Check for new incidents: pods in Error/CrashLoopBackOff state that appeared in the last 15 minutes. For each, collect logs, events, and recent deployment changes. Produce a brief incident report."
       memory:
         enabled: true
