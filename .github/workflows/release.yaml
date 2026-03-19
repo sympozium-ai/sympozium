@@ -205,6 +205,11 @@ jobs:
         with:
           files: .helm-packages/sympozium-*.tgz
 
+      - name: Trigger docs rebuild
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml
+
   # ── Update Homebrew tap ─────────────────────────────────────────────────────
   update-homebrew:
     name: Update Homebrew tap
