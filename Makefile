@@ -68,6 +68,7 @@ test-integration: ## Run integration tests (requires Kind cluster + API keys)
 	./test/integration/test-llmfit-cluster-fit.sh
 	./test/integration/test-telegram-channel.sh
 	./test/integration/test-slack-channel.sh
+	./test/integration/test-mcp-bridge.sh
 
 integration-tests: ## Run API smoke regression tests (PersonaPacks, ad-hoc Instances, Skills, Policies, Schedules)
 	bash ./test/integration/test-api-smoke.sh
