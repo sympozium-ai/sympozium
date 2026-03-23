@@ -1404,6 +1404,33 @@ func (r *AgentRunReconciler) buildContainers(
 		containers[0].Env = append(containers[0].Env,
 			corev1.EnvVar{Name: "MEMORY_SERVER_URL", Value: memoryURL},
 		)
+
+		// Init container to wait for memory server readiness before agent starts.
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "wait-for-memory",
+			Image:           "busybox:1.36",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			SecurityContext: &corev1.SecurityContext{
+				ReadOnlyRootFilesystem:   &readOnly,
+				AllowPrivilegeEscalation: &noPrivEsc,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{"ALL"},
+				},
+			},
+			Command: []string{"sh", "-c",
+				fmt.Sprintf("until wget -q --spider --timeout=2 %s/health; do echo 'waiting for memory server...'; sleep 1; done", memoryURL),
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("50m"),
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+		})
 	}
 
 	// Inject custom environment variables from AgentRun spec.

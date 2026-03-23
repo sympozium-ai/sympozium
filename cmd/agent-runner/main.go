@@ -188,7 +188,7 @@ func main() {
 
 	obs := initObservability(ctx)
 	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer shutdownCancel()
 		if err := obs.shutdown(shutdownCtx); err != nil {
 			log.Printf("failed to shutdown OTel providers: %v", err)

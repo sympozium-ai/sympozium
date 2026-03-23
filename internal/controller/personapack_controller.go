@@ -445,6 +445,20 @@ func (r *PersonaPackReconciler) buildInstance(
 		inst.Spec.Skills = append(inst.Spec.Skills, ref)
 	}
 
+	// Ensure memory skill is always attached.
+	hasMemory := false
+	for _, s := range inst.Spec.Skills {
+		if s.SkillPackRef == "memory" {
+			hasMemory = true
+			break
+		}
+	}
+	if !hasMemory {
+		inst.Spec.Skills = append(inst.Spec.Skills, sympoziumv1alpha1.SkillRef{
+			SkillPackRef: "memory",
+		})
+	}
+
 	// Channels
 	for _, ch := range persona.Channels {
 		cs := sympoziumv1alpha1.ChannelSpec{

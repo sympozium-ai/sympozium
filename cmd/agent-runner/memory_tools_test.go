@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestMemoryToolDefs(t *testing.T) {
@@ -286,5 +289,87 @@ func TestExecuteMemoryTool_APIError(t *testing.T) {
 	result := executeMemoryTool(context.Background(), ToolMemorySearch, `{"query":"test"}`)
 	if result != "Memory error: something went wrong" {
 		t.Errorf("unexpected result: %q", result)
+	}
+}
+
+// ── Retry behaviour ─────────────────────────────────────────────────────────
+
+func TestExecuteMemoryTool_NoRetryOnSuccess(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		resp := map[string]any{
+			"success": true,
+			"content": []map[string]any{
+				{"id": 1, "content": "found it", "tags": []string{"test"}, "created_at": "2026-03-23T00:00:00Z"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	old := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = old }()
+
+	result := executeMemoryTool(context.Background(), ToolMemorySearch, `{"query":"test"}`)
+	if strings.HasPrefix(result, "Memory server error") {
+		t.Errorf("expected success, got: %q", result)
+	}
+	if callCount.Load() != 1 {
+		t.Errorf("expected exactly 1 call (no retries), got %d", callCount.Load())
+	}
+}
+
+func TestExecuteMemoryTool_RetriesExhausted(t *testing.T) {
+	old := memoryServerURL
+	memoryServerURL = "http://127.0.0.1:1" // port 1 — connection refused
+	defer func() { memoryServerURL = old }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result := executeMemoryTool(ctx, ToolMemorySearch, `{"query":"test"}`)
+	if !strings.Contains(result, "Memory server error after") {
+		t.Errorf("expected 'Memory server error after' in result, got: %q", result)
+	}
+}
+
+func TestExecuteMemoryTool_RetriesWithRecovery(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n <= 2 {
+			// Simulate server not ready by closing connection.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("server doesn't support hijacking")
+			}
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		resp := map[string]any{
+			"success": true,
+			"content": []map[string]any{
+				{"id": 1, "content": "found it", "tags": []string{"test"}, "created_at": "2026-03-23T00:00:00Z"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	old := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = old }()
+
+	result := executeMemoryTool(context.Background(), ToolMemorySearch, `{"query":"test"}`)
+	if strings.HasPrefix(result, "Memory server error") {
+		t.Errorf("expected success after retries, got: %q", result)
+	}
+	if callCount.Load() < 3 {
+		t.Errorf("expected at least 3 calls (2 failures + 1 success), got %d", callCount.Load())
 	}
 }

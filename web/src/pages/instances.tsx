@@ -196,7 +196,7 @@ export function InstancesPage() {
         onClose={() => setWizardOpen(false)}
         mode="instance"
         availableSkills={(skillPacks || []).map((s) => s.metadata.name)}
-        defaults={{ provider: "openai", model: "gpt-4o", skills: ["k8s-ops", "llmfit"] }}
+        defaults={{ provider: "openai", model: "gpt-4o", skills: ["k8s-ops", "llmfit", "memory"] }}
         onComplete={handleComplete}
         isPending={createInstance.isPending}
       />

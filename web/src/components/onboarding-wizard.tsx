@@ -301,7 +301,7 @@ export function OnboardingWizard({
     secretName: defaults?.secretName || "",
     model: defaults?.model || "",
     baseURL: defaults?.baseURL || "",
-    skills: defaults?.skills || [],
+    skills: Array.from(new Set([...(defaults?.skills || []), "memory"])),
     channels: defaults?.channels || Object.keys(defaults?.channelConfigs || {}),
     channelConfigs: defaults?.channelConfigs || {},
     heartbeatInterval: defaults?.heartbeatInterval || "",
@@ -792,11 +792,14 @@ export function OnboardingWizard({
                 <div className="p-1 space-y-1">
                   {[...availableSkills].sort((a, b) => a.localeCompare(b)).map((skill) => {
                     const selected = form.skills.includes(skill);
+                    const locked = skill === "memory";
                     return (
                       <button
                         key={skill}
                         type="button"
+                        disabled={locked}
                         onClick={() => {
+                          if (locked) return;
                           const next = selected
                             ? form.skills.filter((s) => s !== skill)
                             : [...form.skills, skill];
@@ -804,13 +807,15 @@ export function OnboardingWizard({
                         }}
                         className={cn(
                           "flex w-full items-center justify-between rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
-                          selected
-                            ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
-                            : "border-transparent hover:border-border/60 hover:bg-white/5"
+                          locked
+                            ? "border-blue-500/40 bg-blue-500/15 text-blue-300 opacity-70 cursor-not-allowed"
+                            : selected
+                              ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
+                              : "border-transparent hover:border-border/60 hover:bg-white/5"
                         )}
                       >
                         <span className="font-mono">{skill}</span>
-                        <span className="text-[10px]">{selected ? "Selected" : "Select"}</span>
+                        <span className="text-[10px]">{locked ? "Required" : selected ? "Selected" : "Select"}</span>
                       </button>
                     );
                   })}

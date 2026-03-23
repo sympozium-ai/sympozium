@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,12 @@ func initObservability(ctx context.Context) *agentObservability {
 		log.Println("observability enabled but no OTLP endpoint set; skipping OTel bootstrap")
 		return obs
 	}
+	// Quick connectivity check to avoid ongoing export errors.
+	if !checkOTelEndpoint(endpoint) {
+		log.Printf("OTLP endpoint %s unreachable; falling back to noop", endpoint)
+		return obs
+	}
+
 	// pkg/telemetry.Init reads OTEL_EXPORTER_OTLP_ENDPOINT from the environment.
 	os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint)
 
@@ -67,7 +74,7 @@ func initObservability(ctx context.Context) *agentObservability {
 	tel, err := telemetry.Init(ctx, telemetry.Config{
 		ServiceName:     serviceName,
 		BatchTimeout:    1 * time.Second,
-		ShutdownTimeout: 10 * time.Second,
+		ShutdownTimeout: 3 * time.Second,
 	})
 	if err != nil {
 		log.Printf("failed to initialize OTel via pkg/telemetry: %v", err)
@@ -82,6 +89,17 @@ func initObservability(ctx context.Context) *agentObservability {
 	o.initMetrics()
 	obs = o
 	return o
+}
+
+// checkOTelEndpoint does a quick TCP dial to verify the collector is reachable.
+func checkOTelEndpoint(endpoint string) bool {
+	addr := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 func (o *agentObservability) initMetrics() {

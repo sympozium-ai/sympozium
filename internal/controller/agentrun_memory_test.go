@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -85,6 +86,58 @@ func TestBuildVolumes_NoMemoryDBWithoutSkill(t *testing.T) {
 	for _, v := range vols {
 		if v.Name == "memory-db" {
 			t.Error("memory-db volume should not exist without memory SkillPack")
+			return
+		}
+	}
+}
+
+// ── buildContainers: wait-for-memory init container ─────────────────────────
+
+func TestBuildContainers_WaitForMemoryInitContainer(t *testing.T) {
+	r := &AgentRunReconciler{}
+	run := newTestRun()
+	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
+		{SkillPackRef: "memory"},
+	}
+
+	_, initCs := r.buildContainers(run, false, nil, nil, nil)
+
+	var found bool
+	for _, ic := range initCs {
+		if ic.Name == "wait-for-memory" {
+			found = true
+			cmd := strings.Join(ic.Command, " ")
+			expectedURL := "http://my-instance-memory.default.svc:8080/health"
+			if !strings.Contains(cmd, expectedURL) {
+				t.Errorf("init container command %q does not contain %q", cmd, expectedURL)
+			}
+			// Verify security context.
+			if ic.SecurityContext == nil {
+				t.Fatal("expected SecurityContext to be set")
+			}
+			if ic.SecurityContext.ReadOnlyRootFilesystem == nil || !*ic.SecurityContext.ReadOnlyRootFilesystem {
+				t.Error("expected ReadOnlyRootFilesystem=true")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("wait-for-memory init container not found when memory skill is attached")
+	}
+}
+
+func TestBuildContainers_NoWaitForMemoryWithoutSkill(t *testing.T) {
+	r := &AgentRunReconciler{}
+	run := newTestRun()
+	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
+		{SkillPackRef: "k8s-ops"},
+	}
+
+	_, initCs := r.buildContainers(run, false, nil, nil, nil)
+
+	for _, ic := range initCs {
+		if ic.Name == "wait-for-memory" {
+			t.Error("wait-for-memory init container should not exist without memory skill")
 			return
 		}
 	}

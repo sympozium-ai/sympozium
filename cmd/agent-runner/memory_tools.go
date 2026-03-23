@@ -37,7 +37,12 @@ func isMemoryTool(name string) bool {
 var memoryServerURL string
 
 // memoryHTTPClient is a shared HTTP client with reasonable timeouts.
-var memoryHTTPClient = &http.Client{Timeout: 15 * time.Second}
+var memoryHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
+const (
+	memoryMaxRetries  = 3
+	memoryBaseBackoff = 500 * time.Millisecond
+)
 
 // memoryToolDefs returns the static tool definitions for memory tools.
 func memoryToolDefs() []ToolDef {
@@ -120,19 +125,36 @@ func executeMemoryTool(ctx context.Context, toolName string, argsJSON string) st
 	var resp *http.Response
 	var err error
 
-	switch toolName {
-	case ToolMemorySearch:
-		resp, err = memoryPost(ctx, "/search", args)
-	case ToolMemoryStore:
-		resp, err = memoryPost(ctx, "/store", args)
-	case ToolMemoryList:
-		resp, err = memoryGet(ctx, "/list", args)
-	default:
-		return fmt.Sprintf("Unknown memory tool: %s", toolName)
+	for attempt := 0; attempt <= memoryMaxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := memoryBaseBackoff * time.Duration(1<<(attempt-1))
+			log.Printf("memory tool retry %d/%d after %v", attempt, memoryMaxRetries, backoff)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return fmt.Sprintf("Memory server error: %v", ctx.Err())
+			}
+		}
+
+		switch toolName {
+		case ToolMemorySearch:
+			resp, err = memoryPost(ctx, "/search", args)
+		case ToolMemoryStore:
+			resp, err = memoryPost(ctx, "/store", args)
+		case ToolMemoryList:
+			resp, err = memoryGet(ctx, "/list", args)
+		default:
+			return fmt.Sprintf("Unknown memory tool: %s", toolName)
+		}
+
+		if err == nil {
+			break
+		}
+		log.Printf("memory server call failed (attempt %d/%d): %v", attempt+1, memoryMaxRetries+1, err)
 	}
 
 	if err != nil {
-		return fmt.Sprintf("Memory server error: %v", err)
+		return fmt.Sprintf("Memory server error after %d attempts: %v", memoryMaxRetries+1, err)
 	}
 	defer resp.Body.Close()
 

@@ -3013,6 +3013,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.editTab == 2 {
 					if m.editField >= 0 && m.editField < len(m.editSkills) {
 						sk := &m.editSkills[m.editField]
+						if sk.name == "memory" {
+							// memory is mandatory — cannot be toggled off
+						} else {
 						sk.enabled = !sk.enabled
 						if sk.enabled && sk.name == "github-gitops" {
 							m.editSkillGithubInput = true
@@ -3026,6 +3029,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 							ti.Focus()
 							m.editSkillGithubTI = ti
+						}
 						}
 					}
 				} else if m.editTab == 3 {
@@ -3147,6 +3151,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.editTab == 2 {
 					if m.editField >= 0 && m.editField < len(m.editSkills) {
 						sk := &m.editSkills[m.editField]
+						if sk.name == "memory" {
+							// memory is mandatory — cannot be toggled off
+						} else {
 						sk.enabled = !sk.enabled
 						if sk.enabled && sk.name == "github-gitops" {
 							m.editSkillGithubInput = true
@@ -3160,6 +3167,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 							ti.Focus()
 							m.editSkillGithubTI = ti
+						}
 						}
 					}
 				} else if m.editTab == 3 {
@@ -4370,7 +4378,7 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 			}
 			m.editSkills = append(m.editSkills, editSkillItem{
 				name:     sp.Name,
-				enabled:  enabledSkills[sp.Name],
+				enabled:  enabledSkills[sp.Name] || sp.Name == "memory",
 				category: sp.Spec.Category,
 				params:   skillParams[sp.Name],
 				hostReq:  hostReq,
@@ -4465,7 +4473,7 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 					}
 					m.editSkills = append(m.editSkills, editSkillItem{
 						name:     sp.Name,
-						enabled:  enabledSkills[sp.Name],
+						enabled:  enabledSkills[sp.Name] || sp.Name == "memory",
 						category: sp.Spec.Category,
 						params:   skillParams[sp.Name],
 						hostReq:  hostReq,
@@ -7377,7 +7385,9 @@ func (m tuiModel) renderEditModal(base string) string {
 				}
 				// Show configured params inline (e.g. repo for github-gitops).
 				extra := ""
-				if sk.enabled && sk.name == "github-gitops" {
+				if sk.name == "memory" {
+					extra = tuiDimStyle.Render(" (required)")
+				} else if sk.enabled && sk.name == "github-gitops" {
 					if repo, ok := sk.params["repo"]; ok && repo != "" {
 						extra = tuiDimStyle.Render(" → " + repo)
 					} else {
