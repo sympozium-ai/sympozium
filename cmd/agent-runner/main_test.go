@@ -294,7 +294,7 @@ func TestCallAnthropic_MockServer(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	text, inTok, outTok, _, err := callAnthropic(ctx, "test-anthropic-key", srv.URL, "claude-sonnet-4-20250514", "Be helpful.", "Say hello", nil)
+	text, inTok, outTok, _, err := callAnthropic(ctx, "test-anthropic-key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "Be helpful.", "Say hello", nil)
 	if err != nil {
 		t.Fatalf("callAnthropic error: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestCallAnthropic_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	_, _, _, _, err := callAnthropic(ctx, "bad-key", srv.URL, "claude-sonnet-4-20250514", "sys", "task", nil)
+	_, _, _, _, err := callAnthropic(ctx, "bad-key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "task", nil)
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -384,7 +384,7 @@ func TestProviderRouting(t *testing.T) {
 		t.Error("expected OpenAI server to be called for openai provider")
 	}
 
-	callAnthropic(ctx, "k", anthropicSrv.URL, "m", "s", "t", nil)
+	callAnthropic(ctx, "k", "apikey", "", anthropicSrv.URL, "m", "s", "t", nil)
 	if !anthropicCalled {
 		t.Error("expected Anthropic server to be called for anthropic provider")
 	}
@@ -486,7 +486,7 @@ func TestCallAnthropic_ToolUseFlow(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, inTok, outTok, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /tmp/testfile.txt", tools)
+	text, inTok, outTok, toolCalls, err := callAnthropic(ctx, "key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /tmp/testfile.txt", tools)
 	if err != nil {
 		t.Fatalf("callAnthropic tool-use error: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestCallAnthropic_MultipleToolCalls(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, _, _, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read both", tools)
+	text, _, _, toolCalls, err := callAnthropic(ctx, "key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "Read both", tools)
 	if err != nil {
 		t.Fatalf("callAnthropic multi-tool error: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestCallAnthropic_ToolErrorIsError(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, _, _, _, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /nonexistent/file.txt", tools)
+	text, _, _, _, err := callAnthropic(ctx, "key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /nonexistent/file.txt", tools)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

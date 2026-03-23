@@ -49,7 +49,7 @@ func TestOTelSpanHierarchy(t *testing.T) {
 		tracer := otel.Tracer("test")
 		ctx, rootSpan := tracer.Start(ctx, "test-root")
 
-		text, inTok, outTok, _, err := callAnthropic(ctx, "test-key", srv.URL, "claude-sonnet-4-20250514", "sys", "Say hello", nil)
+		text, inTok, outTok, _, err := callAnthropic(ctx, "test-key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "Say hello", nil)
 		if err != nil {
 			t.Fatalf("callAnthropic error: %v", err)
 		}
@@ -153,7 +153,7 @@ func TestOTelSpanHierarchy(t *testing.T) {
 		tracer := otel.Tracer("test")
 		ctx, rootSpan := tracer.Start(ctx, "test-root")
 
-		text, _, _, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read file", tools)
+		text, _, _, toolCalls, err := callAnthropic(ctx, "key", "apikey", "", srv.URL, "claude-sonnet-4-20250514", "sys", "Read file", tools)
 		if err != nil {
 			t.Fatalf("callAnthropic error: %v", err)
 		}

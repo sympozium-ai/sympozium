@@ -90,6 +90,15 @@ spec:
               model:
                 description: Model specifies the LLM configuration for this run.
                 properties:
+                  authMode:
+                    default: apikey
+                    description: |-
+                      AuthMode is the authentication mode: "apikey" (default) or "oauth".
+                      When "oauth", the agent uses Bearer token auth instead of API key auth.
+                    enum:
+                    - apikey
+                    - oauth
+                    type: string
                   authSecretRef:
                     description: AuthSecretRef references the secret containing the
                       API key.

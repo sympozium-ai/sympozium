@@ -198,8 +198,9 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		agentRun.Spec.Model.NodeSelector = instance.Spec.Agents.Default.NodeSelector
 	}
 
-	// Resolve auth secret from the instance.
+	// Resolve auth secret and mode from the instance.
 	agentRun.Spec.Model.AuthSecretRef = resolveAuthSecret(instance)
+	agentRun.Spec.Model.AuthMode = resolveAuthMode(instance)
 
 	// Copy skill refs, excluding server-mode skills (e.g. web-endpoint) that
 	// should not be spawned as ephemeral schedule runs.

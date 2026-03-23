@@ -78,6 +78,10 @@ export interface WizardResult {
   provider: string;
   apiKey: string;
   secretName: string;
+  /** Auth mode: "apikey" (default) or "oauth" (Claude subscription) */
+  authMode?: string;
+  /** OAuth token for Claude subscription auth */
+  oauthToken?: string;
   awsRegion: string;
   awsAccessKeyId: string;
   awsSecretAccessKey: string;
@@ -299,6 +303,8 @@ export function OnboardingWizard({
     provider: defaults?.provider || "",
     apiKey: defaults?.apiKey || "",
     secretName: defaults?.secretName || "",
+    authMode: defaults?.authMode || "apikey",
+    oauthToken: defaults?.oauthToken || "",
     model: defaults?.model || "",
     baseURL: defaults?.baseURL || "",
     skills: defaults?.skills || [],
@@ -335,6 +341,7 @@ export function OnboardingWizard({
       case "apikey":
         if (form.provider === "ollama" || form.provider === "lm-studio") return true;
         if (form.provider === "bedrock") return !!form.secretName || !!form.awsRegion;
+        if (form.authMode === "oauth") return !!form.secretName || !!form.oauthToken;
         return !!form.secretName || !!form.apiKey;
       case "model":
         return !!form.model;
@@ -641,9 +648,55 @@ export function OnboardingWizard({
         {step === "apikey" && (
           <ScrollArea className="max-h-[60vh]">
           <div className="space-y-4">
+            {form.provider === "anthropic" && (
+              <div className="space-y-2">
+                <Label>Auth Mode</Label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className={`flex-1 rounded-md border px-3 py-2 text-sm ${form.authMode !== "oauth" ? "border-primary bg-primary/10 text-primary" : "border-muted text-muted-foreground"}`}
+                    onClick={() => setForm({ ...form, authMode: "apikey", oauthToken: "" })}
+                  >
+                    API Key
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 rounded-md border px-3 py-2 text-sm ${form.authMode === "oauth" ? "border-primary bg-primary/10 text-primary" : "border-muted text-muted-foreground"}`}
+                    onClick={() => setForm({ ...form, authMode: "oauth", apiKey: "" })}
+                  >
+                    OAuth (Subscription)
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {form.authMode === "oauth"
+                    ? "Use your Claude Pro/Team/Enterprise subscription with OAuth tokens."
+                    : "Use a per-token API key from console.anthropic.com."}
+                </p>
+              </div>
+            )}
+            {form.authMode === "oauth" && form.provider === "anthropic" && (
+              <div className="space-y-2">
+                <Label>OAuth Token</Label>
+                <Input
+                  type="password"
+                  value={form.oauthToken || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, oauthToken: e.target.value })
+                  }
+                  placeholder="eyJ…"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paste an OAuth access token from your Anthropic account.
+                  Obtain one from your team admin or Anthropic enterprise portal.
+                  The controller will auto-refresh it before expiry.
+                </p>
+              </div>
+            )}
             {form.provider !== "bedrock" &&
               form.provider !== "ollama" &&
-              form.provider !== "lm-studio" && (
+              form.provider !== "lm-studio" &&
+              !(form.provider === "anthropic" && form.authMode === "oauth") && (
               <div className="space-y-2">
                 <Label>API Key</Label>
                 <Input

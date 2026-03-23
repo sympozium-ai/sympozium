@@ -162,6 +162,9 @@ func main() {
 		systemPrompt += memoryInstruction
 	}
 
+	authMode := getEnv("AUTH_MODE", "apikey")
+	oauthToken := os.Getenv("ANTHROPIC_AUTH_TOKEN")
+
 	apiKey := firstNonEmpty(
 		os.Getenv("API_KEY"),
 		os.Getenv("OPENAI_API_KEY"),
@@ -224,7 +227,10 @@ func main() {
 
 	switch provider {
 	case "anthropic":
-		responseText, inputTokens, outputTokens, toolCalls, err = callAnthropic(ctx, apiKey, baseURL, modelName, systemPrompt, task, tools)
+		anthKey := apiKey
+		anthAuthMode := authMode
+		anthOAuthToken := oauthToken
+		responseText, inputTokens, outputTokens, toolCalls, err = callAnthropic(ctx, anthKey, anthAuthMode, anthOAuthToken, baseURL, modelName, systemPrompt, task, tools)
 	case "bedrock":
 		responseText, inputTokens, outputTokens, toolCalls, err = callBedrock(ctx, modelName, systemPrompt, task, tools)
 	default:
@@ -315,11 +321,14 @@ func main() {
 // When tools is non-empty, the function enters a loop: call the LLM, execute
 // any tool_use blocks, feed results back, and repeat until the model produces
 // a final text response or the iteration limit is reached.
-func callAnthropic(ctx context.Context, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef) (string, int, int, int, error) {
+func callAnthropic(ctx context.Context, apiKey, authMode, oauthToken, baseURL, model, systemPrompt, task string, tools []ToolDef) (string, int, int, int, error) {
 	opts := []anthropicoption.RequestOption{
 		anthropicoption.WithMaxRetries(5),
 	}
-	if apiKey != "" {
+	if authMode == "oauth" && oauthToken != "" {
+		// OAuth mode: use Bearer token authentication.
+		opts = append(opts, anthropicoption.WithAuthToken(oauthToken))
+	} else if apiKey != "" {
 		opts = append(opts, anthropicoption.WithAPIKey(apiKey))
 	}
 	if baseURL != "" {

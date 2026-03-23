@@ -1377,14 +1377,33 @@ func (r *AgentRunReconciler) buildContainers(
 
 	// Inject auth secret if provided.
 	if agentRun.Spec.Model.AuthSecretRef != "" {
-		containers[0].EnvFrom = []corev1.EnvFromSource{
-			{
-				SecretRef: &corev1.SecretEnvSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: agentRun.Spec.Model.AuthSecretRef,
+		if agentRun.Spec.Model.AuthMode == "oauth" {
+			// OAuth mode: inject specific keys and set AUTH_MODE env var.
+			containers[0].Env = append(containers[0].Env,
+				corev1.EnvVar{Name: "AUTH_MODE", Value: "oauth"},
+				corev1.EnvVar{
+					Name: "ANTHROPIC_AUTH_TOKEN",
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: agentRun.Spec.Model.AuthSecretRef,
+							},
+							Key: "oauth-token",
+						},
 					},
 				},
-			},
+			)
+		} else {
+			// API key mode: dump all secret keys as env vars (existing behavior).
+			containers[0].EnvFrom = []corev1.EnvFromSource{
+				{
+					SecretRef: &corev1.SecretEnvSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: agentRun.Spec.Model.AuthSecretRef,
+						},
+					},
+				},
+			}
 		}
 	}
 

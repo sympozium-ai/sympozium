@@ -184,6 +184,16 @@ spec:
                 items:
                   description: SecretRef references a Kubernetes Secret.
                   properties:
+                    mode:
+                      default: apikey
+                      description: |-
+                        Mode is the authentication mode: "apikey" (default) or "oauth".
+                        When "oauth", the Secret must contain oauth-token, refresh-token, and expires-at keys.
+                        The controller will automatically refresh the OAuth token before expiry.
+                      enum:
+                      - apikey
+                      - oauth
+                      type: string
                     provider:
                       description: Provider is the AI provider name (e.g. "openai",
                         "anthropic", "azure-openai", "ollama").

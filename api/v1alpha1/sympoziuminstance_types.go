@@ -282,6 +282,13 @@ type SecretRef struct {
 	Provider string `json:"provider,omitempty"`
 	// Secret is the name of the Secret.
 	Secret string `json:"secret"`
+	// Mode is the authentication mode: "apikey" (default) or "oauth".
+	// When "oauth", the Secret must contain oauth-token, refresh-token, and expires-at keys.
+	// The controller will automatically refresh the OAuth token before expiry.
+	// +kubebuilder:default="apikey"
+	// +kubebuilder:validation:Enum=apikey;oauth
+	// +optional
+	Mode string `json:"mode,omitempty"`
 }
 
 // SympoziumInstanceStatus defines the observed state of SympoziumInstance.

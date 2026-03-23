@@ -614,11 +614,21 @@ func runOnboard() error {
 	fmt.Println("    7) Other / OpenAI-compatible")
 	providerChoice := prompt(reader, "  Choice [1-7]", "1")
 
-	var providerName, secretEnvKey, modelName, baseURL string
+	var providerName, secretEnvKey, modelName, baseURL, authMode string
 	switch providerChoice {
 	case "2":
 		providerName = "anthropic"
-		secretEnvKey = "ANTHROPIC_API_KEY"
+		fmt.Println("\n  Auth mode:")
+		fmt.Println("    1) API Key     (per-token billing)")
+		fmt.Println("    2) OAuth       (Claude Pro/Team/Enterprise subscription)")
+		authModeChoice := prompt(reader, "  Choice [1-2]", "1")
+		if authModeChoice == "2" {
+			authMode = "oauth"
+			secretEnvKey = ""
+		} else {
+			authMode = "apikey"
+			secretEnvKey = "ANTHROPIC_API_KEY"
+		}
 		modelName = prompt(reader, "  Model name", "claude-sonnet-4-20250514")
 	case "3":
 		providerName = "azure-openai"
@@ -680,8 +690,15 @@ func runOnboard() error {
 		modelName = prompt(reader, "  Model name", "gpt-4o")
 	}
 
-	var apiKey string
-	if secretEnvKey != "" {
+	var apiKey, oauthToken string
+	if authMode == "oauth" {
+		oauthToken = promptSecret(reader, "  OAuth access token")
+		if oauthToken == "" {
+			fmt.Println("  ⚠  No OAuth token provided. You can create the secret later:")
+			fmt.Printf("  kubectl create secret generic %s-%s-key --from-literal=oauth-token=<token>\n",
+				instanceName, providerName)
+		}
+	} else if secretEnvKey != "" {
 		apiKey = promptSecret(reader, fmt.Sprintf("  %s", secretEnvKey))
 		if apiKey == "" {
 			// Fall back to environment variable.
@@ -823,7 +840,18 @@ func runOnboard() error {
 	fmt.Println()
 
 	// 1. Create AI provider secret.
-	if apiKey != "" {
+	if authMode == "oauth" && oauthToken != "" {
+		fmt.Printf("  Creating OAuth secret %s...\n", providerSecretName)
+		_ = kubectl("delete", "secret", providerSecretName, "-n", namespace, "--ignore-not-found")
+		if err := kubectl("create", "secret", "generic", providerSecretName,
+			"-n", namespace,
+			fmt.Sprintf("--from-literal=oauth-token=%s", oauthToken)); err != nil {
+			return fmt.Errorf("create OAuth provider secret: %w", err)
+		}
+		// Label the secret for auto-refresh by the controller.
+		_ = kubectl("label", "secret", providerSecretName, "-n", namespace,
+			"sympozium.ai/auth-mode=oauth")
+	} else if apiKey != "" {
 		fmt.Printf("  Creating secret %s...\n", providerSecretName)
 		// Delete first to allow re-runs.
 		_ = kubectl("delete", "secret", providerSecretName, "-n", namespace, "--ignore-not-found")
@@ -865,9 +893,9 @@ func runOnboard() error {
 
 	// 4. Create SympoziumInstance.
 	fmt.Printf("  Creating SympoziumInstance %s...\n", instanceName)
-	// Only pass the secret name if an API key was provided.
+	// Only pass the secret name if an API key or OAuth token was provided.
 	instanceSecret := providerSecretName
-	if apiKey == "" {
+	if apiKey == "" && oauthToken == "" {
 		instanceSecret = ""
 	}
 	// WhatsApp doesn't need a channel secret (QR pairing)
@@ -876,7 +904,7 @@ func runOnboard() error {
 		chSecret = ""
 	}
 	instanceYAML := buildSympoziumInstanceYAML(instanceName, namespace, modelName, baseURL,
-		providerName, instanceSecret, channelType, chSecret,
+		providerName, instanceSecret, authMode, channelType, chSecret,
 		policyName, applyPolicy, githubRepo)
 	if err := kubectlApplyStdin(instanceYAML); err != nil {
 		return fmt.Errorf("apply instance: %w", err)
@@ -1099,7 +1127,7 @@ spec:
 `, name, ns)
 }
 
-func buildSympoziumInstanceYAML(name, ns, model, baseURL, provider, providerSecret,
+func buildSympoziumInstanceYAML(name, ns, model, baseURL, provider, providerSecret, authMode,
 	channelType, channelSecret, policyName string, hasPolicy bool, githubRepo string) string {
 
 	var channelsBlock string
@@ -1130,10 +1158,18 @@ func buildSympoziumInstanceYAML(name, ns, model, baseURL, provider, providerSecr
 
 	var authRefsBlock string
 	if providerSecret != "" {
-		authRefsBlock = fmt.Sprintf(`  authRefs:
+		if authMode == "oauth" {
+			authRefsBlock = fmt.Sprintf(`  authRefs:
+    - provider: %s
+      secret: %s
+      mode: oauth
+`, provider, providerSecret)
+		} else {
+			authRefsBlock = fmt.Sprintf(`  authRefs:
     - provider: %s
       secret: %s
 `, provider, providerSecret)
+		}
 	}
 
 	var githubSkillBlock string
@@ -2242,6 +2278,8 @@ const (
 	wizStepApplying                          // auto — create resources
 	wizStepWhatsAppQR                        // auto — stream QR from pod logs
 	wizStepDone                              // auto — show result
+	wizStepAuthMode                          // menu 1-2: apikey or oauth (Anthropic)
+	wizStepOAuthToken                        // text: OAuth token
 	wizStepLMStudioAPIKeyRequired            // y/n: LM Studio requires API key?
 	wizStepAWSRegion                         // text: AWS region for Bedrock
 	wizStepAWSAccessKeyID                    // text: AWS Access Key ID
@@ -2289,6 +2327,10 @@ type wizardState struct {
 	heartbeatLabel  string // human-readable label (e.g. "every hour")
 	githubRepo      string // GitHub repo (owner/repo) for github-gitops skill
 	teamTask        string // Team-level instructions/objective
+
+	// Auth mode: "apikey" (default) or "oauth" (for Claude subscription auth).
+	authMode   string // "apikey" or "oauth"
+	oauthToken string // OAuth access token (when authMode == "oauth")
 
 	// AWS Bedrock credentials (collected via dedicated wizard steps).
 	awsRegion          string
@@ -8227,9 +8269,9 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		case "2":
 			w.providerName = "anthropic"
 			w.secretEnvKey = "ANTHROPIC_API_KEY"
-			// Collect API key before model so we can fetch models.
-			w.step = wizStepAPIKey
-			m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+			// Ask auth mode: API key vs OAuth
+			w.step = wizStepAuthMode
+			m.input.Placeholder = "Choice [1-2] (default: 1 — API Key)"
 			return m, nil
 		case "3":
 			w.providerName = "azure-openai"
@@ -8269,6 +8311,30 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
 			return m, nil
 		}
+
+	case wizStepAuthMode:
+		if val == "" || val == "1" {
+			w.authMode = "apikey"
+			w.step = wizStepAPIKey
+			m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+		} else {
+			w.authMode = "oauth"
+			w.secretEnvKey = ""
+			w.step = wizStepOAuthToken
+			m.input.Placeholder = "Paste OAuth access token"
+		}
+		return m, nil
+
+	case wizStepOAuthToken:
+		w.oauthToken = val
+		if w.oauthToken == "" {
+			w.err = "OAuth token is required. Obtain one from your team admin or Anthropic enterprise portal."
+			return m, nil
+		}
+		w.err = ""
+		w.step = wizStepModel
+		m.input.Placeholder = "Model name (default: claude-sonnet-4-20250514)"
+		return m, nil
 
 	case wizStepBaseURL:
 		if val == "" && w.providerName == "ollama" {
@@ -8978,6 +9044,22 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" LM Studio       (local, optional API key)"))
 		lines = append(lines, menuNumStyle.Render("  6)")+menuStyle.Render(" AWS Bedrock     (Claude, Nova, etc.)"))
 		lines = append(lines, menuNumStyle.Render("  7)")+menuStyle.Render(" Other / OpenAI-compatible"))
+
+	case wizStepAuthMode:
+		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — Anthropic Auth Mode"))
+		lines = append(lines, menuStyle.Render("  How do you want to authenticate?"))
+		lines = append(lines, "")
+		lines = append(lines, menuNumStyle.Render("  1)")+menuStyle.Render(" API Key         (per-token billing)"))
+		lines = append(lines, menuNumStyle.Render("  2)")+menuStyle.Render(" OAuth            (Claude Pro/Team/Enterprise subscription)"))
+		lines = append(lines, "")
+		lines = append(lines, hintStyle.Render("  OAuth uses your Claude subscription instead of a separate API key."))
+		lines = append(lines, hintStyle.Render("  Obtain a token from your team admin or Anthropic enterprise portal."))
+
+	case wizStepOAuthToken:
+		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — Anthropic OAuth Token"))
+		lines = append(lines, labelStyle.Render("  Paste your OAuth access token:"))
+		lines = append(lines, hintStyle.Render("  Obtain from your team admin or Anthropic enterprise portal."))
+		lines = append(lines, hintStyle.Render("  The controller will auto-refresh it before expiry."))
 
 	case wizStepBaseURL:
 		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — AI Provider (continued)"))
@@ -9875,6 +9957,28 @@ func tuiOnboardApply(ns string, w *wizardState) (string, error) {
 			return "", fmt.Errorf("create provider secret: %w", err)
 		}
 		msgs = append(msgs, tuiSuccessStyle.Render(fmt.Sprintf("✓ Created secret: %s", providerSecretName)))
+	} else if w.authMode == "oauth" && w.oauthToken != "" {
+		// OAuth mode: create secret with OAuth token keys and label for auto-refresh.
+		existing := &corev1.Secret{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: providerSecretName, Namespace: ns}, existing); err == nil {
+			_ = k8sClient.Delete(ctx, existing)
+		}
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      providerSecretName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"sympozium.ai/auth-mode": "oauth",
+				},
+			},
+			StringData: map[string]string{
+				"oauth-token": w.oauthToken,
+			},
+		}
+		if err := k8sClient.Create(ctx, secret); err != nil {
+			return "", fmt.Errorf("create OAuth provider secret: %w", err)
+		}
+		msgs = append(msgs, tuiSuccessStyle.Render(fmt.Sprintf("✓ Created OAuth secret: %s", providerSecretName)))
 	} else if w.apiKey != "" {
 		// Delete existing if present.
 		existing := &corev1.Secret{}
@@ -9973,11 +10077,17 @@ func tuiOnboardApply(ns string, w *wizardState) (string, error) {
 		},
 	}
 
-	// Only add AuthRefs when an API key was provided.
-	if w.apiKey != "" {
+	// Add AuthRefs when an API key or OAuth token was provided.
+	if w.apiKey != "" || (w.authMode == "oauth" && w.oauthToken != "") {
+		authMode := "apikey"
+		if w.authMode == "oauth" {
+			authMode = "oauth"
+		}
 		inst.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{
 			{
-				Secret: providerSecretName,
+				Provider: w.providerName,
+				Secret:   providerSecretName,
+				Mode:     authMode,
 			},
 		}
 	}

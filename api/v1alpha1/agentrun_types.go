@@ -104,6 +104,13 @@ type ModelSpec struct {
 	// Inherited from AgentConfig at AgentRun creation time.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// AuthMode is the authentication mode: "apikey" (default) or "oauth".
+	// When "oauth", the agent uses Bearer token auth instead of API key auth.
+	// +kubebuilder:default="apikey"
+	// +kubebuilder:validation:Enum=apikey;oauth
+	// +optional
+	AuthMode string `json:"authMode,omitempty"`
 }
 
 // AgentRunSandboxSpec defines sandbox settings for an individual agent run.

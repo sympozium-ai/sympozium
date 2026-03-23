@@ -630,6 +630,8 @@ export const api = {
       baseURL?: string;
       secretName?: string;
       apiKey?: string;
+      authMode?: string;
+      oauthToken?: string;
       awsRegion?: string;
       awsAccessKeyId?: string;
       awsSecretAccessKey?: string;

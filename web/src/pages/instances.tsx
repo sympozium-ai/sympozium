@@ -43,6 +43,8 @@ export function InstancesPage() {
         baseURL: result.baseURL || undefined,
         secretName: result.secretName || undefined,
         apiKey: result.apiKey || undefined,
+        authMode: result.authMode || undefined,
+        oauthToken: result.oauthToken || undefined,
         awsRegion: result.awsRegion || undefined,
         awsAccessKeyId: result.awsAccessKeyId || undefined,
         awsSecretAccessKey: result.awsSecretAccessKey || undefined,

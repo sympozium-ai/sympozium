@@ -107,6 +107,20 @@ func resolveAuthSecret(inst *sympoziumv1alpha1.SympoziumInstance) string {
 	return ""
 }
 
+// resolveAuthMode returns the auth mode for the first non-empty auth secret.
+// Returns "oauth" if the matching authRef has mode "oauth", otherwise "apikey".
+func resolveAuthMode(inst *sympoziumv1alpha1.SympoziumInstance) string {
+	for _, ref := range inst.Spec.AuthRefs {
+		if strings.TrimSpace(ref.Secret) != "" {
+			if ref.Mode == "oauth" {
+				return "oauth"
+			}
+			return "apikey"
+		}
+	}
+	return "apikey"
+}
+
 // handleInbound processes an inbound channel message by creating an AgentRun.
 func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Event) {
 	// Use trace context propagated via NATS headers from the channel pod.
@@ -163,6 +177,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	// Resolve model configuration from the SympoziumInstance (same logic as TUI).
 	provider := resolveProvider(inst)
 	authSecret := resolveAuthSecret(inst)
+	authMode := resolveAuthMode(inst)
 
 	// Create an AgentRun for the inbound message.
 	run := &sympoziumv1alpha1.AgentRun{
@@ -191,6 +206,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				Model:         inst.Spec.Agents.Default.Model,
 				BaseURL:       inst.Spec.Agents.Default.BaseURL,
 				AuthSecretRef: authSecret,
+				AuthMode:      authMode,
 				NodeSelector:  inst.Spec.Agents.Default.NodeSelector,
 			},
 			Skills:  inst.Spec.Skills,

@@ -496,6 +496,7 @@ func (r *SympoziumInstanceReconciler) ensureWebEndpointAgentRun(ctx context.Cont
 				Provider:      resolveProvider(instance),
 				Model:         instance.Spec.Agents.Default.Model,
 				AuthSecretRef: resolveAuthSecret(instance),
+				AuthMode:      resolveAuthMode(instance),
 			},
 			Skills: []sympoziumv1alpha1.SkillRef{webSkill},
 		},

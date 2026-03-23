@@ -464,6 +464,8 @@ type CreateInstanceRequest struct {
 	BaseURL            string                          `json:"baseURL,omitempty"`
 	SecretName         string                          `json:"secretName,omitempty"`
 	APIKey             string                          `json:"apiKey,omitempty"`
+	AuthMode           string                          `json:"authMode,omitempty"`
+	OAuthToken         string                          `json:"oauthToken,omitempty"`
 	AWSRegion          string                          `json:"awsRegion,omitempty"`
 	AWSAccessKeyID     string                          `json:"awsAccessKeyId,omitempty"`
 	AWSSecretAccessKey string                          `json:"awsSecretAccessKey,omitempty"`
@@ -551,6 +553,27 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// OAuth mode: create a secret with the OAuth token and label for auto-refresh.
+	if req.AuthMode == "oauth" && req.OAuthToken != "" && req.SecretName == "" {
+		req.SecretName = defaultProviderSecretName(req.Name, req.Provider)
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      req.SecretName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "sympozium",
+					"sympozium.ai/instance":        req.Name,
+					"sympozium.ai/auth-mode":        "oauth",
+				},
+			},
+			StringData: map[string]string{"oauth-token": req.OAuthToken},
+		}
+		if err := createOrUpdateSecret(r.Context(), s.client, secret); err != nil {
+			http.Error(w, "failed to create OAuth credentials secret: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if req.Provider != "" && req.APIKey != "" && req.SecretName == "" {
 		req.SecretName = defaultProviderSecretName(req.Name, req.Provider)
 		envKey := providerEnvKey(req.Provider)
@@ -600,8 +623,12 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.SecretName != "" {
+		authMode := req.AuthMode
+		if authMode == "" {
+			authMode = "apikey"
+		}
 		inst.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{
-			{Provider: req.Provider, Secret: req.SecretName},
+			{Provider: req.Provider, Secret: req.SecretName, Mode: authMode},
 		}
 	}
 
