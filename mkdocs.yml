@@ -106,5 +106,6 @@ nav:
     - Configuration: reference/configuration.md
     - Helm Chart: reference/helm.md
     - Testing: reference/testing.md
+  - Sympozium vs kagent: sympozium-vs-kagent.md
   - Design Document: design.md
   - Roadmap: roadmap.md
