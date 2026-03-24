@@ -26,7 +26,14 @@ import (
 )
 
 // Agent Sandbox CRD GVRs (kubernetes-sigs/agent-sandbox).
-// The upstream project uses the "agents.x-k8s.io" API group.
+//
+// WARNING: These use the v1alpha1 API group "agents.x-k8s.io". As the upstream
+// project graduates (v1alpha1 → v1beta1 → v1), the API group, version, and CR
+// schema will change. When updating, also update:
+//   - internal/apiserver/server.go (capability detection group/version string)
+//   - charts/sympozium/templates/rbac.yaml (RBAC apiGroups)
+//   - hack/agent-sandbox-crds.yaml (bundled test CRDs)
+//   - test/integration/test-agent-sandbox.sh, test-sandbox-lmstudio-*.sh
 var (
 	sandboxGVR = schema.GroupVersionResource{
 		Group:    "agents.x-k8s.io",

@@ -2403,8 +2403,9 @@ func (s *Server) getCapabilities(w http.ResponseWriter, r *http.Request) {
 	// (e.g. metrics-server), it returns a non-nil error with partial results
 	// that silently omit the failed groups. This caused false negatives where
 	// installed CRDs were reported as missing.
-	// NOTE: if the Agent Sandbox API group/version changes, update the
-	// string below AND the sandboxGVR in internal/controller/agentrun_sandbox.go.
+	// WARNING: This uses the v1alpha1 API group. As the upstream project
+	// (kubernetes-sigs/agent-sandbox) graduates, update this string AND the
+	// GVRs in internal/controller/agentrun_sandbox.go (see the full list there).
 	if s.kube != nil {
 		resources, err := s.kube.Discovery().ServerResourcesForGroupVersion("agents.x-k8s.io/v1alpha1")
 		if err == nil {
