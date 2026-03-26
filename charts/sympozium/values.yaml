@@ -111,7 +111,7 @@ certManager:
     name: sympozium-selfsigned
     selfSigned: true
   certificate:
-    duration: 8760h    # 1 year
+    duration: 8760h0m0s    # 1 year
     renewBefore: 720h  # 30 days
 
 # -- CRD installation
