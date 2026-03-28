@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -81,6 +82,18 @@ type AgentRunReconciler struct {
 }
 
 const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
+
+// updateStatusWithRetry safely updates status handling resourceVersion conflicts
+func (r *AgentRunReconciler) updateStatusWithRetry(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, mutate func(ar *sympoziumv1alpha1.AgentRun)) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &sympoziumv1alpha1.AgentRun{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(agentRun), latest); err != nil {
+			return err
+		}
+		mutate(latest)
+		return r.Status().Update(ctx, latest)
+	})
+}
 
 // imageRef returns a fully qualified image reference using the reconciler's tag.
 func (r *AgentRunReconciler) imageRef(name string) string {
@@ -383,15 +396,18 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	// Update status to Running
-	now := metav1.Now()
-	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseRunning
-	agentRun.Status.JobName = job.Name
-	agentRun.Status.StartedAt = &now
-	// Set the trace ID so operators can look up the full distributed trace.
-	if sc := span.SpanContext(); sc.HasTraceID() {
-		agentRun.Status.TraceID = sc.TraceID().String()
-	}
-	if err := r.Status().Update(ctx, agentRun); err != nil {
+	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+		now := metav1.Now()
+		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseRunning
+		ar.Status.JobName = job.Name
+		ar.Status.StartedAt = &now
+
+		// Set the trace ID so operators can look up the full distributed trace.
+		if sc := span.SpanContext(); sc.HasTraceID() {
+			ar.Status.TraceID = sc.TraceID().String()
+		}
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -435,8 +451,16 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 			client.InNamespace(agentRun.Namespace),
 			client.MatchingLabels{"sympozium.ai/agent-run": agentRun.Name},
 		); err == nil && len(podList.Items) > 0 {
-			agentRun.Status.PodName = podList.Items[0].Name
-			_ = r.Status().Update(ctx, agentRun)
+			podName := podList.Items[0].Name
+			err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+				// ⚠️ re-check condition on fresh object!
+				if ar.Status.PodName == "" {
+					ar.Status.PodName = podName
+				}
+			})
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -912,12 +936,14 @@ func (r *AgentRunReconciler) reconcilePendingServer(ctx context.Context, log log
 	r.maybeCreateHTTPRoute(ctx, log, agentRun, serverSidecar.params, svcName)
 
 	// Update status.
-	now := metav1.Now()
-	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseServing
-	agentRun.Status.DeploymentName = deployName
-	agentRun.Status.ServiceName = svcName
-	agentRun.Status.StartedAt = &now
-	if err := r.Status().Update(ctx, agentRun); err != nil {
+	err = r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+		now := metav1.Now()
+		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseServing
+		ar.Status.DeploymentName = deployName
+		ar.Status.ServiceName = svcName
+		ar.Status.StartedAt = &now
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -2051,13 +2077,19 @@ func (r *AgentRunReconciler) createInputConfigMap(ctx context.Context, agentRun 
 	return nil
 }
 
-// succeedRun marks an AgentRun as succeeded and stores the result.
+// succeedRun marks an AgentRun as succeeded and stores the result, using a safe retry for status updates.
 func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, result string, usage *sympoziumv1alpha1.TokenUsage) (ctrl.Result, error) {
 	now := metav1.Now()
-	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseSucceeded
-	agentRun.Status.CompletedAt = &now
-	agentRun.Status.Result = result
-	agentRun.Status.TokenUsage = usage
+
+	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseSucceeded
+		ar.Status.CompletedAt = &now
+		ar.Status.Result = result
+		ar.Status.TokenUsage = usage
+	})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Record run metrics.
 	runAttrs := metric.WithAttributes(
@@ -2069,6 +2101,7 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympozium
 		agentDurationHist.Record(ctx, float64(usage.DurationMs), runAttrs)
 	}
 
+	// Logging
 	logAttrs := []any{
 		"agent_run", agentRun.Name,
 		"instance", agentRun.Spec.InstanceRef,
@@ -2084,7 +2117,7 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympozium
 	}
 	slog.InfoContext(ctx, "agent.run.succeeded", logAttrs...)
 
-	return ctrl.Result{}, r.Status().Update(ctx, agentRun)
+	return ctrl.Result{}, nil
 }
 
 const (
@@ -2285,14 +2318,20 @@ func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log lo
 	log.Info("Updated memory ConfigMap", "configmap", cmName, "bytes", len(memoryContent))
 }
 
-// failRun marks an AgentRun as failed.
+// failRun marks an AgentRun as failed
 func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string) error {
 	now := metav1.Now()
-	agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
-	agentRun.Status.CompletedAt = &now
-	agentRun.Status.Error = reason
 
-	// Record failure metrics.
+	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
+		ar.Status.CompletedAt = &now
+		ar.Status.Error = reason
+	})
+	if err != nil {
+		return err
+	}
+
+	// Record failure metrics
 	failAttrs := metric.WithAttributes(
 		attribute.String("sympozium.agent.status", "failed"),
 		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
@@ -2303,13 +2342,14 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 		attribute.String("sympozium.instance", agentRun.Spec.InstanceRef),
 	))
 
+	// Logging
 	slog.ErrorContext(ctx, "agent.run.failed",
 		"agent_run", agentRun.Name,
 		"instance", agentRun.Spec.InstanceRef,
 		"error", reason,
 	)
 
-	return r.Status().Update(ctx, agentRun)
+	return nil
 }
 
 // --- Skill sidecar resolution and RBAC ---
