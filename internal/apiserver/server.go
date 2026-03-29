@@ -2599,7 +2599,7 @@ func (s *Server) proxyProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := r.URL.Query().Get("provider")
-	apiKey := r.URL.Query().Get("apiKey")
+	apiKey := r.Header.Get("X-Provider-Api-Key")
 
 	// Determine the models endpoint URL.
 	modelsURL := ""

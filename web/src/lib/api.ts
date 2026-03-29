@@ -841,7 +841,8 @@ export const api = {
     nodes: () => apiFetch<ProviderNode[]>("/api/v1/providers/nodes"),
     models: (baseURL: string, apiKey?: string) =>
       apiFetch<ProviderModelsResponse>(
-        `/api/v1/providers/models?baseURL=${encodeURIComponent(baseURL)}${apiKey ? `&apiKey=${encodeURIComponent(apiKey)}` : ""}`,
+        `/api/v1/providers/models?baseURL=${encodeURIComponent(baseURL)}`,
+        apiKey ? { headers: { "X-Provider-Api-Key": apiKey } } : undefined,
       ),
     bedrockModels: (data: {
       region: string;
