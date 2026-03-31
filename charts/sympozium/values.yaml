@@ -260,22 +260,18 @@ nodeProbe:
     probeInterval: 30s
     targets:
       - name: ollama
-        host: localhost
         port: 11434
         healthPath: /api/tags
         modelsPath: /api/tags
       - name: vllm
-        host: localhost
         port: 8000
         healthPath: /health
         modelsPath: /v1/models
       - name: llama-cpp
-        host: localhost
         port: 8080
         healthPath: /health
         modelsPath: /v1/models
       - name: lm-studio
-        host: localhost
         port: 1234
         healthPath: /v1/models
         modelsPath: /v1/models
