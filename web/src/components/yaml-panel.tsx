@@ -174,11 +174,11 @@ export function personaPackYamlFromResource(pack: PersonaPack): string {
     if (p.model) persona.model = p.model;
     if (p.skills && p.skills.length > 0) persona.skills = p.skills;
     if (p.toolPolicy) persona.toolPolicy = p.toolPolicy;
-    if (p.schedule) persona.schedule = p.schedule;
-    if (p.memory) persona.memory = p.memory;
+    if (p.schedule) persona.schedule = p.schedule as unknown as YamlValue;
+    if (p.memory) persona.memory = p.memory as unknown as YamlValue;
     if (p.channels && p.channels.length > 0) persona.channels = p.channels;
-    if (p.webEndpoint) persona.webEndpoint = p.webEndpoint;
-    if (p.lifecycle) persona.lifecycle = p.lifecycle;
+    if (p.webEndpoint) persona.webEndpoint = p.webEndpoint as unknown as YamlValue;
+    if (p.lifecycle) persona.lifecycle = p.lifecycle as unknown as YamlValue;
     return persona;
   });
 
