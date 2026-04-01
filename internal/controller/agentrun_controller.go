@@ -479,6 +479,18 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 	}
 	if err := r.Get(ctx, jobName, job); err != nil {
 		if errors.IsNotFound(err) {
+			// Guard against the race where the Job was already deleted (to kill
+			// sidecars) and a concurrent reconcile of startPostRun has already
+			// transitioned the phase to PostRunning or Succeeded. Do a fresh Get
+			// from the API server (not the cache) to check the actual phase before
+			// deciding to fail the run.
+			fresh := &sympoziumv1alpha1.AgentRun{}
+			if getErr := r.Get(ctx, client.ObjectKeyFromObject(agentRun), fresh); getErr == nil {
+				if fresh.Status.Phase == sympoziumv1alpha1.AgentRunPhasePostRunning ||
+					fresh.Status.Phase == sympoziumv1alpha1.AgentRunPhaseSucceeded {
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+				}
+			}
 			return ctrl.Result{}, r.failRun(ctx, agentRun, "Job not found")
 		}
 		return ctrl.Result{}, err
