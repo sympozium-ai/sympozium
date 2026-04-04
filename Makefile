@@ -86,11 +86,13 @@ integration-tests: ## Run API smoke regression tests (PersonaPacks, ad-hoc Insta
 ux-tests: ## Run Cypress UX tests (requires web dev server + cluster: make web-dev-serve)
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
 	$(eval VITE_PORT := $(shell lsof -ti :5173 >/dev/null 2>&1 && echo 5173 || (lsof -ti :5174 >/dev/null 2>&1 && echo 5174 || echo 5173)))
+	@./hack/check-ux-backend.sh $(VITE_PORT) "$(API_TOKEN)"
 	cd web && CYPRESS_BASE_URL=http://localhost:$(VITE_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) npx cypress run
 
 ux-tests-open: ## Open Cypress interactive runner (requires web dev server + cluster: make web-dev-serve)
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
 	$(eval VITE_PORT := $(shell lsof -ti :5173 >/dev/null 2>&1 && echo 5173 || (lsof -ti :5174 >/dev/null 2>&1 && echo 5174 || echo 5173)))
+	@./hack/check-ux-backend.sh $(VITE_PORT) "$(API_TOKEN)"
 	cd web && CYPRESS_BASE_URL=http://localhost:$(VITE_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) npx cypress open
 
 test-web-proxy: ## Run web-proxy HTTP API tests (requires a running web-endpoint service)

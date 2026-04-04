@@ -11,12 +11,12 @@ import (
 // It replays a scripted sequence of ChatResult values, one per Chat() call,
 // and records every AddToolResults invocation for assertions.
 type mockProvider struct {
-	name     string
-	model    string
-	turns    []ChatResult
-	turnErr  []error // err[i] returned on turn i (nil = no error)
-	idx      int
-	toolLog  [][]ToolResult
+	name      string
+	model     string
+	turns     []ChatResult
+	turnErr   []error // err[i] returned on turn i (nil = no error)
+	idx       int
+	toolLog   [][]ToolResult
 	chatCalls int
 }
 
@@ -77,8 +77,8 @@ func TestRunAgentLoop_ToolCallThenText(t *testing.T) {
 		model: "mock-1",
 		turns: []ChatResult{
 			{
-				Text:         "let me check",
-				InputTokens:  20, OutputTokens: 30,
+				Text:        "let me check",
+				InputTokens: 20, OutputTokens: 30,
 				ToolCalls: []ToolCall{
 					{ID: "call-1", Name: "read_file", Input: `{"path":"/tmp/foo"}`},
 				},
@@ -123,7 +123,7 @@ func TestRunAgentLoop_ToolFailuresDoNotBlock(t *testing.T) {
 	var turns []ChatResult
 	for i := 0; i < 8; i++ {
 		turns = append(turns, ChatResult{
-			InputTokens:  1, OutputTokens: 1,
+			InputTokens: 1, OutputTokens: 1,
 			ToolCalls: []ToolCall{
 				{ID: fmt.Sprintf("c%d", i), Name: "read_file", Input: `{"path":"/nonexistent/xyz"}`},
 			},
@@ -170,8 +170,8 @@ func TestRunAgentLoop_EmptyTerminalFallsBackToAccumulated(t *testing.T) {
 		model: "mock-reasoning",
 		turns: []ChatResult{
 			{
-				Text:         "I'll scan the cluster now.",
-				InputTokens:  100, OutputTokens: 50,
+				Text:        "I'll scan the cluster now.",
+				InputTokens: 100, OutputTokens: 50,
 				ToolCalls: []ToolCall{
 					{ID: "scan", Name: "read_file", Input: `{"path":"/tmp/x"}`},
 				},

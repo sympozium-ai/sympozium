@@ -660,8 +660,8 @@ func TestCallAnthropic_ToolErrorIsError(t *testing.T) {
 // TestCallOpenAI_EmptyTerminalTurnFallsBack reproduces the exact qwen3.5-9b
 // on LM Studio failure pattern at the wire level:
 //
-//   Turn 1: assistant emits reasoning content + tool_calls, finish_reason="tool_calls"
-//   Turn 2: assistant emits EMPTY content, finish_reason="stop"
+//	Turn 1: assistant emits reasoning content + tool_calls, finish_reason="tool_calls"
+//	Turn 2: assistant emits EMPTY content, finish_reason="stop"
 //
 // Before the accumulated-reasoning fallback was added, the agent returned an
 // empty response and the UX showed "No result available" despite 292 output

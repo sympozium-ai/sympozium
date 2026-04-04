@@ -460,7 +460,6 @@ func callBedrockWithClient(ctx context.Context, client bedrockClientAPI, model, 
 	return runAgentLoop(ctx, p)
 }
 
-
 func writeJSON(path string, v any) {
 	dir := filepath.Dir(path)
 	_ = os.MkdirAll(dir, 0o755)
