@@ -255,9 +255,18 @@ export function RunsPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <p className="py-8 text-center text-muted-foreground">
-          No runs found
-        </p>
+        <div className="py-12 text-center space-y-3">
+          <p className="text-muted-foreground">
+            {search ? "No runs match your search" : "No runs yet"}
+          </p>
+          {!search && (
+            <p className="text-sm text-muted-foreground">
+              Runs are created when you dispatch a task to an{" "}
+              <Link to="/instances" className="text-blue-400 hover:text-blue-300">Instance</Link>, or automatically via a{" "}
+              <Link to="/schedules" className="text-blue-400 hover:text-blue-300">Schedule</Link>.
+            </p>
+          )}
+        </div>
       ) : (
         <Table>
           <TableHeader>

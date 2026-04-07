@@ -115,9 +115,19 @@ export function InstancesPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <p className="py-8 text-center text-muted-foreground">
-          No instances found
-        </p>
+        <div className="py-12 text-center space-y-3">
+          <p className="text-muted-foreground">
+            {search ? "No instances match your search" : "No instances yet"}
+          </p>
+          {!search && (
+            <p className="text-sm text-muted-foreground">
+              <Link to="/personas" className="text-blue-400 hover:text-blue-300">Enable a Persona Pack</Link> to auto-create instances, or{" "}
+              <button onClick={() => setWizardOpen(true)} className="text-blue-400 hover:text-blue-300">
+                create one manually
+              </button>.
+            </p>
+          )}
+        </div>
       ) : (
         <Table>
           <TableHeader>

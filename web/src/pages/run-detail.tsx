@@ -13,7 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ArrowLeft, Clock, Cpu, Zap, AlertTriangle } from "lucide-react";
+import { Clock, Cpu, Zap, AlertTriangle } from "lucide-react";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
 
 export function RunDetailPage() {
@@ -40,21 +41,17 @@ export function RunDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/runs" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold font-mono">{run.metadata.name}</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Link to={`/instances/${run.spec.instanceRef}`} className="hover:text-primary">
-              {run.spec.instanceRef}
-            </Link>
-            <span>·</span>
-            <StatusBadge phase={run.status?.phase} />
-            <span>·</span>
-            {formatAge(run.metadata.creationTimestamp)} ago
-          </div>
+      <div className="space-y-1">
+        <Breadcrumbs items={[
+          { label: "Persona Packs", to: "/personas" },
+          { label: run.spec.instanceRef, to: `/instances/${run.spec.instanceRef}` },
+          { label: run.metadata.name },
+        ]} />
+        <h1 className="text-xl font-bold font-mono">{run.metadata.name}</h1>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <StatusBadge phase={run.status?.phase} />
+          <span>·</span>
+          {formatAge(run.metadata.creationTimestamp)} ago
         </div>
       </div>
 

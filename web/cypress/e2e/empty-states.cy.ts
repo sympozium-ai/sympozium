@@ -1,0 +1,32 @@
+// Empty states: verify contextual empty-state messages render with helpful
+// links when no resources exist. Uses search filtering to guarantee the
+// empty state is shown without needing a truly empty cluster.
+
+describe("Empty States — contextual guidance", () => {
+  it("shows contextual empty state on instances page", () => {
+    cy.visit("/instances");
+
+    // Search for something guaranteed not to exist.
+    cy.get("input[placeholder*='Search']", { timeout: 20000 }).clear().type("zzz-nonexistent-xyz");
+
+    cy.contains("No instances match your search", { timeout: 10000 }).should("be.visible");
+  });
+
+  it("shows contextual empty state on runs page", () => {
+    cy.visit("/runs");
+
+    cy.get("input[placeholder*='Search']", { timeout: 20000 }).clear().type("zzz-nonexistent-xyz");
+
+    cy.contains("No runs match your search", { timeout: 10000 }).should("be.visible");
+  });
+
+  it("shows contextual empty state on persona packs page", () => {
+    cy.visit("/personas");
+
+    cy.get("input[placeholder*='Search']", { timeout: 20000 }).clear().type("zzz-nonexistent-xyz");
+
+    cy.contains("No persona packs match your search", { timeout: 10000 }).should("be.visible");
+  });
+});
+
+export {};

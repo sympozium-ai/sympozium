@@ -17,17 +17,35 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRuns } from "@/hooks/use-api";
 
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/gateway", label: "Gateway", icon: Globe },
-  { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
-  { to: "/instances", label: "Instances", icon: Server },
-  { to: "/personas", label: "Persona Packs", icon: Users },
-  { to: "/policies", label: "Policies", icon: Shield },
-  { to: "/runs", label: "Runs", icon: Play },
-  { to: "/schedules", label: "Schedules", icon: Clock },
-  { to: "/skills", label: "Skills", icon: Wrench },
+type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; indent?: number; badgeKey?: string };
+type NavSection = { label?: string; items: NavItem[] };
+
+const navSections: NavSection[] = [
+  {
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/gateway", label: "Gateway", icon: Globe },
+    ],
+  },
+  {
+    label: "Agents",
+    items: [
+      { to: "/personas", label: "Persona Packs", icon: Users },
+      { to: "/instances", label: "Instances", icon: Server, indent: 1 },
+      { to: "/runs", label: "Runs", icon: Play, indent: 2, badgeKey: "runs" },
+      { to: "/schedules", label: "Schedules", icon: Clock, indent: 2 },
+    ],
+  },
+  {
+    label: "Configuration",
+    items: [
+      { to: "/policies", label: "Policies", icon: Shield },
+      { to: "/skills", label: "Skills", icon: Wrench },
+      { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
+    ],
+  },
 ];
 
 interface AppSidebarProps {
@@ -36,6 +54,22 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
+  const { data: runs } = useRuns();
+  const activeRuns = (runs || []).filter(
+    (r) => r.status?.phase === "Running" || r.status?.phase === "Pending" || r.status?.phase === "PostRunning"
+  ).length;
+  const failedRuns = (runs || []).filter(
+    (r) => r.status?.phase === "Failed"
+  ).length;
+
+  const badges: Record<string, { count: number; color: string } | null> = {
+    runs: activeRuns > 0
+      ? { count: activeRuns, color: "bg-blue-500" }
+      : failedRuns > 0
+        ? { count: failedRuns, color: "bg-red-500" }
+        : null,
+  };
+
   return (
     <aside
       className={cn(
@@ -58,24 +92,46 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {/* Navigation */}
       <ScrollArea className="flex-1 py-2">
         <nav className="flex flex-col gap-1 px-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center rounded-md text-sm font-medium transition-colors",
-                  collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
-                  isActive
-                    ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"
-                )
-              }
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {!collapsed && item.label}
-            </NavLink>
+          {navSections.map((section, si) => (
+            <div key={si} className={si > 0 ? "mt-3" : undefined}>
+              {section.label && !collapsed && (
+                <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                  {section.label}
+                </div>
+              )}
+              {section.label && collapsed && (
+                <div className="mx-2 mb-1 mt-1 border-t border-border/30" />
+              )}
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  title={collapsed ? item.label : undefined}
+                  className={({ isActive }) =>
+                    cn(
+                      "relative flex items-center rounded-md text-sm font-medium transition-colors",
+                      collapsed ? "justify-center px-0 py-2" : "gap-3 py-2 pr-3",
+                      !collapsed && (item.indent === 2 ? "pl-9" : item.indent === 1 ? "pl-6" : "pl-3"),
+                      isActive
+                        ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && item.label}
+                  {item.badgeKey && badges[item.badgeKey] && (
+                    <span className={cn(
+                      "ml-auto inline-flex items-center justify-center rounded-full text-[10px] font-bold text-white",
+                      collapsed ? "absolute -top-1 -right-1 h-4 min-w-4 px-1" : "h-5 min-w-5 px-1.5",
+                      badges[item.badgeKey]!.color,
+                    )}>
+                      {badges[item.badgeKey]!.count}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
       </ScrollArea>

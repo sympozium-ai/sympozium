@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Clock, Wrench, MessageSquare, Brain, Shield, Pencil, X, Check } from "lucide-react";
+import { Clock, Wrench, MessageSquare, Brain, Shield, Pencil, X, Check } from "lucide-react";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
 import { YamlButton, personaPackYamlFromResource } from "@/components/yaml-panel";
 
@@ -94,26 +95,25 @@ export function PersonaDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/personas" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold font-mono">{pack.metadata.name}</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {pack.spec.description && (
-              <span>{pack.spec.description}</span>
-            )}
-            <StatusBadge phase={pack.status?.phase} />
-            {pack.spec.category && (
-              <Badge variant="outline" className="capitalize">
-                {pack.spec.category}
-              </Badge>
-            )}
-            {pack.spec.version && (
-              <Badge variant="secondary">v{pack.spec.version}</Badge>
-            )}
-          </div>
+      <div className="space-y-1">
+        <Breadcrumbs items={[
+          { label: "Persona Packs", to: "/personas" },
+          { label: pack.metadata.name },
+        ]} />
+        <h1 className="text-2xl font-bold font-mono">{pack.metadata.name}</h1>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {pack.spec.description && (
+            <span>{pack.spec.description}</span>
+          )}
+          <StatusBadge phase={pack.status?.phase} />
+          {pack.spec.category && (
+            <Badge variant="outline" className="capitalize">
+              {pack.spec.category}
+            </Badge>
+          )}
+          {pack.spec.version && (
+            <Badge variant="secondary">v{pack.spec.version}</Badge>
+          )}
         </div>
       </div>
 
@@ -160,6 +160,39 @@ export function PersonaDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Installed Instances */}
+      {pack.status?.installedPersonas && pack.status.installedPersonas.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Installed Instances</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pack.status.installedPersonas.map((ip) => (
+                <Link
+                  key={ip.instanceName}
+                  to={`/instances/${ip.instanceName}`}
+                  className="flex items-center justify-between rounded-lg border p-3 hover:bg-white/5 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm">{ip.instanceName}</span>
+                    <Badge variant="outline" className="text-xs">{ip.name}</Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {ip.scheduleName && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {ip.scheduleName}
+                      </Badge>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Auth refs */}
       {pack.spec.authRefs && pack.spec.authRefs.length > 0 && (

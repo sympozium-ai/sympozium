@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { useInstance, useCapabilities, usePatchInstance } from "@/hooks/use-api";
+import { useInstance, useCapabilities, usePatchInstance, useRuns } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
 import { GithubAuthDialog } from "@/components/github-auth-dialog";
 import {
@@ -32,14 +32,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, AlertTriangle, Plus, Pencil, Trash2 } from "lucide-react";
-import { formatAge } from "@/lib/utils";
+import { AlertTriangle, Plus, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { formatAge, truncate } from "@/lib/utils";
 import { YamlButton, instanceYamlFromResource } from "@/components/yaml-panel";
 
 export function InstanceDetailPage() {
   const { name } = useParams<{ name: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const allowedTabs = new Set(["overview", "channels", "skills", "memory", "web-endpoint", "lifecycle", "yaml"]);
+  const allowedTabs = new Set(["overview", "runs", "channels", "skills", "memory", "web-endpoint", "lifecycle", "yaml"]);
   const paramTab = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<string>(
     paramTab && allowedTabs.has(paramTab) ? paramTab : "overview",
@@ -47,6 +48,14 @@ export function InstanceDetailPage() {
   const connectGithub = searchParams.get("connect") === "github";
   const { data: inst, isLoading } = useInstance(name || "");
   const { data: capabilities } = useCapabilities();
+  const { data: allRuns } = useRuns();
+  const instanceRuns = (allRuns || [])
+    .filter((r) => r.spec.instanceRef === name)
+    .sort((a, b) =>
+      new Date(b.metadata.creationTimestamp || "").getTime() -
+      new Date(a.metadata.creationTimestamp || "").getTime()
+    )
+    .slice(0, 20);
 
   useEffect(() => {
     if (paramTab && allowedTabs.has(paramTab)) {
@@ -77,22 +86,23 @@ export function InstanceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/instances" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold font-mono">{inst.metadata.name}</h1>
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            Created {formatAge(inst.metadata.creationTimestamp)} ago
-            <StatusBadge phase={inst.status?.phase} />
-          </p>
-        </div>
+      <div className="space-y-1">
+        <Breadcrumbs items={[
+          { label: "Persona Packs", to: "/personas" },
+          { label: "Instances", to: "/instances" },
+          { label: inst.metadata.name },
+        ]} />
+        <h1 className="text-2xl font-bold font-mono">{inst.metadata.name}</h1>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          Created {formatAge(inst.metadata.creationTimestamp)} ago
+          <StatusBadge phase={inst.status?.phase} />
+        </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="runs">Runs{instanceRuns.length > 0 ? ` (${instanceRuns.length})` : ""}</TabsTrigger>
           <TabsTrigger value="channels">Channels</TabsTrigger>
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="memory">Memory</TabsTrigger>
@@ -154,6 +164,52 @@ export function InstanceDetailPage() {
               capability={capabilities?.agentSandbox}
             />
           </div>
+        </TabsContent>
+
+        <TabsContent value="runs">
+          <Card>
+            <CardContent className="pt-6">
+              {instanceRuns.length > 0 ? (
+                <div className="space-y-2">
+                  {instanceRuns.map((run) => (
+                    <Link
+                      key={run.metadata.name}
+                      to={`/runs/${run.metadata.name}`}
+                      className="flex items-center justify-between rounded-lg border p-3 hover:bg-white/5 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <StatusBadge phase={run.status?.phase} />
+                        <span className="font-mono text-xs truncate">{run.metadata.name}</span>
+                        <span className="text-xs text-muted-foreground truncate max-w-xs hidden sm:inline">
+                          {truncate(run.spec.task, 50)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {run.status?.tokenUsage && (
+                          <span className="text-xs text-muted-foreground">
+                            {run.status.tokenUsage.totalTokens.toLocaleString()} tokens
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          {formatAge(run.metadata.creationTimestamp)}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    </Link>
+                  ))}
+                  {(allRuns || []).filter((r) => r.spec.instanceRef === name).length > 20 && (
+                    <Link to={`/runs?search=${name}`} className="block text-center text-xs text-blue-400 hover:text-blue-300 py-2">
+                      View all runs
+                    </Link>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No runs yet. Dispatch an ad-hoc run from the <Link to="/runs" className="text-blue-400 hover:text-blue-300">Runs page</Link>.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="channels">

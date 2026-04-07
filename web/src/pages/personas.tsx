@@ -161,9 +161,23 @@ export function PersonasPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <p className="py-8 text-center text-muted-foreground">
-          No persona packs found
-        </p>
+        <div className="py-12 text-center space-y-3">
+          <p className="text-muted-foreground">
+            {search ? "No persona packs match your search" : "No persona packs yet"}
+          </p>
+          {!search && (
+            <p className="text-sm text-muted-foreground">
+              Click{" "}
+              <button
+                onClick={() => installDefaults.mutate()}
+                className="text-blue-400 hover:text-blue-300"
+              >
+                Install Default Packs
+              </button>{" "}
+              to get started with pre-built agent bundles.
+            </p>
+          )}
+        </div>
       ) : (
         <Table>
           <TableHeader>
