@@ -25,6 +25,7 @@ const (
 	ToolSendChannelMessage = "send_channel_message"
 	ToolFetchURL           = "fetch_url"
 	ToolScheduleTask       = "schedule_task"
+	ToolDelegateToPersona  = "delegate_to_persona"
 )
 
 // ToolDef describes a tool for LLM function calling.
@@ -190,6 +191,28 @@ func defaultTools() []ToolDef {
 				"required": []string{"name", "action"},
 			},
 		},
+		{
+			Name: ToolDelegateToPersona,
+			Description: "Delegate a task to another persona in your team (PersonaPack). " +
+				"Use this when your task requires expertise from another team member. " +
+				"The target persona will receive the task, execute it, and the result will be " +
+				"delivered back to you. Only personas defined in the same PersonaPack with a " +
+				"delegation or sequential relationship can be targeted.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"targetPersona": map[string]any{
+						"type":        "string",
+						"description": "The name of the persona to delegate to (e.g. 'writer', 'reviewer'). Must be a persona in the same PersonaPack.",
+					},
+					"task": map[string]any{
+						"type":        "string",
+						"description": "The task description for the target persona. Be specific and include all necessary context — the target persona runs independently.",
+					},
+				},
+				"required": []string{"targetPersona", "task"},
+			},
+		},
 	}
 }
 
@@ -217,6 +240,8 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 		return fetchURLTool(args)
 	case ToolScheduleTask:
 		return scheduleTaskTool(args)
+	case ToolDelegateToPersona:
+		return delegateToPersonaTool(args)
 	default:
 		// Check if this is a memory tool from the memory-server sidecar.
 		if isMemoryTool(name) {
@@ -334,6 +359,60 @@ func sendChannelMessageTool(args map[string]any) string {
 		target = "owner (self)"
 	}
 	return fmt.Sprintf("Message sent to %s channel (target: %s)", channel, target)
+}
+
+// --- Delegate to persona tool (IPC-based) ---
+
+// delegateToPersonaTool writes a spawn request to /ipc/spawn/ with
+// targetPersona and packName for the IPC bridge to forward to the spawner.
+// The spawner resolves the persona to the correct SympoziumInstance.
+func delegateToPersonaTool(args map[string]any) string {
+	targetPersona, _ := args["targetPersona"].(string)
+	task, _ := args["task"].(string)
+
+	if targetPersona == "" {
+		return "Error: 'targetPersona' is required — specify the persona name to delegate to (e.g. 'writer')"
+	}
+	if task == "" {
+		return "Error: 'task' is required — describe what the target persona should do"
+	}
+
+	packName := os.Getenv("PERSONA_PACK_NAME")
+	if packName == "" {
+		return "Error: this agent is not part of a PersonaPack — delegation requires a pack context. " +
+			"PERSONA_PACK_NAME environment variable is not set."
+	}
+
+	req := struct {
+		Task          string `json:"task"`
+		AgentID       string `json:"agentId"`
+		TargetPersona string `json:"targetPersona"`
+		PackName      string `json:"packName"`
+	}{
+		Task:          task,
+		AgentID:       "default",
+		TargetPersona: targetPersona,
+		PackName:      packName,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Sprintf("Error marshalling spawn request: %v", err)
+	}
+
+	dir := "/ipc/spawn"
+	_ = os.MkdirAll(dir, 0o755)
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	path := filepath.Join(dir, fmt.Sprintf("request-%s.json", id))
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Sprintf("Error writing spawn request: %v", err)
+	}
+
+	log.Printf("Delegated to persona %q in pack %q: task=%s", targetPersona, packName, truncateStr(task, 100))
+	return fmt.Sprintf("Delegation request sent to persona '%s'. "+
+		"A new AgentRun will be created for the target persona. "+
+		"The result will be available once the delegate completes.", targetPersona)
 }
 
 // --- Web fetch tool (runs in the agent container) ---

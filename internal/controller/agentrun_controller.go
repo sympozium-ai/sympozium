@@ -319,6 +319,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		}
 		mcpServers = instance.Spec.MCPServers
 
+		// Extract the owning PersonaPack name for persona-aware delegation.
+		if packName := instance.Labels["sympozium.ai/persona-pack"]; packName != "" {
+			agentRun.Labels["sympozium.ai/persona-pack"] = packName
+		}
+
 		// Propagate RunTimeout from instance config to AgentRun spec if not already set.
 		if agentRun.Spec.Timeout == nil && instance.Spec.Agents.Default.RunTimeout != "" {
 			if d, err := time.ParseDuration(instance.Spec.Agents.Default.RunTimeout); err == nil && d > 0 {
@@ -1516,6 +1521,7 @@ func (r *AgentRunReconciler) buildContainers(
 				{Name: "AGENT_ID", Value: agentRun.Spec.AgentID},
 				{Name: "SESSION_KEY", Value: agentRun.Spec.SessionKey},
 				{Name: "INSTANCE_NAME", Value: agentRun.Spec.InstanceRef},
+				{Name: "PERSONA_PACK_NAME", Value: agentRun.Labels["sympozium.ai/persona-pack"]},
 				{Name: "AGENT_NAMESPACE", Value: agentRun.Namespace},
 				{Name: "TASK", Value: agentRun.Spec.Task},
 				{Name: "SYSTEM_PROMPT", Value: agentRun.Spec.SystemPrompt},

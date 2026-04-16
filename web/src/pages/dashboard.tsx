@@ -16,6 +16,7 @@ import {
   useClusterInfo,
   useObservabilityMetrics,
   useGateVerdict,
+  usePersonaPacks,
 } from "@/hooks/use-api";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { formatAge, truncate } from "@/lib/utils";
@@ -39,7 +40,9 @@ import {
   ShieldAlert,
   Check,
   X,
+  Users,
 } from "lucide-react";
+import { DashboardPersonaCanvas } from "@/components/persona-canvas";
 import { Button } from "@/components/ui/button";
 import { ResponsiveGridLayout, useContainerWidth } from "react-grid-layout";
 import type { Layout, ResponsiveLayouts } from "react-grid-layout";
@@ -59,7 +62,8 @@ type PanelId =
   | "recentRuns"
   | "eventStream"
   | "runStatus"
-  | "recentErrors";
+  | "recentErrors"
+  | "teamCanvas";
 
 const DEFAULT_LAYOUTS: ResponsiveLayouts = {
   lg: [
@@ -73,6 +77,7 @@ const DEFAULT_LAYOUTS: ResponsiveLayouts = {
     { i: "eventStream", x: 0, y: 11, w: 6, h: 6, minW: 4, minH: 4 },
     { i: "runStatus", x: 6, y: 11, w: 3, h: 5, minW: 3, minH: 4 },
     { i: "recentErrors", x: 9, y: 11, w: 3, h: 5, minW: 3, minH: 4 },
+    { i: "teamCanvas", x: 0, y: 16, w: 12, h: 8, minW: 6, minH: 5 },
   ],
   md: [
     { i: "activity", x: 0, y: 0, w: 5, h: 7, minW: 4, minH: 3 },
@@ -82,6 +87,7 @@ const DEFAULT_LAYOUTS: ResponsiveLayouts = {
     { i: "eventStream", x: 0, y: 11, w: 5, h: 6, minW: 4, minH: 4 },
     { i: "runStatus", x: 5, y: 11, w: 5, h: 5, minW: 3, minH: 4 },
     { i: "recentErrors", x: 0, y: 16, w: 10, h: 5, minW: 4, minH: 4 },
+    { i: "teamCanvas", x: 0, y: 21, w: 10, h: 8, minW: 6, minH: 5 },
   ],
   sm: [
     { i: "activity", x: 0, y: 0, w: 6, h: 7, minW: 4, minH: 3 },
@@ -91,6 +97,7 @@ const DEFAULT_LAYOUTS: ResponsiveLayouts = {
     { i: "eventStream", x: 0, y: 22, w: 6, h: 6, minW: 4, minH: 4 },
     { i: "runStatus", x: 0, y: 28, w: 6, h: 5, minW: 3, minH: 4 },
     { i: "recentErrors", x: 0, y: 33, w: 6, h: 5, minW: 4, minH: 4 },
+    { i: "teamCanvas", x: 0, y: 38, w: 6, h: 8, minW: 4, minH: 5 },
   ],
 };
 
@@ -1413,6 +1420,12 @@ export function DashboardPage() {
                   ))}
                 </div>
               )}
+            </PanelWrapper>
+          </div>
+          {/* ---- Team Canvas ---- */}
+          <div key="teamCanvas">
+            <PanelWrapper title="Team Canvas" icon={Users} locked={locked}>
+              <DashboardPersonaCanvas />
             </PanelWrapper>
           </div>
         </ResponsiveGridLayout>

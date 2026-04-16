@@ -641,3 +641,112 @@ export function GlobalPersonaCanvas() {
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Dashboard widget canvas (compact, with pack selector dropdown)
+// ══════════════════════════════════════════════════════════════════════════════
+
+export function DashboardPersonaCanvas() {
+  const { data: packs } = usePersonaPacks();
+  const { data: runs } = useRuns();
+  const [selectedPack, setSelectedPack] = useState<string>("__all__");
+
+  const enabledPacks = useMemo(
+    () => (packs || []).filter((p) => p.spec.enabled),
+    [packs],
+  );
+
+  // Filter to selected pack or show all
+  const visiblePacks = useMemo(
+    () =>
+      selectedPack === "__all__"
+        ? enabledPacks
+        : enabledPacks.filter((p) => p.metadata.name === selectedPack),
+    [enabledPacks, selectedPack],
+  );
+
+  const { allNodes, allEdges } = useMemo(() => {
+    const nodes: Node<PersonaNodeData>[] = [];
+    const edges: Edge[] = [];
+    let currentX = 0;
+
+    for (const pack of visiblePacks) {
+      const personas = pack.spec.personas || [];
+      const relationships = pack.spec.relationships || [];
+      const prefix = pack.metadata.name;
+      const runPhaseMap = buildRunPhaseMap(runs, pack.status?.installedPersonas);
+
+      const packNodes = layoutNodes(personas, relationships, currentX, 0, prefix);
+      for (const node of packNodes) {
+        node.data.packName = visiblePacks.length > 1 ? pack.metadata.name : undefined;
+        const personaName = node.id.split("/")[1] || node.id;
+        const ip = pack.status?.installedPersonas?.find((p) => p.name === personaName);
+        if (ip) node.data.instanceName = ip.instanceName;
+        const status = runPhaseMap.get(personaName);
+        if (status) {
+          node.data.runPhase = status.phase;
+          node.data.runTask = status.task;
+        }
+      }
+
+      nodes.push(...packNodes);
+      edges.push(...buildEdges(relationships, prefix));
+      const cols = Math.max(2, Math.ceil(Math.sqrt(personas.length)));
+      currentX += cols * 260 + 50;
+    }
+
+    return { allNodes: nodes, allEdges: edges };
+  }, [visiblePacks, runs]);
+
+  const [nodes, , onNodesChange] = useNodesState(allNodes);
+  const [edges, , onEdgesChange] = useEdgesState(allEdges);
+
+  if (enabledPacks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2">
+        <p>No enabled persona packs</p>
+        <p className="text-xs">Enable a pack to see the team canvas</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header: pack selector + legend */}
+      <div className="flex items-center justify-between px-1 pb-2 shrink-0">
+        <select
+          value={selectedPack}
+          onChange={(e) => setSelectedPack(e.target.value)}
+          className="text-xs bg-transparent border border-border/40 rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="__all__">All Packs ({enabledPacks.length})</option>
+          {enabledPacks.map((p) => (
+            <option key={p.metadata.name} value={p.metadata.name}>
+              {p.metadata.name} ({p.spec.personas?.length ?? 0})
+            </option>
+          ))}
+        </select>
+        <StatusLegend />
+      </div>
+      {/* Canvas */}
+      <div className="flex-1 min-h-0 rounded-lg border border-border/40 bg-background">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          nodesDraggable
+          nodesConnectable={false}
+          {...rfDefaults}
+        >
+          <Background gap={20} size={1} color="#ffffff08" />
+          <Controls
+            showInteractive={false}
+            className="!bg-card !border-border/40 !shadow-md [&>button]:!bg-card [&>button]:!border-border/40 [&>button]:!text-muted-foreground [&>button:hover]:!bg-white/5"
+          />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
