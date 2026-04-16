@@ -136,10 +136,13 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 
 	// MCP Server endpoints
 	mux.HandleFunc("GET /api/v1/mcpservers", s.listMCPServers)
+	mux.HandleFunc("POST /api/v1/mcpservers/install-defaults", s.installDefaultMCPServers)
 	mux.HandleFunc("GET /api/v1/mcpservers/{name}", s.getMCPServer)
 	mux.HandleFunc("POST /api/v1/mcpservers", s.createMCPServer)
 	mux.HandleFunc("DELETE /api/v1/mcpservers/{name}", s.deleteMCPServer)
 	mux.HandleFunc("PATCH /api/v1/mcpservers/{name}", s.patchMCPServer)
+	mux.HandleFunc("POST /api/v1/mcpservers/{name}/auth/token", s.handleMCPServerAuthToken)
+	mux.HandleFunc("GET /api/v1/mcpservers/{name}/auth/status", s.handleMCPServerAuthStatus)
 
 	// Gateway config endpoints (singleton SympoziumConfig)
 	mux.HandleFunc("GET /api/v1/gateway", s.getGatewayConfig)
@@ -156,6 +159,10 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	// Cluster info & capabilities
 	mux.HandleFunc("GET /api/v1/cluster", s.getClusterInfo)
 	mux.HandleFunc("GET /api/v1/capabilities", s.getCapabilities)
+
+	// Agent Sandbox CRD management
+	mux.HandleFunc("POST /api/v1/agent-sandbox/install", s.installAgentSandboxCRDs)
+	mux.HandleFunc("DELETE /api/v1/agent-sandbox/install", s.uninstallAgentSandboxCRDs)
 
 	// Namespace listing
 	mux.HandleFunc("GET /api/v1/namespaces", s.listNamespaces)
@@ -1116,14 +1123,17 @@ func (s *Server) getMCPServer(w http.ResponseWriter, r *http.Request) {
 
 // CreateMCPServerRequest is the request body for creating an MCPServer.
 type CreateMCPServerRequest struct {
-	Name          string   `json:"name"`
-	TransportType string   `json:"transportType"`
-	ToolsPrefix   string   `json:"toolsPrefix"`
-	URL           string   `json:"url,omitempty"`
-	Image         string   `json:"image,omitempty"`
-	Timeout       int      `json:"timeout,omitempty"`
-	ToolsAllow    []string `json:"toolsAllow,omitempty"`
-	ToolsDeny     []string `json:"toolsDeny,omitempty"`
+	Name          string            `json:"name"`
+	TransportType string            `json:"transportType"`
+	ToolsPrefix   string            `json:"toolsPrefix"`
+	URL           string            `json:"url,omitempty"`
+	Image         string            `json:"image,omitempty"`
+	Timeout       int               `json:"timeout,omitempty"`
+	ToolsAllow    []string          `json:"toolsAllow,omitempty"`
+	ToolsDeny     []string          `json:"toolsDeny,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	SecretRefs    []string          `json:"secretRefs,omitempty"`
+	Args          []string          `json:"args,omitempty"`
 }
 
 func (s *Server) createMCPServer(w http.ResponseWriter, r *http.Request) {
@@ -1162,9 +1172,15 @@ func (s *Server) createMCPServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Image != "" {
-		mcp.Spec.Deployment = &sympoziumv1alpha1.MCPServerDeployment{
+		dep := &sympoziumv1alpha1.MCPServerDeployment{
 			Image: req.Image,
+			Args:  req.Args,
+			Env:   req.Env,
 		}
+		for _, ref := range req.SecretRefs {
+			dep.SecretRefs = append(dep.SecretRefs, sympoziumv1alpha1.MCPSecretRef{Name: ref})
+		}
+		mcp.Spec.Deployment = dep
 	}
 
 	if err := s.client.Create(r.Context(), mcp); err != nil {
@@ -2168,6 +2184,175 @@ func (s *Server) installDefaultPersonaPacks(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, resp)
+}
+
+// ── MCP Server defaults & auth ──────────────────────────────────────────────
+
+type InstallDefaultMCPServersResponse struct {
+	SourceNamespace string   `json:"sourceNamespace"`
+	TargetNamespace string   `json:"targetNamespace"`
+	Copied          []string `json:"copied"`
+	AlreadyPresent  []string `json:"alreadyPresent"`
+}
+
+func (s *Server) installDefaultMCPServers(w http.ResponseWriter, r *http.Request) {
+	targetNS := r.URL.Query().Get("namespace")
+	if targetNS == "" {
+		targetNS = "default"
+	}
+	sourceNS := "sympozium-system"
+
+	var sourceList sympoziumv1alpha1.MCPServerList
+	if err := s.client.List(r.Context(), &sourceList, client.InNamespace(sourceNS)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := InstallDefaultMCPServersResponse{SourceNamespace: sourceNS, TargetNamespace: targetNS, Copied: []string{}, AlreadyPresent: []string{}}
+	for _, src := range sourceList.Items {
+		var existing sympoziumv1alpha1.MCPServer
+		err := s.client.Get(r.Context(), types.NamespacedName{Name: src.Name, Namespace: targetNS}, &existing)
+		if err == nil {
+			resp.AlreadyPresent = append(resp.AlreadyPresent, src.Name)
+			continue
+		}
+		if !k8serrors.IsNotFound(err) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		mcp := &sympoziumv1alpha1.MCPServer{
+			ObjectMeta: metav1.ObjectMeta{Name: src.Name, Namespace: targetNS, Labels: src.Labels, Annotations: src.Annotations},
+			Spec:       src.Spec,
+		}
+		if err := s.client.Create(r.Context(), mcp); err != nil {
+			if k8serrors.IsAlreadyExists(err) {
+				resp.AlreadyPresent = append(resp.AlreadyPresent, src.Name)
+				continue
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp.Copied = append(resp.Copied, src.Name)
+	}
+
+	writeJSON(w, resp)
+}
+
+// mcpServerAuthTokenRequest is the request body for setting an MCP server's auth token.
+type mcpServerAuthTokenRequest struct {
+	Token string `json:"token"`
+}
+
+type mcpServerAuthStatusResponse struct {
+	Status     string `json:"status"` // "idle" or "complete"
+	SecretName string `json:"secretName"`
+}
+
+// mcpServerSecretName returns the conventional Secret name for an MCP server.
+func mcpServerSecretName(mcpName string) string {
+	return "mcp-" + mcpName + "-token"
+}
+
+func (s *Server) handleMCPServerAuthStatus(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ns := r.URL.Query().Get("namespace")
+	if ns == "" {
+		ns = "default"
+	}
+
+	secretName := mcpServerSecretName(name)
+	status := "idle"
+
+	existing := &corev1.Secret{}
+	if err := s.client.Get(r.Context(), types.NamespacedName{Name: secretName, Namespace: ns}, existing); err == nil {
+		if len(existing.Data) > 0 {
+			status = "complete"
+		}
+	}
+
+	writeJSON(w, mcpServerAuthStatusResponse{Status: status, SecretName: secretName})
+}
+
+func (s *Server) handleMCPServerAuthToken(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ns := r.URL.Query().Get("namespace")
+	if ns == "" {
+		ns = "default"
+	}
+
+	var req mcpServerAuthTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		http.Error(w, "token is required", http.StatusBadRequest)
+		return
+	}
+
+	secretName := mcpServerSecretName(name)
+	secretKey := types.NamespacedName{Name: secretName, Namespace: ns}
+
+	existing := &corev1.Secret{}
+	err := s.client.Get(r.Context(), secretKey, existing)
+	if k8serrors.IsNotFound(err) {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "sympozium",
+					"app.kubernetes.io/component":  "mcp-server-secret",
+					"sympozium.ai/mcpserver":       name,
+				},
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"GITHUB_PERSONAL_ACCESS_TOKEN": []byte(token),
+			},
+		}
+		if err := s.client.Create(r.Context(), secret); err != nil {
+			http.Error(w, fmt.Sprintf("failed to create secret: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get secret: %v", err), http.StatusInternalServerError)
+		return
+	} else {
+		patch := client.MergeFrom(existing.DeepCopy())
+		if existing.Data == nil {
+			existing.Data = make(map[string][]byte)
+		}
+		existing.Data["GITHUB_PERSONAL_ACCESS_TOKEN"] = []byte(token)
+		if err := s.client.Patch(r.Context(), existing, patch); err != nil {
+			http.Error(w, fmt.Sprintf("failed to update secret: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Ensure the MCPServer's deployment references this secret.
+	var mcp sympoziumv1alpha1.MCPServer
+	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &mcp); err == nil {
+		if mcp.Spec.Deployment != nil {
+			hasRef := false
+			for _, ref := range mcp.Spec.Deployment.SecretRefs {
+				if ref.Name == secretName {
+					hasRef = true
+					break
+				}
+			}
+			if !hasRef {
+				mcpPatch := client.MergeFrom(mcp.DeepCopy())
+				mcp.Spec.Deployment.SecretRefs = append(mcp.Spec.Deployment.SecretRefs, sympoziumv1alpha1.MCPSecretRef{Name: secretName})
+				_ = s.client.Patch(r.Context(), &mcp, mcpPatch)
+			}
+		}
+	}
+
+	writeJSON(w, mcpServerAuthStatusResponse{Status: "complete", SecretName: secretName})
 }
 
 // GatewayConfigResponse is the response for gateway config endpoints.

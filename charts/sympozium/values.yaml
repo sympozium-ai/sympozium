@@ -150,6 +150,11 @@ defaultPersonas:
   # -- Install built-in persona pack definitions (disabled by default, must be activated after install)
   enabled: true
 
+# -- Default MCPServer catalog entries to install (github)
+defaultMcpServers:
+  # -- Install built-in MCP server definitions (must be configured with credentials after install)
+  enabled: true
+
 # -- Pod security context (applied to all control plane pods)
 securityContext:
   runAsNonRoot: true

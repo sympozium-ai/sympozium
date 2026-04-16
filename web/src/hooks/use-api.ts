@@ -25,6 +25,34 @@ export function useCapabilities() {
   });
 }
 
+// ── Agent Sandbox CRD Management ────────────────────────────────────────────
+
+export function useInstallAgentSandbox() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (version?: string) => api.agentSandbox.install(version),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
+      toast.success(
+        `Installed ${data.installed.length} Agent Sandbox CRDs (${data.version})`,
+      );
+    },
+    onError: toastError,
+  });
+}
+
+export function useUninstallAgentSandbox() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.agentSandbox.uninstall(),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
+      toast.success(`Removed ${data.deleted.length} Agent Sandbox CRDs`);
+    },
+    onError: toastError,
+  });
+}
+
 // ── Namespaces ───────────────────────────────────────────────────────────────
 
 export function useNamespaces() {
@@ -317,6 +345,46 @@ export function useInstallDefaultPersonaPacks() {
 }
 
 // ── MCP Servers ─────────────────────────────────────────────────────────────
+
+export function useInstallDefaultMcpServers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.mcpServers.installDefaults,
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["mcpServers"] });
+      const copied = result.copied.length;
+      const existing = result.alreadyPresent.length;
+      toast.success(
+        copied > 0
+          ? `Installed ${copied} default MCP server${copied === 1 ? "" : "s"} (${existing} already present)`
+          : `No servers installed (${existing} already present)`,
+      );
+    },
+    onError: toastError,
+  });
+}
+
+export function useMcpServerAuthStatus(name: string) {
+  return useQuery({
+    queryKey: ["mcpServers", name, "authStatus"],
+    queryFn: () => api.mcpServers.authStatus(name),
+    enabled: !!name,
+  });
+}
+
+export function useMcpServerAuthToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, token }: { name: string; token: string }) =>
+      api.mcpServers.authToken(name, token),
+    onSuccess: (_result, { name }) => {
+      qc.invalidateQueries({ queryKey: ["mcpServers", name, "authStatus"] });
+      qc.invalidateQueries({ queryKey: ["mcpServers"] });
+      toast.success("Token saved");
+    },
+    onError: toastError,
+  });
+}
 
 export function useMcpServers() {
   return useQuery({ queryKey: ["mcpServers"], queryFn: api.mcpServers.list });

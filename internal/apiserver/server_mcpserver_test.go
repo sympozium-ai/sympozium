@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -300,5 +302,165 @@ func TestGetMCPServerNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInstallDefaultMCPServers(t *testing.T) {
+	// Seed a source MCPServer in sympozium-system (the "defaults" namespace).
+	src := &sympoziumv1alpha1.MCPServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "github",
+			Namespace: "sympozium-system",
+			Labels:    map[string]string{"sympozium.ai/catalog": "true"},
+		},
+		Spec: sympoziumv1alpha1.MCPServerSpec{
+			TransportType: "stdio",
+			ToolsPrefix:   "github",
+		},
+	}
+	srv, cl := newTestServer(t, src)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcpservers/install-defaults?namespace=default", nil)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp InstallDefaultMCPServersResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Copied) != 1 || resp.Copied[0] != "github" {
+		t.Fatalf("expected [github] copied, got %v", resp.Copied)
+	}
+
+	// Verify the MCPServer was created in the target namespace.
+	var got sympoziumv1alpha1.MCPServer
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "github", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("expected github MCPServer in default ns: %v", err)
+	}
+	if got.Spec.ToolsPrefix != "github" {
+		t.Fatalf("expected prefix github, got %s", got.Spec.ToolsPrefix)
+	}
+
+	// Second call should report already present.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/mcpservers/install-defaults?namespace=default", nil)
+	rec2 := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec2, req2)
+
+	var resp2 InstallDefaultMCPServersResponse
+	if err := json.Unmarshal(rec2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("decode second: %v", err)
+	}
+	if len(resp2.AlreadyPresent) != 1 {
+		t.Fatalf("expected 1 already present, got %v", resp2.AlreadyPresent)
+	}
+}
+
+func TestMCPServerAuthToken(t *testing.T) {
+	mcp := &sympoziumv1alpha1.MCPServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "github", Namespace: "default"},
+		Spec: sympoziumv1alpha1.MCPServerSpec{
+			TransportType: "stdio",
+			ToolsPrefix:   "github",
+			Deployment:    &sympoziumv1alpha1.MCPServerDeployment{Image: "mcp/github"},
+		},
+	}
+	srv, cl := newTestServer(t, mcp)
+
+	// POST token
+	body := `{"token":"ghp_test123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcpservers/github/auth/token?namespace=default", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp mcpServerAuthStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Status != "complete" {
+		t.Fatalf("expected status complete, got %s", resp.Status)
+	}
+	if resp.SecretName != "mcp-github-token" {
+		t.Fatalf("expected secret mcp-github-token, got %s", resp.SecretName)
+	}
+
+	// Verify the secret was created.
+	secret := &corev1.Secret{}
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "mcp-github-token", Namespace: "default"}, secret); err != nil {
+		t.Fatalf("expected secret: %v", err)
+	}
+	if string(secret.Data["GITHUB_PERSONAL_ACCESS_TOKEN"]) != "ghp_test123" {
+		t.Fatalf("token mismatch: %s", string(secret.Data["GITHUB_PERSONAL_ACCESS_TOKEN"]))
+	}
+
+	// Verify the MCPServer was patched with the secret ref.
+	var updated sympoziumv1alpha1.MCPServer
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "github", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get updated mcp: %v", err)
+	}
+	found := false
+	for _, ref := range updated.Spec.Deployment.SecretRefs {
+		if ref.Name == "mcp-github-token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected secretRef mcp-github-token in deployment, got %v", updated.Spec.Deployment.SecretRefs)
+	}
+
+	// GET auth status should return complete.
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/mcpservers/github/auth/status?namespace=default", nil)
+	rec2 := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec2, req2)
+
+	var status mcpServerAuthStatusResponse
+	if err := json.Unmarshal(rec2.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if status.Status != "complete" {
+		t.Fatalf("expected complete, got %s", status.Status)
+	}
+}
+
+func TestCreateMCPServerWithSecretRefs(t *testing.T) {
+	srv, cl := newTestServer(t)
+
+	payload := CreateMCPServerRequest{
+		Name:          "github",
+		TransportType: "stdio",
+		ToolsPrefix:   "github",
+		Image:         "mcp/github",
+		SecretRefs:    []string{"mcp-github-token"},
+		Env:           map[string]string{"LOG_LEVEL": "debug"},
+	}
+	raw, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcpservers?namespace=default", bytes.NewReader(raw))
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got sympoziumv1alpha1.MCPServer
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "github", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Spec.Deployment == nil {
+		t.Fatal("expected deployment")
+	}
+	if len(got.Spec.Deployment.SecretRefs) != 1 || got.Spec.Deployment.SecretRefs[0].Name != "mcp-github-token" {
+		t.Fatalf("expected secretRef mcp-github-token, got %v", got.Spec.Deployment.SecretRefs)
+	}
+	if got.Spec.Deployment.Env["LOG_LEVEL"] != "debug" {
+		t.Fatalf("expected env LOG_LEVEL=debug, got %v", got.Spec.Deployment.Env)
 	}
 }

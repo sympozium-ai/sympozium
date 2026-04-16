@@ -1,0 +1,19 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: github
+  namespace: sympozium-system
+  labels:
+    app.kubernetes.io/managed-by: sympozium
+    sympozium.ai/catalog: "true"
+spec:
+  transportType: stdio
+  toolsPrefix: github
+  timeout: 30
+  deployment:
+    image: mcp/github
+    cmd: node
+    args:
+      - dist/index.js
+    secretRefs:
+      - name: mcp-github-token

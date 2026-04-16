@@ -14,6 +14,7 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -51,6 +52,7 @@ const navSections: NavSection[] = [
       { to: "/policies", label: "Policies", icon: Shield },
       { to: "/skills", label: "Skills", icon: Wrench },
       { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
+      { to: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];

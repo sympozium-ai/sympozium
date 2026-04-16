@@ -518,6 +518,18 @@ export interface MCPServer {
   status?: MCPServerStatus;
 }
 
+export interface InstallDefaultMCPServersResponse {
+  sourceNamespace: string;
+  targetNamespace: string;
+  copied: string[];
+  alreadyPresent: string[];
+}
+
+export interface MCPServerAuthStatusResponse {
+  status: string;
+  secretName: string;
+}
+
 // ── Pod info (returned by /api/v1/pods) ──────────────────────────────────────
 
 export interface PodInfo {
@@ -648,6 +660,16 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
+      }
+      // Guard against SPA HTML fallback for unrecognised routes which
+      // would throw a SyntaxError from .json().  Only reject responses
+      // that are explicitly HTML — missing Content-Type is fine (Go's
+      // WriteHeader before writeJSON drops the header but body is JSON).
+      const ct = res.headers.get("Content-Type") || "";
+      if (ct.includes("text/html")) {
+        throw new Error(
+          "Unexpected HTML response — the API endpoint may not exist on this server version",
+        );
       }
       return res.json();
     } catch (err) {
@@ -827,6 +849,9 @@ export const api = {
       timeout?: number;
       toolsAllow?: string[];
       toolsDeny?: string[];
+      env?: Record<string, string>;
+      secretRefs?: string[];
+      args?: string[];
     }) =>
       apiFetch<MCPServer>("/api/v1/mcpservers", {
         method: "POST",
@@ -849,6 +874,20 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+    installDefaults: () =>
+      apiFetch<InstallDefaultMCPServersResponse>(
+        "/api/v1/mcpservers/install-defaults",
+        { method: "POST" },
+      ),
+    authStatus: (name: string) =>
+      apiFetch<MCPServerAuthStatusResponse>(
+        `/api/v1/mcpservers/${name}/auth/status`,
+      ),
+    authToken: (name: string, token: string) =>
+      apiFetch<MCPServerAuthStatusResponse>(
+        `/api/v1/mcpservers/${name}/auth/token`,
+        { method: "POST", body: JSON.stringify({ token }) },
+      ),
   },
 
   pods: {
@@ -867,6 +906,21 @@ export const api = {
 
   capabilities: {
     get: () => apiFetch<CapabilitiesResponse>("/api/v1/capabilities"),
+  },
+
+  agentSandbox: {
+    install: (version?: string) =>
+      apiFetch<{ installed: string[]; version: string }>(
+        "/api/v1/agent-sandbox/install",
+        {
+          method: "POST",
+          body: JSON.stringify(version ? { version } : {}),
+        },
+      ),
+    uninstall: () =>
+      apiFetch<{ deleted: string[] }>("/api/v1/agent-sandbox/install", {
+        method: "DELETE",
+      }),
   },
 
   observability: {

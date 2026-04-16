@@ -56,6 +56,8 @@ declare global {
       deletePersonaPack(name: string): Chainable<void>;
       /** Delete a SympoziumSchedule by name (cleanup helper). */
       deleteSchedule(name: string): Chainable<void>;
+      /** Delete an MCPServer by name (cleanup helper). */
+      deleteMcpServer(name: string): Chainable<void>;
     }
   }
 }
@@ -108,6 +110,15 @@ Cypress.Commands.add("deleteSchedule", (name: string) => {
   cy.request({
     method: "DELETE",
     url: `/api/v1/schedules/${name}?namespace=default`,
+    headers: authHeaders(),
+    failOnStatusCode: false,
+  });
+});
+
+Cypress.Commands.add("deleteMcpServer", (name: string) => {
+  cy.request({
+    method: "DELETE",
+    url: `/api/v1/mcpservers/${name}?namespace=default`,
     headers: authHeaders(),
     failOnStatusCode: false,
   });
