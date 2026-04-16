@@ -81,6 +81,21 @@ type PersonaPackSpec struct {
 	// CRs with gVisor/Kata kernel-level isolation.
 	// +optional
 	AgentSandbox *AgentSandboxInstanceSpec `json:"agentSandbox,omitempty"`
+
+	// Relationships defines directed edges between personas in the pack,
+	// enabling coordination patterns like delegation, sequential pipelines,
+	// and supervision.
+	// +optional
+	Relationships []PersonaRelationship `json:"relationships,omitempty"`
+
+	// WorkflowType describes the overall orchestration pattern for this pack.
+	// "autonomous" (default): personas run independently on their own schedules.
+	// "pipeline": personas execute in sequence defined by sequential edges.
+	// "delegation": personas can actively delegate to each other at runtime.
+	// +kubebuilder:validation:Enum=autonomous;pipeline;delegation
+	// +kubebuilder:default="autonomous"
+	// +optional
+	WorkflowType string `json:"workflowType,omitempty"`
 }
 
 // PersonaSpec defines a single agent persona within a PersonaPack.
@@ -183,6 +198,36 @@ type PersonaMemory struct {
 	Seeds []string `json:"seeds,omitempty"`
 }
 
+// PersonaRelationship defines a directed edge between two personas in a pack.
+type PersonaRelationship struct {
+	// Source is the persona name that initiates the interaction.
+	Source string `json:"source"`
+
+	// Target is the persona name that receives the interaction.
+	Target string `json:"target"`
+
+	// Type categorises the relationship.
+	// "delegation": source requests target and awaits the result.
+	// "sequential": source must complete before target starts.
+	// "supervision": source monitors target (observability only, no runtime effect).
+	// +kubebuilder:validation:Enum=delegation;sequential;supervision
+	Type string `json:"type"`
+
+	// Condition is an optional description of when this edge activates
+	// (e.g. "when source run succeeds", "on explicit request").
+	// +optional
+	Condition string `json:"condition,omitempty"`
+
+	// Timeout is the maximum duration to wait for the target to complete.
+	// Applies to delegation and sequential types. Format: "5m", "1h".
+	// +optional
+	Timeout string `json:"timeout,omitempty"`
+
+	// ResultFormat constrains the expected output (e.g. "json", "markdown").
+	// +optional
+	ResultFormat string `json:"resultFormat,omitempty"`
+}
+
 // InstalledPersona tracks the resources created for one persona.
 type InstalledPersona struct {
 	// Name is the persona identifier.
@@ -224,6 +269,7 @@ type PersonaPackStatus struct {
 // +kubebuilder:printcolumn:name="Enabled",type="boolean",JSONPath=".spec.enabled"
 // +kubebuilder:printcolumn:name="Personas",type="integer",JSONPath=".status.personaCount"
 // +kubebuilder:printcolumn:name="Installed",type="integer",JSONPath=".status.installedCount"
+// +kubebuilder:printcolumn:name="Workflow",type="string",JSONPath=".spec.workflowType"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 

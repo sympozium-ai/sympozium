@@ -442,6 +442,15 @@ export interface InstalledPersona {
   scheduleName?: string;
 }
 
+export interface PersonaRelationship {
+  source: string;
+  target: string;
+  type: "delegation" | "sequential" | "supervision";
+  condition?: string;
+  timeout?: string;
+  resultFormat?: string;
+}
+
 export interface PersonaPackSpec {
   enabled?: boolean;
   description?: string;
@@ -454,6 +463,8 @@ export interface PersonaPackSpec {
   policyRef?: string;
   skillParams?: Record<string, Record<string, string>>;
   taskOverride?: string;
+  relationships?: PersonaRelationship[];
+  workflowType?: "autonomous" | "pipeline" | "delegation";
 }
 
 export interface PersonaPackStatus {

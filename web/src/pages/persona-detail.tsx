@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
   usePersonaPack,
   useActivatePersonaPack,
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Clock,
   Wrench,
@@ -27,6 +28,7 @@ import {
   Pencil,
   X,
   Check,
+  Workflow,
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
@@ -34,6 +36,7 @@ import {
   YamlButton,
   personaPackYamlFromResource,
 } from "@/components/yaml-panel";
+import { PersonaCanvas } from "@/components/persona-canvas";
 
 interface PersonaEditState {
   systemPrompt: string;
@@ -112,9 +115,16 @@ export function PersonaDetailPage() {
     );
   }
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "overview";
+  const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
+
   if (!pack) {
     return <p className="text-muted-foreground">Persona pack not found</p>;
   }
+
+  const hasRelationships =
+    pack.spec.relationships && pack.spec.relationships.length > 0;
 
   return (
     <div className="space-y-6">
@@ -137,8 +147,94 @@ export function PersonaDetailPage() {
           {pack.spec.version && (
             <Badge variant="secondary">v{pack.spec.version}</Badge>
           )}
+          {pack.spec.workflowType &&
+            pack.spec.workflowType !== "autonomous" && (
+              <Badge variant="outline" className="capitalize">
+                <Workflow className="h-3 w-3 mr-1" />
+                {pack.spec.workflowType}
+              </Badge>
+            )}
         </div>
       </div>
+
+      <Tabs value={activeTab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="workflow">
+            Workflow
+            {hasRelationships && (
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">
+                {pack.spec.relationships!.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="workflow" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Persona Workflow</CardTitle>
+              <CardDescription>
+                {hasRelationships
+                  ? `${pack.spec.personas?.length ?? 0} personas with ${pack.spec.relationships!.length} relationships`
+                  : "Define relationships between personas to enable coordination. Drag to rearrange."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PersonaCanvas pack={pack} />
+            </CardContent>
+          </Card>
+
+          {/* Relationship table */}
+          {hasRelationships && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Relationships</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {pack.spec.relationships!.map((rel, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 rounded-lg border p-3 text-sm"
+                    >
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {rel.source}
+                      </Badge>
+                      <Badge
+                        variant={
+                          rel.type === "delegation"
+                            ? "default"
+                            : rel.type === "sequential"
+                              ? "secondary"
+                              : "outline"
+                        }
+                        className="text-xs"
+                      >
+                        {rel.type}
+                      </Badge>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {rel.target}
+                      </Badge>
+                      {rel.timeout && (
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          timeout: {rel.timeout}
+                        </span>
+                      )}
+                      {rel.condition && (
+                        <span className="text-xs text-muted-foreground">
+                          {rel.condition}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="overview" className="mt-4 space-y-6">
 
       {/* Summary stats */}
       <div className="grid gap-4 sm:grid-cols-4">
@@ -513,6 +609,9 @@ export function PersonaDetailPage() {
           </div>
         </>
       )}
+
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

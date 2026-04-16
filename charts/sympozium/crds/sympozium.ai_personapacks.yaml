@@ -24,6 +24,9 @@ spec:
     - jsonPath: .status.installedCount
       name: Installed
       type: integer
+    - jsonPath: .spec.workflowType
+      name: Workflow
+      type: string
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -482,6 +485,52 @@ spec:
                 description: PolicyRef references the SympoziumPolicy to apply to
                   all generated instances.
                 type: string
+              relationships:
+                description: |-
+                  Relationships defines directed edges between personas in the pack,
+                  enabling coordination patterns like delegation, sequential pipelines,
+                  and supervision.
+                items:
+                  description: PersonaRelationship defines a directed edge between
+                    two personas in a pack.
+                  properties:
+                    condition:
+                      description: |-
+                        Condition is an optional description of when this edge activates
+                        (e.g. "when source run succeeds", "on explicit request").
+                      type: string
+                    resultFormat:
+                      description: ResultFormat constrains the expected output (e.g.
+                        "json", "markdown").
+                      type: string
+                    source:
+                      description: Source is the persona name that initiates the interaction.
+                      type: string
+                    target:
+                      description: Target is the persona name that receives the interaction.
+                      type: string
+                    timeout:
+                      description: |-
+                        Timeout is the maximum duration to wait for the target to complete.
+                        Applies to delegation and sequential types. Format: "5m", "1h".
+                      type: string
+                    type:
+                      description: |-
+                        Type categorises the relationship.
+                        "delegation": source requests target and awaits the result.
+                        "sequential": source must complete before target starts.
+                        "supervision": source monitors target (observability only, no runtime effect).
+                      enum:
+                      - delegation
+                      - sequential
+                      - supervision
+                      type: string
+                  required:
+                  - source
+                  - target
+                  - type
+                  type: object
+                type: array
               skillParams:
                 additionalProperties:
                   additionalProperties:
@@ -502,6 +551,18 @@ spec:
                 type: string
               version:
                 description: Version is the persona pack version.
+                type: string
+              workflowType:
+                default: autonomous
+                description: |-
+                  WorkflowType describes the overall orchestration pattern for this pack.
+                  "autonomous" (default): personas run independently on their own schedules.
+                  "pipeline": personas execute in sequence defined by sequential edges.
+                  "delegation": personas can actively delegate to each other at runtime.
+                enum:
+                - autonomous
+                - pipeline
+                - delegation
                 type: string
             required:
             - personas
