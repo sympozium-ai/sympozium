@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.28](https://github.com/sympozium-ai/sympozium/compare/v0.8.27...v0.8.28) (2026-04-16)
+
+
+### Features
+
+* promote Team Canvas to prominent dashboard position ([958600a](https://github.com/sympozium-ai/sympozium/commit/958600a3e7cd7d3f506f62607a6e97ce466e965a))
+
 ## [0.8.27](https://github.com/sympozium-ai/sympozium/compare/v0.8.26...v0.8.27) (2026-04-16)
 
 
