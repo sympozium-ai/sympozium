@@ -25,7 +25,7 @@ fi
 # Differentiate between "nothing listening" and "listening but broken".
 if [ "$status" = "000" ]; then
   reason="nothing is listening on localhost:${PORT} — no dev server or \`sympozium serve\` is running."
-  fix=$(cat <<'HINT'
+  read -r -d '' fix <<'HINT' || true
 Fix — pick one of:
   A) Vite dev server flow:
      make web-dev-serve    # then, in another shell:
@@ -34,16 +34,14 @@ Fix — pick one of:
      sympozium serve       # then, in another shell:
      make ux-tests-serve
 HINT
-  )
 else
   reason="something is listening on :${PORT} but /api/v1/namespaces returned HTTP ${status}. Likely a stale port-forward or bad token."
-  fix=$(cat <<'HINT'
+  read -r -d '' fix <<'HINT' || true
 Fix:
   1. Kill the stale listener:  lsof -t -i :${PORT} | xargs kill 2>/dev/null || true
   2. Start a fresh server:     make web-dev-serve  (or)  sympozium serve
   3. Re-run:                   make ux-tests  (or)  make ux-tests-serve
 HINT
-  )
 fi
 
 cat >&2 <<EOF
