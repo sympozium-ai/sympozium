@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useModelList } from "@/hooks/use-model-list";
 import { useProviderNodes } from "@/hooks/use-provider-nodes";
 import { Input } from "@/components/ui/input";
@@ -499,9 +499,30 @@ export function OnboardingWizard({
     }
     return probeName === form.provider;
   };
-  const { data: providerNodes, isLoading: nodesLoading } = useProviderNodes(
-    isLocalProvider && inferenceMode === "node",
-  );
+  const { data: providerNodes, isLoading: nodesLoading } =
+    useProviderNodes(isLocalProvider);
+  // Track whether the user manually toggled inference mode so we don't override it.
+  const userOverrodeInferenceMode = useRef(false);
+  // Auto-switch to "node" mode when matching providers are discovered.
+  useEffect(() => {
+    if (
+      !isLocalProvider ||
+      nodesLoading ||
+      !providerNodes ||
+      userOverrodeInferenceMode.current
+    )
+      return;
+    const hasMatch = providerNodes.some((n) =>
+      n.providers.some((p) => nodeProviderMatches(p.name)),
+    );
+    if (hasMatch) {
+      setInferenceMode("node");
+    }
+  }, [providerNodes, nodesLoading, form.provider]);
+  // Reset the override flag when the provider changes.
+  useEffect(() => {
+    userOverrodeInferenceMode.current = false;
+  }, [form.provider]);
 
   const stepIdx = steps.indexOf(step);
 
@@ -734,6 +755,7 @@ export function OnboardingWizard({
                   <button
                     type="button"
                     onClick={() => {
+                      userOverrodeInferenceMode.current = true;
                       setInferenceMode("workload");
                       setForm({ ...form, nodeSelector: undefined });
                     }}
@@ -748,7 +770,10 @@ export function OnboardingWizard({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setInferenceMode("node")}
+                    onClick={() => {
+                      userOverrodeInferenceMode.current = true;
+                      setInferenceMode("node");
+                    }}
                     className={cn(
                       "flex-1 flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors",
                       inferenceMode === "node"

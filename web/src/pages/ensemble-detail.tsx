@@ -26,11 +26,16 @@ import {
   Check,
   Workflow,
   Database,
+  Settings,
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
 import { YamlButton, ensembleYamlFromResource } from "@/components/yaml-panel";
 import { EnsembleCanvas } from "@/components/ensemble-canvas";
+import {
+  OnboardingWizard,
+  type WizardResult,
+} from "@/components/onboarding-wizard";
 
 interface PersonaEditState {
   systemPrompt: string;
@@ -42,6 +47,8 @@ export function EnsembleDetailPage() {
   const { data: pack, isLoading } = useEnsemble(name || "");
   const { data: skillPacks } = useSkills();
   const patchMutation = useActivateEnsemble();
+
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   // Track which persona is being edited (by name), and its draft state
   const [editingPersona, setEditingPersona] = useState<string | null>(null);
@@ -97,6 +104,43 @@ export function EnsembleDetailPage() {
     }));
   };
 
+  function handleProviderChange(result: WizardResult) {
+    if (!name) return;
+    let skillParams: Record<string, Record<string, string>> | undefined;
+    if (result.skills.includes("github-gitops") && result.githubRepo) {
+      skillParams = { "github-gitops": { repo: result.githubRepo } };
+    }
+    patchMutation.mutate(
+      {
+        name,
+        provider: result.provider,
+        secretName: result.secretName || undefined,
+        apiKey: result.apiKey || undefined,
+        awsRegion: result.awsRegion || undefined,
+        awsAccessKeyId: result.awsAccessKeyId || undefined,
+        awsSecretAccessKey: result.awsSecretAccessKey || undefined,
+        awsSessionToken: result.awsSessionToken || undefined,
+        model: result.model,
+        baseURL: result.baseURL || undefined,
+        channels: result.channels.length > 0 ? result.channels : undefined,
+        channelConfigs:
+          Object.keys(result.channelConfigs).length > 0
+            ? result.channelConfigs
+            : undefined,
+        heartbeatInterval: result.heartbeatInterval || undefined,
+        skillParams,
+        githubToken: result.githubToken || undefined,
+        agentSandbox: result.agentSandboxEnabled
+          ? {
+              enabled: true,
+              runtimeClass: result.agentSandboxRuntimeClass || "gvisor",
+            }
+          : undefined,
+      },
+      { onSuccess: () => setWizardOpen(false) },
+    );
+  }
+
   // Collect all available skill names from SkillPacks
   const availableSkills = skillPacks?.flatMap((sp) => sp.metadata.name) ?? [];
 
@@ -133,6 +177,17 @@ export function EnsembleDetailPage() {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {pack.spec.description && <span>{pack.spec.description}</span>}
           <StatusBadge phase={pack.status?.phase} />
+          {pack.spec.enabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => setWizardOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Change Provider
+            </Button>
+          )}
           {pack.spec.category && (
             <Badge variant="outline" className="capitalize">
               {pack.spec.category}
@@ -690,6 +745,29 @@ export function EnsembleDetailPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      <OnboardingWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        mode="persona"
+        targetName={pack.metadata.name}
+        personaCount={pack.spec.personas?.length ?? 0}
+        availableSkills={(skillPacks || []).map((s) => s.metadata.name)}
+        defaults={{
+          provider: pack.spec.authRefs?.[0]?.provider || "",
+          secretName: pack.spec.authRefs?.[0]?.secret || "",
+          model: pack.spec.personas?.[0]?.model || "",
+          skills: Array.from(
+            new Set((pack.spec.personas || []).flatMap((p) => p.skills || [])),
+          ),
+          channelConfigs: pack.spec.channelConfigs || {},
+          channels:
+            pack.spec.personas?.[0]?.channels ||
+            Object.keys(pack.spec.channelConfigs || {}),
+        }}
+        onComplete={handleProviderChange}
+        isPending={patchMutation.isPending}
+      />
     </div>
   );
 }
