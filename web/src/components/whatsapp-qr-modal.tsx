@@ -53,7 +53,7 @@ export function WhatsAppQRModal({
 
   const targetLabel = useMemo(() => {
     if (instanceName) return `instance ${instanceName}`;
-    if (ensembleName) return `persona pack ${ensembleName}`;
+    if (ensembleName) return `ensemble ${ensembleName}`;
     return "target";
   }, [instanceName, ensembleName]);
 

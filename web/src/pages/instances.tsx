@@ -137,12 +137,12 @@ export function InstancesPage() {
           {!search && (
             <p className="text-sm text-muted-foreground">
               <Link
-                to="/personas"
+                to="/ensembles"
                 className="text-blue-400 hover:text-blue-300"
               >
-                Enable a Persona Pack
+                Enable an ensemble
               </Link>{" "}
-              to auto-create instances, or{" "}
+              to create instances automatically, or{" "}
               <button
                 onClick={() => setWizardOpen(true)}
                 className="text-blue-400 hover:text-blue-300"
@@ -181,12 +181,12 @@ export function InstancesPage() {
                       {inst.metadata.name}
                       <ExternalLink className="h-3 w-3 opacity-50" />
                     </Link>
-                    {inst.metadata.labels?.["sympozium.ai/persona-pack"] && (
+                    {inst.metadata.labels?.["sympozium.ai/ensemble"] && (
                       <Badge
                         variant="outline"
                         className="text-[10px] px-1.5 py-0 text-blue-400 border-blue-500/30"
                       >
-                        {inst.metadata.labels["sympozium.ai/persona-pack"]}
+                        {inst.metadata.labels["sympozium.ai/ensemble"]}
                       </Badge>
                     )}
                     {inst.spec.agents?.default?.lifecycle?.postRun?.some(

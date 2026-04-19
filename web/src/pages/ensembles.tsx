@@ -144,10 +144,10 @@ export function EnsemblesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Persona Packs</h1>
+          <h1 className="text-2xl font-bold">Ensembles</h1>
           <p className="text-sm text-muted-foreground">
-            Pre-configured agent bundles — stamps out Instances, Schedules, and
-            memory automatically
+            Coordinated agent teams with workflows, shared memory, and
+            delegation
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -180,7 +180,7 @@ export function EnsemblesPage() {
             disabled={installDefaults.isPending}
           >
             <Download className="h-4 w-4" />
-            Install Default Packs
+            Install Defaults
           </Button>
         </div>
       </div>
@@ -206,8 +206,8 @@ export function EnsemblesPage() {
         <div className="py-12 text-center space-y-3">
           <p className="text-muted-foreground">
             {search
-              ? "No persona packs match your search"
-              : "No persona packs yet"}
+              ? "No ensembles match your search"
+              : "No ensembles yet"}
           </p>
           {!search && (
             <p className="text-sm text-muted-foreground">
@@ -216,9 +216,9 @@ export function EnsemblesPage() {
                 onClick={() => installDefaults.mutate()}
                 className="text-blue-400 hover:text-blue-300"
               >
-                Install Default Packs
+                Install Defaults
               </button>{" "}
-              to get started with pre-built agent bundles.
+              to get started with pre-built ensembles.
             </p>
           )}
         </div>
@@ -355,11 +355,11 @@ export function EnsemblesPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Disable Persona Pack</DialogTitle>
+            <DialogTitle>Disable Ensemble</DialogTitle>
             <DialogDescription>
               This will disable <strong>{disablePack?.metadata.name}</strong>{" "}
               and remove all associated Instances, Schedules, and resources. The
-              pack itself will remain available and can be re-enabled at any
+              ensemble will remain available and can be re-enabled at any
               time.
             </DialogDescription>
           </DialogHeader>

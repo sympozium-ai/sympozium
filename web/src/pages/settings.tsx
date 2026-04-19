@@ -117,7 +117,7 @@ function AgentSandboxSection() {
                 <p className="text-muted-foreground">
                   Agent Sandbox resources (agents.x-k8s.io/v1alpha1) are
                   available in the cluster. You can enable sandbox isolation per
-                  instance or persona pack.
+                  instance or ensemble.
                 </p>
               </div>
             </div>

@@ -281,7 +281,7 @@ export function useDeleteEnsemble() {
     mutationFn: api.ensembles.delete,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ensembles"] });
-      toast.success("Persona pack deleted");
+      toast.success("Ensemble deleted");
     },
     onError: toastError,
   });
@@ -320,7 +320,7 @@ export function useActivateEnsemble() {
     }) => api.ensembles.patch(name, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ensembles"] });
-      toast.success("Persona pack updated");
+      toast.success("Ensemble updated");
     },
     onError: toastError,
   });

@@ -121,7 +121,7 @@ export function EnsembleDetailPage() {
   }
 
   if (!pack) {
-    return <p className="text-muted-foreground">Persona pack not found</p>;
+    return <p className="text-muted-foreground">Ensemble not found</p>;
   }
 
   const hasRelationships =

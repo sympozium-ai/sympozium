@@ -167,7 +167,7 @@ const HEARTBEAT_INTERVALS = [
 
 function heartbeatOptions(mode: "instance" | "persona") {
   return [
-    { value: "", label: mode === "persona" ? "Pack default" : "No heartbeat" },
+    { value: "", label: mode === "persona" ? "Ensemble default" : "No heartbeat" },
     ...HEARTBEAT_INTERVALS,
   ];
 }
@@ -659,7 +659,7 @@ export function OnboardingWizard({
           <DialogDescription>
             {mode === "instance"
               ? "Configure a new SympoziumInstance with provider, model, and skills."
-              : "Configure provider, model, skills, and channels to activate this persona pack."}
+              : "Configure provider, model, skills, and channels to activate this ensemble."}
           </DialogDescription>
         </DialogHeader>
 

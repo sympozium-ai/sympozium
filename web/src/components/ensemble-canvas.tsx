@@ -546,7 +546,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Global canvas (used on the persona packs list page)
+// Global canvas (used on the ensembles list page)
 // Shows all enabled packs together with live run status.
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -617,7 +617,7 @@ export function GlobalEnsembleCanvas() {
   if (enabledPacks.length === 0) {
     return (
       <div className="flex items-center justify-center h-[500px] text-sm text-muted-foreground">
-        No enabled persona packs. Enable a pack to see it on the canvas.
+        No enabled ensembles. Enable an ensemble to see it on the canvas.
       </div>
     );
   }
@@ -710,8 +710,8 @@ export function DashboardEnsembleCanvas() {
   if (enabledPacks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground gap-2">
-        <p>No enabled persona packs</p>
-        <p className="text-xs">Enable a pack to see the team canvas</p>
+        <p>No enabled ensembles</p>
+        <p className="text-xs">Enable an ensemble to see the team canvas</p>
       </div>
     );
   }

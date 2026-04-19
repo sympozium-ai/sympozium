@@ -328,7 +328,7 @@ export function FeedPane({
             No instances available
           </p>
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Create an instance or enable a persona pack to get started
+            Create an instance or enable an ensemble to get started
           </p>
         </div>
       )}
