@@ -379,8 +379,13 @@ export function useCreateEnsemble() {
 export function useCloneEnsemble() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ sourceName, newName }: { sourceName: string; newName: string }) =>
-      api.ensembles.clone(sourceName, newName),
+    mutationFn: ({
+      sourceName,
+      newName,
+    }: {
+      sourceName: string;
+      newName: string;
+    }) => api.ensembles.clone(sourceName, newName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ensembles"] });
       toast.success("Ensemble cloned");

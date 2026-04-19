@@ -192,9 +192,7 @@ export function EnsemblesPage() {
         className="max-w-sm"
       />
 
-      {view === "canvas" && !isLoading && (
-        <GlobalEnsembleCanvas />
-      )}
+      {view === "canvas" && !isLoading && <GlobalEnsembleCanvas />}
 
       {view === "table" && isLoading ? (
         <div className="space-y-2">
@@ -205,9 +203,7 @@ export function EnsemblesPage() {
       ) : view === "table" && filtered.length === 0 ? (
         <div className="py-12 text-center space-y-3">
           <p className="text-muted-foreground">
-            {search
-              ? "No ensembles match your search"
-              : "No ensembles yet"}
+            {search ? "No ensembles match your search" : "No ensembles yet"}
           </p>
           {!search && (
             <p className="text-sm text-muted-foreground">
@@ -359,8 +355,7 @@ export function EnsemblesPage() {
             <DialogDescription>
               This will disable <strong>{disablePack?.metadata.name}</strong>{" "}
               and remove all associated Instances, Schedules, and resources. The
-              ensemble will remain available and can be re-enabled at any
-              time.
+              ensemble will remain available and can be re-enabled at any time.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-2">

@@ -1771,7 +1771,7 @@ type dataRefreshMsg struct {
 	channels      *[]channelRow
 	pods          *[]podRow
 	schedules     *[]sympoziumv1alpha1.SympoziumSchedule
-	ensembles  *[]sympoziumv1alpha1.Ensemble
+	ensembles     *[]sympoziumv1alpha1.Ensemble
 	gatewayConfig *sympoziumv1alpha1.SympoziumConfig
 	fetchErr      string
 }
@@ -2286,7 +2286,7 @@ type wizardState struct {
 
 	// Persona wizard state
 	personaMode       bool                   // true when running persona wizard instead of onboard
-	ensembleName   string                 // which pack we're installing
+	ensembleName      string                 // which pack we're installing
 	personaChannels   []personaChannelChoice // channels the user is toggling
 	personaChannelIdx int                    // which channel we're collecting a token for
 	packDetailScroll  int                    // scroll offset for the pack detail pane
@@ -2335,7 +2335,7 @@ type tuiModel struct {
 	channels      []channelRow
 	pods          []podRow
 	schedules     []sympoziumv1alpha1.SympoziumSchedule
-	ensembles  []sympoziumv1alpha1.Ensemble
+	ensembles     []sympoziumv1alpha1.Ensemble
 	gatewayConfig *sympoziumv1alpha1.SympoziumConfig
 
 	// Input
@@ -2398,7 +2398,7 @@ type tuiModel struct {
 	editLifecycleHookIsPost bool                // true if editing postRun, false for preRun
 	editGateway             editGatewayForm     // gateway config
 	showGatewayEditModal    bool                // separate modal for gateway
-	editEnsembleName     string              // non-empty when editing a Ensemble
+	editEnsembleName        string              // non-empty when editing a Ensemble
 	editPersonas            []editPersonaItem   // toggleable personas list
 	editPersonaHeartbeatIdx int                 // index into personaHeartbeatOptions
 

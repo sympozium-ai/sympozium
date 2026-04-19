@@ -806,8 +806,8 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				Name:      runName,
 				Namespace: agentRun.Namespace,
 				Labels: map[string]string{
-					"sympozium.ai/instance":       targetInstanceName,
-					"sympozium.ai/ensemble":       ensembleName,
+					"sympozium.ai/instance":        targetInstanceName,
+					"sympozium.ai/ensemble":        ensembleName,
 					"sympozium.ai/sequential-from": agentRun.Name,
 				},
 			},

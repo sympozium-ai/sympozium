@@ -167,7 +167,10 @@ const HEARTBEAT_INTERVALS = [
 
 function heartbeatOptions(mode: "instance" | "persona") {
   return [
-    { value: "", label: mode === "persona" ? "Ensemble default" : "No heartbeat" },
+    {
+      value: "",
+      label: mode === "persona" ? "Ensemble default" : "No heartbeat",
+    },
     ...HEARTBEAT_INTERVALS,
   ];
 }
@@ -686,9 +689,7 @@ export function OnboardingWizard({
                 autoFocus
                 className={nameError ? "border-red-500" : ""}
               />
-              {nameError && (
-                <p className="text-xs text-red-500">{nameError}</p>
-              )}
+              {nameError && <p className="text-xs text-red-500">{nameError}</p>}
             </div>
           </div>
         )}

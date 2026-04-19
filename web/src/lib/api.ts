@@ -831,8 +831,7 @@ export const api = {
 
   ensembles: {
     list: () => apiFetch<Ensemble[]>("/api/v1/ensembles"),
-    get: (name: string) =>
-      apiFetch<Ensemble>(`/api/v1/ensembles/${name}`),
+    get: (name: string) => apiFetch<Ensemble>(`/api/v1/ensembles/${name}`),
     delete: (name: string) =>
       apiFetch<void>(`/api/v1/ensembles/${name}`, { method: "DELETE" }),
     patch: (
@@ -864,7 +863,10 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    listSharedMemory: (name: string, opts?: { tags?: string; limit?: number }) => {
+    listSharedMemory: (
+      name: string,
+      opts?: { tags?: string; limit?: number },
+    ) => {
       const params = new URLSearchParams();
       if (opts?.tags) params.set("tags", opts.tags);
       if (opts?.limit) params.set("limit", String(opts.limit));

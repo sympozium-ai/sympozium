@@ -47,7 +47,11 @@ export function PersonaConfigPanel({
   const [modelSearch, setModelSearch] = useState("");
 
   // Provider-aware model list
-  const { models, isLoading: modelsLoading, isLive } = useModelList(
+  const {
+    models,
+    isLoading: modelsLoading,
+    isLive,
+  } = useModelList(
     providerCtx.provider,
     providerCtx.apiKey,
     providerCtx.baseURL || undefined,
@@ -83,7 +87,12 @@ export function PersonaConfigPanel({
         <h3 className="font-semibold text-sm truncate">
           {draft.displayName || draft.name || "New Persona"}
         </h3>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="h-7 w-7"
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -100,9 +109,7 @@ export function PersonaConfigPanel({
             onChange={(e) =>
               setDraft({
                 ...draft,
-                name: e.target.value
-                  .toLowerCase()
-                  .replace(/[^a-z0-9-]/g, "-"),
+                name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
               })
             }
             placeholder="e.g. researcher"
@@ -117,7 +124,9 @@ export function PersonaConfigPanel({
           <Input
             id="persona-display"
             value={draft.displayName || ""}
-            onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, displayName: e.target.value })
+            }
             placeholder="e.g. Lead Researcher"
             className="h-8 text-sm"
           />
@@ -145,7 +154,9 @@ export function PersonaConfigPanel({
               <div className="p-1 space-y-0.5">
                 {filteredModels.length === 0 ? (
                   <p className="py-2 text-center text-[10px] text-muted-foreground">
-                    {modelSearch ? `No models match "${modelSearch}"` : "No models available"}
+                    {modelSearch
+                      ? `No models match "${modelSearch}"`
+                      : "No models available"}
                   </p>
                 ) : (
                   filteredModels.map((m) => (
@@ -154,12 +165,15 @@ export function PersonaConfigPanel({
                       type="button"
                       onClick={() => setDraft({ ...draft, model: m })}
                       className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-[11px] font-mono text-left transition-colors
-                        ${m === draft.model
-                          ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
-                          : "text-foreground hover:bg-white/5 border border-transparent"
+                        ${
+                          m === draft.model
+                            ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
+                            : "text-foreground hover:bg-white/5 border border-transparent"
                         }`}
                     >
-                      {m === draft.model && <Check className="h-2.5 w-2.5 shrink-0" />}
+                      {m === draft.model && (
+                        <Check className="h-2.5 w-2.5 shrink-0" />
+                      )}
                       <span className="truncate">{m}</span>
                     </button>
                   ))
@@ -188,7 +202,9 @@ export function PersonaConfigPanel({
           <Textarea
             id="persona-prompt"
             value={draft.systemPrompt}
-            onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
+            onChange={(e) =>
+              setDraft({ ...draft, systemPrompt: e.target.value })
+            }
             placeholder="Describe this persona's role, responsibilities, and behaviour..."
             className="min-h-[120px] text-sm"
           />

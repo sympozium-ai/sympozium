@@ -111,9 +111,7 @@ function AgentSandboxSection() {
             <div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/5 p-3">
               <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-green-500">
-                  CRDs are installed
-                </p>
+                <p className="font-medium text-green-500">CRDs are installed</p>
                 <p className="text-muted-foreground">
                   Agent Sandbox resources (agents.x-k8s.io/v1alpha1) are
                   available in the cluster. You can enable sandbox isolation per

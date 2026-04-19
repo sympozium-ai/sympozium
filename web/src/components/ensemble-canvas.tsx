@@ -80,8 +80,7 @@ const phaseBorder: Record<string, string> = {
   Succeeded: "ring-1 ring-green-500/40",
   Failed: "ring-2 ring-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.3)]",
   Pending: "ring-1 ring-yellow-500/40",
-  Serving:
-    "ring-2 ring-violet-500/60 shadow-[0_0_12px_rgba(139,92,246,0.3)]",
+  Serving: "ring-2 ring-violet-500/60 shadow-[0_0_12px_rgba(139,92,246,0.3)]",
   AwaitingDelegate:
     "ring-2 ring-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.3)]",
 };
@@ -107,7 +106,14 @@ const phaseLabel: Record<string, string> = {
 // ── Custom persona node ─────────────────────────────────────────────────────
 
 function PersonaNode({ data }: NodeProps<Node<PersonaNodeData>>) {
-  const { persona, packName, instanceName, runPhase, runTask, hasSharedMemory } = data;
+  const {
+    persona,
+    packName,
+    instanceName,
+    runPhase,
+    runTask,
+    hasSharedMemory,
+  } = data;
 
   const borderClass = runPhase ? phaseBorder[runPhase] || "" : "";
   const dotClass = runPhase ? phaseDot[runPhase] || "bg-muted-foreground" : "";
@@ -157,7 +163,11 @@ function PersonaNode({ data }: NodeProps<Node<PersonaNodeData>>) {
       )}
 
       {hasSharedMemory && (
-        <Badge variant="outline" className="text-[9px] px-1 py-0 mb-1 gap-0.5 w-fit" title="Shared workflow memory">
+        <Badge
+          variant="outline"
+          className="text-[9px] px-1 py-0 mb-1 gap-0.5 w-fit"
+          title="Shared workflow memory"
+        >
           <Database className="h-2.5 w-2.5" />
           shared memory
         </Badge>
@@ -207,14 +217,12 @@ const nodeTypes = { persona: PersonaNode };
 
 const EDGE_TYPES = ["delegation", "sequential", "supervision"] as const;
 
-const edgeStyles: Record<
-  string,
-  { stroke: string; strokeDasharray?: string }
-> = {
-  delegation: { stroke: "#3b82f6" },
-  sequential: { stroke: "#f59e0b", strokeDasharray: "6 3" },
-  supervision: { stroke: "#6b7280", strokeDasharray: "2 4" },
-};
+const edgeStyles: Record<string, { stroke: string; strokeDasharray?: string }> =
+  {
+    delegation: { stroke: "#3b82f6" },
+    sequential: { stroke: "#f59e0b", strokeDasharray: "6 3" },
+    supervision: { stroke: "#6b7280", strokeDasharray: "2 4" },
+  };
 
 const edgeLabels: Record<string, string> = {
   delegation: "delegates to",
@@ -287,10 +295,8 @@ function layoutNodes(
   }
 
   const sorted = [...personas].sort((a, b) => {
-    const aScore =
-      (outDegree.get(a.name) || 0) - (inDegree.get(a.name) || 0);
-    const bScore =
-      (outDegree.get(b.name) || 0) - (inDegree.get(b.name) || 0);
+    const aScore = (outDegree.get(a.name) || 0) - (inDegree.get(a.name) || 0);
+    const bScore = (outDegree.get(b.name) || 0) - (inDegree.get(b.name) || 0);
     if (bScore !== aScore) return bScore - aScore;
     return a.name.localeCompare(b.name);
   });
@@ -310,10 +316,7 @@ function layoutNodes(
   }));
 }
 
-function buildEdges(
-  relationships: PersonaRelationship[],
-  prefix = "",
-): Edge[] {
+function buildEdges(relationships: PersonaRelationship[], prefix = ""): Edge[] {
   return relationships.map((rel, i) =>
     styledEdge(
       `e-${prefix}-${i}-${rel.source}-${rel.target}`,
@@ -410,7 +413,11 @@ function StatusLegend() {
   const items = [
     { phase: "Running", dot: "bg-blue-500 animate-pulse" },
     { phase: "Serving", dot: "bg-violet-500 animate-pulse" },
-    { phase: "AwaitingDelegate", dot: "bg-amber-500 animate-pulse", label: "Awaiting" },
+    {
+      phase: "AwaitingDelegate",
+      dot: "bg-amber-500 animate-pulse",
+      label: "Awaiting",
+    },
     { phase: "Succeeded", dot: "bg-green-500" },
     { phase: "Failed", dot: "bg-red-500" },
   ];
@@ -468,9 +475,18 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
       }
     }
     return nodes;
-  }, [personas, relationships, pack.spec.sharedMemory?.enabled, pack.status?.installedPersonas, runPhaseMap]);
+  }, [
+    personas,
+    relationships,
+    pack.spec.sharedMemory?.enabled,
+    pack.status?.installedPersonas,
+    runPhaseMap,
+  ]);
 
-  const initialEdges = useMemo(() => buildEdges(relationships), [relationships]);
+  const initialEdges = useMemo(
+    () => buildEdges(relationships),
+    [relationships],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -499,7 +515,13 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
       if (connection.source === connection.target) return;
-      if (edges.some((e) => e.source === connection.source && e.target === connection.target)) return;
+      if (
+        edges.some(
+          (e) =>
+            e.source === connection.source && e.target === connection.target,
+        )
+      )
+        return;
       setPendingConnection(connection);
     },
     [edges],
@@ -509,7 +531,17 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
     (relType: string) => {
       if (!pendingConnection?.source || !pendingConnection?.target) return;
       const id = `e-new-${pendingConnection.source}-${pendingConnection.target}-${Date.now()}`;
-      setEdges((eds) => addEdge(styledEdge(id, pendingConnection.source!, pendingConnection.target!, relType), eds));
+      setEdges((eds) =>
+        addEdge(
+          styledEdge(
+            id,
+            pendingConnection.source!,
+            pendingConnection.target!,
+            relType,
+          ),
+          eds,
+        ),
+      );
       setPendingConnection(null);
       setDirty(true);
     },
@@ -536,7 +568,8 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdge) handleDeleteSelected();
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedEdge)
+        handleDeleteSelected();
     },
     [selectedEdge, handleDeleteSelected],
   );
@@ -562,21 +595,38 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
         </div>
         <div className="flex items-center gap-2">
           {selectedEdge && (
-            <Button variant="destructive" size="sm" onClick={handleDeleteSelected} type="button">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteSelected}
+              type="button"
+            >
               <Trash2 className="h-3.5 w-3.5 mr-1" />
               Delete Edge
             </Button>
           )}
-          <Button size="sm" onClick={handleSave} disabled={!dirty || patchMutation.isPending} type="button">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={!dirty || patchMutation.isPending}
+            type="button"
+          >
             <Save className="h-3.5 w-3.5 mr-1" />
             {patchMutation.isPending ? "Saving..." : "Save"}
           </Button>
         </div>
       </div>
 
-      <div className="h-[500px] w-full rounded-lg border border-border/40 bg-background relative" onKeyDown={onKeyDown} tabIndex={0}>
+      <div
+        className="h-[500px] w-full rounded-lg border border-border/40 bg-background relative"
+        onKeyDown={onKeyDown}
+        tabIndex={0}
+      >
         {pendingConnection && (
-          <EdgeTypePicker onSelect={handleEdgeTypeSelect} onCancel={() => setPendingConnection(null)} />
+          <EdgeTypePicker
+            onSelect={handleEdgeTypeSelect}
+            onCancel={() => setPendingConnection(null)}
+          />
         )}
         <ReactFlow
           nodes={nodes}
@@ -678,8 +728,9 @@ export function GlobalEnsembleCanvas() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <p className="text-xs text-muted-foreground">
-            {enabledPacks.length} active pack{enabledPacks.length !== 1 ? "s" : ""} &middot;{" "}
-            {allNodes.length} personas
+            {enabledPacks.length} active pack
+            {enabledPacks.length !== 1 ? "s" : ""} &middot; {allNodes.length}{" "}
+            personas
           </p>
           <StatusLegend />
         </div>
@@ -733,15 +784,27 @@ export function DashboardEnsembleCanvas() {
       const personas = pack.spec.personas || [];
       const relationships = pack.spec.relationships || [];
       const prefix = pack.metadata.name;
-      const runPhaseMap = buildRunPhaseMap(runs, pack.status?.installedPersonas);
+      const runPhaseMap = buildRunPhaseMap(
+        runs,
+        pack.status?.installedPersonas,
+      );
 
-      const packNodes = layoutNodes(personas, relationships, currentX, 0, prefix);
+      const packNodes = layoutNodes(
+        personas,
+        relationships,
+        currentX,
+        0,
+        prefix,
+      );
       const sharedMemEnabled = pack.spec.sharedMemory?.enabled ?? false;
       for (const node of packNodes) {
-        node.data.packName = visiblePacks.length > 1 ? pack.metadata.name : undefined;
+        node.data.packName =
+          visiblePacks.length > 1 ? pack.metadata.name : undefined;
         node.data.hasSharedMemory = sharedMemEnabled;
         const personaName = node.id.split("/")[1] || node.id;
-        const ip = pack.status?.installedPersonas?.find((p) => p.name === personaName);
+        const ip = pack.status?.installedPersonas?.find(
+          (p) => p.name === personaName,
+        );
         if (ip) node.data.instanceName = ip.instanceName;
         const status = runPhaseMap.get(personaName);
         if (status) {

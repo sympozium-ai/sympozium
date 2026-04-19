@@ -45,7 +45,12 @@ export function EnsembleSettingsPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h3 className="font-semibold text-sm">Ensemble Settings</h3>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="h-7 w-7"
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -53,12 +58,16 @@ export function EnsembleSettingsPanel({
       {/* Form */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="ens-name" className="text-xs">Name (required)</Label>
+          <Label htmlFor="ens-name" className="text-xs">
+            Name (required)
+          </Label>
           <Input
             id="ens-name"
             value={settings.name}
             onChange={(e) =>
-              update({ name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-") })
+              update({
+                name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+              })
             }
             placeholder="e.g. my-research-team"
             className="h-8 text-sm font-mono"
@@ -69,7 +78,9 @@ export function EnsembleSettingsPanel({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="ens-desc" className="text-xs">Description</Label>
+          <Label htmlFor="ens-desc" className="text-xs">
+            Description
+          </Label>
           <Textarea
             id="ens-desc"
             value={settings.description}
@@ -80,7 +91,9 @@ export function EnsembleSettingsPanel({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="ens-cat" className="text-xs">Category</Label>
+          <Label htmlFor="ens-cat" className="text-xs">
+            Category
+          </Label>
           <Input
             id="ens-cat"
             value={settings.category}
@@ -136,7 +149,9 @@ export function EnsembleSettingsPanel({
           </div>
           {settings.sharedMemory?.enabled && (
             <div className="space-y-1.5 pl-5">
-              <Label htmlFor="sm-size" className="text-xs">Storage Size</Label>
+              <Label htmlFor="sm-size" className="text-xs">
+                Storage Size
+              </Label>
               <Input
                 id="sm-size"
                 value={settings.sharedMemory.storageSize || "1Gi"}

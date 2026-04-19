@@ -63,9 +63,7 @@ async function fetchAnthropicModels(apiKey: string): Promise<string[]> {
   return (data.data as { id: string }[]).map((m) => m.id).sort();
 }
 
-async function fetchProviderModelsDirect(
-  baseURL: string,
-): Promise<string[]> {
+async function fetchProviderModelsDirect(baseURL: string): Promise<string[]> {
   // Try fetching directly from the browser (works when the provider is on the
   // local network / same machine and CORS allows it or isn't enforced).
   const modelsURL = baseURL.replace(/\/+$/, "") + "/models";

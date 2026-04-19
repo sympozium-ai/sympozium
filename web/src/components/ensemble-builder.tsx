@@ -33,7 +33,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Settings, Save, ArrowRight, Database } from "lucide-react";
-import type { PersonaSpec, PersonaRelationship, SharedMemorySpec } from "@/lib/api";
+import type {
+  PersonaSpec,
+  PersonaRelationship,
+  SharedMemorySpec,
+} from "@/lib/api";
 import { PersonaConfigPanel } from "@/components/persona-config-panel";
 import {
   EnsembleSettingsPanel,
@@ -87,7 +91,10 @@ function BuilderNode({ data }: NodeProps<Node<BuilderNodeData>>) {
       </p>
 
       {persona.model && (
-        <Badge variant="outline" className="text-[10px] font-mono mb-1.5 block w-fit">
+        <Badge
+          variant="outline"
+          className="text-[10px] font-mono mb-1.5 block w-fit"
+        >
           {persona.model}
         </Badge>
       )}
@@ -126,11 +133,12 @@ const nodeTypes = { builder: BuilderNode };
 
 const EDGE_TYPES = ["delegation", "sequential", "supervision"] as const;
 
-const edgeStyles: Record<string, { stroke: string; strokeDasharray?: string }> = {
-  delegation: { stroke: "#3b82f6" },
-  sequential: { stroke: "#f59e0b", strokeDasharray: "6 3" },
-  supervision: { stroke: "#6b7280", strokeDasharray: "2 4" },
-};
+const edgeStyles: Record<string, { stroke: string; strokeDasharray?: string }> =
+  {
+    delegation: { stroke: "#3b82f6" },
+    sequential: { stroke: "#f59e0b", strokeDasharray: "6 3" },
+    supervision: { stroke: "#6b7280", strokeDasharray: "2 4" },
+  };
 
 const edgeLabels: Record<string, string> = {
   delegation: "delegates to",
@@ -157,7 +165,9 @@ function ProviderSetup({
     provider === "unsloth";
   const needsKey = !isLocal && provider !== "custom" && provider !== "";
   const canContinue =
-    provider !== "" && (!needsKey || apiKey !== "") && (!isLocal || baseURL !== "");
+    provider !== "" &&
+    (!needsKey || apiKey !== "") &&
+    (!isLocal || baseURL !== "");
 
   return (
     <div className="flex items-center justify-center h-[calc(100vh-12rem)]">
@@ -182,9 +192,10 @@ function ProviderSetup({
                   setBaseURL(p.defaultBaseURL || "");
                 }}
                 className={`flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs transition-colors
-                  ${provider === p.value
-                    ? "border-blue-500/60 bg-blue-500/10 text-blue-400"
-                    : "border-border/50 hover:border-border hover:bg-white/5"
+                  ${
+                    provider === p.value
+                      ? "border-blue-500/60 bg-blue-500/10 text-blue-400"
+                      : "border-border/50 hover:border-border hover:bg-white/5"
                   }`}
               >
                 <Icon className="h-5 w-5" />
@@ -276,12 +287,17 @@ export function EnsembleBuilder({
     description: initialSettings?.description || "",
     category: initialSettings?.category || "",
     workflowType: initialSettings?.workflowType || "autonomous",
-    sharedMemory: initialSettings?.sharedMemory || { enabled: true, storageSize: "1Gi" },
+    sharedMemory: initialSettings?.sharedMemory || {
+      enabled: true,
+      storageSize: "1Gi",
+    },
   });
 
   const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [pendingConnection, setPendingConnection] = useState<Connection | null>(null);
+  const [pendingConnection, setPendingConnection] = useState<Connection | null>(
+    null,
+  );
 
   // ── Show provider setup if not configured ──────────────────────────────
 
@@ -386,10 +402,13 @@ function BuilderCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedPersona(node.id);
-    setShowSettings(false);
-  }, [setSelectedPersona, setShowSettings]);
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      setSelectedPersona(node.id);
+      setShowSettings(false);
+    },
+    [setSelectedPersona, setShowSettings],
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => setPendingConnection(connection),
@@ -416,7 +435,11 @@ function BuilderCanvas({
     setEdges((eds) => addEdge(newEdge, eds));
     setRelationships((prev) => [
       ...prev,
-      { source: pendingConnection.source!, target: pendingConnection.target!, type },
+      {
+        source: pendingConnection.source!,
+        target: pendingConnection.target!,
+        type,
+      },
     ]);
     setPendingConnection(null);
   }
@@ -425,7 +448,8 @@ function BuilderCanvas({
     const idx = personas.length + 1;
     const name = `persona-${idx}`;
     const defaultModel =
-      PROVIDERS.find((p) => p.value === providerCtx.provider)?.defaultModel || "";
+      PROVIDERS.find((p) => p.value === providerCtx.provider)?.defaultModel ||
+      "";
     const newPersona: PersonaSpec = {
       name,
       displayName: "",
@@ -490,11 +514,15 @@ function BuilderCanvas({
     if (!selectedPersona) return;
     setPersonas((prev) => prev.filter((p) => p.name !== selectedPersona));
     setRelationships((prev) =>
-      prev.filter((r) => r.source !== selectedPersona && r.target !== selectedPersona),
+      prev.filter(
+        (r) => r.source !== selectedPersona && r.target !== selectedPersona,
+      ),
     );
     setNodes((prev) => prev.filter((n) => n.id !== selectedPersona));
     setEdges((prev) =>
-      prev.filter((e) => e.source !== selectedPersona && e.target !== selectedPersona),
+      prev.filter(
+        (e) => e.source !== selectedPersona && e.target !== selectedPersona,
+      ),
     );
     setSelectedPersona(null);
   }
@@ -515,7 +543,9 @@ function BuilderCanvas({
         workflowType: settings.workflowType,
         personas,
         relationships: relationships.length > 0 ? relationships : undefined,
-        sharedMemory: settings.sharedMemory?.enabled ? settings.sharedMemory : undefined,
+        sharedMemory: settings.sharedMemory?.enabled
+          ? settings.sharedMemory
+          : undefined,
       },
       { onSuccess: () => navigate(`/ensembles/${settings.name}`) },
     );
@@ -548,7 +578,10 @@ function BuilderCanvas({
           <Button
             size="sm"
             variant={showSettings ? "default" : "outline"}
-            onClick={() => { setShowSettings(!showSettings); setSelectedPersona(null); }}
+            onClick={() => {
+              setShowSettings(!showSettings);
+              setSelectedPersona(null);
+            }}
           >
             <Settings className="h-3.5 w-3.5 mr-1" />
             Settings
@@ -563,9 +596,10 @@ function BuilderCanvas({
               }))
             }
             className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] transition-colors
-              ${settings.sharedMemory?.enabled
-                ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
-                : "border-border/50 text-muted-foreground hover:border-border"
+              ${
+                settings.sharedMemory?.enabled
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                  : "border-border/50 text-muted-foreground hover:border-border"
               }`}
             title="Toggle shared workflow memory"
           >
@@ -642,7 +676,12 @@ function BuilderCanvas({
                 </Button>
               ))}
             </div>
-            <Button size="sm" variant="ghost" onClick={() => setPendingConnection(null)} className="w-full">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setPendingConnection(null)}
+              className="w-full"
+            >
               Cancel
             </Button>
           </div>
