@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -23,6 +23,8 @@ import {
   useEnsembles,
   usePatchEnsembleRelationships,
 } from "@/hooks/use-api";
+import { useWebSocket } from "@/hooks/use-websocket";
+import { useQueryClient } from "@tanstack/react-query";
 import { Save, Plus, Trash2, Database } from "lucide-react";
 import type {
   Ensemble,
@@ -30,6 +32,33 @@ import type {
   PersonaRelationship,
   AgentRun,
 } from "@/lib/api";
+
+// ── Real-time run status updates via WebSocket ─────────────────────────────
+
+/** Invalidates the runs query when a run lifecycle event arrives over the
+ *  WebSocket, giving the canvas near-instant status updates. */
+function useRunEventInvalidation() {
+  const { events } = useWebSocket();
+  const qc = useQueryClient();
+  const lastSeenRef = useRef(0);
+
+  useEffect(() => {
+    if (events.length <= lastSeenRef.current) return;
+    const newEvents = events.slice(lastSeenRef.current);
+    lastSeenRef.current = events.length;
+
+    const hasRunEvent = newEvents.some(
+      (e) =>
+        e.topic === "agent.run.completed" ||
+        e.topic === "agent.run.failed" ||
+        e.topic === "agent.run.started" ||
+        e.topic === "agent.run.requested",
+    );
+    if (hasRunEvent) {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+    }
+  }, [events, qc]);
+}
 
 // ── Shared node data ────────────────────────────────────────────────────────
 
@@ -406,6 +435,7 @@ interface EnsembleCanvasProps {
 }
 
 export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
+  useRunEventInvalidation();
   const { data: runs } = useRuns();
   const patchMutation = usePatchEnsembleRelationships();
   const relationships = pack.spec.relationships || [];
@@ -442,8 +472,28 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 
   const initialEdges = useMemo(() => buildEdges(relationships), [relationships]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Sync run status into nodes when polling data changes — preserves
+  // user-dragged positions while updating phase/task indicators.
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((node) => {
+        const personaName = node.id;
+        const status = runPhaseMap.get(personaName);
+        const newPhase = status?.phase;
+        const newTask = status?.task;
+        if (node.data.runPhase === newPhase && node.data.runTask === newTask) {
+          return node; // no change — keep reference stable
+        }
+        return {
+          ...node,
+          data: { ...node.data, runPhase: newPhase, runTask: newTask },
+        };
+      }),
+    );
+  }, [runPhaseMap, setNodes]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -551,6 +601,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function GlobalEnsembleCanvas() {
+  useRunEventInvalidation();
   const { data: packs } = useEnsembles();
   const { data: runs } = useRuns();
 
@@ -654,6 +705,7 @@ export function GlobalEnsembleCanvas() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function DashboardEnsembleCanvas() {
+  useRunEventInvalidation();
   const { data: packs } = useEnsembles();
   const { data: runs } = useRuns();
   const [selectedPack, setSelectedPack] = useState<string>("__all__");
