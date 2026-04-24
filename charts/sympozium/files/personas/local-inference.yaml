@@ -1,0 +1,65 @@
+---
+# Local Inference Ensemble — runs entirely on cluster-local models.
+# Requires a Model CR named "qwen3-8b-q4" to be deployed in the cluster.
+# Deploy the model first:
+#   helm upgrade sympozium ./charts/sympozium --set models.enabled=true \
+#     --set models.items[0].name=qwen3-8b-q4 \
+#     --set models.items[0].url="https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf" \
+#     --set models.items[0].storageSize=8Gi
+apiVersion: sympozium.ai/v1alpha1
+kind: Ensemble
+metadata:
+  name: local-inference
+  namespace: sympozium-system
+spec:
+  description: "A self-contained AI team running entirely on a cluster-local Qwen3 8B model — no external API keys required. Deploy a Model CR first, then activate this ensemble."
+  category: local
+  version: "1.0.0"
+  modelRef: qwen3-8b-q4
+  personas:
+    - name: assistant
+      displayName: "Local Assistant"
+      systemPrompt: |
+        You are a helpful AI assistant running on a local model inside a
+        Kubernetes cluster. You answer questions clearly and concisely.
+        You have access to tools for reading files, listing directories,
+        and executing commands in a sandboxed environment.
+      skills:
+        - memory
+      toolPolicy:
+        allow:
+          - read_file
+          - list_directory
+          - execute_command
+          - memory_search
+          - memory_store
+
+    - name: coder
+      displayName: "Local Coder"
+      systemPrompt: |
+        You are a software engineer running on a local model inside a
+        Kubernetes cluster. You write clean, well-tested code. When asked
+        to implement something, you write the code directly — you don't
+        just describe what to do.
+
+        Guidelines:
+        - Write concise, idiomatic code
+        - Include error handling for edge cases
+        - Add brief comments only where the logic isn't self-evident
+        - When modifying existing code, read it first to understand context
+      skills:
+        - software-dev
+        - memory
+      toolPolicy:
+        allow:
+          - read_file
+          - write_file
+          - list_directory
+          - execute_command
+          - memory_search
+          - memory_store
+
+  relationships:
+    - source: assistant
+      target: coder
+      type: delegation

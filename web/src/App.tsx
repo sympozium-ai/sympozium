@@ -16,6 +16,8 @@ import { EnsembleBuilderPage } from "@/pages/ensemble-builder";
 import { GatewayPage } from "@/pages/gateway";
 import { McpServersPage } from "@/pages/mcp-servers";
 import { McpServerDetailPage } from "@/pages/mcp-server-detail";
+import { ModelsPage } from "@/pages/models";
+import { ModelDetailPage } from "@/pages/model-detail";
 import { SettingsPage } from "@/pages/settings";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -59,6 +61,8 @@ export default function App() {
         <Route path="/ensembles/:name" element={<EnsembleDetailPage />} />
         <Route path="/mcp-servers" element={<McpServersPage />} />
         <Route path="/mcp-servers/:name" element={<McpServerDetailPage />} />
+        <Route path="/models" element={<ModelsPage />} />
+        <Route path="/models/:name" element={<ModelDetailPage />} />
         <Route path="/gateway" element={<GatewayPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

@@ -317,5 +317,6 @@ SympoziumSchedule or use a Ensemble with a schedule — see
 
 - [Writing Ensembles](./writing-ensembles.md) — bundle agents into reusable teams
 - [Writing Skills](./writing-skills.md) — create custom tools for your agents
-- [LM Studio guide](./lm-studio.md) / [Ollama guide](./ollama.md) — use local inference
+- [Local Models guide](./local-models.md) — run models in-cluster with no API keys
+- [LM Studio guide](./lm-studio.md) / [Ollama guide](./ollama.md) — use external local inference
 - [Agent Sandboxing](../concepts/agent-sandboxing.md) — isolate agent execution

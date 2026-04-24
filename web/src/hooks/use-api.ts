@@ -317,6 +317,7 @@ export function useActivateEnsemble() {
         skills?: string[];
       }>;
       agentSandbox?: { enabled: boolean; runtimeClass?: string };
+      modelRef?: string;
     }) => api.ensembles.patch(name, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ensembles"] });
@@ -490,6 +491,58 @@ export function usePatchMcpServer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       toast.success("MCP server updated");
+    },
+    onError: toastError,
+  });
+}
+
+// ── Nodes ───────────────────────────────────────────────────────────────────
+
+export function useClusterNodes() {
+  return useQuery({
+    queryKey: ["nodes"],
+    queryFn: api.nodes.list,
+  });
+}
+
+// ── Models ──────────────────────────────────────────────────────────────────
+
+export function useModels() {
+  return useQuery({
+    queryKey: ["models"],
+    queryFn: api.models.list,
+    refetchInterval: 5000,
+  });
+}
+
+export function useModel(name: string) {
+  return useQuery({
+    queryKey: ["models", name],
+    queryFn: () => api.models.get(name),
+    enabled: !!name,
+    refetchInterval: 5000,
+  });
+}
+
+export function useCreateModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.models.create,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["models"] });
+      toast.success("Model created");
+    },
+    onError: toastError,
+  });
+}
+
+export function useDeleteModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.models.delete,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["models"] });
+      toast.success("Model deleted");
     },
     onError: toastError,
   });

@@ -36,6 +36,8 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
+const systemNamespace = "sympozium-system"
+
 // Server is the Sympozium API server.
 type Server struct {
 	client   client.Client
@@ -146,6 +148,15 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/mcpservers/{name}", s.patchMCPServer)
 	mux.HandleFunc("POST /api/v1/mcpservers/{name}/auth/token", s.handleMCPServerAuthToken)
 	mux.HandleFunc("GET /api/v1/mcpservers/{name}/auth/status", s.handleMCPServerAuthStatus)
+
+	// Node endpoints
+	mux.HandleFunc("GET /api/v1/nodes", s.listClusterNodes)
+
+	// Model endpoints (cluster-local inference)
+	mux.HandleFunc("GET /api/v1/models", s.listModels)
+	mux.HandleFunc("GET /api/v1/models/{name}", s.getModel)
+	mux.HandleFunc("POST /api/v1/models", s.createModel)
+	mux.HandleFunc("DELETE /api/v1/models/{name}", s.deleteModel)
 
 	// Gateway config endpoints (singleton SympoziumConfig)
 	mux.HandleFunc("GET /api/v1/gateway", s.getGatewayConfig)
@@ -1458,6 +1469,7 @@ type PatchEnsembleRequest struct {
 	Relationships        []sympoziumv1alpha1.PersonaRelationship            `json:"relationships,omitempty"`
 	WorkflowType         string                                             `json:"workflowType,omitempty"`
 	SharedMemory         *sympoziumv1alpha1.SharedMemorySpec                `json:"sharedMemory,omitempty"`
+	ModelRef             string                                             `json:"modelRef,omitempty"`
 }
 
 // PersonaPatchSpec allows partial updates to individual personas by name.
@@ -1580,8 +1592,13 @@ func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.BaseURL != "" {
+	if req.ModelRef != "" {
+		pp.Spec.ModelRef = req.ModelRef
+		pp.Spec.BaseURL = "" // controller resolves from Model CR
+		pp.Spec.AuthRefs = nil
+	} else if req.BaseURL != "" {
 		pp.Spec.BaseURL = req.BaseURL
+		pp.Spec.ModelRef = ""
 	} else if pp.Spec.BaseURL == "" && req.Provider != "" {
 		// Apply default baseURL for keyless local providers so the
 		// controller can reach the inference server (fixes #39).
@@ -3323,6 +3340,181 @@ func parseProviderModels(body []byte) []string {
 	}
 
 	return []string{}
+}
+
+// --- Node handlers ---
+
+type ClusterNode struct {
+	Name   string            `json:"name"`
+	Labels map[string]string `json:"labels,omitempty"`
+	Ready  bool              `json:"ready"`
+}
+
+func (s *Server) listClusterNodes(w http.ResponseWriter, r *http.Request) {
+	var nodeList corev1.NodeList
+	if err := s.client.List(r.Context(), &nodeList); err != nil {
+		http.Error(w, "failed to list nodes: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var result []ClusterNode
+	for _, node := range nodeList.Items {
+		ready := false
+		for _, cond := range node.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				ready = true
+				break
+			}
+		}
+		result = append(result, ClusterNode{
+			Name:   node.Name,
+			Labels: node.Labels,
+			Ready:  ready,
+		})
+	}
+
+	writeJSON(w, result)
+}
+
+// --- Model handlers ---
+
+func (s *Server) listModels(w http.ResponseWriter, r *http.Request) {
+	var list sympoziumv1alpha1.ModelList
+	if err := s.client.List(r.Context(), &list); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, list.Items)
+}
+
+func (s *Server) getModel(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	// Models are always in the system namespace.
+	ns := systemNamespace
+
+	var model sympoziumv1alpha1.Model
+	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &model); err != nil {
+		if k8serrors.IsNotFound(err) {
+			http.Error(w, "model not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, model)
+}
+
+type createModelRequest struct {
+	Name         string            `json:"name"`
+	URL          string            `json:"url"`
+	Filename     string            `json:"filename"`
+	StorageSize  string            `json:"storageSize"`
+	StorageClass string            `json:"storageClass"`
+	GPU          int               `json:"gpu"`
+	Memory       string            `json:"memory"`
+	CPU          string            `json:"cpu"`
+	ContextSize  int               `json:"contextSize"`
+	Image        string            `json:"image"`
+	Port         int32             `json:"port"`
+	Args         []string          `json:"args"`
+	NodeSelector map[string]string `json:"nodeSelector"`
+}
+
+func (s *Server) createModel(w http.ResponseWriter, r *http.Request) {
+	var req createModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" || req.URL == "" {
+		http.Error(w, "name and url are required", http.StatusBadRequest)
+		return
+	}
+
+	// Defaults
+	if req.Filename == "" {
+		req.Filename = "model.gguf"
+	}
+	if req.StorageSize == "" {
+		req.StorageSize = "10Gi"
+	}
+	if req.Memory == "" {
+		req.Memory = "16Gi"
+	}
+	if req.CPU == "" {
+		req.CPU = "4"
+	}
+
+	model := &sympoziumv1alpha1.Model{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      req.Name,
+			Namespace: systemNamespace,
+		},
+		Spec: sympoziumv1alpha1.ModelCRDSpec{
+			Source: sympoziumv1alpha1.ModelSource{
+				URL:      req.URL,
+				Filename: req.Filename,
+			},
+			Storage: sympoziumv1alpha1.ModelStorage{
+				Size:         req.StorageSize,
+				StorageClass: req.StorageClass,
+			},
+			Resources: sympoziumv1alpha1.ModelResources{
+				GPU:    req.GPU,
+				Memory: req.Memory,
+				CPU:    req.CPU,
+			},
+			NodeSelector: req.NodeSelector,
+		},
+	}
+
+	if req.Image != "" {
+		model.Spec.Inference.Image = req.Image
+	}
+	if req.Port > 0 {
+		model.Spec.Inference.Port = req.Port
+	}
+	if req.ContextSize > 0 {
+		model.Spec.Inference.ContextSize = req.ContextSize
+	}
+	if len(req.Args) > 0 {
+		model.Spec.Inference.Args = req.Args
+	}
+
+	if err := s.client.Create(r.Context(), model); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			http.Error(w, "model already exists", http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, model)
+}
+
+func (s *Server) deleteModel(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	// Models are always in the system namespace.
+	ns := systemNamespace
+
+	model := &sympoziumv1alpha1.Model{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+	}
+	if err := s.client.Delete(r.Context(), model); err != nil {
+		if k8serrors.IsNotFound(err) {
+			http.Error(w, "model not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

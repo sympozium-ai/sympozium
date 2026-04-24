@@ -1,0 +1,41 @@
+{{- if and .Values.models.enabled .Values.models.items }}
+{{- range .Values.models.items }}
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: Model
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.namespace | default "sympozium-system" }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/part-of: sympozium
+spec:
+  source:
+    url: {{ .url | quote }}
+    filename: {{ .filename | default "model.gguf" | quote }}
+  storage:
+    size: {{ .storageSize | default "10Gi" | quote }}
+    {{- if .storageClass }}
+    storageClass: {{ .storageClass | quote }}
+    {{- end }}
+  resources:
+    gpu: {{ .gpu | default 1 }}
+    memory: {{ .memory | default "16Gi" | quote }}
+    cpu: {{ .cpu | default "4" | quote }}
+  {{- if .args }}
+  inference:
+    args:
+    {{- range .args }}
+      - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- if .nodeSelector }}
+  nodeSelector:
+    {{- toYaml .nodeSelector | nindent 4 }}
+  {{- end }}
+  {{- if .tolerations }}
+  tolerations:
+    {{- toYaml .tolerations | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

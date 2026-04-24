@@ -83,10 +83,8 @@ export function RunsPage() {
     return () => clearTimeout(timer);
   }, [isLoading, data, markAllSeen]);
 
-  const sorted = (data || []).sort(
-    (a, b) =>
-      new Date(b.metadata.creationTimestamp || "").getTime() -
-      new Date(a.metadata.creationTimestamp || "").getTime(),
+  const sorted = (data || []).sort((a, b) =>
+    a.metadata.name.localeCompare(b.metadata.name),
   );
 
   const filtered = sorted.filter(

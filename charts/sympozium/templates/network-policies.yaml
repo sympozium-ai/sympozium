@@ -57,6 +57,14 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # Allow egress to cluster-local Model inference servers (llama-server)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: model
+      ports:
+        - protocol: TCP
+          port: 8080
     # Allow Kubernetes API server (post-DNAT port on some CNIs like kube-router)
     - to: []
       ports:

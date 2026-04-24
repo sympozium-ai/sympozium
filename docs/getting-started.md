@@ -10,7 +10,9 @@ DevOps workflows.
 
 - A running Kubernetes cluster (Kind, minikube, EKS, GKE, AKS, etc.)
 - `kubectl` configured and pointing at the cluster
-- An LLM API key (OpenAI, Anthropic, Azure OpenAI, or a local Ollama instance)
+- An LLM provider — either:
+  - An API key (OpenAI, Anthropic, Azure OpenAI, AWS Bedrock), **or**
+  - A [cluster-local model](./guides/local-models.md) — no API key needed
 
 ## Install
 

@@ -57,6 +57,13 @@ type EnsembleSpec struct {
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
 
+	// ModelRef references a Model CR for cluster-local inference.
+	// When set, the controller resolves the Model's endpoint and configures all
+	// generated instances to use it (provider=openai, baseURL=endpoint, no auth).
+	// Takes precedence over AuthRefs and BaseURL.
+	// +optional
+	ModelRef string `json:"modelRef,omitempty"`
+
 	// SkillParams provides per-skill parameters applied to all generated instances.
 	// The outer key is the SkillPack name (e.g. "github-gitops"), and the inner map
 	// holds key/value pairs injected as SKILL_<KEY> environment variables.

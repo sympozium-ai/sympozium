@@ -122,6 +122,7 @@ export function EnsembleDetailPage() {
         awsSessionToken: result.awsSessionToken || undefined,
         model: result.model,
         baseURL: result.baseURL || undefined,
+        modelRef: result.modelRef || undefined,
         channels: result.channels.length > 0 ? result.channels : undefined,
         channelConfigs:
           Object.keys(result.channelConfigs).length > 0

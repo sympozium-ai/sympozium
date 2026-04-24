@@ -35,6 +35,7 @@ rules:
       - ensembles
       - sympoziumconfigs
       - mcpservers
+      - models
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["sympozium.ai"]
     resources:
@@ -46,6 +47,7 @@ rules:
       - ensembles/status
       - sympoziumconfigs/status
       - mcpservers/status
+      - models/status
     verbs: ["get", "update", "patch"]
   - apiGroups: ["sympozium.ai"]
     resources:
@@ -56,6 +58,7 @@ rules:
       - sympoziumschedules/finalizers
       - ensembles/finalizers
       - sympoziumconfigs/finalizers
+      - models/finalizers
     verbs: ["update"]
   # Core resources — controller + skill RBAC delegation
   - apiGroups: [""]

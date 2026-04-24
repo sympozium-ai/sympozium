@@ -199,6 +199,24 @@ func (r *EnsembleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	// Resolve modelRef once for the whole ensemble.
+	var modelEndpoint string
+	if pack.Spec.ModelRef != "" {
+		var model sympoziumv1alpha1.Model
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: pack.Namespace,
+			Name:      pack.Spec.ModelRef,
+		}, &model); err != nil {
+			log.Info("Model not found for modelRef, waiting", "modelRef", pack.Spec.ModelRef)
+			return ctrl.Result{RequeueAfter: 10_000_000_000}, nil // 10s
+		}
+		if model.Status.Phase != sympoziumv1alpha1.ModelPhaseReady {
+			log.Info("Model not ready, waiting", "modelRef", pack.Spec.ModelRef, "phase", model.Status.Phase)
+			return ctrl.Result{RequeueAfter: 10_000_000_000}, nil
+		}
+		modelEndpoint = model.Status.Endpoint
+	}
+
 	// Reconcile each persona → instance + schedule + memory
 	var installed []sympoziumv1alpha1.InstalledPersona
 	var installErr error
@@ -210,7 +228,7 @@ func (r *EnsembleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 			continue
 		}
-		ip, err := r.reconcilePersona(ctx, log, pack, &persona, i)
+		ip, err := r.reconcilePersona(ctx, log, pack, &persona, i, modelEndpoint)
 		if err != nil {
 			log.Error(err, "Failed to reconcile persona", "persona", persona.Name)
 			installErr = err
@@ -249,6 +267,7 @@ func (r *EnsembleReconciler) reconcilePersona(
 	pack *sympoziumv1alpha1.Ensemble,
 	persona *sympoziumv1alpha1.PersonaSpec,
 	personaIndex int,
+	modelEndpoint string,
 ) (sympoziumv1alpha1.InstalledPersona, error) {
 	instanceName := pack.Name + "-" + persona.Name
 	ip := sympoziumv1alpha1.InstalledPersona{
@@ -260,7 +279,7 @@ func (r *EnsembleReconciler) reconcilePersona(
 	existingInst := &sympoziumv1alpha1.SympoziumInstance{}
 	err := r.Get(ctx, client.ObjectKey{Name: instanceName, Namespace: pack.Namespace}, existingInst)
 	if errors.IsNotFound(err) {
-		inst := r.buildInstance(pack, persona, instanceName)
+		inst := r.buildInstance(pack, persona, instanceName, modelEndpoint)
 		if err := ctrl.SetControllerReference(pack, inst, r.Scheme); err != nil {
 			return ip, fmt.Errorf("set owner ref on instance: %w", err)
 		}
@@ -288,8 +307,19 @@ func (r *EnsembleReconciler) reconcilePersona(
 		}
 
 		// Propagate baseURL changes (e.g. switching to/from a local provider).
-		if existingInst.Spec.Agents.Default.BaseURL != pack.Spec.BaseURL {
-			existingInst.Spec.Agents.Default.BaseURL = pack.Spec.BaseURL
+		// If modelRef is set, use the resolved endpoint instead.
+		wantBaseURL := pack.Spec.BaseURL
+		if modelEndpoint != "" {
+			wantBaseURL = modelEndpoint
+		}
+		if existingInst.Spec.Agents.Default.BaseURL != wantBaseURL {
+			existingInst.Spec.Agents.Default.BaseURL = wantBaseURL
+			needsUpdate = true
+		}
+
+		// When using a local model, clear auth refs (no API key needed).
+		if modelEndpoint != "" && len(existingInst.Spec.AuthRefs) > 0 {
+			existingInst.Spec.AuthRefs = nil
 			needsUpdate = true
 		}
 
@@ -427,10 +457,21 @@ func (r *EnsembleReconciler) buildInstance(
 	pack *sympoziumv1alpha1.Ensemble,
 	persona *sympoziumv1alpha1.PersonaSpec,
 	instanceName string,
+	modelEndpoint string,
 ) *sympoziumv1alpha1.SympoziumInstance {
 	model := persona.Model
 	if model == "" {
 		model = "gpt-4o" // sensible default; overridden by onboarding
+	}
+
+	baseURL := pack.Spec.BaseURL
+	authRefs := pack.Spec.AuthRefs
+
+	// If a cluster-local Model is referenced, override provider settings.
+	if modelEndpoint != "" {
+		baseURL = modelEndpoint
+		model = pack.Spec.ModelRef
+		authRefs = nil // no auth needed for cluster-internal inference
 	}
 
 	inst := &sympoziumv1alpha1.SympoziumInstance{
@@ -446,13 +487,12 @@ func (r *EnsembleReconciler) buildInstance(
 			Agents: sympoziumv1alpha1.AgentsSpec{
 				Default: sympoziumv1alpha1.AgentConfig{
 					Model:        model,
-					BaseURL:      pack.Spec.BaseURL,
+					BaseURL:      baseURL,
 					AgentSandbox: pack.Spec.AgentSandbox,
 					Lifecycle:    persona.Lifecycle,
 				},
 			},
-			// Copy auth refs from the pack (set during install via TUI).
-			AuthRefs: pack.Spec.AuthRefs,
+			AuthRefs: authRefs,
 			Memory: &sympoziumv1alpha1.MemorySpec{
 				Enabled:      true,
 				MaxSizeKB:    256,

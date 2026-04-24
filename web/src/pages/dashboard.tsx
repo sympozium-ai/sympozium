@@ -17,6 +17,7 @@ import {
   useObservabilityMetrics,
   useGateVerdict,
   useEnsembles,
+  useModels,
 } from "@/hooks/use-api";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { formatAge, truncate } from "@/lib/utils";
@@ -41,6 +42,7 @@ import {
   Check,
   X,
   Users,
+  Cpu,
 } from "lucide-react";
 import { DashboardEnsembleCanvas } from "@/components/ensemble-canvas";
 import { Button } from "@/components/ui/button";
@@ -52,7 +54,7 @@ import "react-grid-layout/css/styles.css";
 // Layout persistence
 // ---------------------------------------------------------------------------
 
-const LAYOUT_KEY = "sympozium-dashboard-layout-v2";
+const LAYOUT_KEY = "sympozium-dashboard-layout-v3";
 const LAYOUT_LOCKED_KEY = "sympozium-dashboard-locked";
 
 type PanelId =
@@ -63,42 +65,46 @@ type PanelId =
   | "eventStream"
   | "runStatus"
   | "recentErrors"
-  | "teamCanvas";
+  | "teamCanvas"
+  | "localModels";
 
 const DEFAULT_LAYOUTS: ResponsiveLayouts = {
   lg: [
-    // Left column: activity chart + tokens by model
+    // Top row: activity chart + recent runs
     { i: "activity", x: 0, y: 0, w: 6, h: 7, minW: 4, minH: 3 },
-    { i: "tokensByModel", x: 0, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
-    // Right column: recent runs + tool invocations
     { i: "recentRuns", x: 6, y: 0, w: 6, h: 7, minW: 4, minH: 4 },
-    { i: "topTools", x: 6, y: 7, w: 6, h: 4, minW: 4, minH: 3 },
-    // Team canvas (large) + run status (sidebar) — same row
-    { i: "teamCanvas", x: 0, y: 11, w: 9, h: 8, minW: 6, minH: 5 },
-    { i: "runStatus", x: 9, y: 11, w: 3, h: 8, minW: 3, minH: 4 },
+    // Second row: three equal panels
+    { i: "tokensByModel", x: 0, y: 7, w: 4, h: 5, minW: 3, minH: 3 },
+    { i: "topTools", x: 4, y: 7, w: 4, h: 5, minW: 3, minH: 3 },
+    { i: "localModels", x: 8, y: 7, w: 4, h: 5, minW: 3, minH: 3 },
+    // Team canvas + run status
+    { i: "teamCanvas", x: 0, y: 12, w: 9, h: 8, minW: 6, minH: 5 },
+    { i: "runStatus", x: 9, y: 12, w: 3, h: 8, minW: 3, minH: 4 },
     // Bottom row
     { i: "eventStream", x: 0, y: 19, w: 9, h: 6, minW: 4, minH: 4 },
     { i: "recentErrors", x: 9, y: 19, w: 3, h: 6, minW: 3, minH: 4 },
   ],
   md: [
     { i: "activity", x: 0, y: 0, w: 5, h: 7, minW: 4, minH: 3 },
-    { i: "tokensByModel", x: 0, y: 7, w: 5, h: 4, minW: 4, minH: 3 },
     { i: "recentRuns", x: 5, y: 0, w: 5, h: 7, minW: 4, minH: 4 },
-    { i: "topTools", x: 5, y: 7, w: 5, h: 4, minW: 4, minH: 3 },
-    { i: "teamCanvas", x: 0, y: 11, w: 7, h: 8, minW: 5, minH: 5 },
-    { i: "runStatus", x: 7, y: 11, w: 3, h: 8, minW: 3, minH: 4 },
+    { i: "tokensByModel", x: 0, y: 7, w: 4, h: 5, minW: 3, minH: 3 },
+    { i: "topTools", x: 4, y: 7, w: 3, h: 5, minW: 3, minH: 3 },
+    { i: "localModels", x: 7, y: 7, w: 3, h: 5, minW: 3, minH: 3 },
+    { i: "teamCanvas", x: 0, y: 12, w: 7, h: 8, minW: 5, minH: 5 },
+    { i: "runStatus", x: 7, y: 12, w: 3, h: 8, minW: 3, minH: 4 },
     { i: "eventStream", x: 0, y: 19, w: 7, h: 6, minW: 4, minH: 4 },
     { i: "recentErrors", x: 7, y: 19, w: 3, h: 6, minW: 3, minH: 4 },
   ],
   sm: [
     { i: "activity", x: 0, y: 0, w: 6, h: 7, minW: 4, minH: 3 },
     { i: "recentRuns", x: 0, y: 7, w: 6, h: 6, minW: 4, minH: 4 },
-    { i: "tokensByModel", x: 0, y: 13, w: 6, h: 4, minW: 4, minH: 3 },
-    { i: "topTools", x: 0, y: 17, w: 6, h: 5, minW: 4, minH: 3 },
-    { i: "teamCanvas", x: 0, y: 22, w: 6, h: 8, minW: 4, minH: 5 },
-    { i: "runStatus", x: 0, y: 30, w: 6, h: 5, minW: 3, minH: 4 },
-    { i: "eventStream", x: 0, y: 35, w: 6, h: 6, minW: 4, minH: 4 },
-    { i: "recentErrors", x: 0, y: 41, w: 6, h: 5, minW: 4, minH: 4 },
+    { i: "tokensByModel", x: 0, y: 13, w: 6, h: 5, minW: 3, minH: 3 },
+    { i: "topTools", x: 0, y: 18, w: 6, h: 5, minW: 3, minH: 3 },
+    { i: "localModels", x: 0, y: 23, w: 6, h: 5, minW: 3, minH: 3 },
+    { i: "teamCanvas", x: 0, y: 28, w: 6, h: 8, minW: 4, minH: 5 },
+    { i: "runStatus", x: 0, y: 36, w: 6, h: 5, minW: 3, minH: 4 },
+    { i: "eventStream", x: 0, y: 41, w: 6, h: 6, minW: 4, minH: 4 },
+    { i: "recentErrors", x: 0, y: 47, w: 6, h: 5, minW: 4, minH: 4 },
   ],
 };
 
@@ -333,6 +339,70 @@ function PanelWrapper({
         {children}
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Local Models panel
+// ---------------------------------------------------------------------------
+
+function LocalModelsPanel() {
+  const { data: models, isLoading } = useModels();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  const items = models || [];
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-4 text-center">
+        <Cpu className="h-8 w-8 text-muted-foreground/30 mb-2" />
+        <p className="text-xs text-muted-foreground">No local models deployed</p>
+        <Link
+          to="/models"
+          className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+        >
+          Deploy a model
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((m) => (
+        <Link
+          key={m.metadata.name}
+          to={`/models/${m.metadata.name}`}
+          className="block rounded-lg border border-border/50 px-3 py-2 hover:border-border transition-colors"
+        >
+          <div className="flex items-center justify-between gap-2 mb-0.5">
+            <span className="text-xs font-mono text-foreground truncate">
+              {m.metadata.name}
+            </span>
+            <StatusBadge phase={m.status?.phase} />
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span>{m.spec.resources?.gpu ? `${m.spec.resources.gpu} GPU` : "CPU"}</span>
+            <span>{m.spec.resources?.memory || "16Gi"} RAM</span>
+            {m.status?.endpoint && (
+              <span className="truncate max-w-[120px]">
+                {m.status.endpoint.replace(/^https?:\/\//, "").replace(/\/v1$/, "")}
+              </span>
+            )}
+          </div>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -1421,6 +1491,12 @@ export function DashboardPage() {
                   ))}
                 </div>
               )}
+            </PanelWrapper>
+          </div>
+          {/* ---- Local Models ---- */}
+          <div key="localModels">
+            <PanelWrapper title="Local Models" icon={Cpu} locked={locked}>
+              <LocalModelsPanel />
             </PanelWrapper>
           </div>
           {/* ---- Team Canvas ---- */}

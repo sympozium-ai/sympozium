@@ -1,0 +1,19 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: Model
+metadata:
+  name: tinyllama-1b-q4
+  namespace: sympozium-system
+spec:
+  source:
+    url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    filename: "model.gguf"
+  storage:
+    size: "2Gi"
+  resources:
+    gpu: 0
+    memory: "4Gi"
+    cpu: "2"
+  inference:
+    args:
+      - "--ctx-size"
+      - "2048"

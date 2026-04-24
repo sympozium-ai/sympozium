@@ -563,6 +563,60 @@ export interface MCPServerAuthStatusResponse {
   secretName: string;
 }
 
+// ── Model (cluster-local inference) ──────────────────────────────────────────
+
+export interface ModelSource {
+  url: string;
+  filename?: string;
+}
+
+export interface ModelStorage {
+  size?: string;
+  storageClass?: string;
+}
+
+export interface InferenceSpec {
+  image?: string;
+  port?: number;
+  contextSize?: number;
+  args?: string[];
+}
+
+export interface ModelResources {
+  gpu?: number;
+  memory?: string;
+  cpu?: string;
+}
+
+export interface ModelCRDSpec {
+  source: ModelSource;
+  storage?: ModelStorage;
+  inference?: InferenceSpec;
+  resources?: ModelResources;
+  nodeSelector?: Record<string, string>;
+}
+
+export interface ModelStatus {
+  phase?: string;
+  endpoint?: string;
+  message?: string;
+  conditions?: Condition[];
+}
+
+export interface Model {
+  metadata: ObjectMeta;
+  spec: ModelCRDSpec;
+  status?: ModelStatus;
+}
+
+// ── Cluster Nodes ───────────────────────────────────────────────────────────
+
+export interface ClusterNode {
+  name: string;
+  labels?: Record<string, string>;
+  ready: boolean;
+}
+
 // ── Pod info (returned by /api/v1/pods) ──────────────────────────────────────
 
 export interface PodInfo {
@@ -953,6 +1007,36 @@ export const api = {
         `/api/v1/mcpservers/${name}/auth/token`,
         { method: "POST", body: JSON.stringify({ token }) },
       ),
+  },
+
+  nodes: {
+    list: () => apiFetch<ClusterNode[]>("/api/v1/nodes"),
+  },
+
+  models: {
+    list: () => apiFetch<Model[]>("/api/v1/models"),
+    get: (name: string) => apiFetch<Model>(`/api/v1/models/${name}`),
+    create: (data: {
+      name: string;
+      url: string;
+      filename?: string;
+      storageSize?: string;
+      storageClass?: string;
+      gpu?: number;
+      memory?: string;
+      cpu?: string;
+      contextSize?: number;
+      image?: string;
+      port?: number;
+      args?: string[];
+      nodeSelector?: Record<string, string>;
+    }) =>
+      apiFetch<Model>("/api/v1/models", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    delete: (name: string) =>
+      apiFetch<void>(`/api/v1/models/${name}`, { method: "DELETE" }),
   },
 
   pods: {

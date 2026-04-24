@@ -10,6 +10,7 @@ Sympozium models every agentic concept as a Kubernetes Custom Resource:
 | `SkillPack` | ConfigMap | Portable skill bundles — kubectl, Helm, or custom tools — mounted into agent pods as files, with optional sidecar containers for cluster ops |
 | `SympoziumSchedule` | CronJob | Recurring tasks — heartbeats, sweeps, scheduled runs with cron expressions |
 | `Ensemble` | Helm Chart / Operator Bundle | Pre-configured agent bundles — activating a pack stamps out instances, schedules, and memory for each persona |
+| `Model` | Deployment + Service | [Cluster-local inference](../guides/local-models.md) — declares a GGUF model, controller deploys llama-server and exposes an OpenAI-compatible endpoint |
 
 ---
 

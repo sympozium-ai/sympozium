@@ -9,7 +9,7 @@ graph TB
     ADMIN(["Operator / SRE"]) -- "TUI · Web UI · kubectl" --> CP
 
     subgraph CP["Control Plane"]
-        CM["Controller Manager<br/><small>SympoziumInstance · AgentRun<br/>Ensemble · SkillPack<br/>SympoziumPolicy · MCPServer</small>"]
+        CM["Controller Manager<br/><small>SympoziumInstance · AgentRun<br/>Ensemble · SkillPack · Model<br/>SympoziumPolicy · MCPServer</small>"]
         API["API Server<br/><small>HTTP + WebSocket</small>"]
         WH["Admission Webhook<br/><small>Policy enforcement</small>"]
         NATS[("NATS JetStream<br/><small>Event bus</small>")]
@@ -145,6 +145,42 @@ graph LR
     style NP stroke:#f5a623,stroke-width:2px
 ```
 
+### Cluster-Local Model Inference
+
+```mermaid
+graph TB
+    USER(["Operator"]) -- "kubectl apply / Web UI" --> MODEL
+
+    subgraph MODEL["Model CRD Lifecycle"]
+        direction LR
+        MCRD["Model CR<br/><small>url, gpu, memory</small>"]
+        PVC[("PVC<br/><small>model.gguf</small>")]
+        DL["Download Job<br/><small>curl → PVC</small>"]
+        DEP["Deployment<br/><small>llama-server</small>"]
+        SVC["Service<br/><small>ClusterIP :8080</small>"]
+
+        MCRD -- "creates" --> PVC
+        MCRD -- "creates" --> DL
+        DL -- "writes to" --> PVC
+        MCRD -- "creates" --> DEP
+        DEP -- "reads from" --> PVC
+        MCRD -- "creates" --> SVC
+        SVC -- "routes to" --> DEP
+    end
+
+    subgraph AP["Agent Pod"]
+        A1["Agent Container"]
+    end
+
+    A1 -- "MODEL_BASE_URL<br/>http://model-*.svc:8080/v1" --> SVC
+    CM["Controller Manager"] -- "reconciles phases:<br/>Pending → Downloading → Loading → Ready" --> MCRD
+
+    style MODEL stroke:#059669,stroke-width:2px
+    style AP stroke:#53354a,stroke-width:2px
+```
+
+Model CRDs declare GGUF models as Kubernetes resources. The controller downloads weights to a PVC, deploys a llama-server, and exposes an OpenAI-compatible endpoint. AgentRuns reference models by name via `modelRef` — the controller resolves it to the cluster-internal endpoint automatically.
+
 ### Persona Delegation Flow
 
 ```mermaid
@@ -189,7 +225,8 @@ Agents in a Ensemble can delegate tasks to other personas using the `delegate_to
 5. **Web endpoints** expose agents as HTTP APIs. When an instance has the `web-endpoint` skill, the controller creates a long-lived Deployment (serving mode) with a web-proxy sidecar. The proxy accepts OpenAI-compatible (`/v1/chat/completions`) and MCP (`/sse`, `/message`) requests, creating per-request AgentRun Jobs. An Envoy Gateway with per-instance HTTPRoutes provides external access with TLS.
 6. **MCP server integration** — `MCPServer` CRDs define external tool providers using the Model Context Protocol. The controller deploys managed servers (from container images) or connects to external ones, probes them for available tools, and records discovered tools in the resource status. Agent pods access MCP tools through the `mcp-bridge` skill sidecar, which translates between the agent's tool interface and MCP's SSE/stdio transport. Tool names are prefixed to avoid collisions when multiple MCP servers are active. The web UI and CLI provide full CRUD management.
 7. **Node-based inference discovery** — for local inference providers (Ollama, vLLM, llama-cpp) installed directly on host nodes, an optional node-probe DaemonSet probes localhost ports and annotates each node with discovered providers and models (`sympozium.ai/inference-*`). The API server reads these annotations, and the web wizard lets users select a node to pin their agent pods to via `nodeSelector`.
-8. **Everything is a Kubernetes resource** — instances, runs, policies, skills, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
+8. **Cluster-local model inference** — `Model` CRDs declare GGUF models as Kubernetes resources. The controller downloads weights to a PVC, deploys a llama-server (OpenAI-compatible), and exposes a ClusterIP Service. AgentRuns reference models by name via `spec.model.modelRef` — no API key needed. The web UI auto-wires Ready models as provider options during instance creation.
+9. **Everything is a Kubernetes resource** — instances, runs, policies, skills, models, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
 
 ---
 

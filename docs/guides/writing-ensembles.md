@@ -12,7 +12,7 @@ This guide walks through creating a custom Ensemble from scratch.
 
 - Sympozium installed (`sympozium install`)
 - Familiarity with [Ensembles concepts](../concepts/ensembles.md)
-- An API key for your chosen provider (or a local inference server)
+- An API key for your chosen provider, **or** a [cluster-local Model](./local-models.md)
 
 ---
 
@@ -41,6 +41,7 @@ spec:
 | `version` | No | Semantic version of the pack |
 | `policyRef` | No | Default SympoziumPolicy for all generated instances |
 | `baseURL` | No | Override provider API endpoint (for Ollama, LM Studio, etc.) |
+| `modelRef` | No | Reference a [cluster-local Model](./local-models.md) — all personas use this model, no API key needed |
 | `sharedMemory` | No | Shared memory pool for cross-persona knowledge sharing (see Step 5) |
 | `personas` | Yes | List of agent personas (see below) |
 

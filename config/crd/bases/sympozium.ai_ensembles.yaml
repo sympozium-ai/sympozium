@@ -196,6 +196,13 @@ spec:
                 items:
                   type: string
                 type: array
+              modelRef:
+                description: |-
+                  ModelRef references a Model CR for cluster-local inference.
+                  When set, the controller resolves the Model's endpoint and configures all
+                  generated instances to use it (provider=openai, baseURL=endpoint, no auth).
+                  Takes precedence over AuthRefs and BaseURL.
+                type: string
               personas:
                 description: Personas is the list of agent personas in this ensemble.
                 items:

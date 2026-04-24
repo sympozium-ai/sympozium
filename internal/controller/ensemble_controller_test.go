@@ -60,7 +60,7 @@ func TestBuildInstance_ChannelAccessControlPrecedence(t *testing.T) {
 				ChannelAccessControl: tt.personaAC,
 			}
 
-			inst := r.buildInstance(pack, persona, "test-pack-tech-lead")
+			inst := r.buildInstance(pack, persona, "test-pack-tech-lead", "")
 
 			if len(inst.Spec.Channels) != 1 {
 				t.Fatalf("expected 1 channel, got %d", len(inst.Spec.Channels))

@@ -118,6 +118,11 @@ type ModelSpec struct {
 	// AuthSecretRef references the secret containing the API key.
 	AuthSecretRef string `json:"authSecretRef"`
 
+	// ModelRef references a Model CR by name for cluster-local inference.
+	// When set, provider, baseURL, and authSecretRef are auto-resolved from the Model's status.
+	// +optional
+	ModelRef string `json:"modelRef,omitempty"`
+
 	// NodeSelector constrains agent pods to nodes with matching labels.
 	// Inherited from AgentConfig at AgentRun creation time.
 	// +optional

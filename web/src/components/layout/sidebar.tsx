@@ -10,6 +10,7 @@ import {
   Github,
   Heart,
   Globe,
+  Cpu,
   Plug,
   BookOpen,
   PanelLeftClose,
@@ -50,6 +51,7 @@ const navSections: NavSection[] = [
     label: "Configuration",
     items: [
       { to: "/policies", label: "Policies", icon: Shield },
+      { to: "/models", label: "Models", icon: Cpu },
       { to: "/skills", label: "Skills", icon: Wrench },
       { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
       { to: "/settings", label: "Settings", icon: Settings },

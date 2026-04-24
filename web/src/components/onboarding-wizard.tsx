@@ -41,7 +41,7 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCapabilities } from "@/hooks/use-api";
+import { useCapabilities, useModels } from "@/hooks/use-api";
 import {
   YamlModal,
   instanceYamlFromWizard,
@@ -210,6 +210,8 @@ export interface WizardResult {
   runTimeout?: string;
   /** Require manual approval before agent responses are delivered. */
   requireApproval?: boolean;
+  /** References a cluster-local Model CR for inference (no API key needed). */
+  modelRef?: string;
 }
 
 interface OnboardingWizardProps {
@@ -475,6 +477,11 @@ export function OnboardingWizard({
   const [channelActionIdx, setChannelActionIdx] = useState(0);
   const [showYaml, setShowYaml] = useState(false);
   const { data: capabilities } = useCapabilities();
+  const { data: clusterModels } = useModels();
+  const [usingLocalModel, setUsingLocalModel] = useState(false);
+  const readyModels = (clusterModels || []).filter(
+    (m) => m.status?.phase === "Ready",
+  );
 
   const isLocalProvider =
     form.provider === "ollama" ||
@@ -601,10 +608,28 @@ export function OnboardingWizard({
       }
       return;
     }
-    if (stepIdx < steps.length - 1) setStep(steps[stepIdx + 1]);
+    // Skip apikey and model steps when using a cluster-local Model
+    let nextIdx = stepIdx + 1;
+    while (
+      nextIdx < steps.length &&
+      usingLocalModel &&
+      (steps[nextIdx] === "apikey" || steps[nextIdx] === "model")
+    ) {
+      nextIdx++;
+    }
+    if (nextIdx < steps.length) setStep(steps[nextIdx]);
   }
   function prev() {
-    if (stepIdx > 0) setStep(steps[stepIdx - 1]);
+    // Skip apikey and model steps when going back too
+    let prevIdx = stepIdx - 1;
+    while (
+      prevIdx >= 0 &&
+      usingLocalModel &&
+      (steps[prevIdx] === "apikey" || steps[prevIdx] === "model")
+    ) {
+      prevIdx--;
+    }
+    if (prevIdx >= 0) setStep(steps[prevIdx]);
   }
 
   function handleClose() {
@@ -721,21 +746,61 @@ export function OnboardingWizard({
             <div className="space-y-2">
               <Label>AI Provider</Label>
               <Select
-                value={form.provider}
+                value={usingLocalModel ? `model:${form.model}` : form.provider}
                 onValueChange={(v) => {
-                  const prov = PROVIDERS.find((p) => p.value === v);
-                  setForm({
-                    ...form,
-                    provider: v,
-                    model: form.model || prov?.defaultModel || "",
-                    baseURL: prov?.defaultBaseURL || "",
-                  });
+                  if (v.startsWith("model:")) {
+                    // Cluster-local Model selected
+                    const modelName = v.slice(6);
+                    const model = readyModels.find(
+                      (m) => m.metadata.name === modelName,
+                    );
+                    if (model) {
+                      setUsingLocalModel(true);
+                      setForm({
+                        ...form,
+                        provider: "openai",
+                        model: model.metadata.name,
+                        baseURL: model.status?.endpoint || "",
+                        apiKey: "",
+                        secretName: "",
+                        modelRef: model.metadata.name,
+                      });
+                    }
+                  } else {
+                    setUsingLocalModel(false);
+                    const prov = PROVIDERS.find((p) => p.value === v);
+                    setForm({
+                      ...form,
+                      provider: v,
+                      model: form.model || prov?.defaultModel || "",
+                      baseURL: prov?.defaultBaseURL || "",
+                      modelRef: undefined,
+                    });
+                  }
                 }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a provider…" />
                 </SelectTrigger>
                 <SelectContent>
+                  {readyModels.length > 0 && (
+                    <>
+                      {readyModels.map((m) => (
+                        <SelectItem
+                          key={`model:${m.metadata.name}`}
+                          value={`model:${m.metadata.name}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Cpu className="h-4 w-4 shrink-0 text-green-500" />
+                            {m.metadata.name}
+                            <span className="text-xs text-muted-foreground">
+                              (Local Model)
+                            </span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
                   {PROVIDERS.map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       <span className="flex items-center gap-2">
