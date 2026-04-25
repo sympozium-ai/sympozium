@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.5](https://github.com/sympozium-ai/sympozium/compare/v0.9.4...v0.9.5) (2026-04-25)
+
+
+### Features
+
+* show local model node on ensemble workflow canvas ([13b08e5](https://github.com/sympozium-ai/sympozium/commit/13b08e5e2f28afd57f7097440d5ba01cc265957a))
+* show model node on global ensemble canvas ([3f00fef](https://github.com/sympozium-ai/sympozium/commit/3f00fef205b22c188c55346f6ea07daad63f03f7))
+
+
+### Bug Fixes
+
+* resolve TypeScript errors in ensemble canvas model node types ([b0fa56f](https://github.com/sympozium-ai/sympozium/commit/b0fa56f531990e3ceb6f97417538a4443563a543))
+* skip global namespace filter on model API endpoints ([454c872](https://github.com/sympozium-ai/sympozium/commit/454c8720d3d3e9140ba75c70fdc5cacaab81fdb5))
+* use namespace dropdown in model deploy dialog ([e2eef80](https://github.com/sympozium-ai/sympozium/commit/e2eef80ef844f4a574c3605c7e6014018b3a4810))
+
 ## [0.9.4](https://github.com/sympozium-ai/sympozium/compare/v0.9.3...v0.9.4) (2026-04-25)
 
 
