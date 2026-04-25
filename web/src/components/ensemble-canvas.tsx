@@ -21,13 +21,15 @@ import { Button } from "@/components/ui/button";
 import {
   useRuns,
   useEnsembles,
+  useModel,
   usePatchEnsembleRelationships,
 } from "@/hooks/use-api";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Plus, Trash2, Database } from "lucide-react";
+import { Save, Plus, Trash2, Database, Cpu } from "lucide-react";
 import type {
   Ensemble,
+  Model,
   PersonaSpec,
   PersonaRelationship,
   AgentRun,
@@ -211,7 +213,87 @@ function PersonaNode({ data }: NodeProps<Node<PersonaNodeData>>) {
   );
 }
 
-const nodeTypes = { persona: PersonaNode };
+// ── Model node (local inference) ────────────────────────────────────────────
+
+export interface ModelNodeData {
+  model: Model;
+  label: string;
+  [key: string]: unknown;
+}
+
+const modelPhaseBorder: Record<string, string> = {
+  Ready: "ring-2 ring-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.25)]",
+  Loading: "ring-2 ring-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.2)]",
+  Downloading: "ring-2 ring-amber-500/50",
+  Placing: "ring-2 ring-blue-500/50",
+  Failed: "ring-2 ring-red-500/60",
+};
+
+function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
+  const { model } = data;
+  const phase = model.status?.phase || "Pending";
+  const border = modelPhaseBorder[phase] || "";
+
+  return (
+    <div
+      className={`rounded-lg border border-violet-500/40 bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300 ${border}`}
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        <Cpu className="h-3.5 w-3.5 text-violet-400" />
+        <span className="font-semibold text-sm text-violet-300">
+          Local Model
+        </span>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground font-mono mb-1.5 truncate">
+        {model.metadata.name}
+      </p>
+
+      <div className="flex flex-wrap gap-1 mb-1">
+        <Badge
+          variant="outline"
+          className={`text-[9px] px-1 py-0 ${
+            phase === "Ready"
+              ? "border-emerald-500/50 text-emerald-400"
+              : phase === "Failed"
+                ? "border-red-500/50 text-red-400"
+                : "border-blue-500/50 text-blue-400"
+          }`}
+        >
+          {phase}
+        </Badge>
+        {(model.spec.resources?.gpu ?? 0) > 0 && (
+          <Badge variant="outline" className="text-[9px] px-1 py-0">
+            GPU: {model.spec.resources?.gpu}
+          </Badge>
+        )}
+      </div>
+
+      {model.status?.endpoint && (
+        <p
+          className="text-[9px] text-muted-foreground/60 truncate"
+          title={model.status.endpoint}
+        >
+          {model.status.endpoint}
+        </p>
+      )}
+
+      {model.status?.placedNode && (
+        <p className="text-[9px] text-violet-400/60 truncate mt-0.5">
+          node: {model.status.placedNode}
+        </p>
+      )}
+
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!bg-violet-400 !w-2 !h-2"
+      />
+    </div>
+  );
+}
+
+const nodeTypes = { persona: PersonaNode, model: ModelNode };
 
 // ── Shared edge styling ─────────────────────────────────────────────────────
 
@@ -444,6 +526,7 @@ interface EnsembleCanvasProps {
 export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
   useRunEventInvalidation();
   const { data: runs } = useRuns();
+  const { data: modelData } = useModel(pack.spec.modelRef || "");
   const patchMutation = usePatchEnsembleRelationships();
   const relationships = pack.spec.relationships || [];
   const personas = pack.spec.personas || [];
@@ -460,7 +543,9 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
   );
 
   const initialNodes = useMemo(() => {
-    const nodes = layoutNodes(personas, relationships);
+    // If a model is attached, offset persona nodes down to make room.
+    const yOffset = modelData ? 140 : 0;
+    const nodes = layoutNodes(personas, relationships, 0, yOffset);
     const sharedMemEnabled = pack.spec.sharedMemory?.enabled ?? false;
     for (const node of nodes) {
       node.data.hasSharedMemory = sharedMemEnabled;
@@ -474,6 +559,22 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
         node.data.runTask = status.task;
       }
     }
+
+    // Add model node above the persona nodes.
+    if (modelData) {
+      const cols = Math.max(2, Math.ceil(Math.sqrt(personas.length)));
+      const totalWidth = (cols - 1) * 260;
+      nodes.push({
+        id: `__model__${modelData.metadata.name}`,
+        type: "model",
+        position: { x: totalWidth / 2 - 90, y: 0 },
+        data: {
+          model: modelData,
+          label: modelData.metadata.name,
+        },
+      } as Node<ModelNodeData>);
+    }
+
     return nodes;
   }, [
     personas,
@@ -481,12 +582,30 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
     pack.spec.sharedMemory?.enabled,
     pack.status?.installedPersonas,
     runPhaseMap,
+    modelData,
   ]);
 
-  const initialEdges = useMemo(
-    () => buildEdges(relationships),
-    [relationships],
-  );
+  const initialEdges = useMemo(() => {
+    const edges = buildEdges(relationships);
+
+    // Add edges from model node to each persona.
+    if (modelData) {
+      const modelNodeId = `__model__${modelData.metadata.name}`;
+      for (const persona of personas) {
+        edges.push({
+          id: `model-${modelData.metadata.name}-${persona.name}`,
+          source: modelNodeId,
+          target: persona.name,
+          type: "default",
+          animated: modelData.status?.phase === "Ready",
+          style: { stroke: "#8b5cf6", strokeWidth: 1.5, strokeDasharray: "4 3" },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf6", width: 14, height: 14 },
+        });
+      }
+    }
+
+    return edges;
+  }, [relationships, modelData, personas]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);

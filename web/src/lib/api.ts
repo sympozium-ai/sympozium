@@ -486,6 +486,8 @@ export interface EnsembleSpec {
   relationships?: PersonaRelationship[];
   workflowType?: "autonomous" | "pipeline" | "delegation";
   sharedMemory?: SharedMemorySpec;
+  /** References a Model CR for cluster-local inference. */
+  modelRef?: string;
 }
 
 export interface EnsembleStatus {
