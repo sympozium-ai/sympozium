@@ -546,7 +546,12 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
   const initialNodes = useMemo(() => {
     // If a model is attached, offset persona nodes down to make room.
     const yOffset = modelData ? 140 : 0;
-    const nodes = layoutNodes(personas, relationships, 0, yOffset);
+    const nodes: Node<PersonaNodeData | ModelNodeData>[] = layoutNodes(
+      personas,
+      relationships,
+      0,
+      yOffset,
+    );
     const sharedMemEnabled = pack.spec.sharedMemory?.enabled ?? false;
     for (const node of nodes) {
       node.data.hasSharedMemory = sharedMemEnabled;
@@ -573,7 +578,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
           model: modelData,
           label: modelData.metadata.name,
         },
-      } as Node<ModelNodeData>);
+      });
     }
 
     return nodes;
@@ -871,7 +876,9 @@ export function GlobalEnsembleCanvas() {
       );
     }
     return layoutedNodes.map((node) => {
-      const packName = node.data.packName || "";
+      // Model nodes don't have run status — pass through unchanged.
+      if (node.type === "model") return node;
+      const packName = (node.data as PersonaNodeData).packName || "";
       const personaName = node.id.split("/")[1] || node.id;
       const status = runPhaseMaps.get(packName)?.get(personaName);
       if (!status) return node;
