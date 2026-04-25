@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.6](https://github.com/sympozium-ai/sympozium/compare/v0.9.5...v0.9.6) (2026-04-25)
+
+
+### Features
+
+* add Local Model as provider option in ensemble builder ([83f032a](https://github.com/sympozium-ai/sympozium/commit/83f032acada1e360dc57538d7a662b8c70e37c9d))
+
+
+### Bug Fixes
+
+* wire modelRef into ensemble creation and fix persona default model ([85a504a](https://github.com/sympozium-ai/sympozium/commit/85a504a2f25da1e999ff58c4d9283a4251db9c2e))
+
 ## [0.9.5](https://github.com/sympozium-ai/sympozium/compare/v0.9.4...v0.9.5) (2026-04-25)
 
 
