@@ -55,6 +55,10 @@ import {
 } from "@/components/ensemble-settings-panel";
 import { PROVIDERS } from "@/components/onboarding-wizard";
 import { useCreateEnsemble, useModels } from "@/hooks/use-api";
+import {
+  AddProviderModal,
+  type AddProviderResult,
+} from "@/components/add-provider-modal";
 import { useProviderNodes } from "@/hooks/use-provider-nodes";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -672,6 +676,36 @@ function BuilderCanvas({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+
+  function handleAddProvider(result: AddProviderResult) {
+    const provId = result.modelRef
+      ? `model:${result.modelRef}`
+      : result.provider;
+    const nodeId = `__prov__${provId}`;
+
+    // Add provider node to canvas
+    setNodes((prev) => [
+      ...prev,
+      {
+        id: nodeId,
+        type: "builder" as const,
+        position: { x: 0, y: -160 },
+        data: {
+          persona: {
+            name: provId,
+            displayName: result.label,
+            systemPrompt: "",
+            model: result.modelRef || "",
+            provider: result.modelRef ? undefined : result.provider,
+            baseURL: result.baseURL || undefined,
+          } as AgentConfigSpec,
+          isConfigured: true,
+          label: result.label,
+        },
+      },
+    ]);
+  }
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -852,6 +886,14 @@ function BuilderCanvas({
           </Button>
           <Button
             size="sm"
+            variant="outline"
+            onClick={() => setShowAddProvider(true)}
+          >
+            <Cpu className="h-3.5 w-3.5 mr-1" />
+            Add Provider
+          </Button>
+          <Button
+            size="sm"
             variant={showSettings ? "default" : "outline"}
             onClick={() => {
               setShowSettings(!showSettings);
@@ -987,6 +1029,12 @@ function BuilderCanvas({
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      <AddProviderModal
+        open={showAddProvider}
+        onClose={() => setShowAddProvider(false)}
+        onAdd={handleAddProvider}
+      />
     </div>
   );
 }

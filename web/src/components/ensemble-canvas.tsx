@@ -36,6 +36,10 @@ import type {
   SecretRef,
 } from "@/lib/api";
 import { PROVIDERS } from "@/components/onboarding-wizard";
+import {
+  AddProviderModal,
+  type AddProviderResult,
+} from "@/components/add-provider-modal";
 
 // ── Real-time run status updates via WebSocket ─────────────────────────────
 
@@ -765,6 +769,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
   );
   const [dirty, setDirty] = useState(false);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [showAddProvider, setShowAddProvider] = useState(false);
 
   const modelMap = useMemo(() => {
     const m = new Map<string, Model>();
@@ -926,6 +931,15 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
           <StatusLegend />
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAddProvider(true)}
+            type="button"
+          >
+            <Cpu className="h-3.5 w-3.5 mr-1" />
+            Add Provider
+          </Button>
           {selectedEdge && (
             <Button
               variant="destructive"
@@ -973,6 +987,32 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
           <CanvasShell>{null}</CanvasShell>
         </ReactFlow>
       </div>
+
+      <AddProviderModal
+        open={showAddProvider}
+        onClose={() => setShowAddProvider(false)}
+        onAdd={(result) => {
+          const provId = result.modelRef
+            ? `model:${result.modelRef}`
+            : result.provider;
+          const nodeId = `__prov__${provId}`;
+          setNodes((prev) => [
+            ...prev,
+            {
+              id: nodeId,
+              type: "provider" as const,
+              position: { x: 100, y: -160 },
+              data: {
+                provider: result.provider,
+                label: result.label,
+                baseURL: result.baseURL,
+                isModelRef: !!result.modelRef,
+              },
+            },
+          ]);
+          setDirty(true);
+        }}
+      />
     </div>
   );
 }
