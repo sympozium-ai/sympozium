@@ -10,88 +10,36 @@ metadata:
 spec:
   description: "A 2-pizza software development team — tech lead, backend, frontend, QA, reviewer, DevOps, and docs — collaborating on a single GitHub repository."
   category: development
-  version: "1.1.0"
+  version: "1.0.0"
   workflowType: delegation
-
-  sharedMemory:
-    enabled: true
-    storageSize: "1Gi"
-    accessRules:
-      - persona: tech-lead
-        access: read-write
-      - persona: backend-dev
-        access: read-write
-      - persona: frontend-dev
-        access: read-write
-      - persona: qa-engineer
-        access: read-write
-      - persona: code-reviewer
-        access: read-only
-      - persona: devops-engineer
-        access: read-write
-      - persona: docs-writer
-        access: read-write
-
   relationships:
-    # Tech Lead delegates work to developers
     - source: tech-lead
       target: backend-dev
       type: delegation
-      condition: "when backend issues are triaged"
-      timeout: "30m"
     - source: tech-lead
       target: frontend-dev
       type: delegation
-      condition: "when frontend issues are triaged"
-      timeout: "30m"
     - source: tech-lead
       target: devops-engineer
       type: delegation
-      condition: "when infra issues are triaged"
-      timeout: "30m"
-    # Developers hand off to Code Reviewer once PRs are opened
     - source: backend-dev
-      target: code-reviewer
+      target: qa-engineer
       type: sequential
-      condition: "when PR is opened"
-      timeout: "15m"
     - source: frontend-dev
-      target: code-reviewer
+      target: qa-engineer
       type: sequential
-      condition: "when PR is opened"
-      timeout: "15m"
-    - source: devops-engineer
-      target: code-reviewer
-      type: sequential
-      condition: "when PR is opened"
-      timeout: "15m"
-    # Reviewed PRs go to QA for validation
     - source: code-reviewer
-      target: qa-engineer
-      type: sequential
-      condition: "when PR is approved"
-      timeout: "15m"
-    # QA passes back to Tech Lead for merge decision
-    - source: qa-engineer
       target: tech-lead
-      type: delegation
-      condition: "when QA passes"
-      timeout: "10m"
-      resultFormat: markdown
-    # Merged PRs trigger documentation updates
-    - source: tech-lead
-      target: docs-writer
-      type: sequential
-      condition: "when PR is merged"
-      timeout: "15m"
-    # Tech Lead supervises all activity
-    - source: tech-lead
-      target: code-reviewer
       type: supervision
-    - source: tech-lead
-      target: qa-engineer
+    - source: code-reviewer
+      target: backend-dev
       type: supervision
-
+    - source: code-reviewer
+      target: frontend-dev
+      type: supervision
+  sharedMemory:
+    enabled: true
+    storageSize: "1Gi"
   agentConfigs:
     - name: tech-lead
       displayName: "Tech Lead"

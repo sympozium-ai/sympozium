@@ -852,6 +852,22 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
       if (connection.source === connection.target) return;
+      // Provider→Agent connections: auto-wire without relationship picker
+      if (connection.source.startsWith("__prov__")) {
+        setEdges((eds) =>
+          addEdge(
+            {
+              ...connection,
+              id: `prov-${connection.source}-${connection.target}-${Date.now()}`,
+              style: { stroke: "#8b5cf6", strokeWidth: 1.5, strokeDasharray: "4 3" },
+              animated: true,
+            },
+            eds,
+          ),
+        );
+        setDirty(true);
+        return;
+      }
       if (
         edges.some(
           (e) =>
@@ -861,7 +877,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
         return;
       setPendingConnection(connection);
     },
-    [edges],
+    [edges, setEdges],
   );
 
   const handleEdgeTypeSelect = useCallback(
@@ -1130,7 +1146,7 @@ export function GlobalEnsembleCanvas() {
           <p className="text-xs text-muted-foreground">
             {enabledPacks.length} active pack
             {enabledPacks.length !== 1 ? "s" : ""} &middot; {allNodes.length}{" "}
-            personas
+            agents
           </p>
           <StatusLegend />
         </div>
@@ -1159,6 +1175,7 @@ export function DashboardEnsembleCanvas() {
   useRunEventInvalidation();
   const { data: packs } = useEnsembles();
   const { data: runs } = useRuns();
+  const { data: models } = useModels();
   const [selectedPack, setSelectedPack] = useState<string>("__all__");
 
   const enabledPacks = useMemo(
@@ -1175,9 +1192,15 @@ export function DashboardEnsembleCanvas() {
     [enabledPacks, selectedPack],
   );
 
+  const modelMap = useMemo(() => {
+    const m = new Map<string, Model>();
+    for (const model of models || []) m.set(model.metadata.name, model);
+    return m;
+  }, [models]);
+
   // Build layout only when packs change — NOT on run updates.
   const { layoutedNodes: dashLayoutNodes, allEdges } = useMemo(() => {
-    const nodes: Node<AgentConfigNodeData>[] = [];
+    const nodes: Node<AgentConfigNodeData | ModelNodeData | ProviderNodeData>[] = [];
     const edges: Edge[] = [];
     let currentX = 0;
 
@@ -1186,11 +1209,15 @@ export function DashboardEnsembleCanvas() {
       const relationships = pack.spec.relationships || [];
       const prefix = pack.metadata.name;
 
+      const provResult = buildProviderNodesAndEdges(pack, modelMap, personas, currentX, prefix);
+      const hasProviders = provResult.nodes.length > 0;
+      const yOffset = hasProviders ? 140 : 0;
+
       const packNodes = layoutNodes(
         personas,
         relationships,
         currentX,
-        0,
+        yOffset,
         prefix,
       );
       const sharedMemEnabled = pack.spec.sharedMemory?.enabled ?? false;
@@ -1205,14 +1232,16 @@ export function DashboardEnsembleCanvas() {
         if (ip) node.data.agentName = ip.agentName;
       }
 
+      nodes.push(...provResult.nodes);
       nodes.push(...packNodes);
+      edges.push(...provResult.edges);
       edges.push(...buildEdges(relationships, prefix));
       const cols = Math.max(2, Math.ceil(Math.sqrt(personas.length)));
       currentX += cols * 260 + 50;
     }
 
     return { layoutedNodes: nodes, allEdges: edges };
-  }, [visiblePacks]);
+  }, [visiblePacks, modelMap]);
 
   // Merge run status without recalculating positions.
   const allNodes = useMemo(() => {
@@ -1227,7 +1256,8 @@ export function DashboardEnsembleCanvas() {
       );
     }
     return dashLayoutNodes.map((node) => {
-      const packName = node.data.packName || "";
+      if (node.type === "model" || node.type === "provider") return node;
+      const packName = (node.data as AgentConfigNodeData).packName || "";
       const personaName = node.id.split("/")[1] || node.id;
       const status = runPhaseMaps.get(packName)?.get(personaName);
       if (!status) return node;

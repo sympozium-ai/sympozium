@@ -709,6 +709,8 @@ function BuilderCanvas({
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      // Don't open config panel for provider nodes
+      if (node.id.startsWith("__prov__")) return;
       setSelectedPersona(node.id);
       setShowSettings(false);
     },
@@ -716,8 +718,43 @@ function BuilderCanvas({
   );
 
   const onConnect = useCallback(
-    (connection: Connection) => setPendingConnection(connection),
-    [setPendingConnection],
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      // Provider→Agent connections: auto-wire without relationship picker
+      if (connection.source.startsWith("__prov__")) {
+        const provId = connection.source.replace("__prov__", "");
+        const targetPersona = personas.find((p) => p.name === connection.target);
+        if (targetPersona) {
+          // Update the agent config's provider
+          const isModelRef = provId.startsWith("model:");
+          const updated = { ...targetPersona };
+          if (isModelRef) {
+            updated.provider = undefined;
+            updated.baseURL = undefined;
+          } else {
+            updated.provider = provId;
+          }
+          setPersonas((prev) =>
+            prev.map((p) => (p.name === connection.target ? updated : p)),
+          );
+          // Add a visual edge
+          setEdges((eds) =>
+            addEdge(
+              {
+                ...connection,
+                id: `prov-${provId}-${connection.target}`,
+                style: { stroke: "#8b5cf6", strokeWidth: 1.5, strokeDasharray: "4 3" },
+                animated: true,
+              },
+              eds,
+            ),
+          );
+        }
+        return;
+      }
+      setPendingConnection(connection);
+    },
+    [setPendingConnection, personas, setPersonas, setEdges],
   );
 
   function confirmEdgeType(type: (typeof EDGE_TYPES)[number]) {

@@ -11,6 +11,35 @@ spec:
   description: "A 2-pizza software development team — tech lead, backend, frontend, QA, reviewer, DevOps, and docs — collaborating on a single GitHub repository."
   category: development
   version: "1.0.0"
+  workflowType: delegation
+  relationships:
+    - source: tech-lead
+      target: backend-dev
+      type: delegation
+    - source: tech-lead
+      target: frontend-dev
+      type: delegation
+    - source: tech-lead
+      target: devops-engineer
+      type: delegation
+    - source: backend-dev
+      target: qa-engineer
+      type: sequential
+    - source: frontend-dev
+      target: qa-engineer
+      type: sequential
+    - source: code-reviewer
+      target: tech-lead
+      type: supervision
+    - source: code-reviewer
+      target: backend-dev
+      type: supervision
+    - source: code-reviewer
+      target: frontend-dev
+      type: supervision
+  sharedMemory:
+    enabled: true
+    storageSize: "1Gi"
   agentConfigs:
     - name: tech-lead
       displayName: "Tech Lead"
