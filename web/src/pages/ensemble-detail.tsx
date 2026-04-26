@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
-import { YamlButton, ensembleYamlFromResource } from "@/components/yaml-panel";
 import { EnsembleCanvas } from "@/components/ensemble-canvas";
 import {
   OnboardingWizard,
