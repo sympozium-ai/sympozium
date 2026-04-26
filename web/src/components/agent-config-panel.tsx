@@ -65,7 +65,7 @@ export function AgentConfigPanel({
   useEffect(() => {
     setDraft({ ...persona });
     setModelSearch("");
-  }, [persona.name]);
+  }, [persona.name, persona.provider, persona.model]);
 
   const availableSkills = (skills || [])
     .map((s) => (typeof s === "string" ? s : s.metadata?.name || ""))
