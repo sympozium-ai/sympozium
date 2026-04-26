@@ -64,6 +64,25 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 
+// ── Random agent name generator ───────────────────────────────────────────
+
+const ADJECTIVES = [
+  "swift", "brave", "calm", "keen", "bold", "warm", "cool", "fair",
+  "wise", "neat", "deft", "glad", "mild", "pure", "safe", "true",
+  "fast", "kind", "firm", "rare", "bright", "sharp", "steady", "quick",
+];
+const NOUNS = [
+  "mango", "cedar", "flint", "coral", "birch", "ember", "frost", "maple",
+  "quartz", "river", "solar", "tidal", "basil", "onyx", "pebble", "sage",
+  "raven", "crane", "otter", "falcon", "pike", "finch", "spark", "bloom",
+];
+
+function randomAgentName(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  return `${adj}-${noun}`;
+}
+
 // ── Provider context shared with AgentConfigPanel ────────────────────────
 
 export interface ProviderContext {
@@ -787,8 +806,7 @@ function BuilderCanvas({
   }
 
   function addPersona() {
-    const idx = personas.length + 1;
-    const name = `persona-${idx}`;
+    const name = randomAgentName();
     // When using a local model via modelRef, don't set a per-persona model —
     // the controller resolves the endpoint from the ensemble-level modelRef.
     const defaultModel = providerCtx.modelRef
