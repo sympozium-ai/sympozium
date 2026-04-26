@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  OntologyModal,
+  OntologyModalExpanded,
+} from "@/components/ontology-modal";
 import { useRuns } from "@/hooks/use-api";
 import { useRunsSeen } from "@/hooks/use-runs-seen";
 
@@ -164,6 +168,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {/* Help & Contribute */}
       {collapsed && (
         <div className="border-t border-border/50 px-2 py-2 flex flex-col items-center gap-1">
+          <OntologyModal />
           <a
             href="https://deploy.sympozium.ai/docs"
             target="_blank"
@@ -186,6 +191,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       )}
       {!collapsed && (
         <div className="border-t border-border/50 px-4 py-3 space-y-2">
+          <OntologyModalExpanded />
           <a
             href="https://deploy.sympozium.ai/docs"
             target="_blank"
