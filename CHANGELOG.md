@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/sympozium-ai/sympozium/compare/v0.10.0...v0.10.1) (2026-04-26)
+
+
+### Bug Fixes
+
+* infer local model provider from agent model fields ([6393251](https://github.com/sympozium-ai/sympozium/commit/6393251ff0d8f48ab65fa3361b4a29bab3607566))
+
 ## [0.10.0](https://github.com/sympozium-ai/sympozium/compare/v0.9.5...v0.10.0) (2026-04-26)
 
 
