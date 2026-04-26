@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.10.0](https://github.com/sympozium-ai/sympozium/compare/v0.9.5...v0.10.0) (2026-04-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* This is a full ontology rename that affects CRDs, API routes, Go types, controllers, frontend, Helm charts, docs, and tests.
+
+### Features
+
+* add Concepts modal explaining Sympozium ontology ([9d4bef3](https://github.com/sympozium-ai/sympozium/commit/9d4bef347b1b27b6c3446b254117c581b9c85f11))
+* add Local Model as provider option in ensemble builder ([83f032a](https://github.com/sympozium-ai/sympozium/commit/83f032acada1e360dc57538d7a662b8c70e37c9d))
+* Add Provider button on builder and detail workflow canvases ([a962f69](https://github.com/sympozium-ai/sympozium/commit/a962f69df181244fe9a6b8f71e3317c68c894a7e))
+* add workflows to all default ensembles ([6ad01b9](https://github.com/sympozium-ai/sympozium/commit/6ad01b9be9a4c7a23658c120a47269073bdf0ad5))
+* provider nodes on canvas + per-persona provider overrides ([4bf004a](https://github.com/sympozium-ai/sympozium/commit/4bf004aaf435c44fb7d4e44270e26898a04f56b9))
+* provider nodes on dashboard canvas, fix provider-to-agent wiring ([7350791](https://github.com/sympozium-ai/sympozium/commit/73507911d4450d548e8fd8fa494ee61bc6384942))
+* rename Instance→Agent, Persona→AgentConfig across entire codebase ([df230ee](https://github.com/sympozium-ai/sympozium/commit/df230eeab513085d4fd713702efd5cfefda41766))
+
+
+### Bug Fixes
+
+* generate human-readable random agent names instead of persona-1 ([6c53dd3](https://github.com/sympozium-ai/sympozium/commit/6c53dd352a15d67b0f0d156c9da4cc21bad41652))
+* model detail page namespace resolution ([894f808](https://github.com/sympozium-ai/sympozium/commit/894f808e533d4d2b8f40de5d411815016b506153))
+* prevent canvas crash when model data hasn't loaded yet ([ddb5410](https://github.com/sympozium-ai/sympozium/commit/ddb541073fc81afe65901c58fd7595078ea5b3f2))
+* rename Add Persona→Add Agent, hide GPT models for local model, sort skills ([827f695](https://github.com/sympozium-ai/sympozium/commit/827f6953992244abf28e6987ee5cc49c8dda8127))
+* rename personas→agentConfigs in default ensemble YAML files ([95c4453](https://github.com/sympozium-ai/sympozium/commit/95c445389d60fd623e2548e52daa39a7ba761c94))
+* replace all remaining Instance→Agent in user-facing UI strings ([b3ceb3d](https://github.com/sympozium-ai/sympozium/commit/b3ceb3d1ed2b3c22ef21eba32c1c205dfac271a2))
+* resolve Docker build TS errors for provider nodes ([91147fb](https://github.com/sympozium-ai/sympozium/commit/91147fbb9dfe589c24aa9dacc64a8270879d4545))
+* resolve Docker build TS errors from Instance→Agent rename ([926b5d7](https://github.com/sympozium-ai/sympozium/commit/926b5d7c5115d3ced126d2fe6f25be1d5223ddfc))
+* wire modelRef into ensemble creation and fix persona default model ([85a504a](https://github.com/sympozium-ai/sympozium/commit/85a504a2f25da1e999ff58c4d9283a4251db9c2e))
+* wiring a local model provider updates agent config panel and node ([05b8f28](https://github.com/sympozium-ai/sympozium/commit/05b8f28bc1788536acbc3492d6346e7a5f8c0d25))
+
 ## [0.9.5](https://github.com/sympozium-ai/sympozium/compare/v0.9.4...v0.9.5) (2026-04-25)
 
 
