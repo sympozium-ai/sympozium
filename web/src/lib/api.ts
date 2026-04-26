@@ -936,7 +936,7 @@ export const api = {
         heartbeatInterval?: string;
         skillParams?: Record<string, Record<string, string>>;
         githubToken?: string;
-        personas?: Array<{
+        agentConfigs?: Array<{
           name: string;
           systemPrompt?: string;
           skills?: string[];

@@ -590,7 +590,7 @@ function buildProviderNodesAndEdges(
   const nodes: Node<ProviderNodeData | ModelNodeData>[] = providers.map(
     (prov, i) => ({
       id: prefix ? `${prefix}/__prov__${prov.id}` : `__prov__${prov.id}`,
-      type: prov.isModelRef ? "model" : "provider",
+      type: prov.isModelRef && prov.model ? "model" : "provider",
       position: { x: providerStartX + i * providerGap, y: 0 },
       data: prov.isModelRef && prov.model
         ? ({ model: prov.model, label: prov.label } as ModelNodeData)

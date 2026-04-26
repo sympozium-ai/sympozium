@@ -83,7 +83,7 @@ export function EnsembleDetailPage() {
     patchMutation.mutate(
       {
         name,
-        personas: [
+        agentConfigs: [
           {
             name: personaName,
             systemPrompt: editState.systemPrompt,
