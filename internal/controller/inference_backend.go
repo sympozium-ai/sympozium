@@ -64,11 +64,11 @@ func newInferenceBackend(serverType sympoziumv1alpha1.InferenceServerType) infer
 // customBackend is a minimal backend for user-provided inference server images.
 type customBackend struct{}
 
-func (b *customBackend) NeedsDownload() bool      { return false }
-func (b *customBackend) DefaultImage() string      { return "" }
-func (b *customBackend) DefaultPort() int32        { return 8080 }
-func (b *customBackend) ContainerName() string     { return "inference" }
-func (b *customBackend) HealthPath() string        { return "/health" }
+func (b *customBackend) NeedsDownload() bool              { return false }
+func (b *customBackend) DefaultImage() string             { return "" }
+func (b *customBackend) DefaultPort() int32               { return 8080 }
+func (b *customBackend) ContainerName() string            { return "inference" }
+func (b *customBackend) HealthPath() string               { return "/health" }
 func (b *customBackend) ReadinessFailureThreshold() int32 { return 60 }
 
 func (b *customBackend) BuildArgs(model *sympoziumv1alpha1.Model, port int32) []string {

@@ -13,7 +13,7 @@ import (
 // but uses a PVC as an HF cache to avoid re-downloading on pod restarts.
 type vllmBackend struct{}
 
-func (b *vllmBackend) NeedsDownload() bool  { return false }
+func (b *vllmBackend) NeedsDownload() bool   { return false }
 func (b *vllmBackend) DefaultImage() string  { return "vllm/vllm-openai:latest" }
 func (b *vllmBackend) DefaultPort() int32    { return 8000 }
 func (b *vllmBackend) ContainerName() string { return "vllm" }
@@ -97,4 +97,3 @@ func (b *vllmBackend) Volumes(_ *sympoziumv1alpha1.Model, pvcName string) []core
 func (b *vllmBackend) ModelQuery(model *sympoziumv1alpha1.Model) string {
 	return model.Spec.Source.ModelID
 }
-

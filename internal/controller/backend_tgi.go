@@ -12,11 +12,13 @@ import (
 // Like vLLM, TGI pulls from HuggingFace at startup and uses PVC as HF cache.
 type tgiBackend struct{}
 
-func (b *tgiBackend) NeedsDownload() bool  { return false }
-func (b *tgiBackend) DefaultImage() string  { return "ghcr.io/huggingface/text-generation-inference:latest" }
-func (b *tgiBackend) DefaultPort() int32    { return 8080 }
-func (b *tgiBackend) ContainerName() string { return "tgi" }
-func (b *tgiBackend) HealthPath() string    { return "/health" }
+func (b *tgiBackend) NeedsDownload() bool { return false }
+func (b *tgiBackend) DefaultImage() string {
+	return "ghcr.io/huggingface/text-generation-inference:latest"
+}
+func (b *tgiBackend) DefaultPort() int32               { return 8080 }
+func (b *tgiBackend) ContainerName() string            { return "tgi" }
+func (b *tgiBackend) HealthPath() string               { return "/health" }
 func (b *tgiBackend) ReadinessFailureThreshold() int32 { return 120 } // ~10 min
 
 func (b *tgiBackend) BuildArgs(model *sympoziumv1alpha1.Model, port int32) []string {

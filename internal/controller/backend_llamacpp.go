@@ -14,11 +14,11 @@ import (
 // This is the default backend and preserves the original controller behavior.
 type llamaCppBackend struct{}
 
-func (b *llamaCppBackend) NeedsDownload() bool  { return true }
-func (b *llamaCppBackend) DefaultImage() string  { return "ghcr.io/ggml-org/llama.cpp:server" }
-func (b *llamaCppBackend) DefaultPort() int32    { return 8080 }
-func (b *llamaCppBackend) ContainerName() string { return "llama-server" }
-func (b *llamaCppBackend) HealthPath() string    { return "/health" }
+func (b *llamaCppBackend) NeedsDownload() bool              { return true }
+func (b *llamaCppBackend) DefaultImage() string             { return "ghcr.io/ggml-org/llama.cpp:server" }
+func (b *llamaCppBackend) DefaultPort() int32               { return 8080 }
+func (b *llamaCppBackend) ContainerName() string            { return "llama-server" }
+func (b *llamaCppBackend) HealthPath() string               { return "/health" }
 func (b *llamaCppBackend) ReadinessFailureThreshold() int32 { return 60 } // ~5 min
 
 func (b *llamaCppBackend) BuildArgs(model *sympoziumv1alpha1.Model, port int32) []string {
