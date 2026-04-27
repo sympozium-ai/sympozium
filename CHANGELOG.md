@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.6](https://github.com/sympozium-ai/sympozium/compare/v0.10.5...v0.10.6) (2026-04-27)
+
+
+### Features
+
+* add topology page to demo walkthrough recording ([ae6d8fc](https://github.com/sympozium-ai/sympozium/commit/ae6d8fc88d4ecdfa81dafc2f044fbdb2a99135f0))
+* implement blocking delegation between ensemble personas ([dc2c7a6](https://github.com/sympozium-ai/sympozium/commit/dc2c7a6cba1cced245ae3390d618e2352b2fd6c7))
+
 ## [0.10.5](https://github.com/sympozium-ai/sympozium/compare/v0.10.4...v0.10.5) (2026-04-27)
 
 
