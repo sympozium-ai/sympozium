@@ -23,6 +23,13 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   useAgents,
   useRuns,
   useEnsembles,
@@ -47,6 +54,7 @@ import type {
   Ensemble,
   Model,
   ProviderNode,
+  NodeProvider,
   GatewayConfigResponse,
 } from "@/lib/api";
 import { Link } from "react-router-dom";
@@ -55,7 +63,7 @@ import { Link } from "react-router-dom";
 
 function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
   return (
-    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 min-w-[240px] shadow-md">
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 min-w-[240px] shadow-md cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-colors">
       <Handle type="source" position={Position.Bottom} className="!bg-emerald-500 !w-2 !h-2" />
       <div className="flex items-center gap-2 mb-2">
         <Server className="h-4 w-4 text-emerald-400" />
@@ -825,6 +833,7 @@ function TopologyCanvas() {
   const [rfNodes, setNodes, onNodesChange] = useNodesState<Node>([] as Node[]);
   const [rfEdges, setEdges, onEdgesChange] = useEdgesState<Edge>([] as Edge[]);
   const [locked, setLocked] = useState(() => localStorage.getItem(TOPO_LOCKED_KEY) === "true");
+  const [selectedK8sNode, setSelectedK8sNode] = useState<ProviderNode | null>(null);
 
   // Track when we've done the initial fitView so we don't re-fit on every refetch.
   const hasFitRef = useRef(false);
@@ -997,6 +1006,26 @@ function TopologyCanvas() {
     });
   }
 
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (node.type === "k8sNode") {
+        const pn = (providerNodes || []).find(
+          (p) => p.nodeName === (node.data as K8sNodeData).name,
+        );
+        if (pn) setSelectedK8sNode(pn);
+      }
+    },
+    [providerNodes],
+  );
+
+  // Models placed on the selected K8s node.
+  const modelsOnSelectedNode = useMemo(() => {
+    if (!selectedK8sNode) return [];
+    return (models || []).filter(
+      (m) => m.status?.placedNode === selectedK8sNode.nodeName,
+    );
+  }, [selectedK8sNode, models]);
+
   return (
     <div className="h-[calc(100vh-4rem)]">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border">
@@ -1054,6 +1083,7 @@ function TopologyCanvas() {
           edges={rfEdges}
           onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
           proOptions={{ hideAttribution: true }}
           minZoom={0.2}
@@ -1088,6 +1118,125 @@ function TopologyCanvas() {
           />
         </ReactFlow>
       </div>
+
+      {/* K8s Node detail panel */}
+      <Dialog
+        open={selectedK8sNode !== null}
+        onOpenChange={(open) => { if (!open) setSelectedK8sNode(null); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-300">
+              <Server className="h-4 w-4 text-emerald-400" />
+              {selectedK8sNode?.nodeName}
+            </DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              {selectedK8sNode?.nodeIP}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 text-sm">
+            {/* Providers */}
+            {selectedK8sNode && selectedK8sNode.providers.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Inference Providers
+                </h4>
+                <div className="space-y-2">
+                  {selectedK8sNode.providers.map((p) => (
+                    <div
+                      key={p.name}
+                      className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-emerald-300">{p.name}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          port {p.port}
+                          {p.proxyPort ? ` / proxy ${p.proxyPort}` : ""}
+                        </span>
+                      </div>
+                      {p.models.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {p.models.map((m) => (
+                            <Badge
+                              key={m}
+                              variant="outline"
+                              className="text-[9px] border-emerald-500/30 text-emerald-400"
+                            >
+                              {m}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      {p.lastProbe && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Last probe: {new Date(p.lastProbe).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Models placed on this node */}
+            {modelsOnSelectedNode.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Models on this Node
+                </h4>
+                <div className="space-y-1.5">
+                  {modelsOnSelectedNode.map((m) => (
+                    <div
+                      key={m.metadata.name}
+                      className="flex items-center justify-between rounded-md border border-violet-500/20 bg-violet-500/5 px-2 py-1.5"
+                    >
+                      <Link
+                        to={`/models/${m.metadata.name}?namespace=${m.metadata.namespace}`}
+                        className="font-medium text-xs text-violet-300 hover:underline"
+                      >
+                        {m.metadata.name}
+                      </Link>
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] ${
+                          m.status?.phase === "Ready"
+                            ? "border-green-500/30 text-green-400"
+                            : m.status?.phase === "Failed"
+                              ? "border-red-500/30 text-red-400"
+                              : "border-yellow-500/30 text-yellow-400"
+                        }`}
+                      >
+                        {m.status?.phase || "Pending"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Labels */}
+            {selectedK8sNode?.labels && Object.keys(selectedK8sNode.labels).length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Labels
+                </h4>
+                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                  {Object.entries(selectedK8sNode.labels).map(([k, v]) => (
+                    <Badge
+                      key={k}
+                      variant="outline"
+                      className="text-[9px] font-mono"
+                    >
+                      {k}={v}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
