@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.7](https://github.com/sympozium-ai/sympozium/compare/v0.10.6...v0.10.7) (2026-04-28)
+
+
+### Bug Fixes
+
+* add missing DryRun field and supporting changes omitted from dc2c7a6 ([7f0a4aa](https://github.com/sympozium-ai/sympozium/commit/7f0a4aaf9f17ee46f408a839d512c18590833098))
+
 ## [0.10.6](https://github.com/sympozium-ai/sympozium/compare/v0.10.5...v0.10.6) (2026-04-27)
 
 
