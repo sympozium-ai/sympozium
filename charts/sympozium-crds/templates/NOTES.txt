@@ -1,0 +1,8 @@
+Sympozium CRDs {{ .Chart.AppVersion }} installed.
+
+Next steps:
+
+  helm upgrade --install sympozium ./charts/sympozium \
+    --namespace {{ .Release.Namespace }} \
+    --skip-crds \
+    --set createNamespace=false

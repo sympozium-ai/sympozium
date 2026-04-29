@@ -1,0 +1,937 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+    helm.sh/resource-policy: keep
+  name: ensembles.sympozium.ai
+spec:
+  group: sympozium.ai
+  names:
+    kind: Ensemble
+    listKind: EnsembleList
+    plural: ensembles
+    singular: ensemble
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.enabled
+      name: Enabled
+      type: boolean
+    - jsonPath: .status.personaCount
+      name: Personas
+      type: integer
+    - jsonPath: .status.installedCount
+      name: Installed
+      type: integer
+    - jsonPath: .spec.workflowType
+      name: Workflow
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Ensemble is the Schema for the ensembles API.
+          It bundles pre-configured agent personas that can be installed to stamp out
+          Agents, Schedules, and memory seeds.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              EnsembleSpec defines a bundle of pre-configured agent personas.
+              Installing an Ensemble stamps out Agents, SympoziumSchedules,
+              and optionally seeds memory for each persona.
+            properties:
+              agentConfigs:
+                description: Personas is the list of agent personas in this ensemble.
+                items:
+                  description: AgentConfigSpec defines a single agent configuration
+                    within an Ensemble.
+                  properties:
+                    baseURL:
+                      description: BaseURL overrides the ensemble-level base URL for
+                        this agent configuration.
+                      type: string
+                    channelAccessControl:
+                      additionalProperties:
+                        description: ChannelAccessControl restricts which users and
+                          chats can interact via a channel.
+                        properties:
+                          allowedChats:
+                            description: |-
+                              AllowedChats restricts interaction to these chat/group IDs.
+                              When non-empty, only messages from listed chats are accepted.
+                            items:
+                              type: string
+                            type: array
+                          allowedSenders:
+                            description: |-
+                              AllowedSenders restricts interaction to these sender IDs.
+                              When non-empty, only listed senders can trigger agent runs.
+                            items:
+                              type: string
+                            type: array
+                          deniedSenders:
+                            description: |-
+                              DeniedSenders blocks these sender IDs from interacting.
+                              Overrides AllowedSenders when a sender appears in both lists.
+                            items:
+                              type: string
+                            type: array
+                          denyMessage:
+                            description: |-
+                              DenyMessage is the text sent back to rejected senders.
+                              When empty, rejected messages are silently dropped.
+                            type: string
+                        type: object
+                      description: |-
+                        ChannelAccessControl maps channel types to per-agent-configuration access control
+                        overrides. When set, these take priority over ensemble-level
+                        ChannelAccessControl for this agent configuration. Use AllowedChats with Discord
+                        channel IDs to route specific Discord channels to this persona.
+                      type: object
+                    channels:
+                      description: |-
+                        Channels lists channel types this agent config should be bound to after install.
+                        Users can modify channel bindings later via the TUI edit modal.
+                      items:
+                        type: string
+                      type: array
+                    displayName:
+                      description: DisplayName is the human-readable name shown in
+                        the TUI.
+                      type: string
+                    lifecycle:
+                      description: |-
+                        Lifecycle defines pre and post run hooks for this agent configuration.
+                        Propagated to the generated Agent's AgentConfig.
+                      properties:
+                        gateDefault:
+                          default: block
+                          description: |-
+                            GateDefault controls what happens when a gate hook fails or times out.
+                            "allow" passes the original result through unchanged; "block" replaces
+                            it with a policy error message. Defaults to "block".
+                          enum:
+                          - allow
+                          - block
+                          type: string
+                        postRun:
+                          description: |-
+                            PostRun containers execute in a follow-up Job after the agent completes.
+                            They have access to /workspace (with agent output) and receive
+                            AGENT_EXIT_CODE and AGENT_RESULT as additional env vars.
+                            PostRun failures are recorded as Conditions but do not change the
+                            agent's final phase (best-effort semantics).
+                          items:
+                            description: LifecycleHookContainer defines a container
+                              to run as a lifecycle hook.
+                            properties:
+                              args:
+                                description: Args are arguments to the entrypoint.
+                                items:
+                                  type: string
+                                type: array
+                              command:
+                                description: Command overrides the container entrypoint.
+                                items:
+                                  type: string
+                                type: array
+                              env:
+                                description: Env is a list of environment variables
+                                  for this hook container.
+                                items:
+                                  description: EnvVar is a simplified environment
+                                    variable (name + value).
+                                  properties:
+                                    name:
+                                      type: string
+                                    value:
+                                      type: string
+                                  required:
+                                  - name
+                                  - value
+                                  type: object
+                                type: array
+                              gate:
+                                description: |-
+                                  Gate makes this hook a response gate. When true, agent output is held
+                                  until this hook approves, rejects, or rewrites it by patching the
+                                  annotation sympozium.ai/gate-verdict on the AgentRun CR.
+                                  Only valid on PostRun hooks. At most one PostRun hook may set gate: true.
+                                type: boolean
+                              image:
+                                description: Image is the container image.
+                                type: string
+                              name:
+                                description: Name is the container name.
+                                type: string
+                              timeout:
+                                description: |-
+                                  Timeout is the maximum duration for this hook container.
+                                  Defaults to 5 minutes.
+                                type: string
+                            required:
+                            - image
+                            - name
+                            type: object
+                          type: array
+                        preRun:
+                          description: |-
+                            PreRun containers execute as init containers before the agent starts.
+                            They have access to /workspace, /ipc, /tmp and standard env vars.
+                          items:
+                            description: LifecycleHookContainer defines a container
+                              to run as a lifecycle hook.
+                            properties:
+                              args:
+                                description: Args are arguments to the entrypoint.
+                                items:
+                                  type: string
+                                type: array
+                              command:
+                                description: Command overrides the container entrypoint.
+                                items:
+                                  type: string
+                                type: array
+                              env:
+                                description: Env is a list of environment variables
+                                  for this hook container.
+                                items:
+                                  description: EnvVar is a simplified environment
+                                    variable (name + value).
+                                  properties:
+                                    name:
+                                      type: string
+                                    value:
+                                      type: string
+                                  required:
+                                  - name
+                                  - value
+                                  type: object
+                                type: array
+                              gate:
+                                description: |-
+                                  Gate makes this hook a response gate. When true, agent output is held
+                                  until this hook approves, rejects, or rewrites it by patching the
+                                  annotation sympozium.ai/gate-verdict on the AgentRun CR.
+                                  Only valid on PostRun hooks. At most one PostRun hook may set gate: true.
+                                type: boolean
+                              image:
+                                description: Image is the container image.
+                                type: string
+                              name:
+                                description: Name is the container name.
+                                type: string
+                              timeout:
+                                description: |-
+                                  Timeout is the maximum duration for this hook container.
+                                  Defaults to 5 minutes.
+                                type: string
+                            required:
+                            - image
+                            - name
+                            type: object
+                          type: array
+                        rbac:
+                          description: |-
+                            RBAC defines namespace-scoped Kubernetes RBAC rules to create for
+                            lifecycle hook containers. A Role and RoleBinding are provisioned
+                            in the agent namespace, bound to the "sympozium-agent" ServiceAccount.
+                            This allows hooks to interact with Kubernetes resources (e.g., create
+                            or delete ConfigMaps, read Secrets).
+                          items:
+                            description: RBACRule defines a single Kubernetes RBAC
+                              policy rule.
+                            properties:
+                              apiGroups:
+                                description: APIGroups is the list of API groups (e.g.
+                                  "", "apps", "batch").
+                                items:
+                                  type: string
+                                type: array
+                              resources:
+                                description: Resources is the list of resources (e.g.
+                                  "pods", "deployments").
+                                items:
+                                  type: string
+                                type: array
+                              verbs:
+                                description: Verbs is the list of allowed verbs (e.g.
+                                  "get", "list", "watch").
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - apiGroups
+                            - resources
+                            - verbs
+                            type: object
+                          type: array
+                      type: object
+                    memory:
+                      description: Memory defines initial memory seeds for this agent
+                        configuration.
+                      properties:
+                        enabled:
+                          default: true
+                          description: Enabled indicates whether persistent memory
+                            is active.
+                          type: boolean
+                        seeds:
+                          description: Seeds is a list of initial memory entries injected
+                            into MEMORY.md.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - enabled
+                      type: object
+                    model:
+                      description: |-
+                        Model overrides the default model for this agent configuration.
+                        If empty, the ensemble-level or onboarding-time model is used.
+                      type: string
+                    name:
+                      description: Name is the agent configuration identifier (used
+                        as suffix in generated instance names).
+                      type: string
+                    provider:
+                      description: |-
+                        Provider overrides the ensemble-level provider for this agent configuration.
+                        When set, the controller uses this persona's own provider
+                        instead of the ensemble-level AuthRefs/BaseURL.
+                      type: string
+                    schedule:
+                      description: Schedule defines a recurring task for this agent
+                        configuration.
+                      properties:
+                        cron:
+                          description: Cron is a raw cron expression. Takes precedence
+                            over Interval.
+                          type: string
+                        interval:
+                          description: |-
+                            Interval is a human-readable interval (e.g. "30m", "1h", "6h").
+                            Converted to a cron expression by the controller.
+                          type: string
+                        task:
+                          description: Task is the task description sent to the agent
+                            on each trigger.
+                          type: string
+                        type:
+                          default: heartbeat
+                          description: 'Type categorises the schedule: heartbeat,
+                            scheduled, or sweep.'
+                          enum:
+                          - heartbeat
+                          - scheduled
+                          - sweep
+                          type: string
+                      required:
+                      - task
+                      - type
+                      type: object
+                    skills:
+                      description: Skills lists SkillPack references to mount into
+                        the agent pod.
+                      items:
+                        type: string
+                      type: array
+                    systemPrompt:
+                      description: SystemPrompt is the system prompt that defines
+                        the agent's role and behaviour.
+                      type: string
+                    toolPolicy:
+                      description: ToolPolicy defines which tools this agent config
+                        is allowed to use.
+                      properties:
+                        allow:
+                          description: Allow lists explicitly allowed tools.
+                          items:
+                            type: string
+                          type: array
+                        deny:
+                          description: Deny lists explicitly denied tools.
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    webEndpoint:
+                      description: WebEndpoint configures the web endpoint for this
+                        agent configuration.
+                      properties:
+                        enabled:
+                          description: Enabled indicates whether the web endpoint
+                            is active.
+                          type: boolean
+                        hostname:
+                          description: Hostname overrides the auto-derived hostname.
+                          type: string
+                      required:
+                      - enabled
+                      type: object
+                  required:
+                  - name
+                  - systemPrompt
+                  type: object
+                type: array
+              agentSandbox:
+                description: |-
+                  AgentSandbox configures the Kubernetes Agent Sandbox (CRD) execution backend
+                  for all instances generated by this ensemble. When enabled, agent runs use Sandbox
+                  CRs with gVisor/Kata kernel-level isolation.
+                properties:
+                  enabled:
+                    description: Enabled activates Agent Sandbox mode for all runs
+                      in this instance.
+                    type: boolean
+                  runtimeClass:
+                    description: RuntimeClass is the default runtimeClassName (e.g.,
+                      "gvisor", "kata").
+                    type: string
+                  warmPool:
+                    description: WarmPool configures a controller-managed SandboxWarmPool
+                      for this instance.
+                    properties:
+                      resources:
+                        description: Resources for each warm pool sandbox.
+                        properties:
+                          limits:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          requests:
+                            additionalProperties:
+                              type: string
+                            type: object
+                        type: object
+                      runtimeClass:
+                        description: RuntimeClass for warm pool sandboxes.
+                        type: string
+                      size:
+                        default: 2
+                        description: Size is the number of pre-warmed sandboxes to
+                          maintain.
+                        type: integer
+                    type: object
+                required:
+                - enabled
+                type: object
+              authRefs:
+                description: |-
+                  AuthRefs references secrets containing AI provider credentials.
+                  Applied to all generated Agents. Set during install.
+                items:
+                  description: SecretRef references a Kubernetes Secret.
+                  properties:
+                    provider:
+                      description: Provider is the AI provider name (e.g. "openai",
+                        "anthropic", "azure-openai", "ollama").
+                      type: string
+                    secret:
+                      description: Secret is the name of the Secret.
+                      type: string
+                  required:
+                  - secret
+                  type: object
+                type: array
+              baseURL:
+                description: |-
+                  BaseURL overrides the provider's default API endpoint for all generated instances.
+                  Set during onboarding for local providers (e.g. Ollama, LM Studio) that do not
+                  require authentication.
+                type: string
+              category:
+                description: Category classifies this ensemble (e.g. "platform", "security",
+                  "devops").
+                type: string
+              channelAccessControl:
+                additionalProperties:
+                  description: ChannelAccessControl restricts which users and chats
+                    can interact via a channel.
+                  properties:
+                    allowedChats:
+                      description: |-
+                        AllowedChats restricts interaction to these chat/group IDs.
+                        When non-empty, only messages from listed chats are accepted.
+                      items:
+                        type: string
+                      type: array
+                    allowedSenders:
+                      description: |-
+                        AllowedSenders restricts interaction to these sender IDs.
+                        When non-empty, only listed senders can trigger agent runs.
+                      items:
+                        type: string
+                      type: array
+                    deniedSenders:
+                      description: |-
+                        DeniedSenders blocks these sender IDs from interacting.
+                        Overrides AllowedSenders when a sender appears in both lists.
+                      items:
+                        type: string
+                      type: array
+                    denyMessage:
+                      description: |-
+                        DenyMessage is the text sent back to rejected senders.
+                        When empty, rejected messages are silently dropped.
+                      type: string
+                  type: object
+                description: |-
+                  ChannelAccessControl maps channel types to their access control rules.
+                  Propagated to generated instances during reconciliation.
+                type: object
+              channelConfigs:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ChannelConfigs maps channel types to their credential secret names.
+                  Populated during agent config onboarding when users provide channel tokens.
+                  The controller uses this to set ConfigRef on generated instances.
+                type: object
+              description:
+                description: Description is a human-readable summary of this ensemble.
+                type: string
+              enabled:
+                description: |-
+                  Enabled controls whether the controller stamps out resources for this ensemble.
+                  Ensembles default to disabled (catalog-only) and must be explicitly
+                  activated — for example via the TUI or kubectl patch.
+                type: boolean
+              excludePersonas:
+                description: |-
+                  ExcludeAgentConfigs lists agent config names to skip during reconciliation.
+                  Personas listed here will not have their Instance/Schedule created,
+                  and existing resources for them will be deleted. Set by the TUI when
+                  a user disables an individual persona.
+                items:
+                  type: string
+                type: array
+              modelRef:
+                description: |-
+                  ModelRef references a Model CR for cluster-local inference.
+                  When set, the controller resolves the Model's endpoint and configures all
+                  generated instances to use it (provider=openai, baseURL=endpoint, no auth).
+                  Takes precedence over AuthRefs and BaseURL.
+                type: string
+              policyRef:
+                description: PolicyRef references the SympoziumPolicy to apply to
+                  all generated instances.
+                type: string
+              relationships:
+                description: |-
+                  Relationships defines directed edges between personas in the ensemble,
+                  enabling coordination patterns like delegation, sequential pipelines,
+                  and supervision.
+                items:
+                  description: AgentConfigRelationship defines a directed edge between
+                    two agent configurations in an ensemble.
+                  properties:
+                    condition:
+                      description: |-
+                        Condition is an optional description of when this edge activates
+                        (e.g. "when source run succeeds", "on explicit request").
+                      type: string
+                    resultFormat:
+                      description: ResultFormat constrains the expected output (e.g.
+                        "json", "markdown").
+                      type: string
+                    source:
+                      description: Source is the agent config name that initiates
+                        the interaction.
+                      type: string
+                    target:
+                      description: Target is the agent config name that receives the
+                        interaction.
+                      type: string
+                    timeout:
+                      description: |-
+                        Timeout is the maximum duration to wait for the target to complete.
+                        Applies to delegation and sequential types. Format: "5m", "1h".
+                      type: string
+                    type:
+                      description: |-
+                        Type categorises the relationship.
+                        "delegation": source requests target and awaits the result.
+                        "sequential": source must complete before target starts.
+                        "supervision": source monitors target (observability only, no runtime effect).
+                      enum:
+                      - delegation
+                      - sequential
+                      - supervision
+                      type: string
+                  required:
+                  - source
+                  - target
+                  - type
+                  type: object
+                type: array
+              sharedMemory:
+                description: |-
+                  SharedMemory configures a shared memory pool accessible to all agent configurations
+                  in this ensemble. Each agent config retains its private memory; the shared pool
+                  provides cross-agent config knowledge sharing within the workflow.
+                properties:
+                  accessRules:
+                    description: |-
+                      AccessRules defines per-agent-configuration access controls for the shared memory.
+                      If empty, all agent configurations get read-write access.
+                    items:
+                      description: SharedMemoryAccessRule defines access control for
+                        a specific agent configuration.
+                      properties:
+                        access:
+                          default: read-write
+                          description: 'Access is the access level: "read-write" or
+                            "read-only".'
+                          enum:
+                          - read-write
+                          - read-only
+                          type: string
+                        agentConfig:
+                          description: AgentConfig is the agent config name this rule
+                            applies to.
+                          type: string
+                      required:
+                      - access
+                      - agentConfig
+                      type: object
+                    type: array
+                  enabled:
+                    default: false
+                    description: Enabled activates the shared memory server for this
+                      ensemble.
+                    type: boolean
+                  membrane:
+                    description: |-
+                      Membrane configures the synthetic membrane layer: selective permeability,
+                      provenance tracking, token budgets, and circuit breakers.
+                    properties:
+                      circuitBreaker:
+                        description: CircuitBreaker configures failure thresholds
+                          for delegation chains.
+                        properties:
+                          consecutiveFailures:
+                            default: 3
+                            description: |-
+                              ConsecutiveFailures is how many consecutive delegate failures
+                              trigger the circuit breaker.
+                            type: integer
+                          cooldownDuration:
+                            description: |-
+                              CooldownDuration is how long the breaker stays open before
+                              allowing retries. Format: "5m", "1h". Empty means manual reset only.
+                            type: string
+                        type: object
+                      defaultVisibility:
+                        default: public
+                        description: |-
+                          DefaultVisibility is the default visibility tier for new entries
+                          when not overridden by a per-agent-config PermeabilityRule.
+                        enum:
+                        - public
+                        - trusted
+                        - private
+                        type: string
+                      permeability:
+                        description: |-
+                          Permeability defines per-agent-config visibility and selectivity rules.
+                          If empty, all entries default to the ensemble-level DefaultVisibility.
+                        items:
+                          description: |-
+                            PermeabilityRule defines what an agent config exposes to and accepts from
+                            the shared memory membrane.
+                          properties:
+                            acceptTags:
+                              description: |-
+                                AcceptTags lists tags this agent config is interested in receiving.
+                                Empty means accept all visible entries. When set, search results
+                                are filtered to only include entries with at least one matching tag.
+                              items:
+                                type: string
+                              type: array
+                            agentConfig:
+                              description: AgentConfig is the agent config name this
+                                rule applies to.
+                              type: string
+                            defaultVisibility:
+                              description: |-
+                                DefaultVisibility for entries created by this agent config.
+                                Overrides the ensemble-level default.
+                              enum:
+                              - public
+                              - trusted
+                              - private
+                              type: string
+                            exposeTags:
+                              description: |-
+                                ExposeTags lists tags this agent config publishes through the membrane.
+                                Empty means expose all tags. Entries with tags not in this list
+                                are treated as "private" regardless of their visibility setting.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - agentConfig
+                          type: object
+                        type: array
+                      timeDecay:
+                        description: TimeDecay configures how old entries lose salience
+                          in search results.
+                        properties:
+                          decayFunction:
+                            default: linear
+                            description: DecayFunction controls how relevance decreases
+                              with age.
+                            enum:
+                            - linear
+                            - exponential
+                            type: string
+                          ttl:
+                            description: |-
+                              TTL is the default time-to-live for entries. Entries older than this
+                              are excluded from search results but not deleted.
+                              Format: "24h", "168h" (7 days).
+                            type: string
+                        type: object
+                      tokenBudget:
+                        description: TokenBudget configures ensemble-level token spending
+                          limits.
+                        properties:
+                          action:
+                            default: halt
+                            description: |-
+                              Action determines what happens when the budget is exceeded.
+                              "halt" (default) prevents new runs from starting.
+                              "warn" allows runs but sets a warning condition on the ensemble.
+                            enum:
+                            - halt
+                            - warn
+                            type: string
+                          maxTokens:
+                            description: |-
+                              MaxTokens is the maximum total tokens (input+output) across all agent
+                              runs in a single ensemble execution wave. 0 means unlimited.
+                            format: int64
+                            type: integer
+                          maxTokensPerRun:
+                            description: MaxTokensPerRun limits tokens for any single
+                              AgentRun. 0 means unlimited.
+                            format: int64
+                            type: integer
+                        type: object
+                      trustGroups:
+                        description: |-
+                          TrustGroups defines named groups of agent configs that share "trusted"
+                          visibility. Agents in the same trust group can see each other's
+                          "trusted" entries. If empty, trust is derived from ensemble Relationships
+                          (delegation and supervision edges imply mutual trust).
+                        items:
+                          description: |-
+                            TrustGroup defines a named group of agent configs that share "trusted"
+                            visibility with each other.
+                          properties:
+                            agentConfigs:
+                              description: AgentConfigs lists the agent config names
+                                in this group.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name is a human-readable identifier for
+                                this trust group.
+                              type: string
+                          required:
+                          - agentConfigs
+                          - name
+                          type: object
+                        type: array
+                    type: object
+                  storageSize:
+                    default: 1Gi
+                    description: |-
+                      StorageSize is the PVC storage request for the shared memory database.
+                      Defaults to "1Gi".
+                    type: string
+                required:
+                - enabled
+                type: object
+              skillParams:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                description: |-
+                  SkillParams provides per-skill parameters applied to all generated instances.
+                  The outer key is the SkillPack name (e.g. "github-gitops"), and the inner map
+                  holds key/value pairs injected as SKILL_<KEY> environment variables.
+                  Set during onboarding when the user configures skill-specific settings.
+                type: object
+              taskOverride:
+                description: |-
+                  TaskOverride replaces each persona's default schedule task with a
+                  team-level objective. Set during onboarding when the user provides
+                  instructions for the team. Each persona's schedule task is prepended
+                  with this directive so every agent works toward the same goal.
+                type: string
+              version:
+                description: Version is the ensemble version.
+                type: string
+              workflowType:
+                default: autonomous
+                description: |-
+                  WorkflowType describes the overall orchestration pattern for this ensemble.
+                  "autonomous" (default): personas run independently on their own schedules.
+                  "pipeline": personas execute in sequence defined by sequential edges.
+                  "delegation": personas can actively delegate to each other at runtime.
+                enum:
+                - autonomous
+                - pipeline
+                - delegation
+                type: string
+            required:
+            - agentConfigs
+            type: object
+          status:
+            description: EnsembleStatus defines the observed state of Ensemble.
+            properties:
+              circuitBreakerOpen:
+                description: |-
+                  CircuitBreakerOpen indicates the delegation circuit breaker has tripped
+                  due to consecutive delegate failures exceeding the configured threshold.
+                type: boolean
+              conditions:
+                description: Conditions represent the latest available observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              consecutiveDelegateFailures:
+                description: |-
+                  ConsecutiveDelegateFailures tracks the current streak of consecutive
+                  delegate failures for circuit breaker evaluation.
+                type: integer
+              installedCount:
+                description: InstalledCount is the number of personas successfully
+                  installed.
+                type: integer
+              installedPersonas:
+                description: InstalledAgentConfigs lists the resources created for
+                  each persona.
+                items:
+                  description: InstalledAgentConfig tracks the resources created for
+                    one persona.
+                  properties:
+                    instanceName:
+                      description: InstanceName is the name of the generated Agent.
+                      type: string
+                    name:
+                      description: Name is the agent configuration identifier.
+                      type: string
+                    scheduleName:
+                      description: ScheduleName is the name of the generated SympoziumSchedule
+                        (if any).
+                      type: string
+                  required:
+                  - instanceName
+                  - name
+                  type: object
+                type: array
+              personaCount:
+                description: AgentConfigCount is the number of personas defined in
+                  this ensemble.
+                type: integer
+              phase:
+                description: Phase is the current phase (Pending, Ready, Error).
+                type: string
+              sharedMemoryReady:
+                description: SharedMemoryReady indicates the shared memory infrastructure
+                  is provisioned.
+                type: boolean
+              tokenBudgetUsed:
+                description: |-
+                  TokenBudgetUsed tracks aggregate token consumption across all runs
+                  in the current execution wave. Only populated when Membrane.TokenBudget is configured.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

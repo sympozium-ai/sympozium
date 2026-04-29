@@ -60,14 +60,21 @@ sympozium serve            # open the web dashboard (port-forwards to the in-clu
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
 ```
 
-Deploy the Sympozium control plane:
+Sympozium can be installed as two charts: `sympozium-crds` (the CRDs, so they can be upgraded) and `sympozium` (the control plane). Install the CRDs first, then the control plane:
+
 ```bash
 helm repo add sympozium https://deploy.sympozium.ai/charts
 helm repo update
-helm install sympozium sympozium/sympozium
+
+helm upgrade --install sympozium-crds sympozium/sympozium-crds \
+  --namespace sympozium-system --create-namespace
+
+helm upgrade --install sympozium sympozium/sympozium \
+  --namespace sympozium-system \
+  --skip-crds --set createNamespace=false
 ```
 
-See [`charts/sympozium/values.yaml`](charts/sympozium/values.yaml) for configuration options.
+See [`charts/sympozium/values.yaml`](charts/sympozium/values.yaml) for configuration options, or the [Helm Chart docs](https://deploy.sympozium.ai/docs/reference/helm/) for the full guide.
 
 ---
 

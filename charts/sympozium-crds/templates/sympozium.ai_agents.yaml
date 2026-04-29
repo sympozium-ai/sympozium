@@ -1,0 +1,817 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+    helm.sh/resource-policy: keep
+  name: agents.sympozium.ai
+spec:
+  group: sympozium.ai
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    singular: agent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.activeAgentPods
+      name: Active Agents
+      type: integer
+    - jsonPath: .status.totalAgentRuns
+      name: Total Runs
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Agent is the Schema for the agents API.
+          It represents a per-user/per-tenant gateway configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentSpec defines the desired state of a Agent.
+              Each user or tenant gets a Agent that declares their desired channels,
+              agents, and policy bindings.
+            properties:
+              agents:
+                description: Agent configuration.
+                properties:
+                  default:
+                    description: Default is the default agent configuration.
+                    properties:
+                      agentSandbox:
+                        description: |-
+                          AgentSandbox configures the Kubernetes Agent Sandbox (CRD) execution backend defaults.
+                          When enabled, agent runs use Sandbox CRs with gVisor/Kata kernel isolation.
+                        properties:
+                          enabled:
+                            description: Enabled activates Agent Sandbox mode for
+                              all runs in this instance.
+                            type: boolean
+                          runtimeClass:
+                            description: RuntimeClass is the default runtimeClassName
+                              (e.g., "gvisor", "kata").
+                            type: string
+                          warmPool:
+                            description: WarmPool configures a controller-managed
+                              SandboxWarmPool for this instance.
+                            properties:
+                              resources:
+                                description: Resources for each warm pool sandbox.
+                                properties:
+                                  limits:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  requests:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                type: object
+                              runtimeClass:
+                                description: RuntimeClass for warm pool sandboxes.
+                                type: string
+                              size:
+                                default: 2
+                                description: Size is the number of pre-warmed sandboxes
+                                  to maintain.
+                                type: integer
+                            type: object
+                        required:
+                        - enabled
+                        type: object
+                      baseURL:
+                        description: |-
+                          BaseURL overrides the provider's default API endpoint.
+                          Use for OpenAI-compatible providers (GitHub Copilot, Azure OpenAI, Ollama, etc.).
+                        type: string
+                      lifecycle:
+                        description: |-
+                          Lifecycle defines pre and post run hooks for agent runs.
+                          Propagated to AgentRunSpec.Lifecycle when runs are created.
+                        properties:
+                          gateDefault:
+                            default: block
+                            description: |-
+                              GateDefault controls what happens when a gate hook fails or times out.
+                              "allow" passes the original result through unchanged; "block" replaces
+                              it with a policy error message. Defaults to "block".
+                            enum:
+                            - allow
+                            - block
+                            type: string
+                          postRun:
+                            description: |-
+                              PostRun containers execute in a follow-up Job after the agent completes.
+                              They have access to /workspace (with agent output) and receive
+                              AGENT_EXIT_CODE and AGENT_RESULT as additional env vars.
+                              PostRun failures are recorded as Conditions but do not change the
+                              agent's final phase (best-effort semantics).
+                            items:
+                              description: LifecycleHookContainer defines a container
+                                to run as a lifecycle hook.
+                              properties:
+                                args:
+                                  description: Args are arguments to the entrypoint.
+                                  items:
+                                    type: string
+                                  type: array
+                                command:
+                                  description: Command overrides the container entrypoint.
+                                  items:
+                                    type: string
+                                  type: array
+                                env:
+                                  description: Env is a list of environment variables
+                                    for this hook container.
+                                  items:
+                                    description: EnvVar is a simplified environment
+                                      variable (name + value).
+                                    properties:
+                                      name:
+                                        type: string
+                                      value:
+                                        type: string
+                                    required:
+                                    - name
+                                    - value
+                                    type: object
+                                  type: array
+                                gate:
+                                  description: |-
+                                    Gate makes this hook a response gate. When true, agent output is held
+                                    until this hook approves, rejects, or rewrites it by patching the
+                                    annotation sympozium.ai/gate-verdict on the AgentRun CR.
+                                    Only valid on PostRun hooks. At most one PostRun hook may set gate: true.
+                                  type: boolean
+                                image:
+                                  description: Image is the container image.
+                                  type: string
+                                name:
+                                  description: Name is the container name.
+                                  type: string
+                                timeout:
+                                  description: |-
+                                    Timeout is the maximum duration for this hook container.
+                                    Defaults to 5 minutes.
+                                  type: string
+                              required:
+                              - image
+                              - name
+                              type: object
+                            type: array
+                          preRun:
+                            description: |-
+                              PreRun containers execute as init containers before the agent starts.
+                              They have access to /workspace, /ipc, /tmp and standard env vars.
+                            items:
+                              description: LifecycleHookContainer defines a container
+                                to run as a lifecycle hook.
+                              properties:
+                                args:
+                                  description: Args are arguments to the entrypoint.
+                                  items:
+                                    type: string
+                                  type: array
+                                command:
+                                  description: Command overrides the container entrypoint.
+                                  items:
+                                    type: string
+                                  type: array
+                                env:
+                                  description: Env is a list of environment variables
+                                    for this hook container.
+                                  items:
+                                    description: EnvVar is a simplified environment
+                                      variable (name + value).
+                                    properties:
+                                      name:
+                                        type: string
+                                      value:
+                                        type: string
+                                    required:
+                                    - name
+                                    - value
+                                    type: object
+                                  type: array
+                                gate:
+                                  description: |-
+                                    Gate makes this hook a response gate. When true, agent output is held
+                                    until this hook approves, rejects, or rewrites it by patching the
+                                    annotation sympozium.ai/gate-verdict on the AgentRun CR.
+                                    Only valid on PostRun hooks. At most one PostRun hook may set gate: true.
+                                  type: boolean
+                                image:
+                                  description: Image is the container image.
+                                  type: string
+                                name:
+                                  description: Name is the container name.
+                                  type: string
+                                timeout:
+                                  description: |-
+                                    Timeout is the maximum duration for this hook container.
+                                    Defaults to 5 minutes.
+                                  type: string
+                              required:
+                              - image
+                              - name
+                              type: object
+                            type: array
+                          rbac:
+                            description: |-
+                              RBAC defines namespace-scoped Kubernetes RBAC rules to create for
+                              lifecycle hook containers. A Role and RoleBinding are provisioned
+                              in the agent namespace, bound to the "sympozium-agent" ServiceAccount.
+                              This allows hooks to interact with Kubernetes resources (e.g., create
+                              or delete ConfigMaps, read Secrets).
+                            items:
+                              description: RBACRule defines a single Kubernetes RBAC
+                                policy rule.
+                              properties:
+                                apiGroups:
+                                  description: APIGroups is the list of API groups
+                                    (e.g. "", "apps", "batch").
+                                  items:
+                                    type: string
+                                  type: array
+                                resources:
+                                  description: Resources is the list of resources
+                                    (e.g. "pods", "deployments").
+                                  items:
+                                    type: string
+                                  type: array
+                                verbs:
+                                  description: Verbs is the list of allowed verbs
+                                    (e.g. "get", "list", "watch").
+                                  items:
+                                    type: string
+                                  type: array
+                              required:
+                              - apiGroups
+                              - resources
+                              - verbs
+                              type: object
+                            type: array
+                        type: object
+                      model:
+                        description: Model is the LLM model to use.
+                        type: string
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          NodeSelector constrains agent pods to nodes with matching labels.
+                          Used for node-pinned inference (e.g., Ollama installed on specific GPU nodes).
+                        type: object
+                      runTimeout:
+                        description: |-
+                          RunTimeout is the maximum duration for each agent run (e.g. "30m", "1h").
+                          Defaults to 10 minutes for cloud providers and 30 minutes for local
+                          providers (ollama, lm-studio, vllm). Local models are significantly
+                          slower per request, so the longer default prevents premature timeouts.
+                        type: string
+                      sandbox:
+                        description: Sandbox configuration.
+                        properties:
+                          enabled:
+                            description: Enabled indicates whether sandboxing is enabled.
+                            type: boolean
+                          image:
+                            description: Image is the sandbox container image.
+                            type: string
+                          resources:
+                            description: Resources for the sandbox container.
+                            properties:
+                              claims:
+                                description: |-
+                                  Claims lists the names of resources, defined in spec.resourceClaims,
+                                  that are used by this container.
+
+                                  This field depends on the
+                                  DynamicResourceAllocation feature gate.
+
+                                  This field is immutable. It can only be set for containers.
+                                items:
+                                  description: ResourceClaim references one entry
+                                    in PodSpec.ResourceClaims.
+                                  properties:
+                                    name:
+                                      description: |-
+                                        Name must match the name of one entry in pod.spec.resourceClaims of
+                                        the Pod where this field is used. It makes that resource available
+                                        inside a container.
+                                      type: string
+                                    request:
+                                      description: |-
+                                        Request is the name chosen for a request in the referenced claim.
+                                        If empty, everything from the claim is made available, otherwise
+                                        only the result of this request.
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              limits:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Limits describes the maximum amount of compute resources allowed.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Requests describes the minimum amount of compute resources required.
+                                  If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                  otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                            type: object
+                        required:
+                        - enabled
+                        type: object
+                      subagents:
+                        description: Subagents configuration.
+                        properties:
+                          maxChildrenPerAgent:
+                            default: 3
+                            description: MaxChildrenPerAgent is the maximum number
+                              of children per agent.
+                            type: integer
+                          maxConcurrent:
+                            default: 5
+                            description: MaxConcurrent is the maximum number of concurrent
+                              agent runs.
+                            type: integer
+                          maxDepth:
+                            default: 2
+                            description: MaxDepth is the maximum nesting depth for
+                              sub-agents.
+                            type: integer
+                        type: object
+                      thinking:
+                        description: Thinking is the thinking mode (off, low, medium,
+                          high).
+                        type: string
+                    required:
+                    - model
+                    type: object
+                required:
+                - default
+                type: object
+              authRefs:
+                description: AuthRefs references secrets containing AI provider credentials.
+                items:
+                  description: SecretRef references a Kubernetes Secret.
+                  properties:
+                    provider:
+                      description: Provider is the AI provider name (e.g. "openai",
+                        "anthropic", "azure-openai", "ollama").
+                      type: string
+                    secret:
+                      description: Secret is the name of the Secret.
+                      type: string
+                  required:
+                  - secret
+                  type: object
+                type: array
+              channels:
+                description: Channels this instance connects to.
+                items:
+                  description: ChannelSpec defines a channel connection.
+                  properties:
+                    accessControl:
+                      description: |-
+                        AccessControl restricts which users and chats can interact via this channel.
+                        When nil, all users and chats are allowed.
+                      properties:
+                        allowedChats:
+                          description: |-
+                            AllowedChats restricts interaction to these chat/group IDs.
+                            When non-empty, only messages from listed chats are accepted.
+                          items:
+                            type: string
+                          type: array
+                        allowedSenders:
+                          description: |-
+                            AllowedSenders restricts interaction to these sender IDs.
+                            When non-empty, only listed senders can trigger agent runs.
+                          items:
+                            type: string
+                          type: array
+                        deniedSenders:
+                          description: |-
+                            DeniedSenders blocks these sender IDs from interacting.
+                            Overrides AllowedSenders when a sender appears in both lists.
+                          items:
+                            type: string
+                          type: array
+                        denyMessage:
+                          description: |-
+                            DenyMessage is the text sent back to rejected senders.
+                            When empty, rejected messages are silently dropped.
+                          type: string
+                      type: object
+                    configRef:
+                      description: |-
+                        ConfigRef references the secret containing channel credentials.
+                        Optional for channels that use alternative authentication (e.g. WhatsApp QR pairing).
+                      properties:
+                        provider:
+                          description: Provider is the AI provider name (e.g. "openai",
+                            "anthropic", "azure-openai", "ollama").
+                          type: string
+                        secret:
+                          description: Secret is the name of the Secret.
+                          type: string
+                      required:
+                      - secret
+                      type: object
+                    type:
+                      description: Type is the channel type (telegram, whatsapp, discord,
+                        slack).
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+              imagePullSecrets:
+                description: ImagePullSecrets are secrets to use when pulling container
+                  images.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+              mcpServers:
+                description: |-
+                  MCPServers configures remote MCP (Model Context Protocol) servers
+                  that agents in this instance can access via the mcp-bridge sidecar.
+                items:
+                  description: MCPServerRef references a remote MCP server for tool
+                    integration.
+                  properties:
+                    authKey:
+                      description: AuthKey is the key within AuthSecret to use. Defaults
+                        to "token".
+                      type: string
+                    authSecret:
+                      description: |-
+                        AuthSecret references a Kubernetes Secret containing auth credentials.
+                        The key specified by AuthKey (default "token") is used as a Bearer token.
+                      type: string
+                    headers:
+                      additionalProperties:
+                        type: string
+                      description: Headers are additional HTTP headers to send with
+                        every request.
+                      type: object
+                    name:
+                      description: Name is a unique identifier for this MCP server
+                        connection.
+                      minLength: 1
+                      type: string
+                    timeout:
+                      default: 30
+                      description: Timeout is the per-request timeout in seconds for
+                        this server.
+                      type: integer
+                    toolsAllow:
+                      description: ToolsAllow lists tool names (without prefix) to
+                        expose. If set, only these tools are registered.
+                      items:
+                        type: string
+                      type: array
+                    toolsDeny:
+                      description: ToolsDeny lists tool names (without prefix) to
+                        hide. Applied after toolsAllow.
+                      items:
+                        type: string
+                      type: array
+                    toolsPrefix:
+                      description: |-
+                        ToolsPrefix is prepended to tool names from this server to avoid collisions.
+                        Must be unique across all configured servers.
+                      minLength: 1
+                      type: string
+                    url:
+                      description: URL is the MCP server's Streamable HTTP endpoint.
+                        Optional if an MCPServer CR with this name exists.
+                      type: string
+                  required:
+                  - name
+                  - toolsPrefix
+                  type: object
+                type: array
+              memory:
+                description: |-
+                  Memory configures persistent memory for this instance.
+                  When enabled, a MEMORY.md ConfigMap is managed and mounted into agent pods.
+                properties:
+                  enabled:
+                    default: true
+                    description: Enabled indicates whether persistent memory is active.
+                    type: boolean
+                  maxSizeKB:
+                    default: 256
+                    description: MaxSizeKB caps the memory ConfigMap size in kilobytes.
+                    type: integer
+                  systemPrompt:
+                    description: |-
+                      SystemPrompt is injected into every agent run for this instance
+                      to instruct the agent on how to use memory.
+                    type: string
+                required:
+                - enabled
+                type: object
+              observability:
+                description: |-
+                  Observability configures OpenTelemetry for agent pods spawned by this instance.
+                  When nil, inherits from Helm chart global values.
+                properties:
+                  enabled:
+                    default: false
+                    description: Enabled turns OpenTelemetry tracing/metrics on for
+                      this instance.
+                    type: boolean
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: Headers are additional OTLP export headers (e.g.,
+                      auth tokens).
+                    type: object
+                  headersSecretRef:
+                    description: HeadersSecretRef references a Secret containing OTLP
+                      export headers.
+                    type: string
+                  otlpEndpoint:
+                    description: |-
+                      OTLPEndpoint is the collector endpoint (for example:
+                      "otel-collector.observability.svc:4317" for gRPC or
+                      "http://otel-collector.observability.svc:4318" for HTTP/protobuf).
+                    type: string
+                  otlpProtocol:
+                    description: OTLPProtocol is "grpc" or "http/protobuf".
+                    enum:
+                    - grpc
+                    - http/protobuf
+                    type: string
+                  resourceAttributes:
+                    additionalProperties:
+                      type: string
+                    description: ResourceAttributes are additional OTel resource attributes
+                      (key/value).
+                    type: object
+                  samplingRatio:
+                    description: |-
+                      SamplingRatio is the trace sampling probability as a string ("0.0" to "1.0").
+                      Parsed to float64 at runtime. String type avoids controller-gen float issues.
+                    type: string
+                  serviceName:
+                    description: 'ServiceName overrides the OTel service name (default:
+                      "sympozium-agent-runner").'
+                    type: string
+                required:
+                - enabled
+                type: object
+              policyRef:
+                description: PolicyRef references the SympoziumPolicy that applies
+                  to this instance.
+                type: string
+              skills:
+                description: Skills to mount (from SkillPack CRDs or ConfigMaps).
+                items:
+                  description: SkillRef references a SkillPack or ConfigMap containing
+                    skills.
+                  properties:
+                    configMapRef:
+                      description: ConfigMapRef references a ConfigMap by name.
+                      type: string
+                    params:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Params are per-instance key/value pairs injected as SKILL_<KEY> environment
+                        variables into the skill sidecar container. This allows the same SkillPack to
+                        be configured differently per Agent (e.g. different GitHub repos).
+                      type: object
+                    skillPackRef:
+                      description: SkillPackRef references a SkillPack CRD by name.
+                      type: string
+                  type: object
+                type: array
+              webEndpoint:
+                description: |-
+                  Deprecated: Use the "web-endpoint" SkillPack in Skills instead.
+                  WebEndpoint exposes this agent as an HTTP API (OpenAI-compatible + MCP).
+                  When nil or Enabled is false, no web-proxy infrastructure is deployed.
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef references a K8s Secret containing the API key.
+                      The Secret must have a key named "api-key".
+                      If empty, one is auto-generated with a random sk-<hex> key.
+                    type: string
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled is the master switch. When false (or when WebEndpoint is nil),
+                      no web-proxy Deployment, Service, HTTPRoute, or Secret is created.
+                      When toggled from true→false, the controller tears down all resources.
+                    type: boolean
+                  hostname:
+                    description: |-
+                      Hostname for this instance's HTTPRoute (e.g. "alice.sympozium.example.com").
+                      If empty, defaults to "<instance-name>.<gateway.baseDomain>" from Helm values.
+                    type: string
+                  rateLimit:
+                    description: RateLimit defines request rate limiting.
+                    properties:
+                      burstSize:
+                        default: 10
+                        description: BurstSize allows short bursts above the rate
+                          limit.
+                        type: integer
+                      requestsPerMinute:
+                        default: 60
+                        description: RequestsPerMinute is the maximum requests per
+                          minute per API key.
+                        type: integer
+                    type: object
+                required:
+                - enabled
+                type: object
+            required:
+            - agents
+            type: object
+          status:
+            description: AgentStatus defines the observed state of Agent.
+            properties:
+              activeAgentPods:
+                description: ActiveAgentPods is the number of currently running agent
+                  pods.
+                type: integer
+              channels:
+                description: Channels reports the status of each connected channel.
+                items:
+                  description: ChannelStatus reports the status of a channel.
+                  properties:
+                    lastHealthCheck:
+                      description: LastHealthCheck is the timestamp of the last health
+                        check.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message provides additional details about the channel
+                        status.
+                      type: string
+                    status:
+                      description: Status is the connection status (Connected, Disconnected,
+                        Error).
+                      type: string
+                    type:
+                      description: Type is the channel type.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations
+                  of an object's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              phase:
+                description: Phase is the current phase (Pending, Running, Serving,
+                  Error).
+                type: string
+              totalAgentRuns:
+                description: TotalAgentRuns is the total number of agent runs for
+                  this instance.
+                format: int64
+                type: integer
+              webEndpoint:
+                description: WebEndpoint reports the status of the web endpoint.
+                properties:
+                  authSecretName:
+                    description: AuthSecretName is the name of the Secret containing
+                      the API key.
+                    type: string
+                  status:
+                    description: Status is the current status (Pending, Ready, Error).
+                    type: string
+                  url:
+                    description: URL is the external URL for the web endpoint.
+                    type: string
+                required:
+                - status
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

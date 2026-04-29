@@ -386,19 +386,32 @@ db-migrate: ## Run database migrations
 
 ##@ Helm
 
-helm-sync: ## Sync CRDs and appVersion into the Helm chart
+helm-sync: ## Sync CRDs and appVersion into the Helm charts
 	@echo "Syncing CRDs to charts/sympozium/crds/..."
 	@mkdir -p charts/sympozium/crds
 	cp config/crd/bases/*.yaml charts/sympozium/crds/
+	@echo "Syncing CRDs to charts/sympozium-crds/templates/..."
+	@mkdir -p charts/sympozium-crds/templates
+	@rm -f charts/sympozium-crds/templates/sympozium.ai_*.yaml
+	cp config/crd/bases/*.yaml charts/sympozium-crds/templates/
 	@echo "Done."
 
 helm-sync-check: ## Check that Helm chart CRDs are in sync (CI use)
 	@diff -qr config/crd/bases/ charts/sympozium/crds/ > /dev/null 2>&1 \
 		|| (echo "ERROR: Helm chart CRDs are out of sync. Run 'make helm-sync'" && exit 1)
+	@tmp=$$(mktemp -d); \
+	cp config/crd/bases/*.yaml $$tmp/; \
+	diff -qr $$tmp/ charts/sympozium-crds/templates/ \
+		| grep -v ': NOTES.txt$$' \
+		| grep . \
+		&& (echo "ERROR: sympozium-crds chart templates are out of sync. Run 'make helm-sync'" && rm -rf $$tmp && exit 1) \
+		|| true; \
+	rm -rf $$tmp
 	@echo "Helm chart CRDs are in sync."
 
-helm-lint: ## Lint the Helm chart
+helm-lint: ## Lint the Helm charts
 	helm lint charts/sympozium/
+	helm lint charts/sympozium-crds/
 
 ##@ Clean
 

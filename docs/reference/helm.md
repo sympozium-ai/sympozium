@@ -12,11 +12,24 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 ## Install
 
+Sympozium ships as two charts: `sympozium-crds` (the CRDs) and `sympozium` (the control plane). The CRDs live in their own chart so `helm upgrade` can roll schema changes forward — Helm 3 [never touches files under a chart's `crds/` directory on upgrade](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/). Install the CRDs first, then the control plane:
+
 ```bash
-helm install sympozium ./charts/sympozium
+helm upgrade --install sympozium-crds ./charts/sympozium-crds \
+  --namespace sympozium-system --create-namespace
+
+helm upgrade --install sympozium ./charts/sympozium \
+  --namespace sympozium-system \
+  --skip-crds --set createNamespace=false
 ```
 
-See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/blob/main/charts/sympozium/values.yaml) for all configuration options (replicas, resources, external NATS, network policies, etc.).
+Both charts are kept in lockstep. Always upgrade `sympozium-crds` before `sympozium`.
+
+> **Uninstall ordering.** Removing `sympozium-crds` cascade-deletes every Agent, AgentRun, SkillPack, etc. in the cluster. Uninstall `sympozium` first.
+
+> The legacy single-chart install (`helm install sympozium ./charts/sympozium`) still works for fresh clusters that will never need a CRD upgrade.
+
+See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/blob/main/charts/sympozium/values.yaml) for all configuration options. The `sympozium-crds` chart has no configurable values.
 
 ## Observability
 
