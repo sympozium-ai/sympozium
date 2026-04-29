@@ -759,6 +759,8 @@ func (r *AgentReconciler) ensureWebEndpointAgentRun(ctx context.Context, instanc
 			},
 			Skills:           []sympoziumv1alpha1.SkillRef{webSkill},
 			ImagePullSecrets: instance.Spec.ImagePullSecrets,
+			Volumes:          instance.Spec.Volumes,
+			VolumeMounts:     instance.Spec.VolumeMounts,
 		},
 	}
 

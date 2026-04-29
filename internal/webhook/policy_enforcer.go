@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,6 +20,19 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
+
+// systemNamespace is the namespace where built-in SkillPacks live by default.
+const systemNamespace = "sympozium-system"
+
+// reservedVolumeNames mirrors the controller-side reservedVolumeNames helper.
+var reservedVolumeNames = map[string]struct{}{
+	"workspace":  {},
+	"ipc":        {},
+	"skills":     {},
+	"tmp":        {},
+	"memory":     {},
+	"mcp-config": {},
+}
 
 // PolicyEnforcer is a validating webhook that enforces SympoziumPolicy on AgentRuns.
 type PolicyEnforcer struct {
@@ -50,6 +65,13 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	}, &instance); err != nil {
 		return admission.Errored(http.StatusBadRequest,
 			fmt.Errorf("failed to find Agent %s: %w", run.Spec.AgentRef, err))
+	}
+
+	// Validate user-supplied volumes (AgentRun + resolved SkillPack sidecars).
+	// This catches reserved-name collisions and same-name-different-source
+	// collisions before they become silent mismounts at runtime.
+	if err := pe.validateVolumes(ctx, run); err != nil {
+		return admission.Denied(err.Error())
 	}
 
 	// If no policy is bound, allow
@@ -115,6 +137,69 @@ func (pe *PolicyEnforcer) validateResources(run *sympoziumv1alpha1.AgentRun, pol
 	if policy.Spec.SandboxPolicy.MaxMemory != "" {
 		maxMem := resource.MustParse(policy.Spec.SandboxPolicy.MaxMemory)
 		_ = maxMem
+	}
+
+	return nil
+}
+
+type volumeOrigin struct {
+	source string
+	volume corev1.Volume
+}
+
+// validateVolumes rejects reserved-name collisions and same-name-different-source
+// collisions across AgentRun.spec.volumes and resolved SkillPack sidecar volumes.
+func (pe *PolicyEnforcer) validateVolumes(ctx context.Context, run *sympoziumv1alpha1.AgentRun) error {
+	declarations := make(map[string][]volumeOrigin)
+
+	for _, v := range run.Spec.Volumes {
+		if _, reserved := reservedVolumeNames[v.Name]; reserved {
+			return fmt.Errorf("AgentRun.spec.volumes[%q]: name is reserved by Sympozium (reserved: workspace, ipc, skills, tmp, memory, mcp-config)", v.Name)
+		}
+		declarations[v.Name] = append(declarations[v.Name], volumeOrigin{
+			source: "AgentRun.spec.volumes",
+			volume: v,
+		})
+	}
+
+	// SkillPack lookup is best-effort: missing SkillPacks are skipped so the
+	// controller's lenient resolver remains the source of truth.
+	for _, ref := range run.Spec.Skills {
+		if ref.SkillPackRef == "" {
+			continue
+		}
+		spName := strings.TrimPrefix(ref.SkillPackRef, "skillpack-")
+
+		sp := &sympoziumv1alpha1.SkillPack{}
+		if err := pe.Client.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: spName}, sp); err != nil {
+			if err2 := pe.Client.Get(ctx, types.NamespacedName{Namespace: systemNamespace, Name: spName}, sp); err2 != nil {
+				continue
+			}
+		}
+		if sp.Spec.Sidecar == nil {
+			continue
+		}
+		for _, v := range sp.Spec.Sidecar.Volumes {
+			if _, reserved := reservedVolumeNames[v.Name]; reserved {
+				return fmt.Errorf("SkillPack %q sidecar volume %q: name is reserved by Sympozium (reserved: workspace, ipc, skills, tmp, memory, mcp-config)", spName, v.Name)
+			}
+			declarations[v.Name] = append(declarations[v.Name], volumeOrigin{
+				source: fmt.Sprintf("SkillPack/%s.spec.sidecar.volumes", spName),
+				volume: v,
+			})
+		}
+	}
+
+	for name, decls := range declarations {
+		if len(decls) < 2 {
+			continue
+		}
+		first := decls[0]
+		for _, d := range decls[1:] {
+			if !apiequality.Semantic.DeepEqual(first.volume.VolumeSource, d.volume.VolumeSource) {
+				return fmt.Errorf("volume %q is declared by both %s and %s with different VolumeSource; rename one (e.g. prefix the SkillPack name) so each declaration is unambiguous", name, first.source, d.source)
+			}
+		}
 	}
 
 	return nil

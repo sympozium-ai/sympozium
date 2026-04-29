@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -109,6 +110,19 @@ type EnsembleSpec struct {
 	// +kubebuilder:default="autonomous"
 	// +optional
 	WorkflowType string `json:"workflowType,omitempty"`
+
+	// Volumes are additional pod volumes propagated to every Agent stamped
+	// out by this ensemble. Useful for declaring a single Vault CSI
+	// SecretProviderClass volume that all team members share. Names must not
+	// collide with Sympozium-reserved volume names
+	// (workspace, ipc, skills, tmp, memory, mcp-config).
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts are additional volume mounts propagated to every Agent
+	// stamped out by this ensemble and applied to the agent container.
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // AgentConfigSpec defines a single agent configuration within an Ensemble.

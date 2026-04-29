@@ -526,6 +526,8 @@ func (r *EnsembleReconciler) buildAgent(
 				SystemPrompt: persona.SystemPrompt,
 			},
 			Observability: defaultObservabilitySpec(),
+			Volumes:       pack.Spec.Volumes,
+			VolumeMounts:  pack.Spec.VolumeMounts,
 		},
 	}
 

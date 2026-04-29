@@ -24,6 +24,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -860,6 +861,8 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				},
 				ImagePullSecrets: targetInst.Spec.ImagePullSecrets,
 				Lifecycle:        targetInst.Spec.Agents.Default.Lifecycle,
+				Volumes:          targetInst.Spec.Volumes,
+				VolumeMounts:     targetInst.Spec.VolumeMounts,
 			},
 		}
 
@@ -1897,6 +1900,24 @@ func (r *AgentRunReconciler) buildContainers(
 		})
 	}
 
+	// Append user-defined volume mounts from the AgentRun spec to the
+	// main agent container. Skip any mount whose name collides with a
+	// Sympozium-reserved volume.
+	for _, vm := range agentRun.Spec.VolumeMounts {
+		if isReservedVolumeName(vm.Name) {
+			slog.Warn("dropping user-supplied volumeMount on agent container: name collides with a Sympozium-reserved volume",
+				"agentrun", agentRun.Name,
+				"namespace", agentRun.Namespace,
+				"volumeMount", vm.Name,
+				"mountPath", vm.MountPath,
+				"source", "AgentRun.spec.volumeMounts",
+				"reservedNames", reservedVolumeNamesList(),
+			)
+			continue
+		}
+		containers[0].VolumeMounts = append(containers[0].VolumeMounts, vm)
+	}
+
 	// Add sandbox sidecar if enabled
 	if agentRun.Spec.Sandbox != nil && agentRun.Spec.Sandbox.Enabled {
 		sandboxImage := r.imageRef("sandbox")
@@ -2086,6 +2107,24 @@ func (r *AgentRunReconciler) buildContainers(
 					ReadOnly:  readOnly,
 				})
 			}
+		}
+
+		// Append user-defined volume mounts from the SkillPack sidecar.
+		// Skip any whose name collides with a Sympozium-reserved volume.
+		for _, vm := range sc.sidecar.VolumeMounts {
+			if isReservedVolumeName(vm.Name) {
+				slog.Warn("dropping skill sidecar volumeMount: name collides with a Sympozium-reserved volume",
+					"agentrun", agentRun.Name,
+					"namespace", agentRun.Namespace,
+					"volumeMount", vm.Name,
+					"mountPath", vm.MountPath,
+					"skillpack", sc.skillPackName,
+					"source", "SkillPack.spec.sidecar.volumeMounts",
+					"reservedNames", reservedVolumeNamesList(),
+				)
+				continue
+			}
+			mounts = append(mounts, vm)
 		}
 
 		cpuReq := "100m"
@@ -2737,7 +2776,100 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, 
 		}
 	}
 
+	// Append user-defined volumes from the AgentRun spec (e.g. Vault CSI,
+	// PVCs, projected secrets). Skip any entry whose name collides with
+	// a Sympozium-reserved volume to avoid breaking core mounts.
+	for _, v := range agentRun.Spec.Volumes {
+		if isReservedVolumeName(v.Name) {
+			slog.Warn("dropping user-supplied volume: name collides with a Sympozium-reserved volume",
+				"agentrun", agentRun.Name,
+				"namespace", agentRun.Namespace,
+				"volume", v.Name,
+				"source", "AgentRun.spec.volumes",
+				"reservedNames", reservedVolumeNamesList(),
+			)
+			continue
+		}
+		volumes = append(volumes, v)
+	}
+
+	// Append pod-level volumes contributed by SkillPack sidecars. Track
+	// names already used (reserved + agent-run + sidecar-contributed)
+	// to avoid duplicate volume entries when multiple sidecars declare
+	// the same volume name.
+	//
+	// Collision policy:
+	//   - Reserved name → drop, warn (Sympozium owns that name).
+	//   - Same name, structurally-equal VolumeSource → drop the duplicate
+	//     silently (no-op; the existing volume already provides it).
+	//   - Same name, different VolumeSource → drop, send warning. The
+	//     admission webhook is expected to reject this case before it
+	//     reaches the controller; the warn here is a safety net.
+	seen := make(map[string]corev1.Volume, len(volumes))
+	for _, v := range volumes {
+		seen[v.Name] = v
+	}
+	for _, sc := range sidecars {
+		for _, v := range sc.sidecar.Volumes {
+			if isReservedVolumeName(v.Name) {
+				slog.Warn("dropping skill sidecar volume: name collides with a Sympozium-reserved volume",
+					"agentrun", agentRun.Name,
+					"namespace", agentRun.Namespace,
+					"volume", v.Name,
+					"skillpack", sc.skillPackName,
+					"source", "SkillPack.spec.sidecar.volumes",
+					"reservedNames", reservedVolumeNamesList(),
+				)
+				continue
+			}
+			if existing, dup := seen[v.Name]; dup {
+				if apiequality.Semantic.DeepEqual(existing.VolumeSource, v.VolumeSource) {
+					// Identical declaration — silently no-op.
+					continue
+				}
+				slog.Warn("dropping skill sidecar volume: another declaration with the same name but a different VolumeSource is already on this pod",
+					"agentrun", agentRun.Name,
+					"namespace", agentRun.Namespace,
+					"volume", v.Name,
+					"skillpack", sc.skillPackName,
+					"hint", "another SkillPack, the AgentRun, or core Sympozium already contributes this volume name with a different source; rename to avoid the collision",
+				)
+				continue
+			}
+			seen[v.Name] = v
+			volumes = append(volumes, v)
+		}
+	}
+
 	return volumes
+}
+
+// reservedVolumeNames are the volume names that Sympozium manages internally
+// on every agent pod. User-supplied volumes/mounts with these names are
+// silently skipped to prevent accidental clobbering of core functionality.
+var reservedVolumeNames = map[string]struct{}{
+	"workspace":  {},
+	"ipc":        {},
+	"skills":     {},
+	"tmp":        {},
+	"memory":     {},
+	"mcp-config": {},
+}
+
+func isReservedVolumeName(name string) bool {
+	_, ok := reservedVolumeNames[name]
+	return ok
+}
+
+// reservedVolumeNamesList returns a deterministic, sorted slice of reserved
+// volume names for use in log messages.
+func reservedVolumeNamesList() []string {
+	names := make([]string, 0, len(reservedVolumeNames))
+	for n := range reservedVolumeNames {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func derivePodHostAccess(sidecars []resolvedSidecar) (hostNetwork bool, hostPID bool) {

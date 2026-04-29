@@ -153,6 +153,8 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 		TargetPersona:    req.TargetPersona,
 		PackName:         req.PackName,
 		ImagePullSecrets: parentRun.Spec.ImagePullSecrets,
+		Volumes:          parentRun.Spec.Volumes,
+		VolumeMounts:     parentRun.Spec.VolumeMounts,
 	}
 
 	result, err := sr.spawner.Spawn(ctx, spawnReq)

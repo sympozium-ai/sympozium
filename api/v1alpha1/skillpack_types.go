@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -142,6 +143,22 @@ type SkillSidecar struct {
 	// Ports exposed by this sidecar, used to create a Service when RequiresServer is true.
 	// +optional
 	Ports []SidecarPort `json:"ports,omitempty"`
+
+	// Volumes are additional pod-level volumes added when this sidecar is
+	// injected. Use this to expose CSI driver volumes (e.g. Vault Secrets
+	// Store CSI), PVCs, or projected Secret/ConfigMap volumes to the
+	// sidecar. Volumes are appended at the pod level, so multiple sidecars
+	// on the same pod must use unique volume names. Names must not collide
+	// with reserved volumes (workspace, ipc, skills, tmp, memory, mcp-config)
+	// or volumes contributed by other sidecars.
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts are additional volume mounts attached to this sidecar
+	// container. Names must reference entries in Volumes (or another volume
+	// already present on the pod).
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // SidecarPort defines a port exposed by a skill sidecar.

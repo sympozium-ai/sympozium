@@ -52,6 +52,25 @@ type AgentSpec struct {
 	// ImagePullSecrets are secrets to use when pulling container images.
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+
+	// Volumes are additional pod volumes to attach to agent pods spawned
+	// by this Agent. Common use cases include CSI driver volumes
+	// (e.g. Vault Secrets Store CSI / secrets-store.csi.k8s.io),
+	// PersistentVolumeClaims, and projected Secret/ConfigMap volumes.
+	// These are appended to the volumes Sympozium manages internally
+	// (workspace, ipc, skills, tmp, memory, etc.). Names must not
+	// collide with reserved volumes: workspace, ipc, skills, tmp,
+	// memory, mcp-config.
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts are additional volume mounts applied to the main
+	// agent container. Names must reference entries in Volumes or any
+	// other volume defined on the pod. Use Volumes + VolumeMounts
+	// together to surface secrets from CSI drivers (e.g. Vault CSI)
+	// inside the agent's filesystem.
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // MCPServerRef references a remote MCP server for tool integration.

@@ -85,6 +85,21 @@ type AgentRunSpec struct {
 	// PostRun hooks execute in a follow-up Job after the agent completes.
 	// +optional
 	Lifecycle *LifecycleHooks `json:"lifecycle,omitempty"`
+
+	// Volumes are additional pod volumes to attach to the agent pod.
+	// Typically populated from Agent.Spec.Volumes by the controller,
+	// but may also be set directly on an AgentRun. Useful for mounting
+	// secrets via CSI drivers (Vault CSI, Secrets Store CSI), PVCs,
+	// or arbitrary projected volumes. Names must not collide with
+	// reserved volumes: workspace, ipc, skills, tmp, memory, mcp-config.
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts are additional volume mounts applied to the main
+	// agent container. Names must reference entries in Volumes (or any
+	// other volume present on the pod).
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // ParentRunRef links a sub-agent to its parent.

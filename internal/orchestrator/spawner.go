@@ -60,6 +60,11 @@ type SpawnRequest struct {
 
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 
+	// Volumes and VolumeMounts are propagated from the parent AgentRun
+	// so sub-agents inherit user-provided secret/PVC mounts (e.g. Vault CSI).
+	Volumes      []corev1.Volume      `json:"volumes,omitempty"`
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+
 	// TargetPersona is the name of a persona within the same Ensemble.
 	// When set (along with PackName), the spawner resolves it to the
 	// correct Agent, overriding InstanceName.
@@ -145,6 +150,8 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 			Skills:           req.Skills,
 			Cleanup:          "delete",
 			ImagePullSecrets: req.ImagePullSecrets,
+			Volumes:          req.Volumes,
+			VolumeMounts:     req.VolumeMounts,
 		},
 	}
 
