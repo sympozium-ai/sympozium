@@ -580,3 +580,88 @@ func TestExecuteMemoryTool_RetriesWithRecovery(t *testing.T) {
 		t.Errorf("expected at least 3 calls (2 failures + 1 success), got %d", callCount.Load())
 	}
 }
+
+// ── ExposeTags enforcement tests ────────────────────────────────────────────
+
+func TestEntryTagsMatchExpose_Match(t *testing.T) {
+	tags := []any{"findings", "kafka"}
+	expose := []string{"findings", "summary"}
+	if !entryTagsMatchExpose(tags, expose) {
+		t.Error("expected match: 'findings' is in both lists")
+	}
+}
+
+func TestEntryTagsMatchExpose_NoMatch(t *testing.T) {
+	tags := []any{"kafka", "debug"}
+	expose := []string{"findings", "summary"}
+	if entryTagsMatchExpose(tags, expose) {
+		t.Error("expected no match: no overlap between tags and expose")
+	}
+}
+
+func TestEntryTagsMatchExpose_EmptyTags(t *testing.T) {
+	expose := []string{"findings"}
+	if entryTagsMatchExpose(nil, expose) {
+		t.Error("expected no match for nil tags")
+	}
+	if entryTagsMatchExpose([]any{}, expose) {
+		t.Error("expected no match for empty tags")
+	}
+}
+
+func TestEntryTagsMatchExpose_NonStringTags(t *testing.T) {
+	tags := []any{42, true}
+	expose := []string{"findings"}
+	if entryTagsMatchExpose(tags, expose) {
+		t.Error("expected no match for non-string tags")
+	}
+}
+
+func TestWorkflowMemoryStore_ExposeTagsEnforcement(t *testing.T) {
+	// Set up a test memory server that captures the request body.
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "id": 1})
+	}))
+	defer srv.Close()
+
+	// Save and restore globals.
+	oldURL := workflowMemoryServerURL
+	oldVis := membraneVisibility
+	oldExpose := membraneExposeTags
+	oldAccess := workflowMemoryAccess
+	defer func() {
+		workflowMemoryServerURL = oldURL
+		membraneVisibility = oldVis
+		membraneExposeTags = oldExpose
+		workflowMemoryAccess = oldAccess
+	}()
+
+	workflowMemoryServerURL = srv.URL
+	membraneVisibility = "public"
+	workflowMemoryAccess = "read-write"
+	membraneExposeTags = []string{"findings", "summary"}
+
+	// Store with non-matching tags → should be forced to private.
+	result := executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryStore,
+		`{"content":"test entry","tags":["debug","internal"]}`)
+	if strings.HasPrefix(result, "Error") {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	if capturedBody["visibility"] != "private" {
+		t.Errorf("visibility = %v, want private (expose tags mismatch)", capturedBody["visibility"])
+	}
+
+	// Store with matching tags → should keep configured visibility.
+	capturedBody = nil
+	result = executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryStore,
+		`{"content":"test entry","tags":["findings","kafka"]}`)
+	if strings.HasPrefix(result, "Error") {
+		t.Fatalf("unexpected error: %s", result)
+	}
+	if capturedBody["visibility"] != "public" {
+		t.Errorf("visibility = %v, want public (expose tags match)", capturedBody["visibility"])
+	}
+}

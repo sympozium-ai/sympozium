@@ -408,6 +408,7 @@ var (
 	membraneVisibility string   // default visibility for entries created by this persona
 	membraneTrustPeers []string // agent configs in this persona's trust group
 	membraneAcceptTags []string // tags this persona wants to receive
+	membraneExposeTags []string // tags this persona is allowed to expose; entries with non-matching tags are forced private
 	membraneMaxAge     string   // time decay TTL (e.g., "24h")
 )
 
@@ -524,6 +525,15 @@ func executeWorkflowMemoryTool(ctx context.Context, toolName string, argsJSON st
 				args["visibility"] = membraneVisibility
 			}
 			args["source_agent"] = instanceName
+
+			// Enforce expose tags: if the persona has an exposeTags list,
+			// entries with tags that don't intersect are forced private so
+			// other agents cannot see them.
+			if len(membraneExposeTags) > 0 {
+				if !entryTagsMatchExpose(args["tags"], membraneExposeTags) {
+					args["visibility"] = "private"
+				}
+			}
 		}
 	}
 
@@ -706,6 +716,26 @@ func queryWorkflowMemoryContext(task string, maxResults int) string {
 }
 
 // initWorkflowMemoryTools initializes the shared workflow memory tools.
+// entryTagsMatchExpose returns true if at least one of the entry's tags
+// appears in the expose list. When entryTags is nil/empty, there is no tag
+// to match so the entry is not exposed.
+func entryTagsMatchExpose(entryTagsRaw any, exposeTags []string) bool {
+	tags, ok := entryTagsRaw.([]any)
+	if !ok || len(tags) == 0 {
+		return false
+	}
+	exposeSet := make(map[string]bool, len(exposeTags))
+	for _, t := range exposeTags {
+		exposeSet[t] = true
+	}
+	for _, t := range tags {
+		if s, ok := t.(string); ok && exposeSet[s] {
+			return true
+		}
+	}
+	return false
+}
+
 func initWorkflowMemoryTools() []ToolDef {
 	workflowMemoryServerURL = os.Getenv("WORKFLOW_MEMORY_SERVER_URL")
 	if workflowMemoryServerURL == "" {
@@ -724,6 +754,9 @@ func initWorkflowMemoryTools() []ToolDef {
 	}
 	if tags := os.Getenv("WORKFLOW_MEMBRANE_ACCEPT_TAGS"); tags != "" {
 		membraneAcceptTags = strings.Split(tags, ",")
+	}
+	if tags := os.Getenv("WORKFLOW_MEMBRANE_EXPOSE_TAGS"); tags != "" {
+		membraneExposeTags = strings.Split(tags, ",")
 	}
 	membraneMaxAge = os.Getenv("WORKFLOW_MEMBRANE_MAX_AGE")
 

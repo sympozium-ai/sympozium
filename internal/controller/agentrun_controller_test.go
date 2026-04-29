@@ -1785,6 +1785,73 @@ func TestResolveMembraneEnvVars(t *testing.T) {
 	if !strings.Contains(peers, "editor") || !strings.Contains(peers, "reviewer") {
 		t.Errorf("trust_peers = %q, want editor and reviewer", peers)
 	}
+	// No expose tags configured for this rule → should be empty.
+	if envMap["WORKFLOW_MEMBRANE_EXPOSE_TAGS"] != "" {
+		t.Errorf("expose_tags = %q, want empty", envMap["WORKFLOW_MEMBRANE_EXPOSE_TAGS"])
+	}
+}
+
+func TestResolveMembraneEnvVars_ExposeTags(t *testing.T) {
+	membrane := &sympoziumv1alpha1.MembraneSpec{
+		DefaultVisibility: "public",
+		Permeability: []sympoziumv1alpha1.PermeabilityRule{
+			{
+				AgentConfig: "researcher",
+				ExposeTags:  []string{"findings", "summary"},
+				AcceptTags:  []string{"tasks"},
+			},
+		},
+	}
+
+	envs := resolveMembraneEnvVars("researcher", membrane, nil)
+	envMap := map[string]string{}
+	for _, e := range envs {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["WORKFLOW_MEMBRANE_EXPOSE_TAGS"] != "findings,summary" {
+		t.Errorf("expose_tags = %q, want findings,summary", envMap["WORKFLOW_MEMBRANE_EXPOSE_TAGS"])
+	}
+}
+
+func TestResolveMembraneEnvVars_MaxTokensPerRun(t *testing.T) {
+	membrane := &sympoziumv1alpha1.MembraneSpec{
+		DefaultVisibility: "public",
+		TokenBudget: &sympoziumv1alpha1.TokenBudgetSpec{
+			MaxTokens:       100000,
+			MaxTokensPerRun: 50000,
+			Action:          "warn",
+		},
+	}
+
+	envs := resolveMembraneEnvVars("agent-a", membrane, nil)
+	envMap := map[string]string{}
+	for _, e := range envs {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"] != "50000" {
+		t.Errorf("max_tokens_per_run = %q, want 50000", envMap["WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"])
+	}
+	if envMap["WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION"] != "warn" {
+		t.Errorf("token_budget_action = %q, want warn", envMap["WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION"])
+	}
+}
+
+func TestResolveMembraneEnvVars_NoTokenBudget(t *testing.T) {
+	membrane := &sympoziumv1alpha1.MembraneSpec{
+		DefaultVisibility: "public",
+	}
+
+	envs := resolveMembraneEnvVars("agent-a", membrane, nil)
+	envMap := map[string]string{}
+	for _, e := range envs {
+		envMap[e.Name] = e.Value
+	}
+
+	if _, ok := envMap["WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"]; ok {
+		t.Error("expected no WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN when budget is nil")
+	}
 }
 
 func TestResolveMembraneEnvVars_Nil(t *testing.T) {

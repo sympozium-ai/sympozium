@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -330,5 +331,125 @@ func TestRunAgentLoop_MultipleToolCallsPerTurn(t *testing.T) {
 		if p.toolLog[0][i].CallID != want {
 			t.Errorf("result[%d].CallID = %q, want %q", i, p.toolLog[0][i].CallID, want)
 		}
+	}
+}
+
+// TestRunAgentLoop_MaxTokensPerRun_Halt: when per-run token budget is set to
+// "halt", the loop should stop early once token usage exceeds the limit.
+func TestRunAgentLoop_MaxTokensPerRun_Halt(t *testing.T) {
+	os.Setenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN", "100")
+	os.Setenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION", "halt")
+	defer func() {
+		os.Unsetenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN")
+		os.Unsetenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION")
+	}()
+
+	p := &mockProvider{
+		name:  "mock",
+		model: "mock-1",
+		turns: []ChatResult{
+			// Turn 1: 60+50=110 tokens → exceeds 100 limit → halt
+			{
+				Text:         "reasoning about the task",
+				InputTokens:  60,
+				OutputTokens: 50,
+				ToolCalls: []ToolCall{
+					{ID: "c1", Name: "read_file", Input: `{"path":"/tmp/x"}`},
+				},
+				FinishReason: "tool_calls",
+			},
+			// Turn 2: should NOT be reached
+			{Text: "should not reach this", InputTokens: 100, OutputTokens: 100},
+		},
+	}
+
+	text, in, out, _, err := runAgentLoop(context.Background(), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should have stopped after turn 1.
+	if p.chatCalls != 1 {
+		t.Errorf("chatCalls = %d, want 1 (halt after first turn)", p.chatCalls)
+	}
+	if in != 60 || out != 50 {
+		t.Errorf("tokens = (%d,%d), want (60,50)", in, out)
+	}
+	if text == "" {
+		t.Error("expected non-empty text from halt")
+	}
+}
+
+// TestRunAgentLoop_MaxTokensPerRun_Warn: in "warn" mode, the loop should
+// continue past the budget and log a warning, not halt.
+func TestRunAgentLoop_MaxTokensPerRun_Warn(t *testing.T) {
+	os.Setenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN", "100")
+	os.Setenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION", "warn")
+	defer func() {
+		os.Unsetenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN")
+		os.Unsetenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION")
+	}()
+
+	p := &mockProvider{
+		name:  "mock",
+		model: "mock-1",
+		turns: []ChatResult{
+			// Turn 1: 60+50=110 tokens → exceeds 100 limit → warn but continue
+			{
+				Text:         "reasoning",
+				InputTokens:  60,
+				OutputTokens: 50,
+				ToolCalls: []ToolCall{
+					{ID: "c1", Name: "read_file", Input: `{"path":"/tmp/x"}`},
+				},
+				FinishReason: "tool_calls",
+			},
+			// Turn 2: should be reached because warn mode continues
+			{Text: "final answer", InputTokens: 40, OutputTokens: 10, FinishReason: "stop"},
+		},
+	}
+
+	text, in, out, _, err := runAgentLoop(context.Background(), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.chatCalls != 2 {
+		t.Errorf("chatCalls = %d, want 2 (warn should not halt)", p.chatCalls)
+	}
+	if text != "final answer" {
+		t.Errorf("text = %q, want 'final answer'", text)
+	}
+	if in != 100 || out != 60 {
+		t.Errorf("tokens = (%d,%d), want (100,60)", in, out)
+	}
+}
+
+// TestRunAgentLoop_MaxTokensPerRun_NotSet: when env var is not set, the loop
+// should run normally without budget enforcement.
+func TestRunAgentLoop_MaxTokensPerRun_NotSet(t *testing.T) {
+	os.Unsetenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN")
+	os.Unsetenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION")
+
+	p := &mockProvider{
+		name:  "mock",
+		model: "mock-1",
+		turns: []ChatResult{
+			{
+				InputTokens: 5000, OutputTokens: 5000,
+				ToolCalls:    []ToolCall{{ID: "c1", Name: "read_file", Input: `{"path":"/tmp/x"}`}},
+				FinishReason: "tool_calls",
+			},
+			{Text: "done", InputTokens: 5000, OutputTokens: 5000, FinishReason: "stop"},
+		},
+	}
+
+	text, _, _, _, err := runAgentLoop(context.Background(), p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text != "done" {
+		t.Errorf("text = %q, want 'done'", text)
+	}
+	if p.chatCalls != 2 {
+		t.Errorf("chatCalls = %d, want 2 (no budget = no halt)", p.chatCalls)
 	}
 }

@@ -2514,12 +2514,14 @@ func resolveMembraneEnvVars(personaName string, membrane *sympoziumv1alpha1.Memb
 		visibility = "public"
 	}
 	var acceptTags []string
+	var exposeTags []string
 	for _, rule := range membrane.Permeability {
 		if rule.AgentConfig == personaName {
 			if rule.DefaultVisibility != "" {
 				visibility = rule.DefaultVisibility
 			}
 			acceptTags = rule.AcceptTags
+			exposeTags = rule.ExposeTags
 			break
 		}
 	}
@@ -2537,8 +2539,26 @@ func resolveMembraneEnvVars(personaName string, membrane *sympoziumv1alpha1.Memb
 		{Name: "WORKFLOW_MEMBRANE_VISIBILITY", Value: visibility},
 		{Name: "WORKFLOW_MEMBRANE_TRUST_PEERS", Value: strings.Join(trustPeers, ",")},
 		{Name: "WORKFLOW_MEMBRANE_ACCEPT_TAGS", Value: strings.Join(acceptTags, ",")},
+		{Name: "WORKFLOW_MEMBRANE_EXPOSE_TAGS", Value: strings.Join(exposeTags, ",")},
 		{Name: "WORKFLOW_MEMBRANE_MAX_AGE", Value: maxAge},
 	}
+
+	// Propagate per-run token budget if configured.
+	if membrane.TokenBudget != nil {
+		if membrane.TokenBudget.MaxTokensPerRun > 0 {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN",
+				Value: fmt.Sprintf("%d", membrane.TokenBudget.MaxTokensPerRun),
+			})
+		}
+		if membrane.TokenBudget.Action != "" {
+			envs = append(envs, corev1.EnvVar{
+				Name:  "WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION",
+				Value: membrane.TokenBudget.Action,
+			})
+		}
+	}
+
 	return envs
 }
 

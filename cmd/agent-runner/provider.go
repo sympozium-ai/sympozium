@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -79,6 +81,18 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 	totalToolCalls := 0
 	var accumulated strings.Builder
 
+	// Per-run token budget enforcement from membrane config.
+	maxTokensPerRun := int64(0)
+	tokenBudgetAction := "halt"
+	if v := os.Getenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			maxTokensPerRun = n
+		}
+	}
+	if v := os.Getenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION"); v != "" {
+		tokenBudgetAction = v
+	}
+
 	for i := 0; i < maxToolIterations; i++ {
 		chatCtx, chatSpan := obs.startChatSpan(ctx,
 			attribute.String("gen_ai.system", p.Name()),
@@ -102,6 +116,26 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 		}
 		chatSpan.SetStatus(codes.Ok, "")
 		chatSpan.End()
+
+		// Per-run token budget check.
+		if maxTokensPerRun > 0 {
+			used := int64(totalInputTokens + totalOutputTokens)
+			if used >= maxTokensPerRun {
+				msg := fmt.Sprintf("Per-run token budget exceeded (%d/%d tokens used)", used, maxTokensPerRun)
+				if tokenBudgetAction == "halt" {
+					log.Printf("TOKEN BUDGET HALT: %s", msg)
+					text := accumulated.String()
+					if trimmed := strings.TrimSpace(res.Text); trimmed != "" {
+						text = trimmed
+					}
+					if text == "" {
+						text = msg
+					}
+					return text, totalInputTokens, totalOutputTokens, totalToolCalls, nil
+				}
+				log.Printf("TOKEN BUDGET WARN: %s", msg)
+			}
+		}
 
 		// Accumulate this turn's text (reasoning preamble on tool-calling
 		// turns, or the final answer on the terminal turn) so we can surface
