@@ -320,6 +320,12 @@ spec:
                       Required for vllm and tgi server types. These servers pull
                       directly from HuggingFace at container startup.
                     type: string
+                  sha256:
+                    description: |-
+                      SHA256 is the expected SHA-256 hash of the downloaded model file.
+                      When set, the download job verifies the file integrity after download
+                      and fails if the checksum does not match. Recommended for production use.
+                    type: string
                   url:
                     description: |-
                       URL is the download URL for a model file (e.g. GGUF).
