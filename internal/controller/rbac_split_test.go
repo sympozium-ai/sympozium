@@ -51,6 +51,29 @@ func TestRBACSplit_ControllerAndApiserverHaveSeparateRoles(t *testing.T) {
 	}
 }
 
+// TestRBACSplit_ApiserverHasNodeAccess validates that the apiserver ClusterRole
+// includes read access to nodes, which is required for the topology view,
+// provider discovery, and cluster status endpoints.
+func TestRBACSplit_ApiserverHasNodeAccess(t *testing.T) {
+	rbacPath := "../../charts/sympozium/templates/rbac.yaml"
+	data, err := os.ReadFile(rbacPath)
+	if err != nil {
+		t.Fatalf("read rbac.yaml: %v", err)
+	}
+	content := string(data)
+
+	docs := strings.Split(content, "---")
+	for _, doc := range docs {
+		if strings.Contains(doc, "kind: ClusterRole") &&
+			strings.Contains(doc, "-apiserver") &&
+			!strings.Contains(doc, "ClusterRoleBinding") {
+			if !strings.Contains(doc, `"nodes"`) {
+				t.Error("apiserver ClusterRole must include 'nodes' resource for topology/cluster-status endpoints")
+			}
+		}
+	}
+}
+
 // TestRBACSplit_ApiserverLacksRBACDelegation validates that the apiserver
 // ClusterRole cannot create/modify RBAC rules (no privilege escalation path).
 func TestRBACSplit_ApiserverLacksRBACDelegation(t *testing.T) {
