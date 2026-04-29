@@ -100,12 +100,34 @@ describe("Ensemble — Enable via Wizard", () => {
     // Step: Channels — skip.
     cy.wizardNext();
 
-    // Step: Confirm — verify summary and activate.
+    // Step: Confirm — verify summary and activate (or finalize channels first).
     cy.get("[role='dialog']").contains("lm-studio");
     cy.get("[role='dialog']").contains("qwen/qwen3.5-9b");
-    cy.get("[role='dialog']")
-      .contains("button", "Activate")
-      .click({ force: true });
+    cy.get("[role='dialog']").then(($dialog) => {
+      // If the ensemble has channels, the button says "Finalize Channels"
+      // and we need to go through channel action steps before the dialog closes.
+      if ($dialog.text().includes("Finalize Channels")) {
+        cy.wrap($dialog)
+          .contains("button", "Finalize Channels")
+          .click({ force: true });
+        // Complete any channel action steps
+        const finishChannels = (): void => {
+          cy.get("[role='dialog']", { timeout: 5000 }).then(($d) => {
+            if ($d.length && $d.find("button:contains('Next Channel')").length) {
+              cy.contains("button", "Next Channel").click({ force: true });
+              finishChannels();
+            } else if ($d.length && $d.find("button:contains('Activate')").length) {
+              cy.contains("button", "Activate").click({ force: true });
+            }
+          });
+        };
+        finishChannels();
+      } else {
+        cy.wrap($dialog)
+          .contains("button", "Activate")
+          .click({ force: true });
+      }
+    });
 
     // Wait for dialog to close.
     cy.get("[role='dialog']").should("not.exist", { timeout: 20000 });

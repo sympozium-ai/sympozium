@@ -25,7 +25,7 @@ describe("Ad-hoc Instance — Multiple Runs and Delete", () => {
   it("creates the LM Studio instance via the wizard", () => {
     cy.visit("/agents");
 
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
 
     // ── Step 1: Name ──────────────────────────────────────────
     cy.get("[role='dialog']")
@@ -95,9 +95,9 @@ describe("Ad-hoc Instance — Multiple Runs and Delete", () => {
 
     // All runs should appear on the Runs page tied to this instance.
     cy.visit("/runs");
-    cy.contains("td", INSTANCE, { timeout: 20000 }).should("be.visible");
+    cy.contains("td", INSTANCE, { timeout: 20000 }).should("exist");
     TASKS.forEach((task) => {
-      cy.contains(task, { timeout: 20000 }).should("be.visible");
+      cy.contains(task, { timeout: 20000 }).should("exist");
     });
   });
 

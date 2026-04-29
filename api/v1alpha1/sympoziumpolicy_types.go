@@ -31,6 +31,15 @@ type SympoziumPolicySpec struct {
 	// ModelPolicy defines model access restrictions for bound instances.
 	// +optional
 	ModelPolicy *ModelPolicySpec `json:"modelPolicy,omitempty"`
+
+	// ImagePolicy defines allowed container image registries for user-specified
+	// images in lifecycle hooks, sandbox overrides, and skill sidecars.
+	// +optional
+	ImagePolicy *ImagePolicySpec `json:"imagePolicy,omitempty"`
+
+	// LifecyclePolicy defines bounds on lifecycle hook RBAC requests.
+	// +optional
+	LifecyclePolicy *LifecyclePolicySpec `json:"lifecyclePolicy,omitempty"`
 }
 
 // ModelPolicySpec defines model access restrictions.
@@ -152,6 +161,24 @@ type EgressRule struct {
 	// Port is the allowed destination port.
 	// +optional
 	Port int `json:"port,omitempty"`
+}
+
+// ImagePolicySpec defines allowed container image registries for user-specified
+// images (lifecycle hooks, sandbox overrides, skill sidecars).
+type ImagePolicySpec struct {
+	// AllowedRegistries is a list of registry prefixes that images must match.
+	// Example: ["ghcr.io/sympozium-ai/", "docker.io/library/"]
+	// When empty, all registries are allowed (no restriction).
+	// +optional
+	AllowedRegistries []string `json:"allowedRegistries,omitempty"`
+}
+
+// LifecyclePolicySpec defines bounds on lifecycle hook RBAC requests.
+type LifecyclePolicySpec struct {
+	// DeniedResources is a list of Kubernetes resource types that lifecycle
+	// hooks may not request RBAC access to (e.g. "secrets", "clusterroles").
+	// +optional
+	DeniedResources []string `json:"deniedResources,omitempty"`
 }
 
 // SympoziumPolicyStatus defines the observed state of SympoziumPolicy.

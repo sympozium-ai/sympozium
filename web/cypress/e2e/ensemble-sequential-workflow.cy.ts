@@ -132,19 +132,27 @@ describe("Sequential Workflow — automatic trigger on completion", () => {
           {
             name: R0,
             displayName: "Primary Researcher",
-            systemPrompt: `You are a geography researcher. You state facts precisely.
+            systemPrompt: `You are a geography researcher.
 
-When given a task, state the answer with specific numbers, then call workflow_memory_store to save your finding. Do NOT use any tools except workflow_memory_store.`,
-            model: "qwen/qwen3.5-9b",
+RULES:
+1. Answer the question with the specific number first.
+2. Then call workflow_memory_store to save your finding.
+3. Your final response MUST include the actual number (e.g. "2.1 million" or "10,500 km").
+4. Do NOT use any tools except workflow_memory_store.`,
+            model: "brooooooklyn/qwen3.6-27b-ud-mlx",
             skills: ["memory"],
           },
           {
             name: R1,
             displayName: "Verification Researcher",
-            systemPrompt: `You are a verification researcher. You check work from the primary researcher.
+            systemPrompt: `You are a verification researcher.
 
-When triggered, call workflow_memory_search to find the primary researcher's findings, verify them, and call workflow_memory_store to save your verification. Do NOT use any tools except workflow_memory_search and workflow_memory_store.`,
-            model: "qwen/qwen3.5-9b",
+RULES:
+1. Call workflow_memory_search to find the primary researcher's findings.
+2. Verify the findings and state whether they are correct.
+3. Call workflow_memory_store to save your verification.
+4. Do NOT use any tools except workflow_memory_search and workflow_memory_store.`,
+            model: "brooooooklyn/qwen3.6-27b-ud-mlx",
             skills: ["memory"],
           },
         ],

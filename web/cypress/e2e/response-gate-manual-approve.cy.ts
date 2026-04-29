@@ -12,7 +12,7 @@ function applyInstance() {
   // through -- but we set gateDefault=block so the run stays held until
   // manual intervention via the UI.
   const manifest = `apiVersion: sympozium.ai/v1alpha1
-kind: SympoziumInstance
+kind: Agent
 metadata:
   name: ${INSTANCE}
   namespace: default

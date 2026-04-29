@@ -3,14 +3,14 @@
 
 const INSTANCE = `cy-webep-wiz-${Date.now()}`;
 
-describe("Create Instance — web-endpoint skill", () => {
+describe("Create Agent — web-endpoint skill", () => {
   after(() => {
     cy.deleteAgent(INSTANCE);
   });
 
   it("walks the wizard, enables web-endpoint, and creates the instance", () => {
     cy.visit("/agents");
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
 
     // ── Step 1: Name ──────────────────────────────────────────
     cy.get("[role='dialog']")

@@ -31,12 +31,12 @@ declare global {
       wizardBack(): Chainable<void>;
       /** Delete an instance by name via API (cleanup helper). */
       deleteAgent(name: string): Chainable<void>;
-      /** Create a minimal LM Studio SympoziumInstance via API. */
+      /** Create a minimal LM Studio Agent via API. */
       createLMStudioAgent(
         name: string,
         opts?: { skills?: string[] },
       ): Chainable<void>;
-      /** Create a minimal llama-server SympoziumInstance via API. */
+      /** Create a minimal llama-server Agent via API. */
       createLlamaServerAgent(
         name: string,
         opts?: { skills?: string[] },

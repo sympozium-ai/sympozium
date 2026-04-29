@@ -4,7 +4,7 @@
 describe("Instance name validation", () => {
   beforeEach(() => {
     cy.visit("/agents");
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
   });
 
   it("auto-sanitizes uppercase and spaces to lowercase hyphens", () => {

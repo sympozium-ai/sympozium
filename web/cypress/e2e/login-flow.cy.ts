@@ -17,11 +17,11 @@ describe("Login flow", () => {
 
   it("persists authenticated session across reload with a valid token", () => {
     cy.visit("/"); // token auto-injected via support override
-    cy.contains(/dashboard|instances|runs/i, { timeout: 20000 }).should(
+    cy.contains(/dashboard|agents|instances|runs/i, { timeout: 20000 }).should(
       "exist",
     );
     cy.reload();
-    cy.contains(/dashboard|instances|runs/i, { timeout: 20000 }).should(
+    cy.contains(/dashboard|agents|instances|runs/i, { timeout: 20000 }).should(
       "exist",
     );
   });

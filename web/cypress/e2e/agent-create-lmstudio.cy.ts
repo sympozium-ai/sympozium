@@ -2,7 +2,7 @@
 
 const INSTANCE = `cypress-lmstudio-${Date.now()}`;
 
-describe("Create Instance — LM Studio", () => {
+describe("Create Agent — LM Studio", () => {
   after(() => {
     cy.deleteAgent(INSTANCE);
   });
@@ -10,7 +10,7 @@ describe("Create Instance — LM Studio", () => {
   it("walks through the wizard and creates the instance", () => {
     cy.visit("/agents");
 
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
 
     // ── Step 1: Name ──────────────────────────────────────────
     cy.get("[role='dialog']")

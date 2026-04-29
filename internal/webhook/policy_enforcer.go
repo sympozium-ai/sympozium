@@ -121,6 +121,21 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 		return admission.Denied(err.Error())
 	}
 
+	// Validate env vars do not override sensitive variables
+	if err := pe.validateEnvVars(run); err != nil {
+		return admission.Denied(err.Error())
+	}
+
+	// Validate image sources against policy allowlist
+	if err := pe.validateImagePolicy(run, &policy); err != nil {
+		return admission.Denied(err.Error())
+	}
+
+	// Validate lifecycle RBAC bounds
+	if err := pe.validateLifecycleRBAC(run, &policy); err != nil {
+		return admission.Denied(err.Error())
+	}
+
 	return admission.Allowed("policy validated")
 }
 
@@ -305,6 +320,91 @@ func (pe *PolicyEnforcer) validateFeatureGates(run *sympoziumv1alpha1.AgentRun, 
 	return nil
 }
 
+// deniedEnvVarKeys lists environment variable names that cannot be set via
+// agentRun.spec.env to prevent injection attacks.
+var deniedEnvVarKeys = map[string]bool{
+	"PATH":            true,
+	"LD_PRELOAD":      true,
+	"LD_LIBRARY_PATH": true,
+	"HOME":            true,
+	"SHELL":           true,
+	"USER":            true,
+	"HOSTNAME":        true,
+}
+
+func (pe *PolicyEnforcer) validateEnvVars(run *sympoziumv1alpha1.AgentRun) error {
+	for key := range run.Spec.Env {
+		if deniedEnvVarKeys[key] {
+			return fmt.Errorf("environment variable %q is not allowed: overriding system variables is denied", key)
+		}
+	}
+	return nil
+}
+
+func (pe *PolicyEnforcer) validateImagePolicy(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
+	if policy.Spec.ImagePolicy == nil || len(policy.Spec.ImagePolicy.AllowedRegistries) == 0 {
+		return nil
+	}
+
+	var images []string
+
+	// Collect images from lifecycle hooks
+	if run.Spec.Lifecycle != nil {
+		for _, h := range run.Spec.Lifecycle.PreRun {
+			images = append(images, h.Image)
+		}
+		for _, h := range run.Spec.Lifecycle.PostRun {
+			images = append(images, h.Image)
+		}
+	}
+
+	// Collect sandbox image override
+	if run.Spec.Sandbox != nil && run.Spec.Sandbox.Image != "" {
+		images = append(images, run.Spec.Sandbox.Image)
+	}
+
+	for _, img := range images {
+		if !isImageAllowed(img, policy.Spec.ImagePolicy.AllowedRegistries) {
+			return fmt.Errorf("image %q is not from an allowed registry (allowed: %v)",
+				img, policy.Spec.ImagePolicy.AllowedRegistries)
+		}
+	}
+	return nil
+}
+
+// isImageAllowed checks if an image reference starts with one of the allowed registry prefixes.
+func isImageAllowed(image string, allowedRegistries []string) bool {
+	for _, registry := range allowedRegistries {
+		if strings.HasPrefix(image, registry) {
+			return true
+		}
+	}
+	return false
+}
+
+func (pe *PolicyEnforcer) validateLifecycleRBAC(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {
+	if run.Spec.Lifecycle == nil || len(run.Spec.Lifecycle.RBAC) == 0 {
+		return nil
+	}
+	if policy.Spec.LifecyclePolicy == nil || len(policy.Spec.LifecyclePolicy.DeniedResources) == 0 {
+		return nil
+	}
+
+	denied := make(map[string]bool)
+	for _, r := range policy.Spec.LifecyclePolicy.DeniedResources {
+		denied[r] = true
+	}
+
+	for _, rule := range run.Spec.Lifecycle.RBAC {
+		for _, res := range rule.Resources {
+			if denied[res] {
+				return fmt.Errorf("lifecycle RBAC requests access to denied resource %q", res)
+			}
+		}
+	}
+	return nil
+}
+
 // MutatingPolicyEnforcer is a mutating webhook that injects defaults based on SympoziumPolicy.
 type MutatingPolicyEnforcer struct {
 	Client  client.Client
@@ -462,4 +562,54 @@ func BuildAgentPodSecurityContext() *corev1.SecurityContext {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// ModelValidator is a validating webhook for Model CRs.
+type ModelValidator struct {
+	Log     logr.Logger
+	Decoder admission.Decoder
+}
+
+// Handle validates Model creation/updates.
+func (mv *ModelValidator) Handle(_ context.Context, req admission.Request) admission.Response {
+	model := &sympoziumv1alpha1.Model{}
+	if err := mv.Decoder.Decode(req, model); err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+
+	if err := mv.validateModelSource(model); err != nil {
+		return admission.Denied(err.Error())
+	}
+
+	return admission.Allowed("model validated")
+}
+
+func (mv *ModelValidator) validateModelSource(model *sympoziumv1alpha1.Model) error {
+	src := model.Spec.Source
+
+	// At least one source must be specified
+	if src.URL == "" && src.ModelID == "" {
+		return fmt.Errorf("model source must specify either url or modelID")
+	}
+
+	// Validate URL scheme for URL-based sources
+	if src.URL != "" {
+		if !strings.HasPrefix(src.URL, "https://") && !strings.HasPrefix(src.URL, "http://") {
+			return fmt.Errorf("model source URL must use http:// or https:// scheme")
+		}
+	}
+
+	// Validate SHA256 format if provided
+	if src.SHA256 != "" {
+		if len(src.SHA256) != 64 {
+			return fmt.Errorf("sha256 checksum must be exactly 64 hex characters, got %d", len(src.SHA256))
+		}
+		for _, c := range src.SHA256 {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return fmt.Errorf("sha256 checksum contains invalid character: %c", c)
+			}
+		}
+	}
+
+	return nil
 }

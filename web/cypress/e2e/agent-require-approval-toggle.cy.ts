@@ -19,7 +19,7 @@ describe("Instance -- require approval toggle", () => {
     cy.contains("td", INSTANCE, { timeout: 20000 })
       .parents("tr")
       .within(() => {
-        cy.get("[data-testid='instance-gate-badge']").should("not.exist");
+        cy.get("[data-testid='agent-gate-badge']").should("not.exist");
       });
 
     // Visit detail page and enable the gate.
@@ -29,7 +29,7 @@ describe("Instance -- require approval toggle", () => {
       .click();
 
     // Wait for the patch to complete.
-    cy.contains("Instance updated", { timeout: 10000 }).should("be.visible");
+    cy.contains("Agent updated", { timeout: 10000 }).should("be.visible");
 
     // Verify the toggle now shows "Disable".
     cy.get("[data-testid='gate-toggle-btn']", { timeout: 10000 }).should(
@@ -43,7 +43,7 @@ describe("Instance -- require approval toggle", () => {
     cy.contains("td", INSTANCE, { timeout: 20000 })
       .parents("tr")
       .within(() => {
-        cy.get("[data-testid='instance-gate-badge']", {
+        cy.get("[data-testid='agent-gate-badge']", {
           timeout: 10000,
         }).should("exist");
       });
@@ -72,7 +72,7 @@ describe("Instance -- require approval toggle", () => {
     cy.get("[data-testid='gate-toggle-btn']", { timeout: 10000 })
       .should("contain.text", "Disable")
       .click();
-    cy.contains("Instance updated", { timeout: 10000 }).should("be.visible");
+    cy.contains("Agent updated", { timeout: 10000 }).should("be.visible");
     cy.get("[data-testid='gate-toggle-btn']", { timeout: 10000 }).should(
       "contain.text",
       "Enable",
@@ -84,7 +84,7 @@ describe("Instance -- require approval toggle", () => {
     cy.contains("td", INSTANCE, { timeout: 20000 })
       .parents("tr")
       .within(() => {
-        cy.get("[data-testid='instance-gate-badge']").should("not.exist");
+        cy.get("[data-testid='agent-gate-badge']").should("not.exist");
       });
   });
 });

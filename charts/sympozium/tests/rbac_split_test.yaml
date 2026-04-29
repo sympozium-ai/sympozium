@@ -1,0 +1,15 @@
+# Test: Verify that the apiserver and controller have separate ClusterRoles.
+# This is validated by the Go tests in internal/controller/rbac_split_test.go
+# using static template rendering, but this file documents the expected structure.
+#
+# Expected ClusterRoles:
+#   1. sympozium-manager       — full CRUD for controller only
+#   2. sympozium-apiserver     — read-only + AgentRun create for apiserver only
+#   3. sympozium-web-proxy     — minimal for web proxy
+#   4. sympozium-node-probe    — node get/patch only
+#
+# Expected ClusterRoleBindings:
+#   1. sympozium-manager       → sympozium-controller-manager SA only (NOT apiserver)
+#   2. sympozium-apiserver     → sympozium-apiserver SA only
+#   3. sympozium-web-proxy     → sympozium-web-proxy SA
+#   4. sympozium-node-probe    → sympozium-node-probe SA

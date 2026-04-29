@@ -27,7 +27,7 @@ describe("Breadcrumbs — detail page navigation", () => {
 
     // Clicking "Agents" breadcrumb should navigate to the list.
     cy.get("nav").contains("a", "Agents").click();
-    cy.url().should("include", "/instances");
+    cy.url().should("include", "/agents");
   });
 
   it("shows breadcrumbs on the run detail page with instance link", () => {

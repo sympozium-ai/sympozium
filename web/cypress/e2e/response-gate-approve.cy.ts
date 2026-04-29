@@ -6,7 +6,7 @@ let RUN_NAME = "";
 
 function applyInstance() {
   const manifest = `apiVersion: sympozium.ai/v1alpha1
-kind: SympoziumInstance
+kind: Agent
 metadata:
   name: ${INSTANCE}
   namespace: default

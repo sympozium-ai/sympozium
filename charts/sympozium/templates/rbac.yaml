@@ -175,6 +175,66 @@ subjects:
     namespace: {{ include "sympozium.namespace" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sympozium.fullname" . }}-apiserver
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+rules:
+  # Sympozium CRDs — CRUD for REST API / web UI operations
+  - apiGroups: ["sympozium.ai"]
+    resources:
+      - agents
+      - agentruns
+      - sympoziumpolicies
+      - skillpacks
+      - sympoziumschedules
+      - ensembles
+      - sympoziumconfigs
+      - mcpservers
+      - models
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Status read/update
+  - apiGroups: ["sympozium.ai"]
+    resources:
+      - agents/status
+      - agentruns/status
+      - sympoziumpolicies/status
+      - ensembles/status
+      - models/status
+    verbs: ["get", "update", "patch"]
+  # Finalizers (needed for delete cascades)
+  - apiGroups: ["sympozium.ai"]
+    resources:
+      - agents/finalizers
+      - agentruns/finalizers
+      - ensembles/finalizers
+      - models/finalizers
+    verbs: ["update"]
+  # Read pods/logs for streaming run output
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  # Secrets — read + create (auth token setup)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # ConfigMaps, services, namespaces, service accounts
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "namespaces", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create"]
+  # Gateway API (apiserver manages gateway config)
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayclasses", "gateways", "httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if and .Values.agentSandbox.enabled .Values.agentSandbox.rbac }}
+  # Agent Sandbox CRD management (install/uninstall from UI)
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: {{ include "sympozium.fullname" . }}-manager
@@ -188,6 +248,18 @@ subjects:
   - kind: ServiceAccount
     name: sympozium-controller-manager
     namespace: {{ include "sympozium.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sympozium.fullname" . }}-apiserver
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sympozium.fullname" . }}-apiserver
+subjects:
   - kind: ServiceAccount
     name: sympozium-apiserver
     namespace: {{ include "sympozium.namespace" . }}

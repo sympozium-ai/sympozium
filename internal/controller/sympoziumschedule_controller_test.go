@@ -107,11 +107,17 @@ func TestSympoziumScheduleReconcile_CopiesProviderAndAuthSecretToRun(t *testing.
 	}
 
 	agentContainers, _ := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil, nil)
-	if len(agentContainers) == 0 || len(agentContainers[0].EnvFrom) == 0 || agentContainers[0].EnvFrom[0].SecretRef == nil {
-		t.Fatalf("expected scheduled run auth secret to be mounted via envFrom")
+	// Auth secrets are now injected as individual secretKeyRef entries (Fix 9).
+	found := false
+	for _, env := range agentContainers[0].Env {
+		if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil &&
+			env.ValueFrom.SecretKeyRef.Name == "inst-a-anthropic-key" {
+			found = true
+			break
+		}
 	}
-	if got := agentContainers[0].EnvFrom[0].SecretRef.Name; got != "inst-a-anthropic-key" {
-		t.Fatalf("mounted secret = %q, want inst-a-anthropic-key", got)
+	if !found {
+		t.Fatalf("expected scheduled run auth secret to be mounted via secretKeyRef")
 	}
 }
 

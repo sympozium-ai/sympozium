@@ -11,7 +11,7 @@ describe("Empty States — contextual guidance", () => {
       .clear()
       .type("zzz-nonexistent-xyz");
 
-    cy.contains("No instances match your search", { timeout: 10000 }).should(
+    cy.contains("No agents match your search", { timeout: 10000 }).should(
       "be.visible",
     );
   });
@@ -35,7 +35,7 @@ describe("Empty States — contextual guidance", () => {
       .clear()
       .type("zzz-nonexistent-xyz");
 
-    cy.contains("No persona packs match your search", {
+    cy.contains("No ensembles match your search", {
       timeout: 10000,
     }).should("be.visible");
   });

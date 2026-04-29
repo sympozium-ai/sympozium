@@ -236,11 +236,17 @@ func TestBuildContainers_AuthSecretRef(t *testing.T) {
 	run := newTestRun()
 	cs, _ := r.buildContainers(run, false, nil, nil, nil)
 
-	if len(cs[0].EnvFrom) == 0 {
-		t.Fatal("expected envFrom for auth secret")
+	// Auth secrets are now injected as individual secretKeyRef entries,
+	// not via envFrom (Fix 9: prevent wholesale secret leakage).
+	found := 0
+	for _, env := range cs[0].Env {
+		if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil &&
+			env.ValueFrom.SecretKeyRef.Name == "my-secret" {
+			found++
+		}
 	}
-	if cs[0].EnvFrom[0].SecretRef.Name != "my-secret" {
-		t.Errorf("secret = %q, want my-secret", cs[0].EnvFrom[0].SecretRef.Name)
+	if found == 0 {
+		t.Fatal("expected secretKeyRef entries for auth secret")
 	}
 }
 
@@ -751,7 +757,7 @@ func TestBuildContainers_PrivilegedSidecarUnconfinedSeccomp(t *testing.T) {
 	}
 }
 
-func TestBuildContainers_NonPrivilegedSidecarNoSeccompOverride(t *testing.T) {
+func TestBuildContainers_NonPrivilegedSidecarRestrictedSecurityContext(t *testing.T) {
 	r := &AgentRunReconciler{}
 	sidecars := []resolvedSidecar{
 		{
@@ -765,8 +771,18 @@ func TestBuildContainers_NonPrivilegedSidecarNoSeccompOverride(t *testing.T) {
 	cs, _ := r.buildContainers(newTestRun(), false, nil, sidecars, nil)
 
 	sidecar := cs[2]
-	if sidecar.SecurityContext != nil {
-		t.Errorf("non-privileged sidecar should have nil SecurityContext, got %+v", sidecar.SecurityContext)
+	if sidecar.SecurityContext == nil {
+		t.Fatal("non-privileged sidecar should have a restricted SecurityContext")
+	}
+	if sidecar.SecurityContext.AllowPrivilegeEscalation == nil || *sidecar.SecurityContext.AllowPrivilegeEscalation {
+		t.Error("non-privileged sidecar should have AllowPrivilegeEscalation=false")
+	}
+	if sidecar.SecurityContext.Capabilities == nil || len(sidecar.SecurityContext.Capabilities.Drop) == 0 {
+		t.Error("non-privileged sidecar should drop ALL capabilities")
+	}
+	// Should NOT have seccomp override or privileged flag
+	if sidecar.SecurityContext.Privileged != nil {
+		t.Error("non-privileged sidecar should not have Privileged set")
 	}
 }
 

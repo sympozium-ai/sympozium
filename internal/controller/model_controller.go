@@ -737,19 +737,37 @@ func (r *ModelReconciler) ensureDownloadJob(ctx context.Context, model *sympoziu
 	modelPath := filepath.Join(modelMountPath, filename)
 	tempPath := modelPath + ".tmp"
 
-	// Download with atomic rename: download to .tmp then move
+	// Download with atomic rename: download to .tmp then move.
+	// When a SHA256 checksum is provided, verify after download.
+	checksumScript := ""
+	if model.Spec.Source.SHA256 != "" {
+		checksumScript = fmt.Sprintf(`
+echo "Verifying SHA-256 checksum..."
+ACTUAL=$(sha256sum "%s" | cut -d ' ' -f1)
+EXPECTED="%s"
+if [ "$ACTUAL" != "$EXPECTED" ]; then
+  echo "Checksum mismatch: expected $EXPECTED, got $ACTUAL"
+  rm -f "%s"
+  exit 1
+fi
+echo "Checksum verified"`,
+			tempPath, model.Spec.Source.SHA256, tempPath,
+		)
+	}
+
 	downloadScript := fmt.Sprintf(`set -e
 if [ -f "%s" ]; then
   echo "Model file already exists, skipping download"
   exit 0
 fi
 echo "Downloading model from %s"
-curl -L --fail --retry 3 --retry-delay 5 -o "%s" "%s"
+curl -L --fail --retry 3 --retry-delay 5 -o "%s" "%s"%s
 mv "%s" "%s"
 echo "Download complete"`,
 		modelPath,
 		model.Spec.Source.URL,
 		tempPath, model.Spec.Source.URL,
+		checksumScript,
 		tempPath, modelPath,
 	)
 
@@ -766,12 +784,14 @@ echo "Download complete"`,
 			TTLSecondsAfterFinished: &ttlSeconds,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					RestartPolicy:   corev1.RestartPolicyNever,
+					SecurityContext: modelPodSecurityContext(),
 					Containers: []corev1.Container{
 						{
-							Name:    "download",
-							Image:   downloadJobImage,
-							Command: []string{"sh", "-c", downloadScript},
+							Name:            "download",
+							Image:           downloadJobImage,
+							Command:         []string{"sh", "-c", downloadScript},
+							SecurityContext: modelContainerSecurityContext(),
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "model-storage", MountPath: modelMountPath},
 							},
@@ -903,11 +923,14 @@ func (r *ModelReconciler) ensureDeployment(ctx context.Context, model *sympozium
 			},
 		}
 
+		container.SecurityContext = modelContainerSecurityContext()
+
 		deploy.Spec.Template.Spec = corev1.PodSpec{
-			Containers:   []corev1.Container{container},
-			Volumes:      volumes,
-			NodeSelector: model.Spec.NodeSelector,
-			Tolerations:  model.Spec.Tolerations,
+			SecurityContext: modelPodSecurityContext(),
+			Containers:      []corev1.Container{container},
+			Volumes:         volumes,
+			NodeSelector:    model.Spec.NodeSelector,
+			Tolerations:     model.Spec.Tolerations,
 		}
 
 		return nil
@@ -957,6 +980,32 @@ func (r *ModelReconciler) ensureService(ctx context.Context, model *sympoziumv1a
 // sanitizeName converts a model name to a valid K8s resource name component
 func sanitizeName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), ".", "-")
+}
+
+// modelPodSecurityContext returns a restricted PodSecurityContext for model pods.
+func modelPodSecurityContext() *corev1.PodSecurityContext {
+	runAsNonRoot := true
+	runAsUser := int64(1000)
+	fsGroup := int64(1000)
+	return &corev1.PodSecurityContext{
+		RunAsNonRoot: &runAsNonRoot,
+		RunAsUser:    &runAsUser,
+		FSGroup:      &fsGroup,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
+// modelContainerSecurityContext returns a restricted SecurityContext for model containers.
+func modelContainerSecurityContext() *corev1.SecurityContext {
+	noPrivEsc := false
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &noPrivEsc,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+	}
 }
 
 func (r *ModelReconciler) SetupWithManager(mgr ctrl.Manager) error {

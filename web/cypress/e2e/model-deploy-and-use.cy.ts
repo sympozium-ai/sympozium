@@ -158,7 +158,7 @@ describe("Model Deploy & Use", () => {
 
   it("auto-wires the model as a provider in the onboarding wizard", () => {
     cy.visit("/agents");
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
 
     // ── Step 1: Name ─────────────────────────────────────────
     cy.get("[role='dialog']")

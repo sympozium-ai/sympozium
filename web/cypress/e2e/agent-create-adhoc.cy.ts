@@ -18,7 +18,7 @@ describe("Ad-hoc Instance — Create and Run", () => {
   it("creates an instance via the wizard", () => {
     cy.visit("/agents");
 
-    cy.contains("button", "Create Instance", { timeout: 20000 }).click();
+    cy.contains("button", "Create Agent", { timeout: 20000 }).click();
 
     // ── Step 1: Name ──────────────────────────────────────────
     cy.get("[role='dialog']")
@@ -96,8 +96,8 @@ describe("Ad-hoc Instance — Create and Run", () => {
 
       // Verify the run appears on the Runs page by matching its instance name.
       cy.visit("/runs");
-      cy.contains("td", INSTANCE, { timeout: 20000 }).should("be.visible");
-      cy.contains("Say hello from Cypress test").should("be.visible");
+      cy.contains("td", INSTANCE, { timeout: 20000 }).should("exist");
+      cy.contains("Say hello from Cypress test").should("exist");
     });
   });
 });

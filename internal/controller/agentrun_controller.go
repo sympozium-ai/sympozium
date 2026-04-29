@@ -63,6 +63,35 @@ var (
 const agentRunFinalizer = "sympozium.ai/agentrun-finalizer"
 const systemNamespace = "sympozium-system"
 
+// allowedAuthSecretKeys lists the only Secret keys that will be injected from
+// an auth secret into the agent container. This prevents wholesale secret
+// leakage when a secret contains extra keys.
+var allowedAuthSecretKeys = []string{
+	"OPENAI_API_KEY",
+	"ANTHROPIC_API_KEY",
+	"AZURE_OPENAI_API_KEY",
+	"AZURE_OPENAI_ENDPOINT",
+	"OLLAMA_HOST",
+	"GOOGLE_API_KEY",
+	"MISTRAL_API_KEY",
+	"GROQ_API_KEY",
+	"DEEPSEEK_API_KEY",
+	"OPENROUTER_API_KEY",
+	"API_KEY",
+}
+
+// deniedEnvVarKeys lists environment variable names that cannot be set via
+// agentRun.spec.env to prevent injection attacks.
+var deniedEnvVarKeys = map[string]bool{
+	"PATH":            true,
+	"LD_PRELOAD":      true,
+	"LD_LIBRARY_PATH": true,
+	"HOME":            true,
+	"SHELL":           true,
+	"USER":            true,
+	"HOSTNAME":        true,
+}
+
 // DefaultRunHistoryLimit is how many completed AgentRuns to keep per instance
 // before the oldest are pruned.
 const DefaultRunHistoryLimit = 50
@@ -1817,16 +1846,23 @@ func (r *AgentRunReconciler) buildContainers(
 		},
 	}
 
-	// Inject auth secret if provided.
+	// Inject auth secret keys individually to avoid leaking unrelated secret
+	// data into the agent container. Only known provider keys are mounted.
 	if agentRun.Spec.Model.AuthSecretRef != "" {
-		containers[0].EnvFrom = []corev1.EnvFromSource{
-			{
-				SecretRef: &corev1.SecretEnvSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: agentRun.Spec.Model.AuthSecretRef,
+		for _, key := range allowedAuthSecretKeys {
+			optional := true
+			containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+				Name: key,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: agentRun.Spec.Model.AuthSecretRef,
+						},
+						Key:      key,
+						Optional: &optional,
 					},
 				},
-			},
+			})
 		}
 	}
 
@@ -2177,6 +2213,14 @@ func (r *AgentRunReconciler) buildContainers(
 			}
 			if sidecarSC.Privileged != nil || sidecarSC.RunAsUser != nil || sidecarSC.RunAsNonRoot != nil {
 				container.SecurityContext = sidecarSC
+			}
+		} else {
+			// Apply restricted security context to non-privileged skill sidecars.
+			container.SecurityContext = &corev1.SecurityContext{
+				AllowPrivilegeEscalation: &noPrivEsc,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{"ALL"},
+				},
 			}
 		}
 		// Only set Command if the SkillPack specifies one; otherwise

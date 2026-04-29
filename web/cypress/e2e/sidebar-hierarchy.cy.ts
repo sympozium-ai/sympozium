@@ -7,7 +7,7 @@ describe("Sidebar — grouped navigation", () => {
 
     // Section headers should be visible.
     cy.get("aside").contains("Agents", { timeout: 20000 }).should("exist");
-    cy.get("aside").contains("Configuration").should("exist");
+    cy.get("aside").contains("Infrastructure").should("exist");
 
     // All nav links should be present.
     cy.get("aside").contains("Dashboard").should("exist");
@@ -30,13 +30,13 @@ describe("Sidebar — grouped navigation", () => {
 
     // Click Instances in sidebar.
     cy.get("aside").contains("a", "Agents").click();
-    cy.url().should("include", "/instances");
+    cy.url().should("include", "/agents");
 
     // Click Runs in sidebar.
     cy.get("aside").contains("a", "Runs").click();
     cy.url().should("include", "/runs");
 
-    // Click Policies in sidebar (Configuration section).
+    // Click Policies in sidebar (Infrastructure section).
     cy.get("aside").contains("a", "Policies").click();
     cy.url().should("include", "/policies");
   });

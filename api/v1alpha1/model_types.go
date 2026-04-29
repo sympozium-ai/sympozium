@@ -65,6 +65,12 @@ type ModelSource struct {
 	// directly from HuggingFace at container startup.
 	// +optional
 	ModelID string `json:"modelID,omitempty"`
+
+	// SHA256 is the expected SHA-256 hash of the downloaded model file.
+	// When set, the download job verifies the file integrity after download
+	// and fails if the checksum does not match. Recommended for production use.
+	// +optional
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // ModelStorage configures the PersistentVolumeClaim for model weights.
