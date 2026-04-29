@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.11](https://github.com/sympozium-ai/sympozium/compare/v0.10.10...v0.10.11) (2026-04-29)
+
+
+### Features
+
+* enforce ExposeTags and MaxTokensPerRun membrane fields ([b6aa66c](https://github.com/sympozium-ai/sympozium/commit/b6aa66c1b2054169fbe5608163ae5aa50b68b078))
+
+
+### Bug Fixes
+
+* add missing nodes RBAC for apiserver — restores topology and cluster status ([58ad746](https://github.com/sympozium-ai/sympozium/commit/58ad746c8fba7d1d18365ee023d5492372acacd7))
+
 ## [0.10.10](https://github.com/sympozium-ai/sympozium/compare/v0.10.9...v0.10.10) (2026-04-29)
 
 
