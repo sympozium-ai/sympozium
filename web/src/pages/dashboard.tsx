@@ -741,23 +741,38 @@ export function DashboardPage() {
             {canaryConfig?.enabled && (
               <div className="text-center">
                 <div className="text-xs text-muted-foreground">System Health</div>
-                <div
-                  className={cn(
-                    "text-lg font-semibold",
-                    canaryConfig.healthStatus === "healthy"
-                      ? "text-green-400"
-                      : canaryConfig.healthStatus === "degraded"
-                        ? "text-yellow-400"
-                        : canaryConfig.healthStatus === "unhealthy"
-                          ? "text-red-400"
-                          : "text-muted-foreground",
-                  )}
-                >
-                  {canaryConfig.healthStatus
-                    ? canaryConfig.healthStatus.charAt(0).toUpperCase() +
-                      canaryConfig.healthStatus.slice(1)
-                    : "Pending"}
-                </div>
+                {canaryConfig.checks && canaryConfig.checks.length > 0 ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    {canaryConfig.checks.map((check) => (
+                      <div
+                        key={check.name}
+                        title={`${check.name}: ${check.details}`}
+                        className={cn(
+                          "h-3 w-3 rounded-sm",
+                          check.status === "pass" ? "bg-green-500" : "bg-red-500",
+                        )}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    className={cn(
+                      "text-lg font-semibold",
+                      canaryConfig.healthStatus === "healthy"
+                        ? "text-green-400"
+                        : canaryConfig.healthStatus === "degraded"
+                          ? "text-yellow-400"
+                          : canaryConfig.healthStatus === "unhealthy"
+                            ? "text-red-400"
+                            : "text-muted-foreground",
+                    )}
+                  >
+                    {canaryConfig.healthStatus
+                      ? canaryConfig.healthStatus.charAt(0).toUpperCase() +
+                        canaryConfig.healthStatus.slice(1)
+                      : "Pending"}
+                  </div>
+                )}
               </div>
             )}
           </div>

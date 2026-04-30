@@ -317,6 +317,12 @@ export interface PatchGatewayConfigRequest {
   tlsSecretName?: string;
 }
 
+export interface CanaryCheck {
+  name: string;
+  status: "pass" | "fail";
+  details: string;
+}
+
 export interface CanaryConfigResponse {
   enabled: boolean;
   interval?: string;
@@ -329,6 +335,7 @@ export interface CanaryConfigResponse {
   lastRunTime?: string;
   healthStatus?: string;
   lastRunResult?: string;
+  checks?: CanaryCheck[];
 }
 
 

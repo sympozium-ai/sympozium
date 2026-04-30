@@ -215,8 +215,29 @@ function SystemCanarySection() {
                   </div>
                 )}
 
-              {/* Health report */}
-              {canary?.lastRunResult && (
+              {/* Health check matrix or report fallback */}
+              {canary?.checks && canary.checks.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {canary.checks.map((check) => (
+                    <div
+                      key={check.name}
+                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                        check.status === "pass"
+                          ? "border-green-500/30 bg-green-500/5"
+                          : "border-red-500/30 bg-red-500/5"
+                      }`}
+                      title={check.details}
+                    >
+                      {check.status === "pass" ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                      )}
+                      <span className="truncate">{check.name}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : canary?.lastRunResult ? (
                 <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
                   <div className="prose prose-sm prose-invert prose-feed max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -224,7 +245,7 @@ function SystemCanarySection() {
                     </ReactMarkdown>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Provider summary + controls */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">

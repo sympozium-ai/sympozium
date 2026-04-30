@@ -2852,17 +2852,25 @@ func applyGatewayPatch(gw *sympoziumv1alpha1.GatewaySpec, req *PatchGatewayConfi
 
 // CanaryConfigResponse is the response for GET /api/v1/canary.
 type CanaryConfigResponse struct {
-	Enabled         bool   `json:"enabled"`
-	Interval        string `json:"interval,omitempty"`
-	Model           string `json:"model,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	BaseURL         string `json:"baseURL,omitempty"`
-	AuthSecretRef   string `json:"authSecretRef,omitempty"`
-	EnsembleCreated bool   `json:"ensembleCreated"`
-	LastRunPhase    string `json:"lastRunPhase,omitempty"`
-	LastRunTime     string `json:"lastRunTime,omitempty"`
-	HealthStatus    string `json:"healthStatus,omitempty"`
-	LastRunResult   string `json:"lastRunResult,omitempty"`
+	Enabled         bool          `json:"enabled"`
+	Interval        string        `json:"interval,omitempty"`
+	Model           string        `json:"model,omitempty"`
+	Provider        string        `json:"provider,omitempty"`
+	BaseURL         string        `json:"baseURL,omitempty"`
+	AuthSecretRef   string        `json:"authSecretRef,omitempty"`
+	EnsembleCreated bool          `json:"ensembleCreated"`
+	LastRunPhase    string        `json:"lastRunPhase,omitempty"`
+	LastRunTime     string        `json:"lastRunTime,omitempty"`
+	HealthStatus    string        `json:"healthStatus,omitempty"`
+	LastRunResult   string        `json:"lastRunResult,omitempty"`
+	Checks          []CanaryCheck `json:"checks,omitempty"`
+}
+
+// CanaryCheck is a single health check result parsed from the canary report.
+type CanaryCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"` // "pass" or "fail"
+	Details string `json:"details"`
 }
 
 // PatchCanaryConfigRequest is the request body for PATCH /api/v1/canary.
@@ -2935,6 +2943,7 @@ func (s *Server) getCanaryConfig(w http.ResponseWriter, r *http.Request) {
 				case strings.Contains(upper, "HEALTHY"):
 					resp.HealthStatus = "healthy"
 				}
+				resp.Checks = parseCanaryChecks(latest.Status.Result)
 			} else if latest.Status.Phase == "Failed" {
 				resp.HealthStatus = "unhealthy"
 			}
@@ -2942,6 +2951,39 @@ func (s *Server) getCanaryConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
+}
+
+// parseCanaryChecks extracts individual check rows from the canary markdown table.
+// It looks for rows matching "| <name> | PASS/FAIL | <details> |".
+func parseCanaryChecks(result string) []CanaryCheck {
+	var checks []CanaryCheck
+	for _, line := range strings.Split(result, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") || strings.HasPrefix(line, "|--") || strings.HasPrefix(line, "| Check") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		// Expect: "", name, status, details, ""
+		if len(parts) < 4 {
+			continue
+		}
+		name := strings.TrimSpace(parts[1])
+		status := strings.TrimSpace(parts[2])
+		details := strings.TrimSpace(parts[3])
+		if name == "" || name == "Check" {
+			continue
+		}
+		upper := strings.ToUpper(status)
+		if upper != "PASS" && upper != "FAIL" {
+			continue
+		}
+		checks = append(checks, CanaryCheck{
+			Name:    name,
+			Status:  strings.ToLower(upper),
+			Details: details,
+		})
+	}
+	return checks
 }
 
 func (s *Server) patchCanaryConfig(w http.ResponseWriter, r *http.Request) {
