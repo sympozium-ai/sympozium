@@ -1874,6 +1874,13 @@ func (r *AgentRunReconciler) buildContainers(
 		)
 	}
 
+	// Inject CANARY_MODE flag so the agent-runner runs built-in health checks.
+	if agentRun.Spec.CanaryMode {
+		containers[0].Env = append(containers[0].Env,
+			corev1.EnvVar{Name: "CANARY_MODE", Value: "true"},
+		)
+	}
+
 	// Add memory volume mount if legacy memory is enabled.
 	if memoryEnabled {
 		containers[0].VolumeMounts = append(containers[0].VolumeMounts,

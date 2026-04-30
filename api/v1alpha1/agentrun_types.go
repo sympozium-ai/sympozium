@@ -76,6 +76,13 @@ type AgentRunSpec struct {
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
 
+	// CanaryMode runs built-in health checks instead of the LLM conversation
+	// loop. The agent executes deterministic platform checks (API server,
+	// cluster info, k8s resources) and one minimal LLM call to verify
+	// provider connectivity, then outputs a structured JSON result.
+	// +optional
+	CanaryMode bool `json:"canaryMode,omitempty"`
+
 	// ImagePullSecrets are secrets to use when pulling container images.
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`

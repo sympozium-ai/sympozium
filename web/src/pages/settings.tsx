@@ -217,7 +217,7 @@ function SystemCanarySection() {
 
               {/* Health check matrix or report fallback */}
               {canary?.checks && canary.checks.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {canary.checks.map((check) => (
                     <div
                       key={check.name}
@@ -226,14 +226,18 @@ function SystemCanarySection() {
                           ? "border-green-500/30 bg-green-500/5"
                           : "border-red-500/30 bg-red-500/5"
                       }`}
-                      title={check.details}
                     >
                       {check.status === "pass" ? (
                         <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
                       ) : (
                         <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
                       )}
-                      <span className="truncate">{check.name}</span>
+                      <div className="min-w-0">
+                        <span className="font-medium">{check.name}</span>
+                        <span className="text-muted-foreground ml-2 truncate">
+                          {check.details}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

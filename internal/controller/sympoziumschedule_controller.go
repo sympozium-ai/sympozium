@@ -210,6 +210,11 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		},
 	}
 
+	// Enable canary mode for system canary runs.
+	if instance.Labels["sympozium.ai/ensemble"] == "system-canary" {
+		agentRun.Spec.CanaryMode = true
+	}
+
 	// Copy model config from instance.
 	if instance.Spec.Agents.Default.BaseURL != "" {
 		agentRun.Spec.Model.BaseURL = instance.Spec.Agents.Default.BaseURL

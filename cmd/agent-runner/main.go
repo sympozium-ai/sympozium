@@ -163,6 +163,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Canary mode: run deterministic health checks + one LLM connectivity test.
+	if getEnv("CANARY_MODE", "") == "true" {
+		result := runCanary(context.Background())
+		emitCanaryResult(result)
+		os.Exit(0)
+	}
+
 	systemPrompt := getEnv("SYSTEM_PROMPT", "You are a helpful AI assistant.")
 	provider := strings.ToLower(getEnv("MODEL_PROVIDER", "openai"))
 	modelName := getEnv("MODEL_NAME", "gpt-4o-mini")

@@ -2934,16 +2934,38 @@ func (s *Server) getCanaryConfig(w http.ResponseWriter, r *http.Request) {
 			// Use result if available
 			if latest.Status.Result != "" {
 				resp.LastRunResult = latest.Status.Result
-				upper := strings.ToUpper(latest.Status.Result)
-				switch {
-				case strings.Contains(upper, "UNHEALTHY"):
-					resp.HealthStatus = "unhealthy"
-				case strings.Contains(upper, "DEGRADED"):
-					resp.HealthStatus = "degraded"
-				case strings.Contains(upper, "HEALTHY"):
-					resp.HealthStatus = "healthy"
+
+				// Try structured JSON first (canary mode).
+				var structured struct {
+					Overall string `json:"overall"`
+					Checks  []struct {
+						Name    string `json:"name"`
+						Status  string `json:"status"`
+						Details string `json:"details"`
+					} `json:"checks"`
 				}
-				resp.Checks = parseCanaryChecks(latest.Status.Result)
+				if json.Unmarshal([]byte(latest.Status.Result), &structured) == nil && structured.Overall != "" {
+					resp.HealthStatus = structured.Overall
+					for _, c := range structured.Checks {
+						resp.Checks = append(resp.Checks, CanaryCheck{
+							Name:    c.Name,
+							Status:  c.Status,
+							Details: c.Details,
+						})
+					}
+				} else {
+					// Fallback: legacy markdown parsing.
+					upper := strings.ToUpper(latest.Status.Result)
+					switch {
+					case strings.Contains(upper, "UNHEALTHY"):
+						resp.HealthStatus = "unhealthy"
+					case strings.Contains(upper, "DEGRADED"):
+						resp.HealthStatus = "degraded"
+					case strings.Contains(upper, "HEALTHY"):
+						resp.HealthStatus = "healthy"
+					}
+					resp.Checks = parseCanaryChecks(latest.Status.Result)
+				}
 			} else if latest.Status.Phase == "Failed" {
 				resp.HealthStatus = "unhealthy"
 			}
