@@ -1,0 +1,2 @@
+# sympozium-crds has no configurable values; the chart exists solely to ship
+# CRDs as templates so they can be upgraded via `helm upgrade`.

@@ -1,0 +1,24 @@
+apiVersion: v2
+name: sympozium-crds
+description: Sympozium CustomResourceDefinitions — installed and upgraded as ordinary Helm resources so they participate in `helm upgrade`.
+type: application
+version: 0.10.8
+appVersion: 0.10.8
+home: https://github.com/sympozium-ai/sympozium
+sources:
+  - https://github.com/sympozium-ai/sympozium
+maintainers:
+  - name: sympozium-ai
+    url: https://github.com/sympozium-ai
+  - name: Three Foxes (in a Trenchcoat)
+    email: threefoxes53235@gmail.com
+    url: https://github.com/three-foxes-in-a-trenchcoat
+keywords:
+  - kubernetes
+  - ai
+  - agents
+  - agentic
+  - llm
+  - sympozium
+  - crds
+icon: https://raw.githubusercontent.com/sympozium-ai/sympozium/main/icon.png

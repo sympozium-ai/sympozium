@@ -135,11 +135,15 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sync CRDs to Helm chart
+      - name: Sync CRDs to Helm charts
         run: |
-          echo "Syncing CRDs to Helm chart..."
+          echo "Syncing CRDs to charts/sympozium/crds/..."
           mkdir -p charts/sympozium/crds
           cp config/crd/bases/*.yaml charts/sympozium/crds/
+          echo "Syncing CRDs to charts/sympozium-crds/templates/..."
+          mkdir -p charts/sympozium-crds/templates
+          rm -f charts/sympozium-crds/templates/sympozium.ai_*.yaml
+          cp config/crd/bases/*.yaml charts/sympozium-crds/templates/
 
       - name: Commit and push
         run: |
@@ -163,14 +167,18 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Package chart
-        run: helm package charts/sympozium --destination .helm-packages
+      - name: Package charts
+        run: |
+          helm package charts/sympozium-crds --destination .helm-packages
+          helm package charts/sympozium      --destination .helm-packages
 
-      - name: Upload chart to release
+      - name: Upload charts to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: .helm-packages/sympozium-*.tgz
+          files: |
+            .helm-packages/sympozium-*.tgz
+            .helm-packages/sympozium-crds-*.tgz
 
       - name: Trigger docs rebuild
         env:

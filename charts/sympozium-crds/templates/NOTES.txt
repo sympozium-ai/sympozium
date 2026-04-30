@@ -1,0 +1,19 @@
+Sympozium CRDs {{ .Chart.AppVersion }} installed.
+
+Next steps — install the control plane in the same namespace:
+
+  helm upgrade --install sympozium ./charts/sympozium \
+    --namespace {{ .Release.Namespace }} \
+    --skip-crds \
+    --set createNamespace=false
+
+ UNINSTALL ORDERING
+
+  Uninstalling THIS chart deletes the Sympozium CRDs, which cascade-deletes
+  every Agent, AgentRun, SkillPack, Ensemble, SympoziumPolicy, etc. in the
+  cluster — across ALL namespaces.
+
+  Always uninstall the `sympozium` release FIRST, then this one:
+
+    helm uninstall sympozium      -n {{ .Release.Namespace }}
+    helm uninstall sympozium-crds -n {{ .Release.Namespace }}

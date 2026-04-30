@@ -1,0 +1,254 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: sympoziumconfigs.sympozium.ai
+spec:
+  group: sympozium.ai
+  names:
+    kind: SympoziumConfig
+    listKind: SympoziumConfigList
+    plural: sympoziumconfigs
+    singular: sympoziumconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.gateway.enabled
+      name: Gateway
+      type: boolean
+    - jsonPath: .spec.gateway.baseDomain
+      name: Domain
+      type: string
+    - jsonPath: .spec.canary.enabled
+      name: Canary
+      priority: 1
+      type: boolean
+    - jsonPath: .status.canary.healthStatus
+      name: Health
+      priority: 1
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SympoziumConfig is the Schema for the sympoziumconfigs API.
+          It holds platform-wide settings such as gateway configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SympoziumConfigSpec defines the desired platform-wide configuration.
+            properties:
+              canary:
+                description: |-
+                  Canary configures the built-in system health canary.
+                  When enabled, a canary Ensemble is created that periodically
+                  validates end-to-end platform health.
+                properties:
+                  authSecretRef:
+                    description: AuthSecretRef is the name of a Secret containing
+                      provider API keys.
+                    type: string
+                  baseURL:
+                    description: BaseURL overrides the provider API endpoint (for
+                      local models or proxies).
+                    type: string
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled is the master switch for the system canary.
+                      When true, a canary Ensemble is created/enabled.
+                      When false, the canary Ensemble is disabled (but not deleted).
+                    type: boolean
+                  interval:
+                    default: 30m
+                    description: Interval is the health check interval (e.g. "15m",
+                      "30m", "1h").
+                    type: string
+                  model:
+                    description: Model is the LLM model to use (e.g. "gpt-4o", "claude-sonnet-4-20250514").
+                    type: string
+                  provider:
+                    description: Provider is the LLM provider (e.g. "openai", "anthropic",
+                      "ollama").
+                    type: string
+                required:
+                - enabled
+                type: object
+              gateway:
+                description: Gateway configures the shared Envoy Gateway infrastructure.
+                properties:
+                  baseDomain:
+                    description: |-
+                      BaseDomain is the wildcard base domain for instance hostnames.
+                      Instances get <name>.<baseDomain> as their hostname.
+                    type: string
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled is the master switch for the Gateway.
+                      When false, Gateway and GatewayClass resources are removed.
+                    type: boolean
+                  gatewayClassName:
+                    default: sympozium
+                    description: GatewayClassName is the name of the GatewayClass
+                      to create.
+                    type: string
+                  name:
+                    default: sympozium-gateway
+                    description: Name is the Gateway resource name.
+                    type: string
+                  tls:
+                    description: TLS configures HTTPS on the Gateway.
+                    properties:
+                      certManagerClusterIssuer:
+                        description: |-
+                          CertManagerClusterIssuer is the cert-manager ClusterIssuer name.
+                          When set, the Gateway is annotated for automatic certificate provisioning.
+                        type: string
+                      enabled:
+                        default: false
+                        description: Enabled turns on the HTTPS listener.
+                        type: boolean
+                      secretName:
+                        default: sympozium-wildcard-cert
+                        description: SecretName is the TLS certificate Secret name.
+                        type: string
+                    required:
+                    - enabled
+                    type: object
+                required:
+                - enabled
+                type: object
+            type: object
+          status:
+            description: SympoziumConfigStatus defines the observed state of SympoziumConfig.
+            properties:
+              canary:
+                description: Canary reports the observed state of the system canary.
+                properties:
+                  ensembleCreated:
+                    description: EnsembleCreated indicates the canary Ensemble CR
+                      exists.
+                    type: boolean
+                  healthStatus:
+                    description: 'HealthStatus is the overall health from the last
+                      report: healthy, degraded, unhealthy, unknown.'
+                    type: string
+                  lastRunPhase:
+                    description: LastRunPhase is the phase of the most recent canary
+                      run.
+                    type: string
+                  lastRunTime:
+                    description: LastRunTime is the completion time of the most recent
+                      canary run.
+                    type: string
+                required:
+                - ensembleCreated
+                type: object
+              conditions:
+                description: Conditions represent the latest available observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              gateway:
+                description: Gateway reports the observed state of the Gateway.
+                properties:
+                  address:
+                    description: Address is the external IP or hostname of the Gateway.
+                    type: string
+                  listenerCount:
+                    description: ListenerCount is the number of active listeners.
+                    type: integer
+                  ready:
+                    description: Ready indicates whether the Gateway is accepting
+                      traffic.
+                    type: boolean
+                required:
+                - ready
+                type: object
+              phase:
+                description: 'Phase is the current phase: Disabled, Pending, Ready,
+                  or Error.'
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

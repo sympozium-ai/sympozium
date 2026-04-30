@@ -635,8 +635,10 @@ networkPolicies:
 Then upgrade:
 
 ```bash
-helm upgrade sympozium oci://ghcr.io/sympozium-ai/sympozium/charts/sympozium \
-  -n sympozium-system -f values.yaml
+helm upgrade sympozium-crds oci://ghcr.io/sympozium-ai/sympozium/charts/sympozium-crds \
+  -n sympozium-system
+helm upgrade sympozium      oci://ghcr.io/sympozium-ai/sympozium/charts/sympozium \
+  -n sympozium-system --skip-crds --set createNamespace=false -f values.yaml
 ```
 
 ## What's next

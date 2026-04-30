@@ -16,6 +16,16 @@
           "type": "yaml",
           "path": "charts/sympozium/Chart.yaml",
           "jsonpath": "$.appVersion"
+        },
+        {
+          "type": "yaml",
+          "path": "charts/sympozium-crds/Chart.yaml",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "yaml",
+          "path": "charts/sympozium-crds/Chart.yaml",
+          "jsonpath": "$.appVersion"
         }
       ]
     }
