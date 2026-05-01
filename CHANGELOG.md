@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.16](https://github.com/sympozium-ai/sympozium/compare/v0.10.15...v0.10.16) (2026-05-01)
+
+
+### Features
+
+* auto-inject delegation/supervision context from ensemble relationships ([e38e93e](https://github.com/sympozium-ai/sympozium/commit/e38e93ef6f930baf3149c4765a14644a1307154f))
+
+
+### Bug Fixes
+
+* canary first run never triggers after duplicate-prevention change ([0bbf126](https://github.com/sympozium-ai/sympozium/commit/0bbf12614d18fb260acb498514d204f34b0f1126))
+* canary first run never triggers after duplicate-prevention change ([2e1caeb](https://github.com/sympozium-ai/sympozium/commit/2e1caeb2e0fbdf33b07463f059a5e6f90ec2a2ac))
+
 ## [0.10.15](https://github.com/sympozium-ai/sympozium/compare/v0.10.14...v0.10.15) (2026-05-01)
 
 
