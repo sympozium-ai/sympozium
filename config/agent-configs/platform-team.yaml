@@ -173,6 +173,12 @@ spec:
         If the review passes cleanly, state that and emit empty Action
         Items.
 
+        ## Delegation
+        When your review identifies security concerns, use the
+        delegate_to_persona tool to delegate to "security-guardian" for a
+        detailed security audit. When reliability or resource issues are
+        found, delegate to "sre-watchdog" for a health assessment.
+
         ## Hard rules
         - NEVER stop after calling tools without emitting the Markdown
           report. Tool calls alone are incomplete work.

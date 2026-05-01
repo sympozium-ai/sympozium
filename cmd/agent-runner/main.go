@@ -198,6 +198,17 @@ func main() {
 		log.Printf("channel context injected: channel=%s chatId=%s", sourceChannel, sourceChatID)
 	}
 
+	// If this agent is part of an ensemble with relationships, inject
+	// delegation/supervision guidance so the LLM knows when and how to
+	// use delegate_to_persona. This works for both built-in and
+	// user-created dynamic ensembles.
+	if relJSON := getEnv("ENSEMBLE_RELATIONSHIPS", ""); relJSON != "" {
+		if ctx := buildRelationshipContext(relJSON); ctx != "" {
+			systemPrompt += ctx
+			log.Printf("relationship context injected for persona %s", getEnv("PERSONA_NAME", "unknown"))
+		}
+	}
+
 	// Resolve tool definitions.
 	var tools []ToolDef
 	if toolsEnabled {
@@ -607,4 +618,75 @@ func stripMemoryMarkers(response string) string {
 		response = response[:startIdx] + response[startIdx+endIdx+len(endMarker):]
 	}
 	return strings.TrimSpace(response)
+}
+
+// buildRelationshipContext parses the ENSEMBLE_RELATIONSHIPS JSON and produces
+// a system prompt section instructing the LLM how to use delegate_to_persona
+// and what supervision edges exist.
+func buildRelationshipContext(relJSON string) string {
+	type rel struct {
+		Target      string `json:"target"`
+		DisplayName string `json:"displayName,omitempty"`
+		Type        string `json:"type"`
+		Condition   string `json:"condition,omitempty"`
+	}
+	var rels []rel
+	if err := json.Unmarshal([]byte(relJSON), &rels); err != nil || len(rels) == 0 {
+		return ""
+	}
+
+	var delegations, supervisions []rel
+	for _, r := range rels {
+		switch r.Type {
+		case "delegation":
+			delegations = append(delegations, r)
+		case "supervision":
+			supervisions = append(supervisions, r)
+		}
+	}
+
+	if len(delegations) == 0 && len(supervisions) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n\n## Team Relationships\n\n")
+
+	if len(delegations) > 0 {
+		sb.WriteString("You can delegate tasks to the following team members using the ")
+		sb.WriteString("`delegate_to_persona` tool. When a task matches their expertise, ")
+		sb.WriteString("delegate rather than handling it yourself.\n\n")
+		for _, d := range delegations {
+			label := d.Target
+			if d.DisplayName != "" {
+				label = fmt.Sprintf("%s (%s)", d.DisplayName, d.Target)
+			}
+			sb.WriteString(fmt.Sprintf("- **%s**", label))
+			if d.Condition != "" {
+				sb.WriteString(fmt.Sprintf(" — %s", d.Condition))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\nTo delegate, call `delegate_to_persona` with `targetPersona` set to ")
+		sb.WriteString("the persona name (e.g. ")
+		sb.WriteString(fmt.Sprintf("%q", delegations[0].Target))
+		sb.WriteString(") and a clear `task` description with all necessary context.\n")
+	}
+
+	if len(supervisions) > 0 {
+		sb.WriteString("\nYou supervise the following team members (read-only monitoring):\n\n")
+		for _, s := range supervisions {
+			label := s.Target
+			if s.DisplayName != "" {
+				label = fmt.Sprintf("%s (%s)", s.DisplayName, s.Target)
+			}
+			sb.WriteString(fmt.Sprintf("- **%s**", label))
+			if s.Condition != "" {
+				sb.WriteString(fmt.Sprintf(" — %s", s.Condition))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String()
 }

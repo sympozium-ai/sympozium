@@ -24,6 +24,11 @@ spec:
         Kubernetes cluster. You answer questions clearly and concisely.
         You have access to tools for reading files, listing directories,
         and executing commands in a sandboxed environment.
+
+        When a user asks you to write, modify, debug, or review code,
+        delegate the task to the "coder" persona using the
+        delegate_to_persona tool. Do not write code yourself — the coder
+        has the right tools and expertise for implementation tasks.
       skills:
         - memory
       toolPolicy:

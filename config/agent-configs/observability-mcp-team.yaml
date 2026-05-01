@@ -34,6 +34,11 @@ spec:
         2. Use dynatrace_get_metrics to check resource utilisation trends
         3. Correlate findings with k8s pod status and events
         4. Produce a structured investigation report with timeline and RCA
+
+        When your investigation confirms an active incident requiring
+        network diagnostics or remediation, use the delegate_to_persona
+        tool to delegate to "incident-responder" with the incident details
+        and your findings so far.
       skills:
         - mcp-bridge
         - k8s-ops

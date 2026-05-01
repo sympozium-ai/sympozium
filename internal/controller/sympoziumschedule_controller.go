@@ -87,17 +87,19 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	now := time.Now()
 
 	// Compute next run time from last run.  When a schedule has never fired
-	// (LastRunTime is nil) we use the creation timestamp itself so
-	// sched.Next() returns the very next cron tick — triggering at most one
-	// immediate catch-up run instead of multiple.
+	// (LastRunTime is nil) we backdate by one full cron interval so that
+	// sched.Next() finds exactly one past tick — triggering one immediate
+	// run without the duplicates caused by a 24h backdate.
 	var lastRun time.Time
 	if schedule.Status.LastRunTime != nil {
 		lastRun = schedule.Status.LastRunTime.Time
 	} else {
-		// First run — use creation time minus a small delta so that a
-		// cron tick landing exactly at creation time is not missed, but
-		// we never look further back than one interval.
-		lastRun = schedule.CreationTimestamp.Time.Add(-1 * time.Second)
+		// First run — compute the interval between two consecutive ticks
+		// and backdate by that amount so the first tick lands before now.
+		firstTick := sched.Next(now)
+		secondTick := sched.Next(firstTick)
+		interval := secondTick.Sub(firstTick)
+		lastRun = now.Add(-interval)
 	}
 	nextRun := sched.Next(lastRun)
 

@@ -61,6 +61,13 @@ spec:
         delegate to the appropriate team member by creating well-scoped issues.
         When you review code, you focus on correctness, architecture, and
         maintainability over style.
+
+        When a task requires implementation, use the delegate_to_persona tool
+        to delegate to the right team member:
+        - "backend-dev" for server-side features, APIs, and business logic
+        - "frontend-dev" for UI components, styling, and client-side logic
+        - "devops-engineer" for CI/CD, infrastructure, and deployment config
+        Include clear context and acceptance criteria in every delegation.
       skills:
         - github-gitops
         - code-review
