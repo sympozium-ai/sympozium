@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.15](https://github.com/sympozium-ai/sympozium/compare/v0.10.14...v0.10.15) (2026-05-01)
+
+
+### Features
+
+* expand default MCP server catalog ([ab27fac](https://github.com/sympozium-ai/sympozium/commit/ab27fac64b0b1ebdc6072de351c511439d8869a8))
+* expand default MCP server catalog with grafana, kubernetes, argocd, and postgres ([b620dbf](https://github.com/sympozium-ai/sympozium/commit/b620dbfb5aed5a2767bd4d50917e4f4a19ec897f))
+
+
+### Bug Fixes
+
+* correct MCP server configs after local testing ([6d56e57](https://github.com/sympozium-ai/sympozium/commit/6d56e57d17d23cc5db1505cd90299ed1409f2a84))
+* default MCP server catalog to disabled (opt-in) ([d164dc0](https://github.com/sympozium-ai/sympozium/commit/d164dc01fa7488daf8beac7c7f31d43a839ca5fc))
+* prevent duplicate canary runs on first schedule trigger ([1f5e286](https://github.com/sympozium-ai/sympozium/commit/1f5e2864ecc5bd421ddfc0fa73f0533e963c7f55))
+* prevent duplicate canary runs on first schedule trigger ([1428d68](https://github.com/sympozium-ai/sympozium/commit/1428d68df148a004e60e9e7e47d11902a094fea6))
+
 ## [0.10.14](https://github.com/sympozium-ai/sympozium/compare/v0.10.13...v0.10.14) (2026-05-01)
 
 
