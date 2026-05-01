@@ -301,6 +301,17 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 		// and channels are owned by the pack, not per-instance configuration.
 		needsUpdate := false
 
+		// Propagate provider label.
+		wantProvider := persona.Provider
+		if existingInst.Labels["sympozium.ai/provider"] != wantProvider {
+			if wantProvider != "" {
+				existingInst.Labels["sympozium.ai/provider"] = wantProvider
+			} else {
+				delete(existingInst.Labels, "sympozium.ai/provider")
+			}
+			needsUpdate = true
+		}
+
 		// Propagate authRefs changes.
 		if !authRefsEqual(existingInst.Spec.AuthRefs, pack.Spec.AuthRefs) {
 			existingInst.Spec.AuthRefs = pack.Spec.AuthRefs
@@ -501,14 +512,19 @@ func (r *EnsembleReconciler) buildAgent(
 		}
 	}
 
+	labels := map[string]string{
+		"sympozium.ai/ensemble":     pack.Name,
+		"sympozium.ai/agent-config": persona.Name,
+	}
+	if persona.Provider != "" {
+		labels["sympozium.ai/provider"] = persona.Provider
+	}
+
 	inst := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instanceName,
 			Namespace: pack.Namespace,
-			Labels: map[string]string{
-				"sympozium.ai/ensemble":     pack.Name,
-				"sympozium.ai/agent-config": persona.Name,
-			},
+			Labels:    labels,
 		},
 		Spec: sympoziumv1alpha1.AgentSpec{
 			Agents: sympoziumv1alpha1.AgentsSpec{

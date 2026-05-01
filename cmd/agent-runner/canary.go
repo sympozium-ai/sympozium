@@ -32,8 +32,7 @@ func runCanary(ctx context.Context) string {
 
 	// Deterministic checks — no LLM needed.
 	checks = append(checks, checkAPIServer(ctx))
-	checks = append(checks, checkClusterInfo(ctx))
-	checks = append(checks, checkKubeAPI(ctx, "nodes", "Node Discovery"))
+	checks = append(checks, checkKubeNodes(ctx))
 	checks = append(checks, checkKubeAPI(ctx, "sympoziumschedules.sympozium.ai", "Schedule System"))
 	checks = append(checks, checkKubeAPI(ctx, "mcpservers.sympozium.ai", "MCP Servers"))
 
@@ -46,7 +45,7 @@ func runCanary(ctx context.Context) string {
 	for _, c := range checks {
 		if c.Status == "fail" {
 			switch c.Name {
-			case "API Server", "Cluster Info", "LLM Connection":
+			case "API Server", "Node Discovery", "LLM Connection":
 				criticalFailed = true
 			default:
 				if overall == "healthy" {
@@ -77,23 +76,64 @@ func checkAPIServer(ctx context.Context) canaryCheck {
 	return canaryCheck{Name: "API Server", Status: "fail", Details: "unexpected response: " + truncate(body, 100)}
 }
 
-// checkClusterInfo hits the Sympozium API server cluster endpoint.
-func checkClusterInfo(ctx context.Context) canaryCheck {
-	url := "http://sympozium-apiserver.sympozium-system.svc:8080/api/v1/cluster"
-	body, err := httpGet(ctx, url, 10*time.Second)
+// checkKubeNodes lists cluster nodes via the Kubernetes API and verifies at least one is Ready.
+func checkKubeNodes(ctx context.Context) canaryCheck {
+	token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
 	if err != nil {
-		return canaryCheck{Name: "Cluster Info", Status: "fail", Details: err.Error()}
+		return canaryCheck{Name: "Node Discovery", Status: "fail", Details: "no service account token"}
 	}
-	var info struct {
-		Nodes int `json:"nodes"`
+	host := os.Getenv("KUBERNETES_SERVICE_HOST")
+	port := os.Getenv("KUBERNETES_SERVICE_PORT")
+	if host == "" || port == "" {
+		return canaryCheck{Name: "Node Discovery", Status: "fail", Details: "KUBERNETES_SERVICE_HOST not set"}
 	}
-	if json.Unmarshal([]byte(body), &info) != nil {
-		return canaryCheck{Name: "Cluster Info", Status: "fail", Details: "invalid JSON"}
+
+	url := fmt.Sprintf("https://%s:%s/api/v1/nodes", host, port)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+string(token))
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // in-cluster API server
+		},
 	}
-	if info.Nodes >= 1 {
-		return canaryCheck{Name: "Cluster Info", Status: "pass", Details: fmt.Sprintf("%d node(s)", info.Nodes)}
+	resp, err := client.Do(req)
+	if err != nil {
+		return canaryCheck{Name: "Node Discovery", Status: "fail", Details: err.Error()}
 	}
-	return canaryCheck{Name: "Cluster Info", Status: "fail", Details: "0 nodes"}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return canaryCheck{Name: "Node Discovery", Status: "fail", Details: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+	}
+
+	var nodeList struct {
+		Items []struct {
+			Status struct {
+				Conditions []struct {
+					Type   string `json:"type"`
+					Status string `json:"status"`
+				} `json:"conditions"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if json.Unmarshal(b, &nodeList) != nil {
+		return canaryCheck{Name: "Node Discovery", Status: "fail", Details: "invalid JSON"}
+	}
+
+	ready := 0
+	for _, node := range nodeList.Items {
+		for _, c := range node.Status.Conditions {
+			if c.Type == "Ready" && c.Status == "True" {
+				ready++
+			}
+		}
+	}
+	if ready > 0 {
+		return canaryCheck{Name: "Node Discovery", Status: "pass", Details: fmt.Sprintf("%d/%d node(s) ready", ready, len(nodeList.Items))}
+	}
+	return canaryCheck{Name: "Node Discovery", Status: "fail", Details: fmt.Sprintf("0/%d nodes ready", len(nodeList.Items))}
 }
 
 // checkKubeAPI makes a GET request to the Kubernetes API to verify a resource type is accessible.
@@ -149,6 +189,20 @@ func checkLLMConnection(ctx context.Context) canaryCheck {
 
 	if model == "" {
 		return canaryCheck{Name: "LLM Connection", Status: "fail", Details: "no model configured"}
+	}
+
+	// For local providers without an explicit base URL, route through node-probe proxy.
+	if baseURL == "" && isLocalProvider(provider) {
+		hostIP := os.Getenv("HOST_IP")
+		if hostIP == "" {
+			// Fallback: try status.hostIP injected by k8s downward API.
+			if b, err := os.ReadFile("/etc/podinfo/host-ip"); err == nil {
+				hostIP = strings.TrimSpace(string(b))
+			}
+		}
+		if hostIP != "" {
+			baseURL = fmt.Sprintf("http://%s:9473/proxy/%s/v1", hostIP, provider)
+		}
 	}
 
 	// Build a minimal provider with no tools, just to make one chat call.

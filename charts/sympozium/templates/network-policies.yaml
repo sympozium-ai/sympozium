@@ -79,6 +79,14 @@ spec:
       ports:
         - protocol: TCP
           port: 9473
+    # Allow egress to the Sympozium API server (health checks, canary)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+      ports:
+        - protocol: TCP
+          port: 8080
     # Allow Kubernetes API server (post-DNAT port on some CNIs like kube-router)
     - to: []
       ports:

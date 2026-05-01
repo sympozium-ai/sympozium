@@ -1878,6 +1878,12 @@ func (r *AgentRunReconciler) buildContainers(
 	if agentRun.Spec.CanaryMode {
 		containers[0].Env = append(containers[0].Env,
 			corev1.EnvVar{Name: "CANARY_MODE", Value: "true"},
+			corev1.EnvVar{
+				Name: "HOST_IP",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.hostIP"},
+				},
+			},
 		)
 	}
 

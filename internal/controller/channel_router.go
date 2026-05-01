@@ -70,6 +70,10 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 // It prefers the explicit Provider field on AuthRefs, falling back to
 // guessing from the auth secret names.
 func resolveProvider(inst *sympoziumv1alpha1.Agent) string {
+	// Check explicit provider label (set by Ensemble controller).
+	if p := inst.Labels["sympozium.ai/provider"]; p != "" {
+		return p
+	}
 	for _, ref := range inst.Spec.AuthRefs {
 		if ref.Provider != "" {
 			return ref.Provider
