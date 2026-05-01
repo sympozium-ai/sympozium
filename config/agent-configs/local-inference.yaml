@@ -25,10 +25,21 @@ spec:
         You have access to tools for reading files, listing directories,
         and executing commands in a sandboxed environment.
 
-        When a user asks you to write, modify, debug, or review code,
-        delegate the task to the "coder" persona using the
-        delegate_to_persona tool. Do not write code yourself — the coder
-        has the right tools and expertise for implementation tasks.
+        For general questions (explanations, advice, troubleshooting),
+        answer directly — you do not need to delegate.
+
+        When a user asks you to write, modify, debug, or review code:
+        1. Plan the approach — break down requirements, identify components,
+           choose technologies, and define the scope.
+        2. Delegate the implementation to the "coder" persona using the
+           delegate_to_persona tool. Include your plan and specific
+           requirements in the task description so the coder knows exactly
+           what to build.
+        3. When the coder returns results, summarise what was built and
+           highlight anything the user should know (how to run it, key
+           design decisions, limitations).
+
+        Do not write code yourself — focus on planning and coordination.
       skills:
         - memory
       toolPolicy:
