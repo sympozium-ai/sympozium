@@ -507,6 +507,10 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// Inject shared workflow memory env vars and init container if the pack has shared memory.
 	r.injectSharedMemory(ctx, agentRun, job)
 
+	// Inject ensemble relationship context so the agent-runner can auto-generate
+	// delegation/supervision instructions in the system prompt.
+	r.injectRelationshipContext(ctx, agentRun, job)
+
 	if err := controllerutil.SetControllerReference(agentRun, job, r.Scheme); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting owner reference: %w", err)
 	}
@@ -2466,6 +2470,82 @@ func (r *AgentRunReconciler) injectSharedMemory(ctx context.Context, agentRun *s
 			},
 		},
 	})
+}
+
+// injectRelationshipContext serialises the ensemble's relationships and persona
+// display names into env vars on the agent container so the agent-runner can
+// auto-generate delegation/supervision instructions in the system prompt.
+// This ensures user-created dynamic ensembles get correct routing guidance
+// without requiring manual system prompt edits.
+func (r *AgentRunReconciler) injectRelationshipContext(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, job *batchv1.Job) {
+	packName := agentRun.Labels["sympozium.ai/ensemble"]
+	if packName == "" {
+		return
+	}
+
+	var pack sympoziumv1alpha1.Ensemble
+	if err := r.Get(ctx, types.NamespacedName{Name: packName, Namespace: agentRun.Namespace}, &pack); err != nil {
+		return
+	}
+	if len(pack.Spec.Relationships) == 0 {
+		return
+	}
+
+	// Resolve the persona name for this agent instance.
+	personaName := ""
+	if agentRun.Spec.AgentRef != "" {
+		var inst sympoziumv1alpha1.Agent
+		if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &inst); err == nil {
+			personaName = inst.Labels["sympozium.ai/agent-config"]
+		}
+	}
+	if personaName == "" {
+		return
+	}
+
+	// Build a map of persona name → display name for human-readable context.
+	displayNames := make(map[string]string, len(pack.Spec.AgentConfigs))
+	for _, ac := range pack.Spec.AgentConfigs {
+		if ac.DisplayName != "" {
+			displayNames[ac.Name] = ac.DisplayName
+		}
+	}
+
+	// Filter relationships relevant to this persona (as source).
+	type relJSON struct {
+		Target      string `json:"target"`
+		DisplayName string `json:"displayName,omitempty"`
+		Type        string `json:"type"`
+		Condition   string `json:"condition,omitempty"`
+	}
+	var rels []relJSON
+	for _, rel := range pack.Spec.Relationships {
+		if rel.Source != personaName {
+			continue
+		}
+		rels = append(rels, relJSON{
+			Target:      rel.Target,
+			DisplayName: displayNames[rel.Target],
+			Type:        rel.Type,
+			Condition:   rel.Condition,
+		})
+	}
+	if len(rels) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(rels)
+	if err != nil {
+		return
+	}
+
+	podSpec := &job.Spec.Template.Spec
+	if len(podSpec.Containers) > 0 {
+		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env,
+			corev1.EnvVar{Name: "PERSONA_NAME", Value: personaName},
+			corev1.EnvVar{Name: "ENSEMBLE_RELATIONSHIPS", Value: string(data)},
+		)
+	}
 }
 
 // derivePermeability auto-generates permeability rules from the ensemble's
