@@ -427,11 +427,19 @@ export function useInstallDefaultMcpServers() {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       const copied = result.copied.length;
       const existing = result.alreadyPresent.length;
-      toast.success(
-        copied > 0
-          ? `Installed ${copied} default MCP server${copied === 1 ? "" : "s"} (${existing} already present)`
-          : `No servers installed (${existing} already present)`,
-      );
+      if (result.catalogSize === 0) {
+        toast.error(
+          "No default MCP server catalog found. Enable defaultMcpServers in your Helm values and run helm upgrade.",
+        );
+      } else if (copied > 0) {
+        toast.success(
+          `Installed ${copied} default MCP server${copied === 1 ? "" : "s"} (${existing} already present)`,
+        );
+      } else {
+        toast.success(
+          `All ${existing} default MCP server${existing === 1 ? "" : "s"} already installed`,
+        );
+      }
     },
     onError: toastError,
   });

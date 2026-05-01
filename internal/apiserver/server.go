@@ -2497,6 +2497,7 @@ type InstallDefaultMCPServersResponse struct {
 	TargetNamespace string   `json:"targetNamespace"`
 	Copied          []string `json:"copied"`
 	AlreadyPresent  []string `json:"alreadyPresent"`
+	CatalogSize     int      `json:"catalogSize"`
 }
 
 func (s *Server) installDefaultMCPServers(w http.ResponseWriter, r *http.Request) {
@@ -2512,7 +2513,7 @@ func (s *Server) installDefaultMCPServers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp := InstallDefaultMCPServersResponse{SourceNamespace: sourceNS, TargetNamespace: targetNS, Copied: []string{}, AlreadyPresent: []string{}}
+	resp := InstallDefaultMCPServersResponse{SourceNamespace: sourceNS, TargetNamespace: targetNS, Copied: []string{}, AlreadyPresent: []string{}, CatalogSize: len(sourceList.Items)}
 	for _, src := range sourceList.Items {
 		var existing sympoziumv1alpha1.MCPServer
 		err := s.client.Get(r.Context(), types.NamespacedName{Name: src.Name, Namespace: targetNS}, &existing)

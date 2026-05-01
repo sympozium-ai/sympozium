@@ -635,6 +635,7 @@ export interface InstallDefaultMCPServersResponse {
   targetNamespace: string;
   copied: string[];
   alreadyPresent: string[];
+  catalogSize: number;
 }
 
 export interface MCPServerAuthStatusResponse {
