@@ -76,6 +76,14 @@ export function GatewayPage() {
 
   const handleSave = async () => {
     const isNew = !data?.phase;
+    if (data?.enabled && !form.enabled) {
+      toast.error(
+        "This WebUI is served through the Gateway. Disabling it from here would make the UI unreachable. Use GitOps or kubectl for an intentional edge teardown.",
+      );
+      setForm((prev) => ({ ...prev, enabled: true }));
+      setDirty(false);
+      return;
+    }
     try {
       if (isNew) {
         await createMutation.mutateAsync(form);
@@ -157,15 +165,28 @@ export function GatewayPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <Label>Enabled</Label>
-                <Button
-                  variant={form.enabled ? "default" : "secondary"}
-                  size="sm"
-                  onClick={() => update({ enabled: !form.enabled })}
-                >
-                  {form.enabled ? "On" : "Off"}
-                </Button>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Enabled</Label>
+                  <Button
+                    variant={form.enabled ? "default" : "secondary"}
+                    size="sm"
+                    onClick={() => {
+                      if (form.enabled) {
+                        toast.warning(
+                          "Gateway teardown is intentionally blocked in the WebUI because it can disconnect this page. Use GitOps/kubectl for an explicit edge teardown.",
+                        );
+                        return;
+                      }
+                      update({ enabled: true });
+                    }}
+                  >
+                    {form.enabled ? "On (GitOps-managed)" : "Turn on"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The public WebUI and agent web endpoints are served through this Gateway. Turning it off from the WebUI can remove the route you are currently using, so disable/teardown is an explicit GitOps operation.
+                </p>
               </div>
 
               <div className="space-y-2">
