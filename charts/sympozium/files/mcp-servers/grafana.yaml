@@ -1,0 +1,27 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: grafana
+  namespace: sympozium-system
+  labels:
+    app.kubernetes.io/managed-by: sympozium
+    sympozium.ai/catalog: "true"
+spec:
+  transportType: stdio
+  toolsPrefix: grafana
+  timeout: 30
+  deployment:
+    image: mcp/grafana
+    cmd: /app/mcp-grafana
+    args:
+      - -t
+      - stdio
+    secretRefs:
+      - name: mcp-grafana-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi

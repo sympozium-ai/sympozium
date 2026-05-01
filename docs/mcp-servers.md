@@ -339,6 +339,50 @@ subjects:
     namespace: sympozium-system
 ```
 
+## Default Catalog
+
+Sympozium ships six MCP servers as default catalog entries. They are installed automatically when `defaultMcpServers.enabled` is `true` (the default). Each server creates an MCPServer CR and Deployment, but the pod will remain `Ready: false` until you create the referenced Secret with credentials.
+
+| Server | Prefix | Transport | Secret | Description |
+|--------|--------|-----------|--------|-------------|
+| GitHub | `github` | stdio | `mcp-github-token` | GitHub API — repos, issues, PRs, code search |
+| Grafana | `grafana` | stdio | `mcp-grafana-token` | Dashboards, PromQL, Loki logs, Tempo traces, alerting, OnCall |
+| Kubernetes | `k8s` | http | _(in-cluster SA)_ | Native K8s API — pods, logs, metrics, resource inspection (read-only) |
+| ArgoCD | `argocd` | stdio | `mcp-argocd-token` | GitOps — applications, sync status, resource trees, events |
+| Postgres | `pg` | stdio | `mcp-postgres-token` | Database queries, performance analysis, index tuning (read-only) |
+
+### Configuring Default Servers
+
+Each server needs a Secret with its credentials. Create them as needed:
+
+```bash
+# GitHub
+kubectl create secret generic mcp-github-token \
+  -n sympozium-system \
+  --from-literal=GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxxx
+
+# Grafana
+kubectl create secret generic mcp-grafana-token \
+  -n sympozium-system \
+  --from-literal=GRAFANA_URL=https://grafana.example.com \
+  --from-literal=GRAFANA_SERVICE_ACCOUNT_TOKEN=glsa_xxxx
+
+# ArgoCD
+kubectl create secret generic mcp-argocd-token \
+  -n sympozium-system \
+  --from-literal=ARGOCD_SERVER=argocd.example.com \
+  --from-literal=ARGOCD_AUTH_TOKEN=xxxx
+
+# Postgres
+kubectl create secret generic mcp-postgres-token \
+  -n sympozium-system \
+  --from-literal=DATABASE_URI=postgresql://user:pass@host:5432/dbname
+```
+
+The **Kubernetes** MCP server uses an in-cluster ServiceAccount (`k8s-mcp`) with read-only RBAC — no Secret needed. It is configured with `toolsDeny` to block write operations (`delete_resource`, `create_resource`, `update_resource`) by default. To enable write access, remove these entries from the MCPServer CR's `toolsDeny` list and expand the ClusterRole verbs.
+
+The **Postgres** server ships with a `toolsDeny` default to prevent destructive operations (`execute_write_query`).
+
 ## Secrets Management
 
 For MCP servers that need API tokens or credentials:
@@ -564,4 +608,242 @@ spec:
     port: 8080
     serviceAccountName: k8s-networking-mcp
 EOF
+```
+
+## Community & Optional Servers
+
+These MCP servers are not included in the default catalog but can be added with a single `kubectl apply`. Copy-paste the YAML and create the referenced Secret.
+
+### PagerDuty MCP
+
+Incident lifecycle management — create, acknowledge, escalate incidents. Requires building the image from the official repository (no pre-built public image available).
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: pagerduty
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: pagerduty
+  timeout: 30
+  toolsDeny:
+    - delete_incident
+  deployment:
+    # Build from https://github.com/PagerDuty/pagerduty-mcp-server
+    # docker build -t your-registry/pagerduty-mcp:latest .
+    image: your-registry/pagerduty-mcp:latest
+    secretRefs:
+      - name: mcp-pagerduty-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+```
+
+```bash
+kubectl create secret generic mcp-pagerduty-token \
+  -n sympozium-system \
+  --from-literal=PAGERDUTY_USER_API_KEY=xxxx
+```
+
+### Datadog MCP
+
+For teams using Datadog instead of Grafana for observability. Provides metrics, logs, traces, dashboards, monitors, APM, and incident tools.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: datadog
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: datadog
+  timeout: 30
+  deployment:
+    image: mcp/datadog
+    cmd: node
+    args:
+      - dist/index.js
+    secretRefs:
+      - name: mcp-datadog-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+```
+
+```bash
+kubectl create secret generic mcp-datadog-token \
+  -n sympozium-system \
+  --from-literal=DD_API_KEY=xxxx \
+  --from-literal=DD_APP_KEY=xxxx
+```
+
+### k8s-networking MCP
+
+Specialized Kubernetes networking diagnostics — network policies, DNS resolution, connectivity checks, route tracing, and service mesh inspection. Exposes 42+ tools (consider using `toolsAllow` to limit context cost).
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: k8s-networking-mcp
+  namespace: sympozium-system
+spec:
+  transportType: http
+  toolsPrefix: k8s_net
+  timeout: 30
+  toolsAllow:
+    - get_pods
+    - get_services
+    - get_network_policies
+    - check_connectivity
+    - dns_lookup
+    - diagnose_service
+  deployment:
+    image: ghcr.io/henrikrexed/k8s-networking-mcp:latest
+    port: 8080
+    serviceAccountName: k8s-networking-mcp
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+```
+
+Requires a ServiceAccount with networking RBAC — see [RBAC Configuration](#rbac-configuration).
+
+### Terraform MCP
+
+HashiCorp Terraform Registry integration and HCP Terraform workspace management. Useful for infrastructure-as-code workflows.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: terraform
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: terraform
+  timeout: 30
+  deployment:
+    image: hashicorp/terraform-mcp-server:latest
+    cmd: terraform-mcp-server
+    args:
+      - stdio
+    secretRefs:
+      - name: mcp-terraform-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+```
+
+```bash
+kubectl create secret generic mcp-terraform-token \
+  -n sympozium-system \
+  --from-literal=TFC_TOKEN=xxxx
+```
+
+### Loki MCP
+
+Dedicated Grafana Loki log querying. Only needed if you run Loki without Grafana — the default Grafana MCP server already includes Loki support.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: loki
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: loki
+  timeout: 30
+  deployment:
+    image: grafana/loki-mcp:latest
+    cmd: loki-mcp
+    secretRefs:
+      - name: mcp-loki-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+```
+
+### Rootly MCP
+
+AI-native incident management with on-call, incident response, and auto-remediation. Alternative to PagerDuty.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: rootly
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: rootly
+  timeout: 30
+  deployment:
+    image: mcp/rootly
+    cmd: node
+    args:
+      - dist/index.js
+    secretRefs:
+      - name: mcp-rootly-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+```
+
+### Slack MCP
+
+Extended Slack integration beyond the built-in channel support — message history search, thread replies, channel management. Only needed if agents require read access to Slack conversations.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: slack
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: slack
+  timeout: 30
+  deployment:
+    image: mcp/slack
+    cmd: node
+    args:
+      - dist/index.js
+    secretRefs:
+      - name: mcp-slack-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
 ```

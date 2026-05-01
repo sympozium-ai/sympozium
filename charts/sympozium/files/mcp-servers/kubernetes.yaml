@@ -1,0 +1,27 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: k8s-mcp
+  namespace: sympozium-system
+  labels:
+    app.kubernetes.io/managed-by: sympozium
+    sympozium.ai/catalog: "true"
+spec:
+  transportType: http
+  toolsPrefix: k8s
+  timeout: 30
+  toolsDeny:
+    - delete_resource
+    - create_resource
+    - update_resource
+  deployment:
+    image: ghcr.io/containers/kubernetes-mcp-server:latest
+    port: 8080
+    serviceAccountName: k8s-mcp
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi

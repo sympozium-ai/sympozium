@@ -1,0 +1,28 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: postgres
+  namespace: sympozium-system
+  labels:
+    app.kubernetes.io/managed-by: sympozium
+    sympozium.ai/catalog: "true"
+spec:
+  transportType: stdio
+  toolsPrefix: pg
+  timeout: 60
+  toolsDeny:
+    - execute_write_query
+  deployment:
+    image: crystaldba/postgres-mcp:latest
+    cmd: /app/docker-entrypoint.sh
+    args:
+      - postgres-mcp
+    secretRefs:
+      - name: mcp-postgres-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi

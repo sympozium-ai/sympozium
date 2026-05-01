@@ -1,0 +1,27 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: argocd
+  namespace: sympozium-system
+  labels:
+    app.kubernetes.io/managed-by: sympozium
+    sympozium.ai/catalog: "true"
+spec:
+  transportType: stdio
+  toolsPrefix: argocd
+  timeout: 30
+  deployment:
+    image: quay.io/argoprojlabs/mcp-for-argocd:latest
+    cmd: node
+    args:
+      - dist/index.js
+      - stdio
+    secretRefs:
+      - name: mcp-argocd-token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
