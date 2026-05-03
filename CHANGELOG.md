@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.17](https://github.com/sympozium-ai/sympozium/compare/v0.10.16...v0.10.17) (2026-05-03)
+
+
+### Bug Fixes
+
+* restrict WhatsApp channel to self-chat messages only ([3425eb8](https://github.com/sympozium-ai/sympozium/commit/3425eb80290f95ce229e91850caef1f1db4e8e6b))
+* restrict WhatsApp channel to self-chat messages only ([6af4dca](https://github.com/sympozium-ai/sympozium/commit/6af4dcaad6f9e2372e917c4f95e3dd952c706c3e)), closes [#138](https://github.com/sympozium-ai/sympozium/issues/138)
+* **web:** prevent gateway toggle from disconnecting UI ([9ededbd](https://github.com/sympozium-ai/sympozium/commit/9ededbd830eb7c409e4340a40b222fd1c7651de4))
+* **web:** prevent gateway toggle from disconnecting UI ([3ef4772](https://github.com/sympozium-ai/sympozium/commit/3ef4772500b15a0149be8c1242ff48154ceb8ee0))
+
 ## [0.10.16](https://github.com/sympozium-ai/sympozium/compare/v0.10.15...v0.10.16) (2026-05-01)
 
 
