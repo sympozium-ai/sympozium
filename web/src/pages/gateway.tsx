@@ -76,14 +76,6 @@ export function GatewayPage() {
 
   const handleSave = async () => {
     const isNew = !data?.phase;
-    if (data?.enabled && !form.enabled) {
-      toast.error(
-        "This WebUI is served through the Gateway. Disabling it from here would make the UI unreachable. Use GitOps or kubectl for an intentional edge teardown.",
-      );
-      setForm((prev) => ({ ...prev, enabled: true }));
-      setDirty(false);
-      return;
-    }
     try {
       if (isNew) {
         await createMutation.mutateAsync(form);

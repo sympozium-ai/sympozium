@@ -142,21 +142,25 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	authSecret := resolveAuthSecret(inst)
 	requestHash := webRequestHash(r.Header.Get("Idempotency-Key"), inst.Name, inst.Spec.Agents.Default.Model, systemPrompt, task)
 
-	if existing, err := p.findRecentWebRun(ctx, inst.Namespace, inst.Name, requestHash, 15*time.Minute); err != nil {
+	// Subscribe to run lifecycle events BEFORE checking for an existing run.
+	// This eliminates the race where a run completes between the lookup and
+	// the subscribe, which would cause the response to hang.
+	completedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunCompleted)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
+		return
+	}
+	failedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunFailed)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
+		return
+	}
+
+	if existing, err := p.findRecentWebRun(ctx, inst.Namespace, inst.Name, requestHash, webDedupeWindow); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to check duplicate agent run: "+err.Error())
 		return
 	} else if existing != nil {
 		p.log.Info("Reusing AgentRun for duplicate web request", "run", existing.Name, "instance", inst.Name, "requestHash", requestHash)
-		completedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunCompleted)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
-			return
-		}
-		failedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunFailed)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
-			return
-		}
 		if req.Stream {
 			p.streamResponse(w, r, existing.Name, completedCh, failedCh)
 		} else {
@@ -211,18 +215,6 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.log.Info("Created AgentRun from web request", "run", run.Name, "instance", inst.Name)
-
-	// Subscribe to completed and failed events to wait for results
-	completedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunCompleted)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
-		return
-	}
-	failedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunFailed)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
-		return
-	}
 
 	if req.Stream {
 		p.streamResponse(w, r, run.Name, completedCh, failedCh)
@@ -407,6 +399,9 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 	}
 }
 
+// webDedupeWindow is how far back we look for a matching AgentRun to reuse.
+const webDedupeWindow = 15 * time.Minute
+
 func webRequestHash(idempotencyKey, instanceName, model, systemPrompt, task string) string {
 	key := strings.TrimSpace(idempotencyKey)
 	if key != "" {
@@ -415,6 +410,9 @@ func webRequestHash(idempotencyKey, instanceName, model, systemPrompt, task stri
 	return hashLabelValue(strings.Join([]string{"web-chat", instanceName, model, systemPrompt, task}, "\x00"))
 }
 
+// hashLabelValue returns a 16-hex-char (64-bit) fingerprint. Collisions are
+// acceptable here: the hash is scoped per-instance within the dedup TTL window,
+// so the effective keyspace is small.
 func hashLabelValue(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:16]
@@ -435,6 +433,12 @@ func (p *Proxy) findRecentWebRun(ctx context.Context, namespace, instanceName, r
 	var candidates []sympoziumv1alpha1.AgentRun
 	for _, run := range list.Items {
 		if run.CreationTimestamp.Time.Before(cutoff) {
+			continue
+		}
+		// Skip terminal runs — subscribing to events for a completed run
+		// would hang because the event already fired.
+		phase := run.Status.Phase
+		if phase == sympoziumv1alpha1.AgentRunPhaseSucceeded || phase == sympoziumv1alpha1.AgentRunPhaseFailed {
 			continue
 		}
 		candidates = append(candidates, run)

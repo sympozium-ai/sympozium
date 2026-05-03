@@ -79,6 +79,39 @@ func TestFindRecentWebRunReusesNewestMatchingRun(t *testing.T) {
 	}
 }
 
+func TestFindRecentWebRunIgnoresTerminalRuns(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	hash := "abcdef0123456789"
+	succeeded := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "done",
+			Namespace:         "sympozium-system",
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+			Labels: map[string]string{
+				"sympozium.ai/instance":     "alfy",
+				"sympozium.ai/source":       "web-proxy",
+				"sympozium.ai/request-hash": hash,
+			},
+		},
+		Status: sympoziumv1alpha1.AgentRunStatus{Phase: sympoziumv1alpha1.AgentRunPhaseSucceeded},
+	}
+	failed := succeeded.DeepCopy()
+	failed.Name = "failed"
+	failed.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
+
+	proxy := &Proxy{k8s: fake.NewClientBuilder().WithScheme(scheme).WithObjects(succeeded, failed).Build(), log: testr.New(t)}
+	got, err := proxy.findRecentWebRun(context.Background(), "sympozium-system", "alfy", hash, 15*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("expected no reusable run for terminal phases, got %s (phase=%s)", got.Name, got.Status.Phase)
+	}
+}
+
 func TestFindRecentWebRunIgnoresExpiredRuns(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
