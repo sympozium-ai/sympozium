@@ -2,14 +2,18 @@ package webproxy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -136,6 +140,30 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Resolve provider and auth
 	provider := resolveProvider(inst)
 	authSecret := resolveAuthSecret(inst)
+	requestHash := webRequestHash(r.Header.Get("Idempotency-Key"), inst.Name, inst.Spec.Agents.Default.Model, systemPrompt, task)
+
+	if existing, err := p.findRecentWebRun(ctx, inst.Namespace, inst.Name, requestHash, 15*time.Minute); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to check duplicate agent run: "+err.Error())
+		return
+	} else if existing != nil {
+		p.log.Info("Reusing AgentRun for duplicate web request", "run", existing.Name, "instance", inst.Name, "requestHash", requestHash)
+		completedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunCompleted)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
+			return
+		}
+		failedCh, err := p.eventBus.Subscribe(ctx, eventbus.TopicAgentRunFailed)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to subscribe: "+err.Error())
+			return
+		}
+		if req.Stream {
+			p.streamResponse(w, r, existing.Name, completedCh, failedCh)
+		} else {
+			p.blockingResponse(w, r, existing.Name, inst.Spec.Agents.Default.Model, completedCh, failedCh)
+		}
+		return
+	}
 
 	// Filter out the web-endpoint skill so child AgentRuns don't inherit
 	// requiresServer=true (which would make them Deployments instead of Jobs).
@@ -152,8 +180,9 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			GenerateName: inst.Name + "-web-",
 			Namespace:    inst.Namespace,
 			Labels: map[string]string{
-				"sympozium.ai/instance": inst.Name,
-				"sympozium.ai/source":   "web-proxy",
+				"sympozium.ai/instance":     inst.Name,
+				"sympozium.ai/source":       "web-proxy",
+				"sympozium.ai/request-hash": requestHash,
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
@@ -376,6 +405,47 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 			return
 		}
 	}
+}
+
+func webRequestHash(idempotencyKey, instanceName, model, systemPrompt, task string) string {
+	key := strings.TrimSpace(idempotencyKey)
+	if key != "" {
+		return hashLabelValue("idempotency-key\x00" + instanceName + "\x00" + key)
+	}
+	return hashLabelValue(strings.Join([]string{"web-chat", instanceName, model, systemPrompt, task}, "\x00"))
+}
+
+func hashLabelValue(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+func (p *Proxy) findRecentWebRun(ctx context.Context, namespace, instanceName, requestHash string, ttl time.Duration) (*sympoziumv1alpha1.AgentRun, error) {
+	var list sympoziumv1alpha1.AgentRunList
+	selector := labels.SelectorFromSet(labels.Set{
+		"sympozium.ai/instance":     instanceName,
+		"sympozium.ai/source":       "web-proxy",
+		"sympozium.ai/request-hash": requestHash,
+	})
+	if err := p.k8s.List(ctx, &list, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, err
+	}
+
+	cutoff := time.Now().Add(-ttl)
+	var candidates []sympoziumv1alpha1.AgentRun
+	for _, run := range list.Items {
+		if run.CreationTimestamp.Time.Before(cutoff) {
+			continue
+		}
+		candidates = append(candidates, run)
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].CreationTimestamp.After(candidates[j].CreationTimestamp.Time)
+	})
+	return &candidates[0], nil
 }
 
 // getAgent fetches the Agent for this proxy.
