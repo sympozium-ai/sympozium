@@ -38,7 +38,7 @@ type AgentReconciler struct {
 // +kubebuilder:rbac:groups=sympozium.ai,resources=agents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=sympozium.ai,resources=agents/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets;configmaps;services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets;configmaps;services;serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles Agent reconciliation.
@@ -140,11 +140,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 func (r *AgentReconciler) reconcileChannels(ctx context.Context, instance *sympoziumv1alpha1.Agent) error {
 	channelStatuses := make([]sympoziumv1alpha1.ChannelStatus, 0, len(instance.Spec.Channels))
 
+	if len(instance.Spec.Channels) > 0 {
+		if err := r.ensureChannelServiceAccount(ctx, instance.Namespace); err != nil {
+			return err
+		}
+	}
+
 	for _, ch := range instance.Spec.Channels {
 		deployName := fmt.Sprintf("%s-channel-%s", instance.Name, ch.Type)
 
-		// Validate that the referenced secret exists before creating/updating the deployment.
-		if ch.ConfigRef.Secret != "" {
+		// Require the referenced Secret up-front, unless a CSI volume will
+		// materialize it on first mount (e.g. Vault Secrets Store CSI).
+		if ch.ConfigRef.Secret != "" && !channelMountsCSI(ch) {
 			var secret corev1.Secret
 			if err := r.Get(ctx, types.NamespacedName{
 				Name:      ch.ConfigRef.Secret,
@@ -251,6 +258,7 @@ func (r *AgentReconciler) buildChannelDeployment(
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName: "sympozium-channel",
 					Containers: []corev1.Container{
 						{
 							Name:            "channel",
@@ -359,6 +367,48 @@ func (r *AgentReconciler) ensureWhatsAppPVC(ctx context.Context, instance *sympo
 
 	r.Log.Info("Creating WhatsApp credential PVC", "name", pvcName)
 	return r.Create(ctx, &pvc)
+}
+
+// channelMountsCSI reports whether the channel pod mounts any CSI volume,
+// which may materialize the configRef Secret on first mount.
+func channelMountsCSI(ch sympoziumv1alpha1.ChannelSpec) bool {
+	for _, v := range ch.Volumes {
+		if v.CSI != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureChannelServiceAccount creates the sympozium-channel ServiceAccount in
+// the given namespace if it does not already exist. Channel Deployments
+// reference this SA so workloads like Vault Secrets Store CSI can authenticate
+// via the pod's SA token.
+func (r *AgentReconciler) ensureChannelServiceAccount(ctx context.Context, namespace string) error {
+	sa := &corev1.ServiceAccount{}
+	err := r.Get(ctx, client.ObjectKey{Name: "sympozium-channel", Namespace: namespace}, sa)
+	if err == nil {
+		return nil // already exists
+	}
+	if !errors.IsNotFound(err) {
+		return fmt.Errorf("checking for channel service account: %w", err)
+	}
+	sa = &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sympozium-channel",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "sympozium",
+			},
+		},
+	}
+	if err := r.Create(ctx, sa); err != nil {
+		if errors.IsAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("creating channel service account: %w", err)
+	}
+	return nil
 }
 
 // cleanupChannelDeployments removes channel deployments owned by the instance.
