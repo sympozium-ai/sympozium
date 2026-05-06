@@ -111,6 +111,72 @@ func resolveAuthSecret(inst *sympoziumv1alpha1.Agent) string {
 	return ""
 }
 
+// applyTriggers evaluates the channel's start/stop keyword rules against
+// the inbound message, persists any mute-state transition, emits the
+// associated Slack reaction, and returns true when the router should
+// proceed to create an AgentRun for this message.
+//
+// On read errors the function fails open (proceeds), so a transient
+// API-server hiccup never silently swallows messages.
+func (cr *ChannelRouter) applyTriggers(
+	ctx context.Context,
+	span trace.Span,
+	inst *sympoziumv1alpha1.Agent,
+	msg channelpkg.InboundMessage,
+) bool {
+	spec := channelTriggerSpec(inst, msg.Channel)
+	if spec == nil {
+		cr.emitReaction(ctx, inst, msg, triggerProcess)
+		return true
+	}
+
+	store := newMuteStore(cr.Client, inst.Namespace, inst.Name)
+	muted, err := store.IsMuted(ctx, msg.Channel, msg.ChatID)
+	if err != nil {
+		cr.Log.Error(err, "failed to read channel mute state — processing message anyway",
+			"instance", msg.InstanceName, "channel", msg.Channel, "chatId", msg.ChatID)
+		cr.emitReaction(ctx, inst, msg, triggerProcess)
+		return true
+	}
+
+	decision := evaluateTrigger(spec, msg.Text, muted)
+	logKV := []interface{}{
+		"instance", msg.InstanceName,
+		"channel", msg.Channel,
+		"chatId", msg.ChatID,
+	}
+
+	switch decision {
+	case triggerProcess:
+		cr.emitReaction(ctx, inst, msg, triggerProcess)
+		return true
+	case triggerDrop:
+		span.SetAttributes(attribute.Bool("sympozium.trigger.muted", true))
+		cr.Log.Info("Channel message dropped (chat muted)", logKV...)
+		return false
+	case triggerStop, triggerResume:
+		newMuted := decision == triggerStop
+		if err := store.SetMuted(ctx, msg.Channel, msg.ChatID, newMuted); err != nil {
+			cr.Log.Error(err, "failed to persist mute state", logKV...)
+		}
+		transition := "stop"
+		logMsg := "Channel chat muted by stop keyword"
+		if decision == triggerResume {
+			transition = "resume"
+			logMsg = "Channel chat unmuted by start keyword"
+		}
+		span.SetAttributes(attribute.String("sympozium.trigger.transition", transition))
+		cr.Log.Info(logMsg, logKV...)
+		cr.emitReaction(ctx, inst, msg, decision)
+		return false
+	 default:
+		// All triggerDecision values are handled above; this is
+		// here only to keep the compiler happy if a new variant
+		// is added without updating this switch.
+		return true
+	}
+}
+
 // handleInbound processes an inbound channel message by creating an AgentRun.
 func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Event) {
 	// Use trace context propagated via NATS headers from the channel pod.
@@ -173,6 +239,12 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		if denyMsg != "" {
 			cr.sendDenialResponse(ctx, msg, denyMsg)
 		}
+		return
+	}
+
+	// Evaluate stop/start keyword triggers (mute state, reactions).
+	// Returns false when the message must not be turned into an AgentRun.
+	if !cr.applyTriggers(ctx, span, inst, msg) {
 		return
 	}
 
@@ -397,21 +469,49 @@ func checkChannelAccess(
 
 // sendDenialResponse sends a denial message back through the originating channel.
 func (cr *ChannelRouter) sendDenialResponse(ctx context.Context, msg channelpkg.InboundMessage, text string) {
-	outMsg := channelpkg.OutboundMessage{
+	cr.publishOutbound(ctx, msg.InstanceName, channelpkg.OutboundMessage{
 		Channel: msg.Channel,
 		ChatID:  msg.ChatID,
 		Text:    text,
-	}
-	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{
-		"instanceName": msg.InstanceName,
-		"channel":      msg.Channel,
-	}, outMsg)
-	if err != nil {
-		cr.Log.Error(err, "failed to create denial response event")
+	}, "denial response")
+}
+
+// emitReaction publishes a per-channel reaction (delegated to
+// reactionForDecision) when one is appropriate. No-op otherwise.
+func (cr *ChannelRouter) emitReaction(
+	ctx context.Context,
+	inst *sympoziumv1alpha1.Agent,
+	msg channelpkg.InboundMessage,
+	decision triggerDecision,
+) {
+	out := reactionForDecision(inst, msg, decision)
+	if out == nil {
 		return
 	}
-	if err := cr.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, outEvent); err != nil {
-		cr.Log.Error(err, "failed to publish denial response")
+	cr.publishOutbound(ctx, msg.InstanceName, *out, "reaction")
+}
+
+// publishOutbound is the single point where the router emits messages
+// (replies, denials, reactions) onto the outbound channel topic. It
+// logs failures without bubbling them — outbound emission is always
+// best-effort from the router's perspective.
+func (cr *ChannelRouter) publishOutbound(
+	ctx context.Context,
+	instanceName string,
+	out channelpkg.OutboundMessage,
+	kind string,
+) {
+	event, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{
+		"instanceName": instanceName,
+		"channel":      out.Channel,
+	}, out)
+	if err != nil {
+		cr.Log.Error(err, "failed to build outbound event", "kind", kind, "channel", out.Channel)
+		return
+	}
+	if err := cr.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, event); err != nil {
+		cr.Log.Error(err, "failed to publish outbound event",
+			"kind", kind, "channel", out.Channel, "chatId", out.ChatID)
 	}
 }
 

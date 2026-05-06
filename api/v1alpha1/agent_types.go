@@ -222,6 +222,15 @@ type ChannelSpec struct {
 	// +optional
 	AccessControl *ChannelAccessControl `json:"accessControl,omitempty"`
 
+	// Triggers controls when an inbound message becomes an AgentRun.
+	// When nil, every accepted message triggers the agent.
+	// +optional
+	Triggers *ChannelTriggerSpec `json:"triggers,omitempty"`
+
+	// Slack holds Slack-specific options. Ignored for other channel types.
+	// +optional
+	Slack *SlackChannelOptions `json:"slack,omitempty"`
+
 	// Volumes are extra pod volumes for the channel pod (e.g. CSI
 	// SecretProviderClass priming the configRef Secret). Channel pods are
 	// independent of agent pods, so these are managed separately from
@@ -255,6 +264,55 @@ type ChannelAccessControl struct {
 	// When empty, rejected messages are silently dropped.
 	// +optional
 	DenyMessage string `json:"denyMessage,omitempty"`
+}
+
+// ChannelTriggerSpec controls when an inbound channel message becomes
+// an AgentRun. All fields are optional; when omitted the agent triggers
+// on every accepted message.
+type ChannelTriggerSpec struct {
+	// StopKeywords mute the agent in a chat when matched on an inbound
+	// message text (case-insensitive substring). Once muted, subsequent
+	// messages in that chat are dropped until a StartKeywords match
+	// resumes the agent. Has no effect on chats that are already muted.
+	// +optional
+	StopKeywords []string `json:"stopKeywords,omitempty"`
+
+	// StartKeywords resume a previously-muted agent in a chat (case-
+	// insensitive substring). Only evaluated while the chat is muted;
+	// otherwise ignored. The triggering message itself is consumed by
+	// the resume action and does not produce an AgentRun.
+	// +optional
+	StartKeywords []string `json:"startKeywords,omitempty"`
+}
+
+// SlackReactionDisabled is the literal value used in any
+// SlackChannelOptions emoji field to suppress that reaction. Empty
+// values fall back to per-slot defaults; use this constant to opt out
+// entirely.
+const SlackReactionDisabled = "none"
+
+// SlackChannelOptions holds Slack-specific channel configuration. These
+// fields have no effect on other channel types.
+//
+// Reaction emojis use Slack emoji names without surrounding colons
+// (e.g. "robot_face"). Each emoji slot has a sensible default; leave a
+// field empty to use the default, or set it to SlackReactionDisabled
+// ("none") to disable that reaction.
+type SlackChannelOptions struct {
+	// EmojiOnTrigger is the reaction added to inbound messages that
+	// successfully start an AgentRun. Default: "eyes".
+	// +optional
+	EmojiOnTrigger string `json:"emojiOnTrigger,omitempty"`
+
+	// EmojiOnStop is the reaction added when a stop keyword mutes
+	// the chat. Default: "mute".
+	// +optional
+	EmojiOnStop string `json:"emojiOnStop,omitempty"`
+
+	// EmojiOnStart is the reaction added when a start keyword
+	// resumes the chat. Default: "loud_sound".
+	// +optional
+	EmojiOnStart string `json:"emojiOnStart,omitempty"`
 }
 
 // AgentsSpec defines agent configuration.

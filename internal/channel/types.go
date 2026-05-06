@@ -23,13 +23,20 @@ type InboundMessage struct {
 }
 
 // OutboundMessage represents a message to send to an external channel.
+// When Reaction is non-empty, the channel pod (where supported) adds the
+// reaction to the message identified by TargetMessageID instead of
+// sending Text. TargetMessageID holds the channel-native identifier of
+// the inbound message (Slack ts, Discord snowflake, Telegram message_id,
+// etc.). Channels without reaction support ignore both fields.
 type OutboundMessage struct {
-	Channel  string `json:"channel"`
-	ChatID   string `json:"chatId"`
-	ThreadID string `json:"threadId,omitempty"`
-	Text     string `json:"text"`
-	Format   string `json:"format,omitempty"` // plain, markdown, html
-	ReplyTo  string `json:"replyTo,omitempty"`
+	Channel         string `json:"channel"`
+	ChatID          string `json:"chatId"`
+	ThreadID        string `json:"threadId,omitempty"`
+	Text            string `json:"text"`
+	Format          string `json:"format,omitempty"` // plain, markdown, html
+	ReplyTo         string `json:"replyTo,omitempty"`
+	Reaction        string `json:"reaction,omitempty"`        // emoji identifier (channel-specific format)
+	TargetMessageID string `json:"targetMessageId,omitempty"` // inbound message id this reaction targets
 }
 
 // Attachment represents a file or media attachment.

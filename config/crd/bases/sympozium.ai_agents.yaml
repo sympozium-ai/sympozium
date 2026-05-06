@@ -463,6 +463,50 @@ spec:
                       required:
                       - secret
                       type: object
+                    slack:
+                      description: Slack holds Slack-specific options. Ignored for
+                        other channel types.
+                      properties:
+                        emojiOnStart:
+                          description: |-
+                            EmojiOnStart is the reaction added when a start keyword
+                            resumes the chat. Default: "loud_sound".
+                          type: string
+                        emojiOnStop:
+                          description: |-
+                            EmojiOnStop is the reaction added when a stop keyword mutes
+                            the chat. Default: "mute".
+                          type: string
+                        emojiOnTrigger:
+                          description: |-
+                            EmojiOnTrigger is the reaction added to inbound messages that
+                            successfully start an AgentRun. Default: "eyes".
+                          type: string
+                      type: object
+                    triggers:
+                      description: |-
+                        Triggers controls when an inbound message becomes an AgentRun.
+                        When nil, every accepted message triggers the agent.
+                      properties:
+                        startKeywords:
+                          description: |-
+                            StartKeywords resume a previously-muted agent in a chat (case-
+                            insensitive substring). Only evaluated while the chat is muted;
+                            otherwise ignored. The triggering message itself is consumed by
+                            the resume action and does not produce an AgentRun.
+                          items:
+                            type: string
+                          type: array
+                        stopKeywords:
+                          description: |-
+                            StopKeywords mute the agent in a chat when matched on an inbound
+                            message text (case-insensitive substring). Once muted, subsequent
+                            messages in that chat are dropped until a StartKeywords match
+                            resumes the agent. Has no effect on chats that are already muted.
+                          items:
+                            type: string
+                          type: array
+                      type: object
                     type:
                       description: Type is the channel type (telegram, whatsapp, discord,
                         slack).

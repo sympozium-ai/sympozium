@@ -440,9 +440,69 @@ func (sc *SlackChannel) handleOutbound(ctx context.Context) {
 			if msg.Channel != "slack" {
 				continue
 			}
-			_ = sc.sendMessage(ctx, msg)
+			if msg.Reaction != "" {
+				if err := sc.addReaction(ctx, msg); err != nil {
+					sc.log.Error(err, "failed to add Slack reaction",
+						"chatId", msg.ChatID, "targetMessageId", msg.TargetMessageID, "reaction", msg.Reaction)
+				}
+				continue
+			}
+			if err := sc.sendMessage(ctx, msg); err != nil {
+				sc.log.Error(err, "failed to send Slack message",
+					"chatId", msg.ChatID, "threadId", msg.ThreadID)
+			}
 		}
 	}
+}
+
+// slackAPIResponse is the common envelope returned by every Slack Web
+// API method. We only need ok/error to distinguish success from
+// soft-failure (HTTP 200 with ok:false).
+type slackAPIResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// callSlackAPI performs a JSON POST to the given Slack Web API endpoint
+// and returns an error when either the transport fails, the HTTP status
+// is non-2xx, or Slack reports ok:false. Errors classified as benign
+// (passed via okErrors) are treated as success.
+func (sc *SlackChannel) callSlackAPI(ctx context.Context, endpoint string, payload interface{}, okErrors ...string) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sc.BotToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := sc.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("slack %s returned HTTP %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var parsed slackAPIResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return fmt.Errorf("decode slack response: %w (body=%q)", err, string(respBody))
+	}
+	if parsed.OK {
+		return nil
+	}
+	for _, ok := range okErrors {
+		if parsed.Error == ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("slack %s rejected request: %s", endpoint, parsed.Error)
 }
 
 // sendMessage sends a message via the Slack chat.postMessage API.
@@ -454,24 +514,23 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	if msg.ThreadID != "" {
 		payload["thread_ts"] = msg.ThreadID
 	}
+	return sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+}
 
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://slack.com/api/chat.postMessage",
-		strings.NewReader(string(body)))
-	if err != nil {
-		return err
+// addReaction adds an emoji reaction to a message via the Slack
+// reactions.add API. Requires msg.TargetMessageID (Slack ts) and
+// msg.Reaction to be set.
+// already_reacted is treated as success so redelivered events stay idempotent.
+func (sc *SlackChannel) addReaction(ctx context.Context, msg channel.OutboundMessage) error {
+	if msg.TargetMessageID == "" || msg.Reaction == "" {
+		return nil
 	}
-	req.Header.Set("Authorization", "Bearer "+sc.BotToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := sc.client.Do(req)
-	if err != nil {
-		return err
+	payload := map[string]interface{}{
+		"channel":   msg.ChatID,
+		"timestamp": msg.TargetMessageID,
+		"name":      strings.Trim(msg.Reaction, ":"),
 	}
-	defer resp.Body.Close()
-
-	return nil
+	return sc.callSlackAPI(ctx, "https://slack.com/api/reactions.add", payload, "already_reacted")
 }
 
 // setHealthy updates the health status and publishes it to the event bus.
