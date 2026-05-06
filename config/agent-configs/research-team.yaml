@@ -14,7 +14,14 @@ spec:
   version: "1.0.0"
   workflowType: delegation
 
+  stimulus:
+    name: research-brief
+    prompt: "Begin a new research cycle. Identify trending topics or open research questions relevant to the project, gather sources, and produce a comprehensive report with citations. Submit findings for review."
+
   relationships:
+    - source: research-brief
+      target: lead
+      type: stimulus
     - source: researcher
       target: writer
       type: delegation

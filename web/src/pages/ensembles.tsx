@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   useEnsembles,
   useActivateEnsemble,
+  useDeleteEnsemble,
   useInstallDefaultEnsembles,
   useSkills,
 } from "@/hooks/use-api";
@@ -39,6 +40,7 @@ import {
   LayoutGrid,
   Workflow,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { formatAge } from "@/lib/utils";
 import type { Ensemble } from "@/lib/api";
@@ -57,8 +59,10 @@ export function EnsemblesPage() {
   const [wizardPack, setWizardPack] = useState<Ensemble | null>(null);
   const [whatsAppPack, setWhatsAppPack] = useState<string | null>(null);
 
-  // Disable confirmation state
+  // Disable / delete confirmation state
   const [disablePack, setDisablePack] = useState<Ensemble | null>(null);
+  const [deletePack, setDeletePack] = useState<Ensemble | null>(null);
+  const deleteEnsemble = useDeleteEnsemble();
 
   const filtered = (data || [])
     .filter((p) => p.metadata.name.toLowerCase().includes(search.toLowerCase()))
@@ -304,6 +308,14 @@ export function EnsemblesPage() {
                         Disable
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      onClick={() => setDeletePack(pack)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -369,6 +381,41 @@ export function EnsemblesPage() {
             >
               <PowerOff className="mr-1 h-3.5 w-3.5" />
               Disable
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={!!deletePack}
+        onOpenChange={(open) => !open && setDeletePack(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Ensemble</DialogTitle>
+            <DialogDescription>
+              This will permanently delete{" "}
+              <strong>{deletePack?.metadata.name}</strong> and all associated
+              agents, schedules, and shared memory. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeletePack(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!deletePack) return;
+                deleteEnsemble.mutate(deletePack.metadata.name, {
+                  onSuccess: () => setDeletePack(null),
+                });
+              }}
+              disabled={deleteEnsemble.isPending}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              {deleteEnsemble.isPending ? "Deleting..." : "Delete"}
             </Button>
           </div>
         </DialogContent>

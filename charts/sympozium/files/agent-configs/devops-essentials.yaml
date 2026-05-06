@@ -11,7 +11,13 @@ spec:
   category: devops
   version: "1.0.0"
   workflowType: pipeline
+  stimulus:
+    name: ops-check
+    prompt: "Check for active incidents, degraded deployments, and cost anomalies. Investigate any pods in Error or CrashLoopBackOff state, review recent deployment changes, and flag over-provisioned workloads."
   relationships:
+    - source: ops-check
+      target: incident-responder
+      type: stimulus
     - source: incident-responder
       target: cost-analyzer
       type: sequential

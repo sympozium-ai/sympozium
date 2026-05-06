@@ -6,8 +6,9 @@
  * 2. Canvas: add persona nodes, drag edges, configure via side panels
  * 3. Save → POST /api/v1/ensembles
  *
- * The provider context flows down to AgentConfigPanel so the model
- * selector can show provider-specific model lists.
+ * Node components, edge styling, and layout helpers are imported from
+ * canvas-primitives.tsx — the single source of truth shared with the
+ * read-only ensemble canvases.
  */
 
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
@@ -19,9 +20,6 @@ import {
   type Node,
   type Edge,
   type Connection,
-  Handle,
-  Position,
-  type NodeProps,
   useNodesState,
   useEdgesState,
   MarkerType,
@@ -32,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Plus,
   Settings,
@@ -42,11 +41,14 @@ import {
   Cpu,
   Loader2,
   Check,
+  Zap,
+  Trash2,
 } from "lucide-react";
 import type {
   AgentConfigSpec,
   AgentConfigRelationship,
   SharedMemorySpec,
+  StimulusSpec,
 } from "@/lib/api";
 import { AgentConfigPanel } from "@/components/agent-config-panel";
 import {
@@ -63,6 +65,16 @@ import { useProviderNodes } from "@/hooks/use-provider-nodes";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+
+// ── Import shared canvas primitives ─────────────────────────────────────────
+import {
+  type AgentConfigNodeData,
+  type StimulusNodeData,
+  nodeTypes,
+  edgeStyles,
+  edgeLabels,
+  EDGE_TYPES,
+} from "@/components/canvas-primitives";
 
 // ── Random agent name generator ───────────────────────────────────────────
 
@@ -91,97 +103,6 @@ export interface ProviderContext {
   baseURL: string;
   modelRef?: string;
 }
-
-// ── Node data ──────────────────────────────────────────────────────────────
-
-interface BuilderNodeData {
-  persona: AgentConfigSpec;
-  isConfigured: boolean;
-  label: string;
-  [key: string]: unknown;
-}
-
-// ── Custom node ────────────────────────────────────────────────────────────
-
-function BuilderNode({ data }: NodeProps<Node<BuilderNodeData>>) {
-  const { persona, isConfigured } = data;
-
-  return (
-    <div
-      className={`rounded-lg border bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] cursor-pointer transition-all
-        ${isConfigured ? "border-border/60" : "border-dashed border-muted-foreground/40"}`}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!bg-muted-foreground !w-2 !h-2"
-      />
-
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="font-semibold text-sm truncate">
-          {persona.displayName || persona.name || "Unnamed"}
-        </span>
-      </div>
-
-      <p className="text-[10px] text-muted-foreground font-mono mb-1.5 truncate">
-        {persona.name || "click to configure"}
-      </p>
-
-      {persona.model && (
-        <Badge
-          variant="outline"
-          className="text-[10px] font-mono mb-1.5 block w-fit"
-        >
-          {persona.model}
-        </Badge>
-      )}
-
-      <div className="flex flex-wrap gap-0.5">
-        {persona.skills?.slice(0, 3).map((sk) => (
-          <Badge key={sk} variant="secondary" className="text-[9px] px-1 py-0">
-            {sk}
-          </Badge>
-        ))}
-        {(persona.skills?.length ?? 0) > 3 && (
-          <Badge variant="secondary" className="text-[9px] px-1 py-0">
-            +{(persona.skills?.length ?? 0) - 3}
-          </Badge>
-        )}
-      </div>
-
-      {!isConfigured && (
-        <p className="text-[9px] text-amber-500/80 mt-1.5 italic">
-          Click to configure
-        </p>
-      )}
-
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!bg-muted-foreground !w-2 !h-2"
-      />
-    </div>
-  );
-}
-
-const nodeTypes = { builder: BuilderNode };
-
-// ── Edge styling ───────────────────────────────────────────────────────────
-
-const EDGE_TYPES = ["delegation", "sequential", "supervision"] as const;
-
-const edgeStyles: Record<string, { stroke: string; strokeDasharray?: string }> =
-  {
-    delegation: { stroke: "#3b82f6" },
-    sequential: { stroke: "#f59e0b", strokeDasharray: "6 3" },
-    supervision: { stroke: "#6b7280", strokeDasharray: "2 4" },
-  };
-
-const edgeLabels: Record<string, string> = {
-  delegation: "delegates to",
-  sequential: "then",
-  supervision: "supervises",
-};
 
 // ── Provider setup step ────────────────────────────────────────────────────
 
@@ -587,7 +508,9 @@ export function EnsembleBuilder({
     },
   });
 
+  const [stimulus, setStimulus] = useState<StimulusSpec | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
+  const [selectedStimulus, setSelectedStimulus] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [pendingConnection, setPendingConnection] = useState<Connection | null>(
     null,
@@ -620,8 +543,12 @@ export function EnsembleBuilder({
       setRelationships={setRelationships}
       settings={settings}
       setSettings={setSettings}
+      stimulus={stimulus}
+      setStimulus={setStimulus}
       selectedPersona={selectedPersona}
       setSelectedPersona={setSelectedPersona}
+      selectedStimulus={selectedStimulus}
+      setSelectedStimulus={setSelectedStimulus}
       showSettings={showSettings}
       setShowSettings={setShowSettings}
       pendingConnection={pendingConnection}
@@ -642,8 +569,12 @@ function BuilderCanvas({
   setRelationships,
   settings,
   setSettings,
+  stimulus,
+  setStimulus,
   selectedPersona,
   setSelectedPersona,
+  selectedStimulus,
+  setSelectedStimulus,
   showSettings,
   setShowSettings,
   pendingConnection,
@@ -658,8 +589,12 @@ function BuilderCanvas({
   setRelationships: React.Dispatch<React.SetStateAction<AgentConfigRelationship[]>>;
   settings: EnsembleSettings;
   setSettings: React.Dispatch<React.SetStateAction<EnsembleSettings>>;
+  stimulus: StimulusSpec | null;
+  setStimulus: React.Dispatch<React.SetStateAction<StimulusSpec | null>>;
   selectedPersona: string | null;
   setSelectedPersona: React.Dispatch<React.SetStateAction<string | null>>;
+  selectedStimulus: boolean;
+  setSelectedStimulus: React.Dispatch<React.SetStateAction<boolean>>;
   showSettings: boolean;
   setShowSettings: React.Dispatch<React.SetStateAction<boolean>>;
   pendingConnection: Connection | null;
@@ -669,7 +604,7 @@ function BuilderCanvas({
 }) {
   const initialNodes = useMemo(() => {
     const cols = Math.max(2, Math.ceil(Math.sqrt(personas.length || 1)));
-    return personas.map((p, i) => ({
+    const nodes: Node<AgentConfigNodeData | StimulusNodeData>[] = personas.map((p, i) => ({
       id: p.name || `persona-${i}`,
       type: "builder" as const,
       position: { x: (i % cols) * 260, y: Math.floor(i / cols) * 200 },
@@ -677,17 +612,34 @@ function BuilderCanvas({
         persona: p,
         isConfigured: !!(p.name && p.systemPrompt),
         label: p.displayName || p.name || "Unnamed",
-      },
+      } as AgentConfigNodeData,
     }));
-  }, [personas]);
+
+    if (stimulus) {
+      nodes.push({
+        id: `__stimulus__${stimulus.name}`,
+        type: "stimulus" as const,
+        position: { x: 0, y: -120 },
+        data: {
+          stimulus,
+          label: stimulus.name,
+        } as StimulusNodeData,
+      });
+    }
+
+    return nodes;
+  }, [personas, stimulus]);
 
   const initialEdges = useMemo(
     () =>
       relationships.map((rel, i) => {
         const style = edgeStyles[rel.type] || edgeStyles.delegation;
+        const sourceId = rel.type === "stimulus"
+          ? `__stimulus__${rel.source}`
+          : rel.source;
         return {
           id: `e-${i}-${rel.source}-${rel.target}`,
-          source: rel.source,
+          source: sourceId,
           target: rel.target,
           label: edgeLabels[rel.type] || rel.type,
           style,
@@ -713,7 +665,6 @@ function BuilderCanvas({
       : result.provider;
     const nodeId = `__prov__${provId}`;
 
-    // Add provider node to canvas
     setNodes((prev) => [
       ...prev,
       {
@@ -731,30 +682,68 @@ function BuilderCanvas({
           } as AgentConfigSpec,
           isConfigured: true,
           label: result.label,
-        },
+        } as AgentConfigNodeData,
       },
     ]);
   }
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      // Don't open config panel for provider nodes
       if (node.id.startsWith("__prov__")) return;
+      if (node.id.startsWith("__stimulus__")) {
+        setSelectedStimulus(true);
+        setSelectedPersona(null);
+        setShowSettings(false);
+        return;
+      }
       setSelectedPersona(node.id);
+      setSelectedStimulus(false);
       setShowSettings(false);
     },
-    [setSelectedPersona, setShowSettings],
+    [setSelectedPersona, setSelectedStimulus, setShowSettings],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
+      // Stimulus→Agent connections: auto-wire as stimulus relationship
+      if (connection.source.startsWith("__stimulus__")) {
+        if (!stimulus) return;
+        setRelationships((prev) => [
+          ...prev.filter((r) => r.type !== "stimulus"),
+          {
+            source: stimulus.name,
+            target: connection.target!,
+            type: "stimulus" as const,
+          },
+        ]);
+        setEdges((eds) => {
+          const filtered = eds.filter(
+            (e) => !e.source.startsWith("__stimulus__"),
+          );
+          return addEdge(
+            {
+              ...connection,
+              id: `stim-${stimulus.name}-${connection.target}`,
+              style: { stroke: "#f59e0b", strokeWidth: 2 },
+              label: "triggers",
+              labelStyle: { fontSize: 10, fill: "#9ca3af" },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: "#f59e0b",
+              },
+              animated: true,
+            },
+            filtered,
+          );
+        });
+        return;
+      }
       // Provider→Agent connections: auto-wire without relationship picker
       if (connection.source.startsWith("__prov__")) {
         const provId = connection.source.replace("__prov__", "");
         const targetPersona = personas.find((p) => p.name === connection.target);
         if (targetPersona) {
-          // Update the agent config's provider
           const isModelRef = provId.startsWith("model:");
           const updated = { ...targetPersona };
           if (isModelRef) {
@@ -768,7 +757,6 @@ function BuilderCanvas({
           setPersonas((prev) =>
             prev.map((p) => (p.name === connection.target ? updated : p)),
           );
-          // Update the node data so the canvas reflects the change
           setNodes((prev) =>
             prev.map((n) =>
               n.id === connection.target
@@ -784,7 +772,6 @@ function BuilderCanvas({
                 : n,
             ),
           );
-          // Add a visual edge
           setEdges((eds) =>
             addEdge(
               {
@@ -801,7 +788,7 @@ function BuilderCanvas({
       }
       setPendingConnection(connection);
     },
-    [setPendingConnection, personas, setPersonas, setEdges],
+    [setPendingConnection, personas, setPersonas, setEdges, stimulus, setRelationships],
   );
 
   function confirmEdgeType(type: (typeof EDGE_TYPES)[number]) {
@@ -835,8 +822,6 @@ function BuilderCanvas({
 
   function addPersona() {
     const name = randomAgentName();
-    // When using a local model via modelRef, don't set a per-persona model —
-    // the controller resolves the endpoint from the ensemble-level modelRef.
     const defaultModel = providerCtx.modelRef
       ? ""
       : PROVIDERS.find((p) => p.value === providerCtx.provider)?.defaultModel ||
@@ -857,11 +842,80 @@ function BuilderCanvas({
         id: name,
         type: "builder" as const,
         position: { x: (i % cols) * 260, y: Math.floor(i / cols) * 200 },
-        data: { persona: newPersona, isConfigured: false, label: name },
+        data: {
+          persona: newPersona,
+          isConfigured: false,
+          label: name,
+        } as AgentConfigNodeData,
       },
     ]);
     setSelectedPersona(name);
     setShowSettings(false);
+  }
+
+  function addStimulus() {
+    const newStimulus: StimulusSpec = { name: "startup", prompt: "" };
+    setStimulus(newStimulus);
+    const nodeId = `__stimulus__${newStimulus.name}`;
+    setNodes((prev) => [
+      ...prev,
+      {
+        id: nodeId,
+        type: "stimulus" as const,
+        position: { x: 0, y: -120 },
+        data: {
+          stimulus: newStimulus,
+          label: newStimulus.name,
+        } as StimulusNodeData,
+      },
+    ]);
+    setSelectedStimulus(true);
+    setSelectedPersona(null);
+    setShowSettings(false);
+  }
+
+  function updateStimulus(updated: StimulusSpec) {
+    const oldId = stimulus ? `__stimulus__${stimulus.name}` : "";
+    const newId = `__stimulus__${updated.name}`;
+    setStimulus(updated);
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === oldId
+          ? {
+              ...n,
+              id: newId,
+              data: {
+                stimulus: updated,
+                label: updated.name,
+              } as StimulusNodeData,
+            }
+          : n,
+      ),
+    );
+    if (stimulus && stimulus.name !== updated.name) {
+      setRelationships((prev) =>
+        prev.map((r) =>
+          r.type === "stimulus" && r.source === stimulus.name
+            ? { ...r, source: updated.name }
+            : r,
+        ),
+      );
+      setEdges((prev) =>
+        prev.map((e) =>
+          e.source === oldId ? { ...e, source: newId } : e,
+        ),
+      );
+    }
+  }
+
+  function deleteStimulus() {
+    if (!stimulus) return;
+    const nodeId = `__stimulus__${stimulus.name}`;
+    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setRelationships((prev) => prev.filter((r) => r.type !== "stimulus"));
+    setStimulus(null);
+    setSelectedStimulus(false);
   }
 
   function updatePersona(updated: AgentConfigSpec) {
@@ -877,7 +931,7 @@ function BuilderCanvas({
                 persona: updated,
                 isConfigured: !!(updated.name && updated.systemPrompt),
                 label: updated.displayName || updated.name,
-              },
+              } as AgentConfigNodeData,
             }
           : n,
       ),
@@ -938,6 +992,7 @@ function BuilderCanvas({
           ? settings.sharedMemory
           : undefined,
         modelRef: providerCtx.modelRef || undefined,
+        stimulus: stimulus && stimulus.name && stimulus.prompt ? stimulus : undefined,
       },
       { onSuccess: () => navigate(`/ensembles/${settings.name}`) },
     );
@@ -975,12 +1030,19 @@ function BuilderCanvas({
             <Cpu className="h-3.5 w-3.5 mr-1" />
             Add Provider
           </Button>
+          {!stimulus && (
+            <Button size="sm" variant="outline" onClick={addStimulus}>
+              <Zap className="h-3.5 w-3.5 mr-1" />
+              Add Stimulus
+            </Button>
+          )}
           <Button
             size="sm"
             variant={showSettings ? "default" : "outline"}
             onClick={() => {
               setShowSettings(!showSettings);
               setSelectedPersona(null);
+              setSelectedStimulus(false);
             }}
           >
             <Settings className="h-3.5 w-3.5 mr-1" />
@@ -1105,6 +1167,66 @@ function BuilderCanvas({
           onClose={() => setSelectedPersona(null)}
         />
       )}
+      {selectedStimulus && stimulus && (
+        <div className="w-80 border-l border-border bg-card overflow-y-auto">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-400" />
+              <h3 className="font-semibold text-sm">Stimulus</h3>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedStimulus(false)}
+            >
+              ✕
+            </Button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={stimulus.name}
+                onChange={(e) =>
+                  updateStimulus({ ...stimulus, name: e.target.value })
+                }
+                placeholder="e.g. startup"
+                className="h-8 text-sm font-mono"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Prompt</Label>
+              <Textarea
+                value={stimulus.prompt}
+                onChange={(e) =>
+                  updateStimulus({ ...stimulus, prompt: e.target.value })
+                }
+                placeholder="The prompt sent to the target agent when all agents are serving..."
+                className="text-sm min-h-[120px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Target Agent
+              </Label>
+              <p className="text-[10px] text-muted-foreground">
+                Drag from the stimulus node to an agent to set the target. The
+                stimulus prompt will be sent to that agent when all agents in the
+                ensemble reach Serving phase.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={deleteStimulus}
+              className="w-full"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Remove Stimulus
+            </Button>
+          </div>
+        </div>
+      )}
       {showSettings && (
         <EnsembleSettingsPanel
           settings={settings}
@@ -1112,11 +1234,11 @@ function BuilderCanvas({
           onClose={() => setShowSettings(false)}
           personaNames={personas.map((p) => p.name)}
           relationships={edges
-            .filter((e) => e.data?.type)
+            .filter((e) => e.data?.relType)
             .map((e) => ({
               source: e.source,
               target: e.target,
-              type: e.data!.type as "delegation" | "sequential" | "supervision",
+              type: e.data!.relType as "delegation" | "sequential" | "supervision",
             }))}
         />
       )}

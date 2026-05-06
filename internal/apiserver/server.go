@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -2433,11 +2434,16 @@ func (s *Server) readCollectorMetrics(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("kubernetes client unavailable")
 	}
 
+	collectorURL := os.Getenv("SYMPOZIUM_COLLECTOR_METRICS_URL")
+	if collectorURL == "" {
+		collectorURL = "http://sympozium-otel-collector.sympozium-system.svc.cluster.local:8889/metrics"
+	}
+
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		"http://sympozium-otel-collector.sympozium-system.svc:8889/metrics",
+		collectorURL,
 		nil,
 	)
 	if err != nil {
