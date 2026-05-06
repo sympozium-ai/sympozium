@@ -205,6 +205,14 @@ type AgentConfigSpec struct {
 	// channel IDs to route specific Discord channels to this persona.
 	// +optional
 	ChannelAccessControl map[string]*ChannelAccessControl `json:"channelAccessControl,omitempty"`
+
+	// MCPServers configures remote MCP (Model Context Protocol) servers
+	// for this agent configuration. Each entry references an MCPServer CR
+	// by Name (or supplies an inline URL) and is mounted into the generated
+	// Agent's spec.mcpServers list, which the agent-runner consumes via the
+	// mcp-bridge sidecar.
+	// +optional
+	MCPServers []MCPServerRef `json:"mcpServers,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.

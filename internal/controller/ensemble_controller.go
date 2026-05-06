@@ -424,6 +424,12 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
+		// Propagate MCP server changes from persona definition.
+		if !mcpServerRefsEqual(existingInst.Spec.MCPServers, persona.MCPServers) {
+			existingInst.Spec.MCPServers = persona.MCPServers
+			needsUpdate = true
+		}
+
 		if needsUpdate {
 			log.Info("Updating pack-level settings on existing instance", "instance", instanceName)
 			if err := r.Update(ctx, existingInst); err != nil {
@@ -635,6 +641,9 @@ func (r *EnsembleReconciler) buildAgent(
 		}
 		inst.Spec.Channels = append(inst.Spec.Channels, cs)
 	}
+
+	// MCP servers — persona-level configuration, mirrors how Skills works.
+	inst.Spec.MCPServers = persona.MCPServers
 
 	// Policy — use the pack's policy ref if set.
 	inst.Spec.PolicyRef = pack.Spec.PolicyRef
@@ -963,6 +972,19 @@ func skillRefsEqual(a, b []sympoziumv1alpha1.SkillRef) bool {
 			if b[i].Params[k] != v {
 				return false
 			}
+		}
+	}
+	return true
+}
+
+// mcpServerRefsEqual compares two MCPServerRef slices for equality.
+func mcpServerRefsEqual(a, b []sympoziumv1alpha1.MCPServerRef) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !reflect.DeepEqual(a[i], b[i]) {
+			return false
 		}
 	}
 	return true

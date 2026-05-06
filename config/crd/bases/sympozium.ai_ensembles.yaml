@@ -291,6 +291,69 @@ spec:
                             type: object
                           type: array
                       type: object
+                    mcpServers:
+                      description: |-
+                        MCPServers configures remote MCP (Model Context Protocol) servers
+                        for this agent configuration. Each entry references an MCPServer CR
+                        by Name (or supplies an inline URL) and is mounted into the generated
+                        Agent's spec.mcpServers list, which the agent-runner consumes via the
+                        mcp-bridge sidecar.
+                      items:
+                        description: MCPServerRef references a remote MCP server for
+                          tool integration.
+                        properties:
+                          authKey:
+                            description: AuthKey is the key within AuthSecret to use.
+                              Defaults to "token".
+                            type: string
+                          authSecret:
+                            description: |-
+                              AuthSecret references a Kubernetes Secret containing auth credentials.
+                              The key specified by AuthKey (default "token") is used as a Bearer token.
+                            type: string
+                          headers:
+                            additionalProperties:
+                              type: string
+                            description: Headers are additional HTTP headers to send
+                              with every request.
+                            type: object
+                          name:
+                            description: Name is a unique identifier for this MCP
+                              server connection.
+                            minLength: 1
+                            type: string
+                          timeout:
+                            default: 30
+                            description: Timeout is the per-request timeout in seconds
+                              for this server.
+                            type: integer
+                          toolsAllow:
+                            description: ToolsAllow lists tool names (without prefix)
+                              to expose. If set, only these tools are registered.
+                            items:
+                              type: string
+                            type: array
+                          toolsDeny:
+                            description: ToolsDeny lists tool names (without prefix)
+                              to hide. Applied after toolsAllow.
+                            items:
+                              type: string
+                            type: array
+                          toolsPrefix:
+                            description: |-
+                              ToolsPrefix is prepended to tool names from this server to avoid collisions.
+                              Must be unique across all configured servers.
+                            minLength: 1
+                            type: string
+                          url:
+                            description: URL is the MCP server's Streamable HTTP endpoint.
+                              Optional if an MCPServer CR with this name exists.
+                            type: string
+                        required:
+                        - name
+                        - toolsPrefix
+                        type: object
+                      type: array
                     memory:
                       description: Memory defines initial memory seeds for this agent
                         configuration.
