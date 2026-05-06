@@ -113,6 +113,19 @@ while true; do
             continue
         fi
 
+        # Target-based routing: if the request specifies a target, only the
+        # sidecar whose SYMPOZIUM_SKILL_PACK env matches may claim it. An
+        # empty target preserves legacy behavior (any sidecar may claim).
+        # Comparison is case-insensitive and whitespace-trimmed for safety.
+        if [[ -n "${SYMPOZIUM_SKILL_PACK:-}" ]]; then
+            req_target=$(jq -r '.target // ""' "$req_file" 2>/dev/null || echo "")
+            req_target_norm=$(printf '%s' "$req_target" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+            self_norm=$(printf '%s' "$SYMPOZIUM_SKILL_PACK" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+            if [[ -n "$req_target_norm" && "$req_target_norm" != "$self_norm" ]]; then
+                continue
+            fi
+        fi
+
         # Atomically claim this request to prevent duplicate processing.
         # mkdir is atomic on POSIX filesystems — only one process wins.
         claim_dir="$TOOLS_DIR/.claim-${local_id}"

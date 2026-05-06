@@ -40,10 +40,13 @@ func defaultTools() []ToolDef {
 	return []ToolDef{
 		{
 			Name: ToolExecuteCommand,
-			Description: "Execute a shell command in the Kubernetes skill sidecar container. " +
+			Description: "Execute a shell command in a Kubernetes skill sidecar container. " +
 				"Use this to run kubectl, bash scripts, curl, jq, and other CLI tools. " +
 				"Commands execute in /workspace by default. " +
-				"If specialized MCP tools are available for the task, prefer those instead.",
+				"If specialized MCP tools are available for the task, prefer those instead. " +
+				"When multiple skill sidecars are attached, set 'target' to the name of the skill " +
+				"that owns the tool you need (e.g. 'github-gitops' for `gh`, 'k8s-ops' for `kubectl`). " +
+				"If 'target' is omitted, any sidecar may serve the request (legacy behavior).",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -58,6 +61,12 @@ func defaultTools() []ToolDef {
 					"timeout": map[string]any{
 						"type":        "integer",
 						"description": "Timeout in seconds (default 30, max 120).",
+					},
+					"target": map[string]any{
+						"type": "string",
+						"description": "Optional. Name of the skill sidecar that should execute this command " +
+							"(must match a SkillPack name attached to this agent, e.g. 'github-gitops'). " +
+							"Leave empty to allow any attached sidecar to claim the request.",
 					},
 				},
 				"required": []string{"command"},
@@ -723,13 +732,27 @@ func writeFileTool(args map[string]any) string {
 // --- IPC-based command execution (runs in the sidecar container) ---
 
 // execRequest matches the IPC ExecRequest protocol.
+//
+// Target is optional. When set, only the skill sidecar whose
+// SYMPOZIUM_SKILL_PACK env var matches this value will claim the request.
+// When empty, any attached sidecar may claim it (legacy behavior — racy in
+// multi-sidecar pods).
 type execRequest struct {
 	ID      string            `json:"id"`
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	WorkDir string            `json:"workDir,omitempty"`
 	Timeout int               `json:"timeout,omitempty"`
+	Target  string            `json:"target,omitempty"`
 	Meta    map[string]string `json:"_meta,omitempty"`
+}
+
+// normalizeSidecarTarget returns the canonical form of a SkillPack target name
+// used in execRequest.Target. Both producer (agent-runner) and consumer
+// (tool-executor.sh in skill sidecars) must use equivalent normalisation so
+// that case or whitespace differences do not cause silent routing misses.
+func normalizeSidecarTarget(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // execResult matches the IPC ExecResult protocol.
@@ -760,6 +783,11 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 		timeoutSec = 120
 	}
 
+	target, _ := args["target"].(string)
+	// Normalize: trim whitespace and lowercase so SkillPack name comparisons
+	// are tolerant of LLM casing variations ("Github-Gitops" vs "github-gitops").
+	target = normalizeSidecarTarget(target)
+
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	req := execRequest{
@@ -768,6 +796,7 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 		Args:    nil,
 		WorkDir: workdir,
 		Timeout: timeoutSec,
+		Target:  target,
 	}
 	req.Meta = traceMetadata(ctx)
 

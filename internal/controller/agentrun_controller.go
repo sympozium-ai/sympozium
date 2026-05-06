@@ -2109,6 +2109,19 @@ func (r *AgentRunReconciler) buildContainers(
 		corev1.EnvVar{Name: "TOOLS_ENABLED", Value: "true"},
 	)
 
+	// Expose the list of attached skill-sidecar targets to the agent runner
+	// so it can advise the LLM (and validate) on the optional `target` arg
+	// of the execute_command tool. Comma-separated, in spec order.
+	if len(sidecars) > 0 {
+		names := make([]string, 0, len(sidecars))
+		for _, sc := range sidecars {
+			names = append(names, sc.skillPackName)
+		}
+		containers[0].Env = append(containers[0].Env,
+			corev1.EnvVar{Name: "SYMPOZIUM_SKILL_TARGETS", Value: strings.Join(names, ",")},
+		)
+	}
+
 	// Pass channel context so the agent knows how to reply when the run
 	// was triggered by a channel message (WhatsApp, Telegram, etc.).
 	if ch := agentRun.Annotations["sympozium.ai/reply-channel"]; ch != "" {
@@ -2133,6 +2146,13 @@ func (r *AgentRunReconciler) buildContainers(
 		cmd := sc.sidecar.Command
 
 		var envVars []corev1.EnvVar
+		// SYMPOZIUM_SKILL_PACK identifies this sidecar to the tool-executor
+		// so it can filter exec-requests by their optional `target` field.
+		// Requests with target="" remain claimable by any sidecar (legacy).
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "SYMPOZIUM_SKILL_PACK",
+			Value: sc.skillPackName,
+		})
 		for _, e := range sc.sidecar.Env {
 			envVars = append(envVars, corev1.EnvVar{Name: e.Name, Value: e.Value})
 		}
