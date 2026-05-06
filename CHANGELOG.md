@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.19](https://github.com/sympozium-ai/sympozium/compare/v0.10.18...v0.10.19) (2026-05-06)
+
+
+### Features
+
+* add envtest-based system tests for API server + controllers ([2344132](https://github.com/sympozium-ai/sympozium/commit/2344132a7483162e66fb6f5deea341ff8e39d017))
+* channel pod CSI compatibility and dedicated service account ([1aa9a99](https://github.com/sympozium-ai/sympozium/commit/1aa9a992d6ca92ec2317c7d30dc2ea12ec27dafc))
+* envtest-based system tests + Cypress fixes ([e173d95](https://github.com/sympozium-ai/sympozium/commit/e173d95afc89f193ccab21eaed7ed2b638d10022))
+* stimulus node support in builder, unified canvas primitives, and UX fixes ([#162](https://github.com/sympozium-ai/sympozium/issues/162)) ([a57c8f1](https://github.com/sympozium-ai/sympozium/commit/a57c8f1c1ff7d41dcde2bb34ae0c84bf5ce79473))
+
+
+### Bug Fixes
+
+* add build tag to system tests so go test ./... skips them ([50052f0](https://github.com/sympozium-ai/sympozium/commit/50052f0d10ea250ec7e4984b28db97b98a00347c))
+* propagate skill changes to existing Agents on ensemble update ([2a498c7](https://github.com/sympozium-ai/sympozium/commit/2a498c733bf10b5494572e850410b7c1339983b7))
+* resolve flaky Cypress tests for run-delete and run-notifications ([74bab5a](https://github.com/sympozium-ai/sympozium/commit/74bab5a59cca869862facb1bd9e62edb9fbbcc71))
+
 ## [0.10.18](https://github.com/sympozium-ai/sympozium/compare/v0.10.17...v0.10.18) (2026-05-05)
 
 
