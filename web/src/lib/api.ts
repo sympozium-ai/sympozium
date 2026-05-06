@@ -1057,6 +1057,7 @@ export const api = {
       relationships?: AgentConfigRelationship[];
       sharedMemory?: SharedMemorySpec;
       modelRef?: string;
+      stimulus?: StimulusSpec;
     }) =>
       apiFetch<Ensemble>("/api/v1/ensembles", {
         method: "POST",

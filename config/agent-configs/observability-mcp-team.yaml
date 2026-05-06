@@ -12,7 +12,13 @@ spec:
   category: observability
   version: "1.0.0"
   workflowType: delegation
+  stimulus:
+    name: observe
+    prompt: "Investigate current observability data for anomalies, latency spikes, and error rate changes. Query Dynatrace for new problems, correlate with Kubernetes events and pod status, and escalate any confirmed incidents."
   relationships:
+    - source: observe
+      target: sre-investigator
+      type: stimulus
     - source: sre-investigator
       target: incident-responder
       type: delegation

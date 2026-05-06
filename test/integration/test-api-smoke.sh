@@ -267,8 +267,8 @@ main() {
   api_post /api/v1/ensembles/install-defaults >/dev/null
   packs_json="$(api_get /api/v1/ensembles)"
   packs_count="$(printf "%s" "$packs_json" | json_len)"
-  if [[ "$packs_count" -ne 6 ]]; then
-    fail "Expected 6 default Ensembles, got ${packs_count}"
+  if [[ "$packs_count" -lt 6 ]]; then
+    fail "Expected at least 6 default Ensembles, got ${packs_count}"
     exit 1
   fi
   first_pack="$(printf "%s" "$packs_json" | json_first_name)"

@@ -11,7 +11,13 @@ spec:
   category: platform
   version: "1.0.0"
   workflowType: delegation
+  stimulus:
+    name: platform-audit
+    prompt: "Audit the cluster for security misconfigurations, resource pressure, and failing workloads. Review namespace configurations against golden path standards and flag any workloads running with excessive privileges or missing resource limits."
   relationships:
+    - source: platform-audit
+      target: platform-engineer
+      type: stimulus
     - source: platform-engineer
       target: security-guardian
       type: delegation
@@ -172,6 +178,12 @@ spec:
             YAML diffs, Helm values changes, or kubectl commands).
         If the review passes cleanly, state that and emit empty Action
         Items.
+
+        ## Delegation
+        When your review identifies security concerns, use the
+        delegate_to_persona tool to delegate to "security-guardian" for a
+        detailed security audit. When reliability or resource issues are
+        found, delegate to "sre-watchdog" for a health assessment.
 
         ## Hard rules
         - NEVER stop after calling tools without emitting the Markdown

@@ -54,6 +54,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: SYMPOZIUM_COLLECTOR_METRICS_URL
+              value: "http://sympozium-otel-collector.{{ include "sympozium.namespace" . }}.svc.cluster.local:{{ .Values.observability.collector.service.metricsPort }}/metrics"
           {{- if .Values.observability.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.endpoint | quote }}

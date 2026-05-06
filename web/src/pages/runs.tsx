@@ -213,11 +213,15 @@ export function RunsPage() {
             <p className="text-xl font-semibold">
               {observability.data?.collectorReachable
                 ? "Connected"
-                : "Unavailable"}
+                : observability.data?.collectorError?.includes("no such host")
+                  ? "Not reachable"
+                  : "Unavailable"}
             </p>
             {observability.data?.collectorError && (
-              <p className="mt-1 text-xs text-destructive">
-                {observability.data.collectorError}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {observability.data.collectorError.includes("no such host")
+                  ? "Collector DNS not resolvable — running outside cluster?"
+                  : observability.data.collectorError}
               </p>
             )}
           </CardContent>
