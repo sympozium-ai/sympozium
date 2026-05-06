@@ -16,8 +16,8 @@ import (
 // recordingEventBus captures published events for assertions. Subscribe
 // and Close are not exercised by these tests.
 type recordingEventBus struct {
-	mu        bool
-	published []recordedEvent
+	mu         bool
+	published  []recordedEvent
 	publishErr error
 }
 

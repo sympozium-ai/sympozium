@@ -87,9 +87,9 @@ func TestAddReaction_NoOpWhenIncomplete(t *testing.T) {
 	})
 
 	cases := []channel.OutboundMessage{
-		{Channel: "slack", ChatID: "C", Reaction: "eyes"},                              // missing ts
-		{Channel: "slack", ChatID: "C", TargetMessageID: "1.0"},                        // missing reaction
-		{Channel: "slack", ChatID: "C"},                                                // both missing
+		{Channel: "slack", ChatID: "C", Reaction: "eyes"},       // missing ts
+		{Channel: "slack", ChatID: "C", TargetMessageID: "1.0"}, // missing reaction
+		{Channel: "slack", ChatID: "C"},                         // both missing
 	}
 	for i, msg := range cases {
 		if err := sc.addReaction(context.Background(), msg); err != nil {

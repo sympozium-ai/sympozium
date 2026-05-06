@@ -169,7 +169,7 @@ func (cr *ChannelRouter) applyTriggers(
 		cr.Log.Info(logMsg, logKV...)
 		cr.emitReaction(ctx, inst, msg, decision)
 		return false
-	 default:
+	default:
 		// All triggerDecision values are handled above; this is
 		// here only to keep the compiler happy if a new variant
 		// is added without updating this switch.
