@@ -203,7 +203,7 @@ func TestEnsureChannelServiceAccount_CreatesWhenMissing(t *testing.T) {
 	}
 
 	var sa corev1.ServiceAccount
-	if err := cl.Get(context.Background(), types.NamespacedName{Name: "sympozium-channel", Namespace: "ns"}, &sa); err != nil {
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: channelServiceAccountName, Namespace: "ns"}, &sa); err != nil {
 		t.Fatalf("get sa: %v", err)
 	}
 	if sa.Labels["app.kubernetes.io/managed-by"] != "sympozium" {
@@ -214,7 +214,7 @@ func TestEnsureChannelServiceAccount_CreatesWhenMissing(t *testing.T) {
 func TestEnsureChannelServiceAccount_NoopWhenPresent(t *testing.T) {
 	existing := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sympozium-channel",
+			Name:      channelServiceAccountName,
 			Namespace: "ns",
 			Labels:    map[string]string{"existing": "true"},
 		},
@@ -226,7 +226,7 @@ func TestEnsureChannelServiceAccount_NoopWhenPresent(t *testing.T) {
 	}
 
 	var sa corev1.ServiceAccount
-	if err := cl.Get(context.Background(), types.NamespacedName{Name: "sympozium-channel", Namespace: "ns"}, &sa); err != nil {
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: channelServiceAccountName, Namespace: "ns"}, &sa); err != nil {
 		t.Fatalf("get sa: %v", err)
 	}
 	if sa.Labels["existing"] != "true" {
@@ -254,8 +254,8 @@ func TestReconcileChannels_CreatesServiceAccount(t *testing.T) {
 	}
 
 	var sa corev1.ServiceAccount
-	if err := cl.Get(context.Background(), types.NamespacedName{Name: "sympozium-channel", Namespace: "ns"}, &sa); err != nil {
-		t.Fatalf("expected sympozium-channel SA to be created: %v", err)
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: channelServiceAccountName, Namespace: "ns"}, &sa); err != nil {
+		t.Fatalf("expected channel SA to be created: %v", err)
 	}
 }
 
@@ -265,7 +265,7 @@ func TestBuildChannelDeployment_UsesChannelServiceAccount(t *testing.T) {
 	r := &AgentReconciler{}
 	instance := newTestInstance()
 	deploy := r.buildChannelDeployment(instance, instance.Spec.Channels[0], "test-instance-channel-telegram")
-	if got := deploy.Spec.Template.Spec.ServiceAccountName; got != "sympozium-channel" {
-		t.Errorf("ServiceAccountName = %q, want sympozium-channel", got)
+	if got := deploy.Spec.Template.Spec.ServiceAccountName; got != channelServiceAccountName {
+		t.Errorf("ServiceAccountName = %q, want %s", got, channelServiceAccountName)
 	}
 }

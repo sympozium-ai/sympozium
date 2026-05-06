@@ -26,6 +26,12 @@ import (
 
 const sympoziumInstanceFinalizer = "sympozium.ai/finalizer"
 
+// channelServiceAccountName is the ServiceAccount used by all channel
+// Deployments. Shared across namespaces and intentionally unowned — it
+// outlives any single Agent so that concurrent reconciles don't fight
+// over ownership.
+const channelServiceAccountName = "sympozium-channel"
+
 // AgentReconciler reconciles a Agent object.
 type AgentReconciler struct {
 	client.Client
@@ -258,7 +264,7 @@ func (r *AgentReconciler) buildChannelDeployment(
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: "sympozium-channel",
+					ServiceAccountName: channelServiceAccountName,
 					Containers: []corev1.Container{
 						{
 							Name:            "channel",
@@ -369,8 +375,12 @@ func (r *AgentReconciler) ensureWhatsAppPVC(ctx context.Context, instance *sympo
 	return r.Create(ctx, &pvc)
 }
 
-// channelMountsCSI reports whether the channel pod mounts any CSI volume,
-// which may materialize the configRef Secret on first mount.
+// channelMountsCSI reports whether the channel pod mounts any CSI volume.
+// When true the controller skips the configRef Secret existence check because
+// the Secret is expected to be materialized by the CSI driver (e.g. Vault
+// Secrets Store CSI) on first pod mount. This is intentionally broad: any CSI
+// volume triggers the bypass, since channel pods with CSI are overwhelmingly
+// used for secret injection.
 func channelMountsCSI(ch sympoziumv1alpha1.ChannelSpec) bool {
 	for _, v := range ch.Volumes {
 		if v.CSI != nil {
@@ -386,7 +396,7 @@ func channelMountsCSI(ch sympoziumv1alpha1.ChannelSpec) bool {
 // via the pod's SA token.
 func (r *AgentReconciler) ensureChannelServiceAccount(ctx context.Context, namespace string) error {
 	sa := &corev1.ServiceAccount{}
-	err := r.Get(ctx, client.ObjectKey{Name: "sympozium-channel", Namespace: namespace}, sa)
+	err := r.Get(ctx, client.ObjectKey{Name: channelServiceAccountName, Namespace: namespace}, sa)
 	if err == nil {
 		return nil // already exists
 	}
@@ -395,7 +405,7 @@ func (r *AgentReconciler) ensureChannelServiceAccount(ctx context.Context, names
 	}
 	sa = &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sympozium-channel",
+			Name:      channelServiceAccountName,
 			Namespace: namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "sympozium",
