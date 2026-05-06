@@ -86,6 +86,9 @@ func (s *Server) StartWithUI(addr, token string, frontendFS fs.FS) error {
 	return server.ListenAndServe()
 }
 
+// Handler returns the HTTP handler for testing. Token may be empty to skip auth.
+func (s *Server) Handler(token string) http.Handler { return s.buildMux(nil, token) }
+
 // buildMux creates the HTTP mux with all API routes.
 // When frontendFS is non-nil, it serves the SPA for non-API paths.
 // When token is non-empty, API routes require Bearer authentication.

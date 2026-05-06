@@ -86,12 +86,16 @@ integration-tests: ## Run API smoke regression tests (Ensembles, ad-hoc Instance
 UX_PORT ?= $(shell lsof -ti :5173 >/dev/null 2>&1 && echo 5173 || (lsof -ti :5174 >/dev/null 2>&1 && echo 5174 || echo 5173))
 SERVE_PORT ?= 9090
 CYPRESS_TEST_MODEL ?= qwen/qwen3.5-9b
+CYPRESS_SPEC ?=
+
+# Build --spec flag only when CYPRESS_SPEC is set
+_CYPRESS_SPEC_FLAG := $(if $(CYPRESS_SPEC),--spec "$(CYPRESS_SPEC)",)
 
 ux-tests: web-install ## Run Cypress UX tests against Vite dev server (make web-dev-serve)
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
 	@./hack/check-ux-backend.sh $(UX_PORT) "$(API_TOKEN)"
 	@./hack/check-llm-ready.sh $(CYPRESS_TEST_MODEL)
-	cd web && CYPRESS_BASE_URL=http://localhost:$(UX_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) CYPRESS_TEST_MODEL=$(CYPRESS_TEST_MODEL) npx cypress run
+	cd web && CYPRESS_BASE_URL=http://localhost:$(UX_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) CYPRESS_TEST_MODEL=$(CYPRESS_TEST_MODEL) npx cypress run $(_CYPRESS_SPEC_FLAG)
 
 ux-tests-open: web-install ## Open Cypress interactive runner against Vite dev server (make web-dev-serve)
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
@@ -103,7 +107,7 @@ ux-tests-serve: web-install ## Run Cypress UX tests against `sympozium serve` (p
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
 	@./hack/check-ux-backend.sh $(SERVE_PORT) "$(API_TOKEN)"
 	@./hack/check-llm-ready.sh $(CYPRESS_TEST_MODEL)
-	cd web && CYPRESS_BASE_URL=http://localhost:$(SERVE_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) CYPRESS_TEST_MODEL=$(CYPRESS_TEST_MODEL) npx cypress run
+	cd web && CYPRESS_BASE_URL=http://localhost:$(SERVE_PORT) CYPRESS_API_TOKEN=$(API_TOKEN) CYPRESS_TEST_MODEL=$(CYPRESS_TEST_MODEL) npx cypress run $(_CYPRESS_SPEC_FLAG)
 
 ux-tests-serve-open: web-install ## Open Cypress interactive runner against `sympozium serve` (port 9090 by default)
 	$(eval API_TOKEN := $(shell kubectl get secret -n sympozium-system sympozium-ui-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d))
@@ -127,6 +131,19 @@ tidy: ## Run go mod tidy
 	$(GOMOD) tidy
 
 ##@ Code Generation
+
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+ENVTEST_K8S_VERSION ?= 1.31.0
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Install setup-envtest locally
+$(ENVTEST):
+	@mkdir -p $(LOCALBIN)
+	GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+test-system: envtest ## Run system tests (envtest — no cluster needed, fast)
+	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+	$(GOCMD) test ./test/system/ -v -count=1 -timeout 120s
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Install controller-gen locally
