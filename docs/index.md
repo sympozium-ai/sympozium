@@ -1,9 +1,9 @@
 # Sympozium
 
-**Kubernetes-native AI Agent Management Platform**
+**Kubernetes-native AI Agent Orchestration Platform**
 
 Every agent is an ephemeral Pod. Every policy is a CRD. Every execution is a Job.
-Orchestrate multi-agent workflows **and** let agents diagnose, scale, and remediate your infrastructure.
+Orchestrate multi-agent workflows on Kubernetes — from single tasks to coordinated teams.
 Multi-tenant. Horizontally scalable. Safe by design.
 
 <p align="center">
@@ -42,12 +42,11 @@ sympozium serve            # open the web dashboard (port-forwards to the in-clu
 
 ## Why Sympozium?
 
-Sympozium serves **two powerful use cases** on one Kubernetes-native platform:
+Sympozium is a **Kubernetes-native platform for orchestrating AI agent teams**. Deploy agents for customer support, code review, data pipelines, incident response, or any domain-specific workflow — each agent gets its own pod, RBAC, and network policy with proper tenant isolation.
 
-1. **Orchestrate fleets of AI agents** — customer support, code review, data pipelines, or any domain-specific workflow. Each agent gets its own pod, RBAC, and network policy with proper tenant isolation.
-2. **Administer the cluster itself agentically** — point agents inward to diagnose failures, scale deployments, triage alerts, and remediate issues, all with Kubernetes-native isolation, RBAC, and audit trails.
+Bundle agents into **Ensembles** with delegation, sequential pipelines, and supervision relationships. Give them persistent memory, external tools via MCP servers, and cron schedules — all declared as CRDs and reconciled by controllers.
 
-Sympozium takes the agentic control model and rebuilds it on Kubernetes primitives. Every concept that traditional agent frameworks manage in application code, Sympozium expresses as a Kubernetes resource — declarative, reconcilable, observable, and scalable.
+Every concept that traditional agent frameworks manage in application code, Sympozium expresses as a Kubernetes resource — declarative, reconcilable, observable, and scalable.
 
 ---
 

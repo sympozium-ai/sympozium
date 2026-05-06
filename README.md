@@ -118,7 +118,7 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 | **Skill Sidecars** | Every skill runs in its own sidecar with ephemeral least-privilege RBAC, garbage-collected on completion |
 | **Multi-Channel** | Telegram, Slack, Discord, WhatsApp &mdash; each channel is a dedicated Deployment backed by NATS JetStream |
 | **Persistent Memory** | SQLite + FTS5 on a PersistentVolume &mdash; memories survive across ephemeral pod runs |
-| **Scheduled Heartbeats** | Cron-based recurring agent runs for health checks, alert triage, and resource right-sizing |
+| **Scheduled Tasks** | Cron-based recurring agent runs for periodic workflows, data syncs, and automated checks |
 | **Agent Sandbox** | Kernel-level isolation via [kubernetes-sigs/agent-sandbox](https://deploy.sympozium.ai/docs/concepts/agent-sandbox/) &mdash; gVisor or Kata with warm pools for instant starts |
 | **MCP Servers** | External tool providers via Model Context Protocol with auto-discovery and allow/deny filtering |
 | **TUI & Web UI** | Terminal and browser dashboards with live workflow canvas, or skip the UI entirely with Helm and kubectl |

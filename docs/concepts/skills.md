@@ -11,7 +11,7 @@ Most agent frameworks dump every tool into one shared process. One bad `kubectl 
 - Shares a `/workspace` volume so the agent can coordinate with the sidecar
 - **Garbage-collects everything** when the run finishes — containers, roles, bindings, all gone
 
-> _"Give the agent tools, not trust."_ — Whether it's orchestrating a fleet or administering the cluster, skills get exactly the permissions they declare, for exactly as long as the run lasts, and not a second longer.
+> _"Give the agent tools, not trust."_ — Skills get exactly the permissions they declare, for exactly as long as the run lasts, and not a second longer.
 
 ## How Sidecars Are Injected
 
