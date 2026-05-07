@@ -3,7 +3,7 @@
  * K8s nodes + providers, deployed models, ensembles + agents, and gateway routes.
  */
 
-import { useMemo, useCallback, useRef, useEffect, useState } from "react";
+import { useMemo, useCallback, useRef, useEffect, useState, useContext } from "react";
 import {
   ReactFlow,
   Background,
@@ -36,6 +36,8 @@ import {
   useModels,
   useGatewayConfig,
 } from "@/hooks/use-api";
+import { StimulusDialogProvider, StimulusDialogCtx } from "@/components/canvas-primitives";
+import type { StimulusNodeData } from "@/components/canvas-primitives";
 import { useProviderNodes } from "@/hooks/use-provider-nodes";
 import {
   Server,
@@ -58,7 +60,6 @@ import type {
   ProviderNode,
   NodeProvider,
   GatewayConfigResponse,
-  StimulusSpec,
 } from "@/lib/api";
 import { Link } from "react-router-dom";
 import Dagre from "@dagrejs/dagre";
@@ -153,12 +154,31 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
 }
 
 function TopologyStimulusNode({ data }: NodeProps<Node<TopologyStimulusNodeData>>) {
+  const openDialog = useContext(StimulusDialogCtx);
+
+  const handleClick = () => {
+    openDialog?.({
+      stimulus: { name: data.name, prompt: data.prompt },
+      ensembleName: data.ensembleName,
+      delivered: data.delivered,
+      generation: data.generation,
+      label: data.name,
+    });
+  };
+
   return (
-    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 shadow-sm min-w-[100px] max-w-[160px]">
+    <div
+      className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 shadow-sm min-w-[100px] max-w-[160px] cursor-pointer hover:border-amber-500/50 hover:bg-amber-500/10 transition-colors"
+      onClick={handleClick}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-1.5 !h-1.5" />
       <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-1.5 !h-1.5" />
       <div className="flex items-center gap-1.5">
         <Zap className="h-3 w-3 text-amber-400 shrink-0" />
         <span className="text-[10px] font-medium text-amber-300 truncate">{data.name}</span>
+        {data.generation != null && data.generation > 0 && (
+          <span className="text-[8px] text-amber-400/60 shrink-0">&times;{data.generation}</span>
+        )}
       </div>
     </div>
   );
@@ -315,6 +335,10 @@ interface EnsembleNodeData {
 
 interface TopologyStimulusNodeData {
   name: string;
+  prompt: string;
+  ensembleName: string;
+  delivered?: boolean;
+  generation?: number;
   [key: string]: unknown;
 }
 
@@ -657,7 +681,14 @@ function buildTopology(
         id: stimId,
         type: "stimulus",
         position: P,
-        data: { name: ens.spec.stimulus.name, label: ens.spec.stimulus.name },
+        data: {
+          name: ens.spec.stimulus.name,
+          prompt: ens.spec.stimulus.prompt,
+          ensembleName: ens.metadata.name,
+          delivered: ens.status?.stimulusDelivered,
+          generation: ens.status?.stimulusGeneration,
+          label: ens.spec.stimulus.name,
+        },
       });
       edges.push({
         id: `e-${ensId}-stim`,
@@ -1283,6 +1314,7 @@ function TopologyCanvas() {
           </div>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
@@ -1292,7 +1324,9 @@ function TopologyCanvas() {
 export function TopologyPage() {
   return (
     <ReactFlowProvider>
-      <TopologyCanvas />
+      <StimulusDialogProvider>
+        <TopologyCanvas />
+      </StimulusDialogProvider>
     </ReactFlowProvider>
   );
 }

@@ -7,9 +7,20 @@
  * in every canvas across the app.
  */
 
+import { useState, createContext, useContext } from "react";
 import { type Node, type Edge, type NodeProps, Handle, Position, MarkerType } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Background, Controls, MiniMap } from "@xyflow/react";
 import { Database, Cpu, Zap } from "lucide-react";
 import type {
@@ -18,6 +29,7 @@ import type {
   StimulusSpec,
   Model,
 } from "@/lib/api";
+import { useTriggerStimulus, usePatchEnsembleStimulus } from "@/hooks/use-api";
 import { PROVIDERS } from "@/components/onboarding-wizard";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -55,6 +67,7 @@ export interface ProviderNodeData {
 
 export interface StimulusNodeData {
   stimulus: StimulusSpec;
+  ensembleName: string;
   delivered?: boolean;
   generation?: number;
   label: string;
@@ -364,17 +377,22 @@ export function ProviderNode({ data }: NodeProps<Node<ProviderNodeData>>) {
   );
 }
 
-// ── Stimulus node ──────────────────────────────────────────────────────────
+// ── Stimulus node + shared dialog ─────────────────────────────────────────
+
+/** Context lets any StimulusNode bubble a click up to the nearest StimulusDialogProvider. */
+export const StimulusDialogCtx = createContext<((d: StimulusNodeData) => void) | null>(null);
 
 export function StimulusNode({ data }: NodeProps<Node<StimulusNodeData>>) {
   const { stimulus, delivered, generation } = data;
+  const openDialog = useContext(StimulusDialogCtx);
 
   return (
     <div
-      className={`rounded-lg border border-amber-500/40 bg-card shadow-md px-3 py-2.5 min-w-[160px] max-w-[200px] transition-shadow duration-300 ${
+      className={`rounded-lg border border-amber-500/40 bg-card shadow-md px-3 py-2.5 min-w-[160px] max-w-[200px] transition-shadow duration-300 cursor-pointer hover:border-amber-500/60 hover:bg-amber-500/5 ${
         delivered ? "ring-1 ring-amber-500/40" : ""
       }`}
       data-testid="stimulus-node"
+      onClick={() => openDialog?.(data)}
     >
       <div className="flex items-center gap-1.5 mb-1">
         <Zap className="h-3.5 w-3.5 text-amber-400" />
@@ -411,6 +429,106 @@ export function StimulusNode({ data }: NodeProps<Node<StimulusNodeData>>) {
         className="!bg-amber-400 !w-2 !h-2"
       />
     </div>
+  );
+}
+
+/**
+ * StimulusDialogProvider — wraps any canvas that contains StimulusNodes.
+ * Renders the shared view/edit/retrigger dialog and provides the click
+ * handler via context so nodes can open it.
+ */
+export function StimulusDialogProvider({ children }: { children: React.ReactNode }) {
+  const [selected, setSelected] = useState<StimulusNodeData | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPrompt, setEditPrompt] = useState("");
+  const triggerMutation = useTriggerStimulus();
+  const patchMutation = usePatchEnsembleStimulus();
+
+  const open = (d: StimulusNodeData) => {
+    setSelected(d);
+    setEditName(d.stimulus.name);
+    setEditPrompt(d.stimulus.prompt);
+  };
+
+  return (
+    <StimulusDialogCtx.Provider value={open}>
+      {children}
+      <Dialog
+        open={selected !== null}
+        onOpenChange={(o) => { if (!o) setSelected(null); }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-300">
+              <Zap className="h-4 w-4 text-amber-400" />
+              Stimulus
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {selected?.ensembleName}
+              {selected?.generation != null && selected.generation > 0 && (
+                <span className="ml-2 text-amber-400/60">
+                  fired {selected.generation}&times;
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="stim-name" className="text-xs">Name</Label>
+                <Input
+                  id="stim-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stim-prompt" className="text-xs">Prompt</Label>
+                <Textarea
+                  id="stim-prompt"
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  rows={5}
+                  className="text-sm font-mono"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  disabled={triggerMutation.isPending}
+                  onClick={() => triggerMutation.mutate(selected.ensembleName)}
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  {triggerMutation.isPending ? "Triggering..." : "Re-trigger"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1 ml-auto"
+                  disabled={
+                    patchMutation.isPending ||
+                    (editName === selected.stimulus.name && editPrompt === selected.stimulus.prompt)
+                  }
+                  onClick={() => {
+                    patchMutation.mutate(
+                      {
+                        name: selected.ensembleName,
+                        stimulus: { name: editName.trim(), prompt: editPrompt },
+                      },
+                      { onSuccess: () => setSelected(null) },
+                    );
+                  }}
+                >
+                  {patchMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </StimulusDialogCtx.Provider>
   );
 }
 
