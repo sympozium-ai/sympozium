@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.21](https://github.com/sympozium-ai/sympozium/compare/v0.10.20...v0.10.21) (2026-05-07)
+
+
+### Features
+
+* shared stimulus view/edit/retrigger dialog across all canvases ([#165](https://github.com/sympozium-ai/sympozium/issues/165)) ([196f219](https://github.com/sympozium-ai/sympozium/commit/196f219b90632b201e8d4fb765ceeb7872a65c9b))
+
+
+### Bug Fixes
+
+* update cypress tests for stimulus relationship in research-team pack ([e21dff9](https://github.com/sympozium-ai/sympozium/commit/e21dff97b4a6db335e56dec7db1dd787f8822ef4))
+
 ## [0.10.20](https://github.com/sympozium-ai/sympozium/compare/v0.10.19...v0.10.20) (2026-05-07)
 
 
