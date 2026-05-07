@@ -50,6 +50,7 @@ import {
   CanvasShell,
   EdgeTypePicker,
   StatusLegend,
+  StimulusDialogProvider,
 } from "@/components/canvas-primitives";
 
 // ── Real-time run status updates via WebSocket ─────────────────────────────
@@ -156,6 +157,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
         position: { x: 0, y: stimulusYOffset },
         data: {
           stimulus: pack.spec.stimulus,
+          ensembleName: pack.metadata.name,
           delivered: pack.status?.stimulusDelivered,
           generation: pack.status?.stimulusGeneration,
           label: pack.spec.stimulus.name,
@@ -292,6 +294,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
   }
 
   return (
+    <StimulusDialogProvider>
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -403,6 +406,7 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
         }}
       />
     </div>
+    </StimulusDialogProvider>
   );
 }
 
@@ -485,6 +489,7 @@ export function GlobalEnsembleCanvas() {
           position: { x: currentX, y: hasProviders ? -60 : -80 },
           data: {
             stimulus: pack.spec.stimulus,
+            ensembleName: pack.metadata.name,
             delivered: pack.status?.stimulusDelivered,
             generation: pack.status?.stimulusGeneration,
             label: pack.spec.stimulus.name,
@@ -533,6 +538,7 @@ export function GlobalEnsembleCanvas() {
   }
 
   return (
+    <StimulusDialogProvider>
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -557,6 +563,7 @@ export function GlobalEnsembleCanvas() {
         </ReactFlow>
       </div>
     </div>
+    </StimulusDialogProvider>
   );
 }
 
@@ -644,6 +651,7 @@ export function DashboardEnsembleCanvas() {
           position: { x: currentX, y: hasProviders ? -60 : -80 },
           data: {
             stimulus: pack.spec.stimulus,
+            ensembleName: pack.metadata.name,
             delivered: pack.status?.stimulusDelivered,
             generation: pack.status?.stimulusGeneration,
             label: pack.spec.stimulus.name,
@@ -692,6 +700,7 @@ export function DashboardEnsembleCanvas() {
   }
 
   return (
+    <StimulusDialogProvider>
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-1 pb-2 shrink-0">
         <select
@@ -721,5 +730,6 @@ export function DashboardEnsembleCanvas() {
         </ReactFlow>
       </div>
     </div>
+    </StimulusDialogProvider>
   );
 }

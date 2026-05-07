@@ -1541,6 +1541,7 @@ type PatchEnsembleRequest struct {
 	WorkflowType         string                                             `json:"workflowType,omitempty"`
 	SharedMemory         *sympoziumv1alpha1.SharedMemorySpec                `json:"sharedMemory,omitempty"`
 	ModelRef             string                                             `json:"modelRef,omitempty"`
+	Stimulus             *sympoziumv1alpha1.StimulusSpec                    `json:"stimulus,omitempty"`
 }
 
 // AgentConfigPatchSpec allows partial updates to individual personas by name.
@@ -1753,6 +1754,10 @@ func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
 
 	if req.SharedMemory != nil {
 		pp.Spec.SharedMemory = req.SharedMemory
+	}
+
+	if req.Stimulus != nil {
+		pp.Spec.Stimulus = req.Stimulus
 	}
 
 	// Store GitHub token as a cluster secret when provided inline.

@@ -381,6 +381,19 @@ export function useTriggerStimulus() {
   });
 }
 
+export function usePatchEnsembleStimulus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, stimulus }: { name: string; stimulus: { name: string; prompt: string } }) =>
+      api.ensembles.patch(name, { stimulus }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ensembles"] });
+      toast.success("Stimulus updated");
+    },
+    onError: toastError,
+  });
+}
+
 export function useInstallDefaultEnsembles() {
   const qc = useQueryClient();
   return useMutation({

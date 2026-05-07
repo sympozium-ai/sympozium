@@ -1030,6 +1030,7 @@ export const api = {
         relationships?: AgentConfigRelationship[];
         workflowType?: string;
         sharedMemory?: SharedMemorySpec;
+        stimulus?: StimulusSpec;
       },
     ) =>
       apiFetch<Ensemble>(`/api/v1/ensembles/${name}`, {
