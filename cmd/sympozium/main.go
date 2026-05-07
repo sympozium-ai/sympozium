@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11008,6 +11009,43 @@ the login URL.`,
 			const maxBackoff = 30 * time.Second
 
 			for {
+				// Before starting, check if the local port is already in
+				// use (e.g. a lingering kubectl process from a previous
+				// iteration).  If so, try to reach the service through it.
+				// If reachable, the forward is healthy — just wait for it
+				// to go away instead of spamming errors.
+				ln, listenErr := net.Listen("tcp4", "127.0.0.1:"+localPort)
+				if listenErr != nil {
+					// Port is occupied.  Probe whether the existing
+					// forward is actually working.
+					probeConn, probeErr := net.DialTimeout("tcp4", "127.0.0.1:"+localPort, 2*time.Second)
+					if probeErr == nil {
+						probeConn.Close()
+						// Forward is live — nothing to do.  Wait and
+						// re-check so we can take over once the old
+						// process exits.
+						select {
+						case <-time.After(5 * time.Second):
+							continue
+						case <-ctx.Done():
+							return nil
+						}
+					}
+					// Port is held but not responding — kill stale
+					// kubectl port-forward processes on this port.
+					killCmd := exec.Command("bash", "-c",
+						fmt.Sprintf("lsof -ti tcp:%s | xargs kill 2>/dev/null", localPort))
+					_ = killCmd.Run()
+					// Give the OS a moment to release the socket.
+					select {
+					case <-time.After(2 * time.Second):
+					case <-ctx.Done():
+						return nil
+					}
+					continue
+				}
+				ln.Close()
+
 				pf := exec.CommandContext(ctx, "kubectl", "port-forward",
 					"-n", ns,
 					"--address", "127.0.0.1",
