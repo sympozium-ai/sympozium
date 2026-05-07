@@ -166,6 +166,13 @@ type AgentRunSandboxSpec struct {
 	// +optional
 	Image string `json:"image,omitempty"`
 
+	// ImagePullPolicy overrides the sandbox container image pull policy.
+	// Valid values are "Always", "IfNotPresent", or "Never". Defaults to
+	// "IfNotPresent" when unset.
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
 	// SecurityContext for the sandbox container.
 	// +optional
 	SecurityContext *SandboxSecurityContext `json:"securityContext,omitempty"`
@@ -381,6 +388,12 @@ type LifecycleHookContainer struct {
 
 	// Image is the container image.
 	Image string `json:"image"`
+
+	// ImagePullPolicy overrides the container image pull policy. Valid values are
+	// "Always", "IfNotPresent", or "Never". Defaults to "IfNotPresent" when unset.
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
 	// Command overrides the container entrypoint.
 	// +optional

@@ -1234,7 +1234,7 @@ func (r *AgentRunReconciler) reconcilePendingServer(ctx context.Context, log log
 						{
 							Name:            "web-proxy",
 							Image:           serverSidecar.sidecar.Image,
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: ResolveImagePullPolicy(serverSidecar.sidecar.ImagePullPolicy),
 							Env:             envVars,
 							Ports:           containerPorts,
 							LivenessProbe: &corev1.Probe{
@@ -1983,7 +1983,7 @@ func (r *AgentRunReconciler) buildContainers(
 		containers = append(containers, corev1.Container{
 			Name:            "sandbox",
 			Image:           sandboxImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			ImagePullPolicy: ResolveImagePullPolicy(agentRun.Spec.Sandbox.ImagePullPolicy),
 			SecurityContext: &corev1.SecurityContext{
 				ReadOnlyRootFilesystem: &readOnly,
 				Capabilities: &corev1.Capabilities{
@@ -2216,7 +2216,7 @@ func (r *AgentRunReconciler) buildContainers(
 		container := corev1.Container{
 			Name:            fmt.Sprintf("skill-%s", sc.skillPackName),
 			Image:           sc.sidecar.Image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			ImagePullPolicy: ResolveImagePullPolicy(sc.sidecar.ImagePullPolicy),
 			Env:             envVars,
 			VolumeMounts:    mounts,
 			Resources: corev1.ResourceRequirements{
@@ -2299,7 +2299,7 @@ func (r *AgentRunReconciler) buildContainers(
 			hookContainer := corev1.Container{
 				Name:            fmt.Sprintf("pre-%s", hook.Name),
 				Image:           hook.Image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
+				ImagePullPolicy: ResolveImagePullPolicy(hook.ImagePullPolicy),
 				SecurityContext: &corev1.SecurityContext{
 					ReadOnlyRootFilesystem:   &readOnly,
 					AllowPrivilegeEscalation: &noPrivEsc,
@@ -4079,7 +4079,7 @@ func (r *AgentRunReconciler) buildPostRunJob(
 		hookContainer := corev1.Container{
 			Name:            fmt.Sprintf("post-%s", hook.Name),
 			Image:           hook.Image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			ImagePullPolicy: ResolveImagePullPolicy(hook.ImagePullPolicy),
 			SecurityContext: &corev1.SecurityContext{
 				ReadOnlyRootFilesystem:   &readOnly,
 				AllowPrivilegeEscalation: &noPrivEsc,

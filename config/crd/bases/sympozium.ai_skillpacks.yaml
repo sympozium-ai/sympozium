@@ -191,6 +191,16 @@ spec:
                   image:
                     description: Image is the container image for this skill sidecar.
                     type: string
+                  imagePullPolicy:
+                    description: |-
+                      ImagePullPolicy overrides the container image pull policy for this
+                      sidecar. Valid values are "Always", "IfNotPresent", or "Never".
+                      Defaults to "IfNotPresent" when unset.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
                   mountWorkspace:
                     default: true
                     description: MountWorkspace controls whether /workspace is mounted

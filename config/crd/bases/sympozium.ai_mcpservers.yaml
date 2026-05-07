@@ -78,6 +78,16 @@ spec:
                     description: Image is the container image for the MCP server.
                     minLength: 1
                     type: string
+                  imagePullPolicy:
+                    description: |-
+                      ImagePullPolicy overrides the MCP server container image pull policy.
+                      Valid values are "Always", "IfNotPresent", or "Never". Defaults to
+                      "IfNotPresent" when unset.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
                   port:
                     default: 8080
                     description: Port is the HTTP port (http transport only). Defaults
