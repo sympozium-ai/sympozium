@@ -3808,8 +3808,8 @@ type mcpServerYAML struct {
 }
 
 type mcpAuthYAML struct {
-	Type     string `yaml:"type"`
-	TokenEnv string `yaml:"tokenEnv"`
+	Type      string `yaml:"type"`
+	SecretKey string `yaml:"secretKey"`
 }
 
 type mcpServersConfigYAML struct {
@@ -3842,8 +3842,8 @@ func buildMCPServersYAML(mcpServers []sympoziumv1alpha1.MCPServerRef) (string, e
 		if srv.AuthSecret != "" {
 			envName := fmt.Sprintf("MCP_AUTH_%s", strings.ToUpper(strings.ReplaceAll(srv.Name, "-", "_")))
 			entry.Auth = &mcpAuthYAML{
-				Type:     "bearer",
-				TokenEnv: envName,
+				Type:      "bearer",
+				SecretKey: envName,
 			}
 		}
 
