@@ -152,7 +152,8 @@ func (m *muteStore) IsMuted(ctx context.Context, channelType, chatID string) (bo
 
 // SetMuted sets or clears the mute flag for (channel, chat). It creates
 // the backing ConfigMap on demand and removes empty entries to keep
-// the map tidy.
+// the map tidy. Concurrent callers racing to create the ConfigMap are
+// handled by retrying through the update path on AlreadyExists.
 func (m *muteStore) SetMuted(ctx context.Context, channelType, chatID string, muted bool) error {
 	name := channelStateConfigMapName(m.instance)
 	key := channelMuteKey(channelType, chatID)
@@ -179,6 +180,14 @@ func (m *muteStore) SetMuted(ctx context.Context, channelType, chatID string, mu
 			return fmt.Errorf("set owner reference on channel state configmap: %w", err)
 		}
 		if err := m.c.Create(ctx, cm); err != nil {
+			if errors.IsAlreadyExists(err) {
+				// A concurrent writer beat us to creating the ConfigMap.
+				// Re-fetch and fall through to the update path.
+				if getErr := m.c.Get(ctx, types.NamespacedName{Namespace: m.owner.Namespace, Name: name}, cm); getErr != nil {
+					return fmt.Errorf("refetch channel state configmap after AlreadyExists: %w", getErr)
+				}
+				break
+			}
 			return fmt.Errorf("create channel state configmap: %w", err)
 		}
 		return nil
