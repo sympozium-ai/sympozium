@@ -172,7 +172,19 @@ web-dev: web-install ## Start the frontend dev server (hot-reload, proxy to :808
 	cd web && npm run dev
 
 web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apiserver (no rebuild needed)
-	@APISERVER_TOKEN=$$( \
+	@set -e; \
+	echo "==> Checking cluster connectivity..."; \
+	if ! kubectl cluster-info >/dev/null 2>&1; then \
+		echo "ERROR: Cannot reach Kubernetes cluster. Is your Kind cluster running?"; \
+		echo "  Try: kind get clusters"; \
+		exit 1; \
+	fi; \
+	if ! kubectl get svc -n $(SYMPOZIUM_NAMESPACE) sympozium-apiserver >/dev/null 2>&1; then \
+		echo "ERROR: Service sympozium-apiserver not found in namespace $(SYMPOZIUM_NAMESPACE)."; \
+		echo "  Is Sympozium installed? Try: make install"; \
+		exit 1; \
+	fi; \
+	APISERVER_TOKEN=$$( \
 		kubectl get deploy -n $(SYMPOZIUM_NAMESPACE) sympozium-apiserver -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].value}' 2>/dev/null \
 	); \
 	if [ -z "$$APISERVER_TOKEN" ]; then \
@@ -183,16 +195,26 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 			APISERVER_TOKEN=$$(kubectl get secret -n $(SYMPOZIUM_NAMESPACE) "$$SECRET_NAME" -o jsonpath="{.data.$$SECRET_KEY}" 2>/dev/null | base64 -d 2>/dev/null); \
 		fi; \
 	fi; \
-	if [ -z "$$APISERVER_TOKEN" ]; then APISERVER_TOKEN="(not set)"; fi; \
-	echo "==> Port-forwarding sympozium-apiserver to localhost:$(API_LOCAL_PORT)"; \
-	echo "==> Vite dev server on http://localhost:$(VITE_PORT) (proxies /api + /ws to :$(API_LOCAL_PORT))"; \
-	echo "==> API token (from apiserver): $$APISERVER_TOKEN"; \
-	echo "==> Edit web/src/ and changes hot-reload instantly."; \
-	echo ""; \
-	if ! kubectl get svc -n $(SYMPOZIUM_NAMESPACE) sympozium-apiserver >/dev/null 2>&1; then \
-		echo "ERROR: Service sympozium-apiserver not found in namespace $(SYMPOZIUM_NAMESPACE)."; \
+	if [ -z "$$APISERVER_TOKEN" ]; then \
+		echo "ERROR: Could not resolve API token from apiserver deployment."; \
+		echo "  Check: kubectl get deploy -n $(SYMPOZIUM_NAMESPACE) sympozium-apiserver -o yaml | grep SYMPOZIUM_UI_TOKEN"; \
 		exit 1; \
 	fi; \
+	STALE_PID=$$(lsof -ti tcp:$(API_LOCAL_PORT) 2>/dev/null || true); \
+	if [ -n "$$STALE_PID" ]; then \
+		echo "==> Killing stale process on port $(API_LOCAL_PORT) (pid $$STALE_PID)"; \
+		kill $$STALE_PID 2>/dev/null; sleep 1; \
+		kill -9 $$STALE_PID 2>/dev/null || true; \
+	fi; \
+	echo ""; \
+	echo "============================================"; \
+	echo "  Sympozium Web Dev Server"; \
+	echo "============================================"; \
+	echo "  UI:     http://localhost:$(VITE_PORT)"; \
+	echo "  API:    localhost:$(API_LOCAL_PORT) (port-forward)"; \
+	echo "  Token:  $$APISERVER_TOKEN"; \
+	echo "============================================"; \
+	echo ""; \
 	PF_LOG=/tmp/sympozium-web-dev-serve-portforward.log; \
 	rm -f $$PF_LOG; \
 	trap 'kill 0' EXIT; \
@@ -220,7 +242,8 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 		echo "--------------------------"; \
 		exit 1; \
 	fi; \
-	echo "==> Port-forward ready (localhost:$(API_LOCAL_PORT))."; \
+	echo "==> Port-forward ready."; \
+	echo ""; \
 	cd web && API_LOCAL_PORT=$(API_LOCAL_PORT) npm run dev -- --port $(VITE_PORT)
 
 web-clean: ## Remove frontend build artifacts

@@ -17,6 +17,7 @@ import {
   PanelLeftOpen,
   Settings,
   Network,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -171,6 +172,20 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {collapsed && (
         <div className="border-t border-border/50 px-2 py-2 flex flex-col items-center gap-1">
           <OntologyModal />
+          <NavLink
+            to="/synthetic-membrane"
+            title="Synthetic Membrane"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center justify-center rounded-md p-1.5 transition-colors",
+                isActive
+                  ? "text-blue-400 bg-blue-500/10"
+                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              )
+            }
+          >
+            <Layers className="h-4 w-4" />
+          </NavLink>
           <a
             href="https://deploy.sympozium.ai/docs"
             target="_blank"
@@ -194,6 +209,20 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       {!collapsed && (
         <div className="border-t border-border/50 px-4 py-3 space-y-2">
           <OntologyModalExpanded />
+          <NavLink
+            to="/synthetic-membrane"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors w-full",
+                isActive
+                  ? "text-blue-400 bg-blue-500/10"
+                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+              )
+            }
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Synthetic Membrane
+          </NavLink>
           <a
             href="https://deploy.sympozium.ai/docs"
             target="_blank"

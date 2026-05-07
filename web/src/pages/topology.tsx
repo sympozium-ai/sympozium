@@ -48,6 +48,7 @@ import {
   Lock,
   Unlock,
   RotateCcw,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -57,8 +58,10 @@ import type {
   ProviderNode,
   NodeProvider,
   GatewayConfigResponse,
+  StimulusSpec,
 } from "@/lib/api";
 import { Link } from "react-router-dom";
+import Dagre from "@dagrejs/dagre";
 
 // ── Custom node components ────────────────────────────────────────────────────
 
@@ -149,15 +152,14 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
   );
 }
 
-/** Wrapper node that renders as a dashed group box around active ensemble + personas. */
-function EnsembleGroupNode({ data }: NodeProps<Node<EnsembleGroupNodeData>>) {
+function TopologyStimulusNode({ data }: NodeProps<Node<TopologyStimulusNodeData>>) {
   return (
-    <div
-      className="rounded-xl border border-dashed border-blue-500/20 bg-blue-500/[0.02]"
-      style={{ width: data.width, height: data.height }}
-    >
-      <Handle type="target" position={Position.Top} className="!bg-blue-500 !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !w-2 !h-2" />
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 shadow-sm min-w-[100px] max-w-[160px]">
+      <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-1.5 !h-1.5" />
+      <div className="flex items-center gap-1.5">
+        <Zap className="h-3 w-3 text-amber-400 shrink-0" />
+        <span className="text-[10px] font-medium text-amber-300 truncate">{data.name}</span>
+      </div>
     </div>
   );
 }
@@ -311,9 +313,8 @@ interface EnsembleNodeData {
   [key: string]: unknown;
 }
 
-interface EnsembleGroupNodeData {
-  width: number;
-  height: number;
+interface TopologyStimulusNodeData {
+  name: string;
   [key: string]: unknown;
 }
 
@@ -342,7 +343,7 @@ const nodeTypes = {
   k8sNode: K8sNodeNode,
   model: ModelNode,
   ensemble: EnsembleNode,
-  ensembleGroup: EnsembleGroupNode,
+  stimulus: TopologyStimulusNode,
   persona: PersonaNode,
   agentRun: AgentRunNode,
   cloudProvider: CloudProviderNode,
@@ -351,35 +352,53 @@ const nodeTypes = {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-const COL_GAP = 340;
-const ROW_GAP = 180;
+/** Estimated node dimensions for dagre layout (width, height). */
+const NODE_SIZES: Record<string, [number, number]> = {
+  gateway:       [220, 70],
+  k8sNode:       [260, 90],
+  cloudProvider: [180, 50],
+  model:         [200, 70],
+  ensemble:      [200, 50],
+  stimulus:      [140, 40],
+  persona:       [150, 50],
+  agentRun:      [140, 40],
+};
 
-/** Center a layer of N items horizontally around x=0 with COL_GAP spacing. */
-function centerX(count: number, index: number): number {
-  const totalWidth = (count - 1) * COL_GAP;
-  return -totalWidth / 2 + index * COL_GAP;
-}
+/** Run dagre layout on nodes and edges, positioning top-to-bottom. */
+function applyDagreLayout(nodes: Node[], edges: Edge[]): void {
+  const g = new Dagre.graphlib.Graph({ compound: true })
+    .setDefaultEdgeLabel(() => ({}))
+    .setGraph({
+      rankdir: "TB",
+      nodesep: 60,
+      ranksep: 100,
+      edgesep: 30,
+    });
 
-/** Lay out items in a grid (maxCols wide), centered horizontally, returning {x, y} offset from layerY. */
-function gridPosition(
-  index: number,
-  total: number,
-  maxCols: number,
-  rowHeight = 60,
-): { dx: number; dy: number } {
-  const cols = Math.min(total, maxCols);
-  const row = Math.floor(index / cols);
-  const itemsInRow = Math.min(cols, total - row * cols);
-  const col = index % cols;
-  return {
-    dx: centerX(itemsInRow, col),
-    dy: row * rowHeight,
-  };
-}
+  for (const node of nodes) {
+    const [w, h] = NODE_SIZES[node.type || ""] || [160, 50];
+    if (node.parentId) continue; // skip children of compound nodes
+    g.setNode(node.id, { width: w, height: h });
+  }
 
-/** How many rows a grid of `total` items with `maxCols` columns occupies. */
-function gridRows(total: number, maxCols: number): number {
-  return Math.ceil(total / Math.min(total, maxCols));
+  for (const edge of edges) {
+    // Only add edges between nodes that exist in the graph (skip child-only edges).
+    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+      g.setEdge(edge.source, edge.target);
+    }
+  }
+
+  Dagre.layout(g);
+
+  for (const node of nodes) {
+    if (node.parentId) continue;
+    const pos = g.node(node.id);
+    if (pos) {
+      const [w, h] = NODE_SIZES[node.type || ""] || [160, 50];
+      // dagre returns center positions; ReactFlow uses top-left.
+      node.position = { x: pos.x - w / 2, y: pos.y - h / 2 };
+    }
+  }
 }
 
 /** Build a stable fingerprint from entity IDs so we know when layout needs recomputing. */
@@ -414,8 +433,9 @@ function buildTopology(
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  const P = { x: 0, y: 0 }; // placeholder — dagre computes real positions
 
-  // Collect unique providers from ensembles (from authRefs or inferred from baseURL).
+  // ── Provider detection ─────────────────────────────────────────────────
   const PROVIDER_LABELS: Record<string, string> = {
     openai: "OpenAI", anthropic: "Anthropic", "azure-openai": "Azure OpenAI",
     bedrock: "AWS Bedrock", "lm-studio": "LM Studio", ollama: "Ollama",
@@ -423,7 +443,6 @@ function buildTopology(
     vllm: "vLLM", tgi: "TGI",
   };
 
-  // Infer provider from baseURL patterns.
   function inferProvider(baseURL: string): string | null {
     if (!baseURL) return null;
     if (baseURL.includes("/proxy/lm-studio/") || baseURL.includes(":1234")) return "lm-studio";
@@ -435,22 +454,18 @@ function buildTopology(
     return null;
   }
 
-  // Track which provider each ensemble uses, and whether providers are local (on a node).
-  const ensProviders = new Map<string, string>(); // provider key → label
-  const ensProviderMap = new Map<string, string>(); // ensemble name → provider key
+  const ensProviders = new Map<string, string>();
+  const ensProviderMap = new Map<string, string>();
   const LOCAL_PROVIDERS = new Set(["lm-studio", "ollama", "llama-server", "vllm", "unsloth"]);
 
   for (const ens of ensembles) {
-    // From authRefs.
     for (const ref of ens.spec.authRefs || []) {
       if (ref.provider) {
         ensProviders.set(ref.provider, PROVIDER_LABELS[ref.provider] || ref.provider);
         ensProviderMap.set(ens.metadata.name, ref.provider);
       }
     }
-    // From baseURL if no authRef matched.
     if (!ensProviderMap.has(ens.metadata.name) && ens.spec.baseURL) {
-      // Skip model endpoints (they're handled separately as Model nodes).
       const isModelEndpoint = models.some(
         (m) => m.status?.endpoint && ens.spec.baseURL?.includes(m.status.endpoint.replace("/v1", "")),
       );
@@ -464,14 +479,12 @@ function buildTopology(
     }
   }
 
-  let layerY = 0;
-
-  // ── Layer 0: Gateway (external ingress — top of topology) ───────────────
+  // ── Gateway ────────────────────────────────────────────────────────────
   if (gateway) {
     nodes.push({
       id: "gateway",
       type: "gateway",
-      position: { x: centerX(1, 0), y: layerY },
+      position: P,
       data: {
         ready: gateway.ready,
         phase: gateway.phase || "",
@@ -479,45 +492,32 @@ function buildTopology(
         routes: webEndpointAgents,
       },
     });
-    layerY += 100;
   }
 
-  // ── Layer 1: K8s Nodes ──────────────────────────────────────────────────
-  if (providerNodes.length > 0) {
-    providerNodes.forEach((pn, i) => {
-      nodes.push({
-        id: `node-${pn.nodeName}`,
-        type: "k8sNode",
-        position: { x: centerX(providerNodes.length, i), y: layerY },
-        data: {
-          name: pn.nodeName,
-          ip: pn.nodeIP,
-          providers: pn.providers.map((p) => ({
-            name: p.name,
-            models: p.models,
-          })),
-        },
-      });
+  // ── K8s Nodes ──────────────────────────────────────────────────────────
+  for (const pn of providerNodes) {
+    nodes.push({
+      id: `node-${pn.nodeName}`,
+      type: "k8sNode",
+      position: P,
+      data: {
+        name: pn.nodeName,
+        ip: pn.nodeIP,
+        providers: pn.providers.map((p) => ({ name: p.name, models: p.models })),
+      },
     });
-    layerY += ROW_GAP;
   }
 
-  // ── Layer 2: Providers ─────────────────────────────────────────────────
-  // Split into local (discovered on node → positioned below it) and cloud (standalone).
-  const localProvEntries = Array.from(ensProviders.entries()).filter(([p]) => LOCAL_PROVIDERS.has(p));
-  const cloudProvEntries = Array.from(ensProviders.entries()).filter(([p]) => !LOCAL_PROVIDERS.has(p));
-
-  // Local providers — below the K8s node, connected to it.
-  if (localProvEntries.length > 0) {
-    localProvEntries.forEach(([prov, label], i) => {
-      nodes.push({
-        id: `cp-${prov}`,
-        type: "cloudProvider",
-        position: { x: centerX(localProvEntries.length, i), y: layerY },
-        data: { provider: prov, label },
-      });
-
-      // Edge: K8s node → local provider.
+  // ── Providers ──────────────────────────────────────────────────────────
+  for (const [prov, label] of ensProviders) {
+    nodes.push({
+      id: `cp-${prov}`,
+      type: "cloudProvider",
+      position: P,
+      data: { provider: prov, label },
+    });
+    // Edge: K8s node → local provider.
+    if (LOCAL_PROVIDERS.has(prov)) {
       for (const pn of providerNodes) {
         if (pn.providers.some((dp) => dp.name === prov || dp.name === prov.replace("-", ""))) {
           edges.push({
@@ -529,86 +529,58 @@ function buildTopology(
           });
         }
       }
-    });
-    layerY += 90;
+    }
   }
 
-  // Cloud/external providers — standalone, positioned to the right.
-  if (cloudProvEntries.length > 0) {
-    // Place cloud providers at the same Y as the K8s node but offset right.
-    const cloudBaseX = (providerNodes.length > 0 ? providerNodes.length : 1) * COL_GAP / 2 + 200;
-    const cloudY = providerNodes.length > 0
-      ? layerY - 90 - ROW_GAP + 30 // align with the node layer
-      : layerY;
-    cloudProvEntries.forEach(([prov, label], i) => {
-      nodes.push({
-        id: `cp-${prov}`,
-        type: "cloudProvider",
-        position: { x: cloudBaseX + i * 200, y: cloudY },
-        data: { provider: prov, label },
-      });
+  // ── Models ─────────────────────────────────────────────────────────────
+  for (const m of models) {
+    const modelId = `model-${m.metadata.name}`;
+    nodes.push({
+      id: modelId,
+      type: "model",
+      position: P,
+      data: {
+        name: m.metadata.name,
+        namespace: m.metadata.namespace,
+        phase: m.status?.phase || "Pending",
+        serverType: m.spec.inference?.serverType || "llama-cpp",
+        gpu: m.spec.resources?.gpu ?? 0,
+        placedNode: m.status?.placedNode,
+      },
     });
-  }
-
-  // ── Layer 3: Models ─────────────────────────────────────────────────────
-  if (models.length > 0) {
-    models.forEach((m, i) => {
-      const modelId = `model-${m.metadata.name}`;
-      nodes.push({
-        id: modelId,
-        type: "model",
-        position: { x: centerX(models.length, i), y: layerY },
-        data: {
-          name: m.metadata.name,
-          namespace: m.metadata.namespace,
-          phase: m.status?.phase || "Pending",
-          serverType: m.spec.inference?.serverType || "llama-cpp",
-          gpu: m.spec.resources?.gpu ?? 0,
-          placedNode: m.status?.placedNode,
-        },
-      });
-
-      // Edge: K8s node → model (runs on)
-      if (m.status?.placedNode) {
-        const nodeId = `node-${m.status.placedNode}`;
-        if (providerNodes.some((pn) => pn.nodeName === m.status?.placedNode)) {
-          edges.push({
-            id: `e-${modelId}-${nodeId}`,
-            source: nodeId,
-            target: modelId,
-            style: { stroke: "#8b5cf6", strokeWidth: 1.5 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf6" },
-            animated: m.status?.phase === "Loading",
-            label: "runs on",
-            labelStyle: { fontSize: 9, fill: "#9ca3af" },
-            labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
-            labelBgPadding: [4, 2] as [number, number],
-          });
-        }
-      } else if (providerNodes.length === 1) {
-        // Single-node cluster: connect model to the only node
+    if (m.status?.placedNode) {
+      const nodeId = `node-${m.status.placedNode}`;
+      if (providerNodes.some((pn) => pn.nodeName === m.status?.placedNode)) {
         edges.push({
-          id: `e-${modelId}-node-${providerNodes[0].nodeName}`,
-          source: `node-${providerNodes[0].nodeName}`,
+          id: `e-${modelId}-${nodeId}`,
+          source: nodeId,
           target: modelId,
-          style: { stroke: "#8b5cf680", strokeWidth: 1 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf680" },
+          style: { stroke: "#8b5cf6", strokeWidth: 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf6" },
+          animated: m.status?.phase === "Loading",
+          label: "runs on",
+          labelStyle: { fontSize: 9, fill: "#9ca3af" },
+          labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
+          labelBgPadding: [4, 2] as [number, number],
         });
       }
-    });
-    layerY += ROW_GAP;
+    } else if (providerNodes.length === 1) {
+      edges.push({
+        id: `e-${modelId}-node-${providerNodes[0].nodeName}`,
+        source: `node-${providerNodes[0].nodeName}`,
+        target: modelId,
+        style: { stroke: "#8b5cf680", strokeWidth: 1 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf680" },
+      });
+    }
   }
 
-  // ── Layer 3: Ensembles ───────────────────────────────────────────────
-  // Split into active (expanded with personas) and inactive (compact grid).
-  const PERSONA_COL_W = 210;
+  // ── Ensembles (active only) ────────────────────────────────────────────
   const activeEnsembles = ensembles.filter((e) => e.spec.enabled);
-  const inactiveEnsembles = ensembles.filter((e) => !e.spec.enabled);
 
-  // Helper: add model/provider edges for an ensemble.
-  function addEnsembleEdges(ensId: string, ens: Ensemble, active = true) {
-    const edgeColor = active ? "#6366f1" : "#4b5563";
-    const provEdgeColor = active ? "#f97316" : "#4b5563";
+  function addEnsembleEdges(ensId: string, ens: Ensemble) {
+    const edgeColor = "#6366f1";
+    const provEdgeColor = "#f97316";
     if (ens.spec.modelRef) {
       const modelId = `model-${ens.spec.modelRef}`;
       if (models.some((m) => m.metadata.name === ens.spec.modelRef)) {
@@ -616,9 +588,9 @@ function buildTopology(
           id: `e-${ensId}-${modelId}`,
           source: modelId,
           target: ensId,
-          style: { stroke: edgeColor, strokeWidth: active ? 1.5 : 1, strokeDasharray: "4 3" },
+          style: { stroke: edgeColor, strokeWidth: 1.5, strokeDasharray: "4 3" },
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
-          animated: active,
+          animated: true,
           label: "inference",
           labelStyle: { fontSize: 9, fill: "#9ca3af" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
@@ -634,7 +606,7 @@ function buildTopology(
           id: `e-${ensId}-model-${matchedModel.metadata.name}`,
           source: `model-${matchedModel.metadata.name}`,
           target: ensId,
-          style: { stroke: edgeColor, strokeWidth: active ? 1.5 : 1, strokeDasharray: "4 3" },
+          style: { stroke: edgeColor, strokeWidth: 1.5, strokeDasharray: "4 3" },
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
           label: "inference",
           labelStyle: { fontSize: 9, fill: "#9ca3af" },
@@ -643,14 +615,13 @@ function buildTopology(
         });
       }
     }
-    // Edge: provider → ensemble.
     const ensProv = ensProviderMap.get(ens.metadata.name);
     if (ensProv) {
       edges.push({
         id: `e-cp-${ensProv}-${ensId}`,
         source: `cp-${ensProv}`,
         target: ensId,
-        style: { stroke: provEdgeColor, strokeWidth: active ? 1.5 : 1, strokeDasharray: "4 3" },
+        style: { stroke: provEdgeColor, strokeWidth: 1.5, strokeDasharray: "4 3" },
         markerEnd: { type: MarkerType.ArrowClosed, color: provEdgeColor },
         label: "inference",
         labelStyle: { fontSize: 9, fill: "#9ca3af" },
@@ -660,47 +631,15 @@ function buildTopology(
     }
   }
 
-  // 3a. Active ensembles — each gets a group box with personas expanded inside.
-  // Pre-compute widths so we can lay them out without overlapping.
-  const ACTIVE_GAP = 60; // px between group boxes
-  const PERSONA_MAX_COLS = 2;
-  const PERSONA_ROW_H = 70;
-  const activeWidths = activeEnsembles.map((ens) => {
-    const n = (ens.spec.agentConfigs || []).length;
-    const cols = Math.min(n, PERSONA_MAX_COLS);
-    // 80px padding each side for persona node width overhang
-    return Math.max(cols * PERSONA_COL_W + 160, 280);
-  });
-  const totalActiveW = activeWidths.reduce((s, w) => s + w, 0) + Math.max(0, activeWidths.length - 1) * ACTIVE_GAP;
-  let activeX = -totalActiveW / 2; // start from left edge of centered row
-
-  activeEnsembles.forEach((ens, i) => {
+  for (const ens of activeEnsembles) {
     const ensId = `ens-${ens.metadata.name}`;
     const configs = ens.spec.agentConfigs || [];
     const personas = configs.map((p) => p.displayName || p.name);
 
-    const groupW = activeWidths[i];
-    const personaRows = configs.length > 0 ? Math.ceil(configs.length / PERSONA_MAX_COLS) : 0;
-    const groupH = personaRows > 0 ? 60 + personaRows * PERSONA_ROW_H + 10 : 50;
-    const groupLeft = activeX;
-    activeX += groupW + ACTIVE_GAP;
-
-    // Group box — parent node; ensemble chip + personas are children.
-    const groupId = `${ensId}-group`;
-    nodes.push({
-      id: groupId,
-      type: "ensembleGroup",
-      position: { x: groupLeft, y: layerY },
-      data: { width: groupW, height: groupH },
-      zIndex: -1,
-    } as Node);
-
-    // Ensemble chip (child of group — position relative to group).
     nodes.push({
       id: ensId,
       type: "ensemble",
-      position: { x: groupW / 2, y: 15 },
-      parentId: groupId,
+      position: P,
       data: {
         name: ens.metadata.name,
         description: ens.spec.description || "",
@@ -711,169 +650,127 @@ function buildTopology(
     });
     addEnsembleEdges(ensId, ens);
 
-    // Persona sub-nodes below the chip, inside the group box.
-    if (configs.length > 0) {
-      const personaBaseY = 60;
-      configs.forEach((cfg, pi) => {
-        const pid = `${ensId}-p-${cfg.name}`;
-        const stampedName = `${ens.metadata.name}-${cfg.name}`;
-        const pRow = Math.floor(pi / PERSONA_MAX_COLS);
-        const pCol = pi % PERSONA_MAX_COLS;
-        const itemsInRow = Math.min(PERSONA_MAX_COLS, configs.length - pRow * PERSONA_MAX_COLS);
-        const rowW = (itemsInRow - 1) * PERSONA_COL_W;
-        const pxRel = (groupW - rowW) / 2 + pCol * PERSONA_COL_W;
-        const pyRel = personaBaseY + pRow * PERSONA_ROW_H;
-        nodes.push({
-          id: pid,
-          type: "persona",
-          position: { x: pxRel, y: pyRel },
-          parentId: groupId,
-          data: {
-            name: cfg.name,
-            displayName: cfg.displayName || cfg.name,
-            runPhase: runPhases[stampedName],
-          },
-        });
-        edges.push({
-          id: `e-${ensId}-${pid}`,
-          source: ensId,
-          target: pid,
-          style: { stroke: "#3b82f640", strokeWidth: 1 },
-        });
+    // Stimulus trigger node.
+    if (ens.spec.stimulus) {
+      const stimId = `${ensId}-stim`;
+      nodes.push({
+        id: stimId,
+        type: "stimulus",
+        position: P,
+        data: { name: ens.spec.stimulus.name, label: ens.spec.stimulus.name },
       });
-
-      // Relationship edges between personas.
-      for (const rel of ens.spec.relationships || []) {
-        const srcId = `${ensId}-p-${rel.source}`;
-        const tgtId = `${ensId}-p-${rel.target}`;
-        const relColor =
-          rel.type === "delegation" ? "#60a5fa"
-            : rel.type === "sequential" ? "#fbbf24"
-              : "#9ca3af";
+      edges.push({
+        id: `e-${ensId}-stim`,
+        source: ensId,
+        target: stimId,
+        style: { stroke: "#f59e0b60", strokeWidth: 1 },
+      });
+      const stimRel = (ens.spec.relationships || []).find((r) => r.type === "stimulus");
+      if (stimRel) {
         edges.push({
-          id: `e-rel-${ensId}-${rel.source}-${rel.target}`,
-          source: srcId,
-          target: tgtId,
-          style: rel.type === "delegation"
-            ? { stroke: relColor, strokeWidth: 1.5 }
-            : { stroke: relColor, strokeWidth: 1, strokeDasharray: "4 3" },
-          markerEnd: { type: MarkerType.ArrowClosed, color: relColor },
-          label: rel.type,
+          id: `e-stim-${ensId}-${stimRel.target}`,
+          source: stimId,
+          target: `${ensId}-p-${stimRel.target}`,
+          style: { stroke: "#f59e0b", strokeWidth: 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
+          label: "triggers",
           labelStyle: { fontSize: 8, fill: "#9ca3af" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
-          animated: rel.type === "delegation",
         });
       }
-
-      // Active run nodes below personas.
-      const runsByAgent = new Map<string, AgentRun[]>();
-      for (const run of activeRuns) {
-        const ref = run.spec?.agentRef;
-        if (ref && ref.startsWith(ens.metadata.name + "-")) {
-          const list = runsByAgent.get(ref) || [];
-          list.push(run);
-          runsByAgent.set(ref, list);
-        }
-      }
-      const personaRows = Math.ceil(configs.length / PERSONA_MAX_COLS);
-      const runBaseY = 60 + personaRows * PERSONA_ROW_H + 10;
-      let runIdx = 0;
-      for (const [agentRef, agentRuns] of runsByAgent) {
-        for (const run of agentRuns) {
-          const runId = `run-${run.metadata.name}`;
-          const personaName = agentRef.slice(ens.metadata.name.length + 1);
-          const parentPersonaId = `${ensId}-p-${personaName}`;
-          nodes.push({
-            id: runId,
-            type: "agentRun",
-            position: { x: 10 + (runIdx % 3) * 150, y: runBaseY + Math.floor(runIdx / 3) * 40 },
-            parentId: groupId,
-            data: {
-              runName: run.metadata.name,
-              task: run.spec.task || "",
-              phase: run.status?.phase || "Pending",
-              label: run.metadata.name,
-            },
-          });
-          edges.push({
-            id: `e-run-${run.metadata.name}`,
-            source: parentPersonaId,
-            target: runId,
-            style: { stroke: "#22d3ee40", strokeWidth: 1 },
-            animated: true,
-          });
-          runIdx++;
-        }
-      }
     }
-  });
-  if (activeEnsembles.length > 0) {
-    const maxGroupH = activeEnsembles.reduce((max, ens, i) => {
-      const rows = Math.ceil((ens.spec.agentConfigs || []).length / PERSONA_MAX_COLS);
-      const h = rows > 0 ? 60 + rows * PERSONA_ROW_H + 10 : 50;
-      return Math.max(max, h);
-    }, 0);
-    layerY += maxGroupH + 50;
-  }
 
-  // 3b. Inactive ensembles — faded, spread wider to the sides.
-  const INACTIVE_MAX_COLS = 3;
-  const INACTIVE_COL_GAP = 300;
-  if (inactiveEnsembles.length > 0) {
-    inactiveEnsembles.forEach((ens, i) => {
-      const ensId = `ens-${ens.metadata.name}`;
-      const personas = (ens.spec.agentConfigs || []).map((p) => p.displayName || p.name);
-      const cols = Math.min(inactiveEnsembles.length, INACTIVE_MAX_COLS);
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      const itemsInRow = Math.min(cols, inactiveEnsembles.length - row * cols);
-      const totalW = (itemsInRow - 1) * INACTIVE_COL_GAP;
-      const dx = -totalW / 2 + col * INACTIVE_COL_GAP;
-      const dy = row * 60;
-
+    // Persona nodes.
+    for (const cfg of configs) {
+      const pid = `${ensId}-p-${cfg.name}`;
+      const stampedName = `${ens.metadata.name}-${cfg.name}`;
       nodes.push({
-        id: ensId,
-        type: "ensemble",
-        position: { x: dx, y: layerY + dy },
+        id: pid,
+        type: "persona",
+        position: P,
         data: {
-          name: ens.metadata.name,
-          description: ens.spec.description || "",
-          enabled: false,
-          personas,
-          runningCount: 0,
+          name: cfg.name,
+          displayName: cfg.displayName || cfg.name,
+          runPhase: runPhases[stampedName],
         },
       });
-      addEnsembleEdges(ensId, ens, false);
-    });
-    layerY += Math.ceil(inactiveEnsembles.length / INACTIVE_MAX_COLS) * 60 + 30;
+      edges.push({
+        id: `e-${ensId}-${pid}`,
+        source: ensId,
+        target: pid,
+        style: { stroke: "#3b82f640", strokeWidth: 1 },
+      });
+    }
+
+    // Relationship edges between personas.
+    for (const rel of ens.spec.relationships || []) {
+      if (rel.type === "stimulus") continue;
+      const srcId = `${ensId}-p-${rel.source}`;
+      const tgtId = `${ensId}-p-${rel.target}`;
+      const relColor =
+        rel.type === "delegation" ? "#60a5fa"
+          : rel.type === "sequential" ? "#fbbf24"
+            : "#9ca3af";
+      edges.push({
+        id: `e-rel-${ensId}-${rel.source}-${rel.target}`,
+        source: srcId,
+        target: tgtId,
+        style: rel.type === "delegation"
+          ? { stroke: relColor, strokeWidth: 1.5 }
+          : { stroke: relColor, strokeWidth: 1, strokeDasharray: "4 3" },
+        markerEnd: { type: MarkerType.ArrowClosed, color: relColor },
+        label: rel.type,
+        labelStyle: { fontSize: 8, fill: "#9ca3af" },
+        labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
+        labelBgPadding: [4, 2] as [number, number],
+        animated: rel.type === "delegation",
+      });
+    }
+
+    // Active run nodes below personas.
+    for (const run of activeRuns) {
+      const ref = run.spec?.agentRef;
+      if (ref && ref.startsWith(ens.metadata.name + "-")) {
+        const runId = `run-${run.metadata.name}`;
+        const personaName = ref.slice(ens.metadata.name.length + 1);
+        const parentPersonaId = `${ensId}-p-${personaName}`;
+        nodes.push({
+          id: runId,
+          type: "agentRun",
+          position: P,
+          data: {
+            runName: run.metadata.name,
+            task: run.spec.task || "",
+            phase: run.status?.phase || "Pending",
+            label: run.metadata.name,
+          },
+        });
+        edges.push({
+          id: `e-run-${run.metadata.name}`,
+          source: parentPersonaId,
+          target: runId,
+          style: { stroke: "#22d3ee40", strokeWidth: 1 },
+          animated: true,
+        });
+      }
+    }
   }
 
-  // ── Ad-hoc active runs (not belonging to any ensemble) ──────────────────
+  // ── Ad-hoc active runs (not belonging to any ensemble) ─────────────────
   const ensembleAgentRefs = new Set<string>();
   for (const ens of ensembles) {
     for (const cfg of ens.spec.agentConfigs || []) {
       ensembleAgentRefs.add(`${ens.metadata.name}-${cfg.name}`);
     }
   }
-  const adhocRuns = activeRuns.filter(
-    (r) => r.spec?.agentRef && !ensembleAgentRefs.has(r.spec.agentRef),
-  );
-  if (adhocRuns.length > 0) {
-    const ADHOC_COL_GAP = 160;
-    const adhocCols = Math.min(adhocRuns.length, 4);
-    const adhocTotalW = (adhocCols - 1) * ADHOC_COL_GAP;
-    adhocRuns.forEach((run, i) => {
-      const col = i % adhocCols;
-      const row = Math.floor(i / adhocCols);
+  for (const run of activeRuns) {
+    if (run.spec?.agentRef && !ensembleAgentRefs.has(run.spec.agentRef)) {
       const runId = `run-${run.metadata.name}`;
       nodes.push({
         id: runId,
         type: "agentRun",
-        position: {
-          x: -adhocTotalW / 2 + col * ADHOC_COL_GAP,
-          y: layerY + row * 45,
-        },
+        position: P,
         data: {
           runName: run.metadata.name,
           task: run.spec.task || "",
@@ -881,14 +778,12 @@ function buildTopology(
           label: run.metadata.name,
         },
       });
-    });
-    layerY += Math.ceil(adhocRuns.length / adhocCols) * 45 + 30;
+    }
   }
 
-  // ── Gateway edges (gateway is at top, ensembles/nodes are below) ─────────
+  // ── Gateway edges ──────────────────────────────────────────────────────
   if (gateway) {
-    // Gateway → ensembles with web endpoints (traffic flows down).
-    webEndpointAgents.forEach((agentName) => {
+    for (const agentName of webEndpointAgents) {
       const ownerEns = ensembles.find((ens) =>
         (ens.spec.agentConfigs || []).some(
           (p) => `${ens.metadata.name}-${p.name}` === agentName,
@@ -907,9 +802,7 @@ function buildTopology(
           labelBgPadding: [4, 2] as [number, number],
         });
       }
-    });
-
-    // Gateway → first K8s node (ingress enters cluster).
+    }
     if (providerNodes.length > 0) {
       edges.push({
         id: "e-gw-node",
@@ -919,6 +812,9 @@ function buildTopology(
       });
     }
   }
+
+  // ── Apply dagre layout ─────────────────────────────────────────────────
+  applyDagreLayout(nodes, edges);
 
   return { nodes, edges };
 }

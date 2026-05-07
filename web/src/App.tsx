@@ -20,6 +20,7 @@ import { ModelsPage } from "@/pages/models";
 import { ModelDetailPage } from "@/pages/model-detail";
 import { SettingsPage } from "@/pages/settings";
 import { TopologyPage } from "@/pages/topology";
+import { SyntheticMembranePage } from "@/pages/synthetic-membrane";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="/models/:name" element={<ModelDetailPage />} />
         <Route path="/gateway" element={<GatewayPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/synthetic-membrane" element={<SyntheticMembranePage />} />
       </Route>
       <Route path="/login" element={<LoginPage />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

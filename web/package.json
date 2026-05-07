@@ -12,6 +12,7 @@
     "demo:record": "./scripts/record-demo.sh"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-label": "^2.1.1",
