@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.20](https://github.com/sympozium-ai/sympozium/compare/v0.10.19...v0.10.20) (2026-05-07)
+
+
+### Features
+
+* topology dagre layout, synthetic membrane page, and UX improvements ([4cef6a2](https://github.com/sympozium-ai/sympozium/commit/4cef6a27b4cf6c01ffd89d7a9659243cf12bc94b))
+
+
+### Bug Fixes
+
+* sort runs list by creation date descending (fixes [#151](https://github.com/sympozium-ai/sympozium/issues/151)) ([bed055c](https://github.com/sympozium-ai/sympozium/commit/bed055c97af6abdff50edb8e93e2bf14bd164fca))
+
 ## [0.10.19](https://github.com/sympozium-ai/sympozium/compare/v0.10.18...v0.10.19) (2026-05-06)
 
 
