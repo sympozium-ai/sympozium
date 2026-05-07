@@ -213,6 +213,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 			Timeout:          &metav1.Duration{Duration: 10 * time.Minute},
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
+			SystemPrompt:     inst.Spec.Memory.SystemPrompt,
 			Volumes:          inst.Spec.Volumes,
 			VolumeMounts:     inst.Spec.VolumeMounts,
 		},

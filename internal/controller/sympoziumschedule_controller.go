@@ -209,6 +209,7 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			},
 			ImagePullSecrets: instance.Spec.ImagePullSecrets,
 			Lifecycle:        instance.Spec.Agents.Default.Lifecycle,
+			SystemPrompt:     instance.Spec.Memory.SystemPrompt,
 			Volumes:          instance.Spec.Volumes,
 			VolumeMounts:     instance.Spec.VolumeMounts,
 		},
