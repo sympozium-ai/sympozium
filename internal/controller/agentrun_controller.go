@@ -894,7 +894,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				},
 				ImagePullSecrets: targetInst.Spec.ImagePullSecrets,
 				Lifecycle:        targetInst.Spec.Agents.Default.Lifecycle,
-				SystemPrompt:     targetInst.Spec.Memory.SystemPrompt,
+				SystemPrompt:     memorySystemPrompt(&targetInst),
 				Volumes:          targetInst.Spec.Volumes,
 				VolumeMounts:     targetInst.Spec.VolumeMounts,
 			},

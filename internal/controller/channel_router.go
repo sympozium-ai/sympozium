@@ -66,6 +66,15 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 	}
 }
 
+// memorySystemPrompt returns the Memory.SystemPrompt for the instance,
+// safely handling a nil MemorySpec pointer.
+func memorySystemPrompt(inst *sympoziumv1alpha1.Agent) string {
+	if inst == nil || inst.Spec.Memory == nil {
+		return ""
+	}
+	return inst.Spec.Memory.SystemPrompt
+}
+
 // resolveProvider returns the AI provider for the instance.
 // It prefers the explicit Provider field on AuthRefs, falling back to
 // guessing from the auth secret names.
@@ -213,7 +222,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 			Timeout:          &metav1.Duration{Duration: 10 * time.Minute},
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
-			SystemPrompt:     inst.Spec.Memory.SystemPrompt,
+			SystemPrompt:     memorySystemPrompt(inst),
 			Volumes:          inst.Spec.Volumes,
 			VolumeMounts:     inst.Spec.VolumeMounts,
 		},
