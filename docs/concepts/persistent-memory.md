@@ -205,7 +205,7 @@ When the membrane is configured, agent pods receive additional env vars (`WORKFL
 See [Ensembles — Synthetic Membrane](ensembles.md#synthetic-membrane) for full configuration reference.
 
 !!! tip "Further Reading"
-    The membrane design is based on the [Synthetic Membrane](https://github.com/AlexsJones/synthetic-membrane) research paper: *"The Synthetic Membrane: A Shared Permeable Boundary for Multi-Agent AI Systems"* (April 2026).
+    The membrane design is based on the [Synthetic Membrane](https://zenodo.org/records/20070699) research paper: *"The Synthetic Membrane: A Shared Permeable Boundary for Multi-Agent AI Systems"* (April 2026).
 
 ### Viewing Shared Memory
 

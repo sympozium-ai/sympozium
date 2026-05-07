@@ -41,7 +41,7 @@ Most multi-agent systems communicate through messages &mdash; strings of tokens 
 
 This is the **sticky-note problem**: agents passing notes instead of sharing a situational board. Kubernetes solved this for containers with a shared control plane. Agents need the same thing &mdash; not better message-passing, but **shared coordination infrastructure**.
 
-Sympozium provides that infrastructure: a [synthetic membrane](https://axjns.dev/research/synthetic-membrane/paper) that wraps agent teams with selective permeability, shared memory, structured handoffs, and circuit breakers &mdash; all expressed as Kubernetes-native CRDs.
+Sympozium provides that infrastructure: a [synthetic membrane](https://zenodo.org/records/20070699) that wraps agent teams with selective permeability, shared memory, structured handoffs, and circuit breakers &mdash; all expressed as Kubernetes-native CRDs.
 
 ---
 
@@ -105,7 +105,7 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 
 | | |
 |---|---|
-| **Synthetic Membrane** | Selective permeability for agent teams &mdash; control what agents share via trust groups, visibility tags, and field-level gating. [Read the paper](https://axjns.dev/research/synthetic-membrane/paper) |
+| **Synthetic Membrane** | Selective permeability for agent teams &mdash; control what agents share via trust groups, visibility tags, and field-level gating. [Read the paper](https://zenodo.org/records/20070699) |
 | **Agent Workflows** | Delegation, sequential pipelines, supervision, and stimulus triggers between personas &mdash; visualised on an interactive canvas |
 | **Shared Workflow Memory** | Pack-level SQLite memory pool for cross-persona knowledge sharing with per-persona access control and time decay |
 | **Ensembles** | Helm-like bundles for AI agent teams &mdash; activate a pack and the controller stamps out instances, schedules, and memory |

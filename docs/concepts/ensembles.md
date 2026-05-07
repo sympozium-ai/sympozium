@@ -317,7 +317,7 @@ The memory server exposes a `/provenance?id=N` endpoint that returns the full de
 
 ### Further Reading
 
-The membrane design is based on the [Synthetic Membrane](https://github.com/AlexsJones/synthetic-membrane) research paper: *"The Synthetic Membrane: A Shared Permeable Boundary for Multi-Agent AI Systems"* (April 2026). The paper proposes a six-layer architecture for multi-agent coordination, drawing on biological analogues, distributed systems theory, and recent findings from the Superminds Test (2M+ agents, zero collective intelligence without structured substrate).
+The membrane design is based on the [Synthetic Membrane](https://zenodo.org/records/20070699) research paper: *"The Synthetic Membrane: A Shared Permeable Boundary for Multi-Agent AI Systems"* (April 2026). The paper proposes a six-layer architecture for multi-agent coordination, drawing on biological analogues, distributed systems theory, and recent findings from the Superminds Test (2M+ agents, zero collective intelligence without structured substrate).
 
 ### Auto-Context Injection
 

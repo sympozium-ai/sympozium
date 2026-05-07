@@ -414,7 +414,7 @@ export function SyntheticMembranePage() {
             Multi-agent AI doesn't lack agents &mdash; it lacks a <em>medium</em>.
           </p>
           <a
-            href="https://axjns.dev/research/0001-synthetic-membrane-coordination-layer"
+            href="https://zenodo.org/records/20070699"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors"
@@ -742,7 +742,7 @@ export function SyntheticMembranePage() {
           <p className="text-xs text-muted-foreground">
             Based on{" "}
             <a
-              href="https://axjns.dev/research/0001-synthetic-membrane-coordination-layer"
+              href="https://zenodo.org/records/20070699"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
