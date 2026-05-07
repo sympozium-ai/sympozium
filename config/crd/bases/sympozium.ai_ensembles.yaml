@@ -185,6 +185,15 @@ spec:
                               image:
                                 description: Image is the container image.
                                 type: string
+                              imagePullPolicy:
+                                description: |-
+                                  ImagePullPolicy overrides the container image pull policy. Valid values are
+                                  "Always", "IfNotPresent", or "Never". Defaults to "IfNotPresent" when unset.
+                                enum:
+                                - Always
+                                - IfNotPresent
+                                - Never
+                                type: string
                               name:
                                 description: Name is the container name.
                                 type: string
@@ -241,6 +250,15 @@ spec:
                                 type: boolean
                               image:
                                 description: Image is the container image.
+                                type: string
+                              imagePullPolicy:
+                                description: |-
+                                  ImagePullPolicy overrides the container image pull policy. Valid values are
+                                  "Always", "IfNotPresent", or "Never". Defaults to "IfNotPresent" when unset.
+                                enum:
+                                - Always
+                                - IfNotPresent
+                                - Never
                                 type: string
                               name:
                                 description: Name is the container name.

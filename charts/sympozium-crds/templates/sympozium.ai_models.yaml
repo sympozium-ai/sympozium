@@ -247,6 +247,16 @@ spec:
                       Defaults vary by serverType: llama-cpp uses ghcr.io/ggml-org/llama.cpp:server,
                       vllm uses vllm/vllm-openai:latest, tgi uses ghcr.io/huggingface/text-generation-inference:latest.
                     type: string
+                  imagePullPolicy:
+                    description: |-
+                      ImagePullPolicy overrides the inference server container image pull policy.
+                      Valid values are "Always", "IfNotPresent", or "Never". Defaults to
+                      "IfNotPresent" when unset.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
                   port:
                     description: |-
                       Port is the inference server listen port.

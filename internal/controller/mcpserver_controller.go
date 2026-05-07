@@ -219,11 +219,12 @@ func (r *MCPServerReconciler) buildStdioPodSpec(ctx context.Context, ms *sympozi
 	}
 
 	container := corev1.Container{
-		Name:    "mcp-server",
-		Image:   dep.Image,
-		Command: []string{"/adapter/mcp-bridge"},
-		Args:    []string{"--stdio-adapter"},
-		Env:     env,
+		Name:            "mcp-server",
+		Image:           dep.Image,
+		ImagePullPolicy: ResolveImagePullPolicy(dep.ImagePullPolicy),
+		Command:         []string{"/adapter/mcp-bridge"},
+		Args:            []string{"--stdio-adapter"},
+		Env:             env,
 
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "adapter-bin", MountPath: "/adapter"},
@@ -289,11 +290,12 @@ func (r *MCPServerReconciler) buildHTTPPodSpec(ms *sympoziumv1alpha1.MCPServer, 
 	}
 
 	container := corev1.Container{
-		Name:      "mcp-server",
-		Image:     dep.Image,
-		Env:       env,
-		EnvFrom:   envFrom,
-		Resources: dep.Resources,
+		Name:            "mcp-server",
+		Image:           dep.Image,
+		ImagePullPolicy: ResolveImagePullPolicy(dep.ImagePullPolicy),
+		Env:             env,
+		EnvFrom:         envFrom,
+		Resources:       dep.Resources,
 		Ports: []corev1.ContainerPort{
 			{ContainerPort: port, Protocol: corev1.ProtocolTCP},
 		},

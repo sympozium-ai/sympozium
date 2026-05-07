@@ -888,11 +888,12 @@ func (r *ModelReconciler) ensureDeployment(ctx context.Context, model *sympozium
 		}
 
 		container := corev1.Container{
-			Name:      backend.ContainerName(),
-			Image:     image,
-			Args:      args,
-			Env:       env,
-			Resources: resources,
+			Name:            backend.ContainerName(),
+			Image:           image,
+			ImagePullPolicy: ResolveImagePullPolicy(model.Spec.Inference.ImagePullPolicy),
+			Args:            args,
+			Env:             env,
+			Resources:       resources,
 			Ports: []corev1.ContainerPort{
 				{ContainerPort: port, Protocol: corev1.ProtocolTCP},
 			},

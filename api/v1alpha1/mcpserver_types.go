@@ -71,6 +71,13 @@ type MCPServerDeployment struct {
 	// +kubebuilder:validation:MinLength=1
 	Image string `json:"image"`
 
+	// ImagePullPolicy overrides the MCP server container image pull policy.
+	// Valid values are "Always", "IfNotPresent", or "Never". Defaults to
+	// "IfNotPresent" when unset.
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
 	// Cmd overrides the container command (for stdio: the MCP server binary).
 	// +optional
 	Cmd string `json:"cmd,omitempty"`

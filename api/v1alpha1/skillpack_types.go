@@ -87,6 +87,13 @@ type SkillSidecar struct {
 	// Image is the container image for this skill sidecar.
 	Image string `json:"image"`
 
+	// ImagePullPolicy overrides the container image pull policy for this
+	// sidecar. Valid values are "Always", "IfNotPresent", or "Never".
+	// Defaults to "IfNotPresent" when unset.
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
 	// Command overrides the container entrypoint.
 	// Defaults to ["sleep", "infinity"] to keep the sidecar alive.
 	// +optional

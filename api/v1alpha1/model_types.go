@@ -100,6 +100,13 @@ type InferenceSpec struct {
 	// +optional
 	Image string `json:"image,omitempty"`
 
+	// ImagePullPolicy overrides the inference server container image pull policy.
+	// Valid values are "Always", "IfNotPresent", or "Never". Defaults to
+	// "IfNotPresent" when unset.
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
 	// Port is the inference server listen port.
 	// Defaults: llama-cpp=8080, vllm=8000, tgi=8080.
 	// +optional
