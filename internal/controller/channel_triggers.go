@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -10,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
@@ -22,8 +25,19 @@ func channelStateConfigMapName(instanceName string) string {
 
 // channelMuteKey returns the data key used inside the state ConfigMap to
 // represent a single (channel, chat) combination.
+//
+// The chat ID is hashed because:
+//   - ConfigMap data keys are restricted to [-._a-zA-Z0-9]+, so raw chat IDs
+//     containing characters like ':' (Matrix), '@' (WhatsApp JIDs), or '/'
+//     would be rejected by the API server.
+//   - It eliminates any chance of collision across channel types whose IDs
+//     happen to share a separator character.
+//
+// Format: "<channelType>.<sha256[:8]>". 64 bits is ample for the small set of
+// chats one Agent ever talks to and keeps the key short and human-greppable.
 func channelMuteKey(channelType, chatID string) string {
-	return channelType + ":" + chatID
+	sum := sha256.Sum256([]byte(chatID))
+	return channelType + "." + hex.EncodeToString(sum[:8])
 }
 
 const channelMuteValue = "muted"
@@ -106,14 +120,17 @@ func evaluateTrigger(spec *sympoziumv1alpha1.ChannelTriggerSpec, text string, mu
 // single ConfigMap per Agent. All operations are best-effort: failures
 // are surfaced to the caller but never panic.
 type muteStore struct {
-	c         client.Client
-	namespace string
-	instance  string
+	c        client.Client
+	owner    *sympoziumv1alpha1.Agent
+	instance string
 }
 
-// newMuteStore returns a store scoped to a single Agent.
-func newMuteStore(c client.Client, namespace, instance string) *muteStore {
-	return &muteStore{c: c, namespace: namespace, instance: instance}
+// newMuteStore returns a store scoped to a single Agent. The owner is
+// used both to derive the namespace/name of the backing ConfigMap and to
+// stamp an ownerReference on it, so the ConfigMap is garbage-collected
+// when the Agent is deleted.
+func newMuteStore(c client.Client, owner *sympoziumv1alpha1.Agent) *muteStore {
+	return &muteStore{c: c, owner: owner, instance: owner.Name}
 }
 
 // IsMuted reports whether the (channel, chat) tuple is currently muted.
@@ -121,7 +138,7 @@ func newMuteStore(c client.Client, namespace, instance string) *muteStore {
 func (m *muteStore) IsMuted(ctx context.Context, channelType, chatID string) (bool, error) {
 	cm := &corev1.ConfigMap{}
 	err := m.c.Get(ctx, types.NamespacedName{
-		Namespace: m.namespace,
+		Namespace: m.owner.Namespace,
 		Name:      channelStateConfigMapName(m.instance),
 	}, cm)
 	if err != nil {
@@ -141,7 +158,7 @@ func (m *muteStore) SetMuted(ctx context.Context, channelType, chatID string, mu
 	key := channelMuteKey(channelType, chatID)
 
 	cm := &corev1.ConfigMap{}
-	err := m.c.Get(ctx, types.NamespacedName{Namespace: m.namespace, Name: name}, cm)
+	err := m.c.Get(ctx, types.NamespacedName{Namespace: m.owner.Namespace, Name: name}, cm)
 	switch {
 	case errors.IsNotFound(err):
 		if !muted {
@@ -150,13 +167,16 @@ func (m *muteStore) SetMuted(ctx context.Context, channelType, chatID string, mu
 		cm = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: m.namespace,
+				Namespace: m.owner.Namespace,
 				Labels: map[string]string{
 					"sympozium.ai/component": "channel-state",
 					"sympozium.ai/instance":  m.instance,
 				},
 			},
 			Data: map[string]string{key: channelMuteValue},
+		}
+		if err := controllerutil.SetControllerReference(m.owner, cm, m.c.Scheme()); err != nil {
+			return fmt.Errorf("set owner reference on channel state configmap: %w", err)
 		}
 		if err := m.c.Create(ctx, cm); err != nil {
 			return fmt.Errorf("create channel state configmap: %w", err)

@@ -130,7 +130,7 @@ func (cr *ChannelRouter) applyTriggers(
 		return true
 	}
 
-	store := newMuteStore(cr.Client, inst.Namespace, inst.Name)
+	store := newMuteStore(cr.Client, inst)
 	muted, err := store.IsMuted(ctx, msg.Channel, msg.ChatID)
 	if err != nil {
 		cr.Log.Error(err, "failed to read channel mute state — processing message anyway",

@@ -8,7 +8,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -68,13 +67,19 @@ func newMuteStoreScheme(t *testing.T) *runtime.Scheme {
 	if err := corev1.AddToScheme(s); err != nil {
 		t.Fatalf("add corev1: %v", err)
 	}
+	if err := sympoziumv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add sympoziumv1alpha1: %v", err)
+	}
 	return s
 }
 
 func TestMuteStore_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	c := fake.NewClientBuilder().WithScheme(newMuteStoreScheme(t)).Build()
-	store := newMuteStore(c, "ns", "agent-x")
+	owner := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "agent-x", Namespace: "ns", UID: "uid-1"},
+	}
+	store := newMuteStore(c, owner)
 
 	// Initially not muted (ConfigMap doesn't exist).
 	muted, err := store.IsMuted(ctx, "slack", "C123")
@@ -98,6 +103,22 @@ func TestMuteStore_RoundTrip(t *testing.T) {
 	muted, err = store.IsMuted(ctx, "slack", "C123")
 	if err != nil || !muted {
 		t.Fatalf("after mute: muted=%v err=%v", muted, err)
+	}
+
+	// The created ConfigMap must carry an ownerReference back to the
+	// Agent so that K8s GC reclaims it when the Agent is deleted.
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "agent-x-channel-state"}, cm); err != nil {
+		t.Fatalf("get state cm: %v", err)
+	}
+	var ownerOK bool
+	for _, or := range cm.OwnerReferences {
+		if or.Kind == "Agent" && or.Name == "agent-x" && or.UID == "uid-1" {
+			ownerOK = true
+			break
+		}
+	}
+	if !ownerOK {
+		t.Fatalf("expected ownerReference to Agent agent-x, got %+v", cm.OwnerReferences)
 	}
 
 	// A second mute is idempotent.
@@ -143,6 +164,38 @@ func TestChannelTriggerSpecLookup(t *testing.T) {
 	if got := channelTriggerSpec(nil, "slack"); got != nil {
 		t.Errorf("nil instance: want nil, got %+v", got)
 	}
-	// Unused import guard.
-	var _ client.Client = fake.NewClientBuilder().Build()
+}
+
+func TestChannelMuteKey(t *testing.T) {
+	// Stable hash format — guards against accidental changes that would
+	// orphan all existing mute entries on upgrade.
+	got := channelMuteKey("slack", "C123")
+	want := "slack.abefcf257b5d2ff2" // sha256("C123")[:8] hex
+	if got != want {
+		t.Errorf("channelMuteKey(slack,C123) = %q, want %q", got, want)
+	}
+
+	// Different chat IDs produce different keys.
+	if channelMuteKey("slack", "C123") == channelMuteKey("slack", "C999") {
+		t.Errorf("expected distinct keys for distinct chat IDs")
+	}
+
+	// Different channel types produce different keys even with the
+	// same chat ID.
+	if channelMuteKey("slack", "X") == channelMuteKey("discord", "X") {
+		t.Errorf("expected distinct keys across channel types")
+	}
+
+	// Chat IDs containing characters disallowed in ConfigMap data keys
+	// (':', '@', '/') must still produce valid keys ([-._a-zA-Z0-9]+).
+	for _, raw := range []string{"matrix:!abc:server", "user@whatsapp.net", "team/channel"} {
+		k := channelMuteKey("x", raw)
+		for _, r := range k {
+			ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r == '-' || r == '.' || r == '_'
+			if !ok {
+				t.Errorf("channelMuteKey(%q) = %q contains invalid rune %q", raw, k, r)
+			}
+		}
+	}
 }
