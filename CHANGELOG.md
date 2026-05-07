@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.22](https://github.com/sympozium-ai/sympozium/compare/v0.10.21...v0.10.22) (2026-05-07)
+
+
+### Bug Fixes
+
+* prevent port-forward reconnect loop when port is already bound ([c39199e](https://github.com/sympozium-ai/sympozium/commit/c39199eb4d07541f61c88ea018fa50b990b6234e))
+* propagate Memory.SystemPrompt to AgentRuns ([#169](https://github.com/sympozium-ai/sympozium/issues/169)) ([bc20d3d](https://github.com/sympozium-ai/sympozium/commit/bc20d3dbe78ef560218140987c1043f89750ceec))
+
 ## [0.10.21](https://github.com/sympozium-ai/sympozium/compare/v0.10.20...v0.10.21) (2026-05-07)
 
 
