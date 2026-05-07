@@ -374,6 +374,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 
 		// Extract the owning Ensemble name for persona-aware delegation.
 		if packName := instance.Labels["sympozium.ai/ensemble"]; packName != "" {
+			if agentRun.Labels == nil {
+				agentRun.Labels = make(map[string]string)
+			}
 			agentRun.Labels["sympozium.ai/ensemble"] = packName
 		}
 
