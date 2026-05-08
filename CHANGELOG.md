@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.24](https://github.com/sympozium-ai/sympozium/compare/v0.10.23...v0.10.24) (2026-05-08)
+
+
+### Features
+
+* subagents skill for ad-hoc sub-agent spawning ([#175](https://github.com/sympozium-ai/sympozium/issues/175)) ([3b6e354](https://github.com/sympozium-ai/sympozium/commit/3b6e3549739079baf4d184594bb6201a88f4fd07))
+
+
+### Bug Fixes
+
+* recover from stuck Terminating namespace during install ([#173](https://github.com/sympozium-ai/sympozium/issues/173)) ([30d59a8](https://github.com/sympozium-ai/sympozium/commit/30d59a8b9976a542b7cc0e60bf97413f8345d51a))
+
 ## [0.10.23](https://github.com/sympozium-ai/sympozium/compare/v0.10.22...v0.10.23) (2026-05-08)
 
 
