@@ -16,7 +16,7 @@ spec:
 
   stimulus:
     name: analysis-request
-    prompt: "Begin a new codebase analysis. Identify the key modules or services, spawn sub-agents to analyze each in parallel, then compile and hand off findings to the architect for review."
+    prompt: "Begin a new codebase analysis of sympozium-ai/sympozium. Identify the key modules or services, spawn sub-agents to analyze each in parallel, then compile and hand off findings to the architect for review."
 
   relationships:
     - source: analysis-request

@@ -52,6 +52,10 @@ import {
   RotateCcw,
   Zap,
   GitBranch,
+  GitFork,
+  ListOrdered,
+  Eye,
+  Network,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -149,6 +153,30 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
             <span className="text-[9px] text-cyan-400 shrink-0">{data.runningCount} running</span>
           )}
         </div>
+        {active && (data.hasDelegation || data.hasSequential || data.hasSupervision || data.hasSubagents) && (
+          <div className="flex items-center gap-1 mt-1">
+            {data.hasDelegation && (
+              <span title="Delegation">
+                <GitFork className="h-2.5 w-2.5 text-blue-400/60" />
+              </span>
+            )}
+            {data.hasSequential && (
+              <span title="Sequential">
+                <ListOrdered className="h-2.5 w-2.5 text-amber-400/60" />
+              </span>
+            )}
+            {data.hasSupervision && (
+              <span title="Supervision">
+                <Eye className="h-2.5 w-2.5 text-gray-400/60" />
+              </span>
+            )}
+            {data.hasSubagents && (
+              <span title="Sub-agents">
+                <Network className="h-2.5 w-2.5 text-teal-400/60" />
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </Link>
   );
@@ -336,6 +364,10 @@ interface EnsembleNodeData {
   enabled: boolean;
   personas: string[];
   runningCount: number;
+  hasDelegation?: boolean;
+  hasSequential?: boolean;
+  hasSupervision?: boolean;
+  hasSubagents?: boolean;
   [key: string]: unknown;
 }
 
@@ -665,6 +697,8 @@ function buildTopology(
     const ensId = `ens-${ens.metadata.name}`;
     const configs = ens.spec.agentConfigs || [];
     const personas = configs.map((p) => p.displayName || p.name);
+    const rels = ens.spec.relationships || [];
+    const skills = configs.flatMap((p) => p.skills || []);
 
     nodes.push({
       id: ensId,
@@ -676,6 +710,10 @@ function buildTopology(
         enabled: true,
         personas,
         runningCount: runningByEnsemble[ens.metadata.name] || 0,
+        hasDelegation: rels.some((r) => r.type === "delegation"),
+        hasSequential: rels.some((r) => r.type === "sequential"),
+        hasSupervision: rels.some((r) => r.type === "supervision"),
+        hasSubagents: skills.includes("subagents"),
       },
     });
     addEnsembleEdges(ensId, ens);
