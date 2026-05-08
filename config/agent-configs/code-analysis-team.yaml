@@ -1,36 +1,47 @@
 ---
 # Code Analysis Team — demonstrates ad-hoc sub-agent spawning.
-# The Lead Analyst uses the subagents skill to dynamically fan out
-# code analysis work across parallel sub-agents, one per module or
-# service. The Architect provides high-level review via delegation.
+# The Lead Analyst uses spawn_subagents to dynamically fan out code
+# analysis across parallel sub-agents (one per module), then
+# synthesises the results into a final report. No delegation is used —
+# all work is coordinated through sub-agent spawning.
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
   name: code-analysis-team
   namespace: sympozium-system
 spec:
-  description: "A code analysis team that dynamically spawns sub-agents to analyze different modules in parallel, then synthesises findings with an architect review."
+  description: "Demonstrates dynamic sub-agent spawning. The lead analyst identifies modules, spawns parallel sub-agents to analyze each, and synthesises a final report."
   category: development
   version: "1.0.0"
-  workflowType: delegation
+  workflowType: autonomous
 
   stimulus:
     name: analysis-request
-    prompt: "Begin a new codebase analysis of sympozium-ai/sympozium. Identify the key modules or services, spawn sub-agents to analyze each in parallel, then compile and hand off findings to the architect for review."
+    prompt: |
+      Analyze the codebase at sympozium-ai/sympozium. You MUST follow
+      these steps exactly:
+
+      Step 1: Discover the top-level modules by listing the directory
+      structure (cmd/, internal/, api/, web/).
+
+      Step 2: Call the spawn_subagents tool ONCE with strategy "parallel"
+      to create one sub-agent per module. Each task should instruct the
+      sub-agent to analyze that specific module for: code quality,
+      complexity, potential bugs, and improvement opportunities.
+
+      Step 3: After all sub-agents return, synthesise their findings
+      into a single markdown report with sections per module, a summary
+      of cross-cutting concerns, and prioritised recommendations.
+
+      Step 4: Store the final report in memory.
+
+      IMPORTANT: You MUST use spawn_subagents. Do NOT try to analyze
+      all modules yourself — the whole point is to fan out the work.
 
   relationships:
     - source: analysis-request
       target: lead-analyst
       type: stimulus
-    - source: lead-analyst
-      target: architect
-      type: delegation
-      condition: "when all module analyses are complete"
-      timeout: "15m"
-      resultFormat: markdown
-    - source: architect
-      target: lead-analyst
-      type: supervision
 
   sharedMemory:
     enabled: true
@@ -38,53 +49,34 @@ spec:
     accessRules:
       - agentConfig: lead-analyst
         access: read-write
-      - agentConfig: architect
-        access: read-write
 
   agentConfigs:
     - name: lead-analyst
       displayName: "Lead Analyst"
       systemPrompt: |
-        You are the lead code analyst. Your job is to coordinate codebase
-        analysis by breaking the work into parallel sub-tasks.
+        You are a lead code analyst. Your ONLY job is to coordinate
+        codebase analysis by spawning sub-agents — you must NOT do the
+        analysis yourself.
 
-        Your workflow:
-        1. Identify the key modules, packages, or services in the codebase
-        2. Use the spawn_subagents tool with strategy "parallel" to create
-           one sub-agent per module. Each sub-agent should analyze its
-           assigned module for code quality, complexity, potential bugs,
-           and improvement opportunities.
-        3. Collect and synthesise the results from all sub-agents
-        4. Delegate the final synthesis to the Architect for review
-           using delegate_to_persona with target "architect"
+        MANDATORY WORKFLOW:
+        1. Discover top-level modules (list directories)
+        2. Call spawn_subagents with strategy "parallel" — one task per
+           module. Give each task a clear ID (e.g. "cmd", "internal-controller",
+           "web") and a self-contained description telling the sub-agent
+           exactly which files to examine and what to look for.
+        3. Wait for all sub-agents to return results
+        4. Synthesise a final report combining all findings
+        5. Store the report in memory with tag "analysis-report"
 
-        When using spawn_subagents, give each task a clear ID matching
-        the module name and include all relevant context in the task
-        description (file paths, module purpose, etc.).
+        RULES:
+        - You MUST call spawn_subagents — this is non-negotiable
+        - Do NOT analyze code yourself — spawn sub-agents to do it
+        - Each sub-agent task must be self-contained with full context
+        - Use "parallel" strategy for independent module analyses
       skills:
         - subagents
         - memory
       subagents:
         maxDepth: 2
         maxConcurrent: 6
-        maxChildrenPerAgent: 5
-
-    - name: architect
-      displayName: "Architect"
-      systemPrompt: |
-        You are a software architect. You receive analysis reports from
-        the Lead Analyst and provide architectural review.
-
-        Your responsibilities:
-        - Review module-level analysis findings for accuracy
-        - Identify cross-cutting concerns and architectural patterns
-        - Flag technical debt and propose remediation priorities
-        - Assess overall code health and maintainability
-        - Write a final architecture review report with recommendations
-      skills:
-        - memory
-      toolPolicy:
-        allow:
-          - read_file
-          - list_directory
-          - fetch_url
+        maxChildrenPerAgent: 8

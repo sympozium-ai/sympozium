@@ -801,10 +801,63 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 // blocking), so the main responsibility is to skip timeout enforcement while
 // the parent waits. The SpawnRouter transitions the parent back to Running
 // once the child finishes and delivers the result via IPC.
+//
+// As a safety net, we also check if all delegate children have reached a
+// terminal phase (Succeeded/Failed) but the parent is still waiting. This
+// can happen if the SpawnRouter's in-memory state was lost (e.g. controller
+// restart). In that case we fail the parent to avoid it being stuck forever.
 func (r *AgentRunReconciler) reconcileAwaitingDelegate(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("AgentRun awaiting delegate completion",
 		"delegates", len(agentRun.Status.Delegates),
 	)
+
+	// Safety net: check if all delegate children have terminated but the
+	// SpawnRouter never delivered the result (e.g. after a controller restart).
+	if len(agentRun.Status.Delegates) > 0 {
+		allTerminal := true
+		anyFailed := false
+		for i, d := range agentRun.Status.Delegates {
+			var childRun sympoziumv1alpha1.AgentRun
+			if err := r.Get(ctx, types.NamespacedName{Name: d.ChildRunName, Namespace: agentRun.Namespace}, &childRun); err != nil {
+				continue // Child not found — may have been cleaned up.
+			}
+			// Sync delegate status from the actual child.
+			agentRun.Status.Delegates[i].Phase = childRun.Status.Phase
+			switch childRun.Status.Phase {
+			case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed:
+				// Terminal.
+			default:
+				allTerminal = false
+			}
+			if childRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed {
+				anyFailed = true
+				if agentRun.Status.Delegates[i].Error == "" {
+					agentRun.Status.Delegates[i].Error = childRun.Status.Error
+				}
+			}
+			if childRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseSucceeded {
+				if agentRun.Status.Delegates[i].Result == "" {
+					agentRun.Status.Delegates[i].Result = childRun.Status.Result
+				}
+			}
+		}
+
+		if allTerminal {
+			log.Info("All delegates terminated but parent still awaiting — recovering",
+				"anyFailed", anyFailed)
+			if anyFailed {
+				return ctrl.Result{}, r.failRun(ctx, agentRun, "delegate child run failed")
+			}
+			// All succeeded but SpawnRouter missed it — transition back to Running
+			// so the agent can pick up the result on next reconcile.
+			agentRun.Status.Phase = sympoziumv1alpha1.AgentRunPhaseRunning
+			if err := r.Status().Update(ctx, agentRun); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true}, nil
+		}
+	}
+
 	// Requeue periodically so the controller can react to phase transitions
 	// made by the SpawnRouter. No timeout check — the parent is blocked on
 	// a delegation tool call and the child may take several minutes.
