@@ -226,6 +226,7 @@
 * sort runs list by creation date descending (fixes [#151](https://github.com/sympozium-ai/sympozium/issues/151)) ([bed055c](https://github.com/sympozium-ai/sympozium/commit/bed055c97af6abdff50edb8e93e2bf14bd164fca))
 * split architecture diagram into readable sections and fix middot entity ([bc2be59](https://github.com/sympozium-ai/sympozium/commit/bc2be594b447d3d7fba4dd20bbb045bdc2725760))
 * stabilize workflow canvas layout across data refreshes ([b83378a](https://github.com/sympozium-ai/sympozium/commit/b83378a1ff88c4546781598fc4bd52e65dd22ce9))
+* stimulus save, canvas sync, agentrun cleanup, and default MCP servers ([ad6752f](https://github.com/sympozium-ai/sympozium/commit/ad6752fa3bad572062aa6c88269f2bb761c5a203))
 * stop Helm template from overriding node-probe host auto-detection ([4f0e5f4](https://github.com/sympozium-ai/sympozium/commit/4f0e5f41217d5ec9bf165dda7796be0df3fd307d))
 * strip directory prefix from CRD names when writing to temp dir ([1906327](https://github.com/sympozium-ai/sympozium/commit/1906327b3abd32dc887f5a09c98eada9e0fb09b6))
 * surface reasoning-model responses when terminal turn is empty ([045f7d7](https://github.com/sympozium-ai/sympozium/commit/045f7d74a2f95b5ebab7eba392c6d4441734368b))
