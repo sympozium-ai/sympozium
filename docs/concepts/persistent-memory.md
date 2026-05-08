@@ -114,7 +114,7 @@ Add `sharedMemory` to the Ensemble spec:
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: research-team
+  name: research-delegation-example
 spec:
   sharedMemory:
     enabled: true
@@ -213,13 +213,13 @@ Query the shared memory via the API:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:9090/api/v1/ensembles/research-team/shared-memory
+  http://localhost:9090/api/v1/ensembles/research-delegation-example/shared-memory
 ```
 
 Or exec into the shared memory pod:
 
 ```bash
-kubectl exec deploy/research-team-shared-memory -c memory-server -- \
+kubectl exec deploy/research-delegation-example-shared-memory -c memory-server -- \
   sqlite3 /data/memory.db "SELECT content, tags FROM memories ORDER BY created_at DESC LIMIT 10;"
 ```
 

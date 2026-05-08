@@ -265,8 +265,8 @@ export function EnsembleDetailPage() {
               <CardTitle className="text-base">Persona Workflow</CardTitle>
               <CardDescription>
                 {hasRelationships
-                  ? `${pack.spec.agentConfigs?.length ?? 0} personas with ${pack.spec.relationships!.length} relationships`
-                  : "Define relationships between personas to enable coordination. Drag to rearrange."}
+                  ? `${pack.spec.agentConfigs?.length ?? 0} agents with ${pack.spec.relationships!.length} relationships`
+                  : "Define relationships between agents to enable coordination. Drag to rearrange."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -331,8 +331,8 @@ export function EnsembleDetailPage() {
               </CardTitle>
               <CardDescription>
                 {pack.spec.sharedMemory?.enabled
-                  ? "Shared memory pool active — all personas can access team knowledge."
-                  : "Enable shared memory to let personas share knowledge across runs."}
+                  ? "Shared memory pool active — all agents can access team knowledge."
+                  : "Enable shared memory to let agents share knowledge across runs."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -500,7 +500,7 @@ export function EnsembleDetailPage() {
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Personas</p>
+                  <p className="text-sm text-muted-foreground">Agents</p>
                   <p className="text-2xl font-bold">
                     {pack.status?.agentConfigCount ??
                       pack.spec.agentConfigs?.length ??
@@ -542,8 +542,8 @@ export function EnsembleDetailPage() {
           </div>
 
           {/* Installed Instances */}
-          {pack.status?.installedPersonas &&
-            pack.status.installedPersonas.length > 0 && (
+          {pack.status?.installedAgents &&
+            pack.status.installedAgents.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
@@ -552,7 +552,7 @@ export function EnsembleDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {pack.status.installedPersonas.map((ip) => (
+                    {pack.status.installedAgents.map((ip) => (
                       <Link
                         key={ip.agentName}
                         to={`/agents/${ip.agentName}`}
@@ -599,13 +599,13 @@ export function EnsembleDetailPage() {
             </Card>
           )}
 
-          {/* Personas */}
+          {/* Agents */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">
-              Personas ({pack.spec.agentConfigs?.length ?? 0})
+              Agents ({pack.spec.agentConfigs?.length ?? 0})
             </h2>
             {pack.spec.agentConfigs?.map((persona, i) => {
-              const installed = pack.status?.installedPersonas?.some(
+              const installed = pack.status?.installedAgents?.some(
                 (ip) => ip.name === persona.name,
               );
               const isEditing = editingPersona === persona.name;

@@ -6,7 +6,7 @@
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: research-team
+  name: research-delegation-example
   namespace: sympozium-system
 spec:
   description: "A research coordination team — lead, researcher, writer, and reviewer — with delegation and sequential workflows for producing reviewed reports."

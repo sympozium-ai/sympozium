@@ -158,7 +158,7 @@ spec:
             defaultVisibility: "public",
             trustGroups: [
               {
-                name: "research-team",
+                name: "research-delegation-example",
                 agentConfigs: ["researcher", "writer"],
               },
               {
@@ -173,7 +173,7 @@ spec:
       expect(resp.status).to.eq(200);
       const groups = resp.body.spec.sharedMemory.membrane.trustGroups;
       expect(groups).to.have.length(2);
-      expect(groups[0].name).to.eq("research-team");
+      expect(groups[0].name).to.eq("research-delegation-example");
       expect(groups[0].agentConfigs).to.deep.eq(["researcher", "writer"]);
       expect(groups[1].name).to.eq("editorial");
     });

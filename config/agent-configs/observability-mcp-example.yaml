@@ -5,7 +5,7 @@
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: observability-mcp-team
+  name: observability-mcp-example
   namespace: sympozium-system
 spec:
   description: "Observability agents powered by MCP servers — SRE investigation and incident response with external tool integration."

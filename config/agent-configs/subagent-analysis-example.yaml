@@ -7,7 +7,7 @@
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: code-analysis-team
+  name: subagent-analysis-example
   namespace: sympozium-system
 spec:
   description: "Demonstrates dynamic sub-agent spawning. The lead analyst identifies modules, spawns parallel sub-agents to analyze each, and synthesises a final report."

@@ -45,6 +45,7 @@ import {
   ListOrdered,
   Eye,
   Network,
+  GraduationCap,
 } from "lucide-react";
 import { formatAge } from "@/lib/utils";
 import type { Ensemble } from "@/lib/api";
@@ -292,7 +293,7 @@ export function EnsemblesPage() {
               <TableHead>Patterns</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Version</TableHead>
-              <TableHead>Personas</TableHead>
+              <TableHead>Agents</TableHead>
               <TableHead>Installed</TableHead>
               <TableHead>Phase</TableHead>
               <TableHead>Enabled</TableHead>
@@ -308,6 +309,11 @@ export function EnsemblesPage() {
                     to={`/ensembles/${pack.metadata.name}`}
                     className="hover:text-primary flex items-center gap-1"
                   >
+                    {pack.metadata.name.endsWith("-example") && (
+                      <IconTip label="Example ensemble">
+                        <GraduationCap className="h-3.5 w-3.5 text-amber-400/70" />
+                      </IconTip>
+                    )}
                     {pack.metadata.name}
                     <ExternalLink className="h-3 w-3 opacity-50" />
                   </Link>

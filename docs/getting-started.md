@@ -80,7 +80,7 @@ The TUI opens on the **Personas** tab, listing the built-in Ensembles:
 | Pack | Personas | Focus |
 |------|----------|-------|
 | `platform-team` | security-guardian, sre-watchdog, platform-engineer | Security audit, cluster health, scheduled ops |
-| `devops-essentials` | incident-responder, cost-analyzer | Incident triage, resource optimisation |
+| `devops-pipeline-example` | incident-responder, cost-analyzer | Incident triage, resource optimisation |
 
 Press **Enter** on a pack to start the activation wizard:
 
@@ -263,7 +263,7 @@ Below are three practical agent personas. Each combines a
 create a purpose-built agent.
 
 > **Tip:** The `platform-team` Ensemble creates the SRE and Security agents
-> below automatically. The `devops-essentials` pack creates the Incident
+> below automatically. The `devops-pipeline-example` pack creates the Incident
 > Responder. You only need to write YAML manually for custom personas.
 
 ### 1. SRE On-Call Agent

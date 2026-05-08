@@ -1,10 +1,10 @@
 /**
- * Research Team Ensemble — end-to-end test for the default research-team
+ * Research Team Ensemble — end-to-end test for the default research-delegation-example
  * pack that demonstrates all three relationship types (delegation, sequential,
  * supervision) on the workflow canvas.
  */
 
-const PACK = "research-team";
+const PACK = "research-delegation-example";
 const NS = "default";
 
 function apiHeaders(): Record<string, string> {
@@ -16,10 +16,10 @@ function apiHeaders(): Record<string, string> {
 
 describe("Research Team — default pack with relationships", () => {
   before(() => {
-    // Apply the research-team pack to the default namespace.
+    // Apply the research-delegation-example pack to the default namespace.
     // Use sed to override the namespace from sympozium-system to default.
     cy.exec(
-      `sed 's/namespace: sympozium-system/namespace: default/' ${Cypress.config().projectRoot}/../config/agent-configs/research-team.yaml | kubectl apply -f -`,
+      `sed 's/namespace: sympozium-system/namespace: default/' ${Cypress.config().projectRoot}/../config/agent-configs/research-delegation-example.yaml | kubectl apply -f -`,
     );
     // Wait for API to serve it
     cy.request({

@@ -541,7 +541,7 @@ into running instances.
 | Pack | Personas | Focus |
 |------|----------|-------|
 | `platform-team` | security-guardian, sre-watchdog, platform-engineer | Security audit, cluster health, scheduled ops |
-| `devops-essentials` | incident-responder, cost-analyzer | Incident triage, resource optimisation |
+| `devops-pipeline-example` | incident-responder, cost-analyzer | Incident triage, resource optimisation |
 
 ---
 

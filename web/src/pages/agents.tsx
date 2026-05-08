@@ -102,9 +102,9 @@ export function AgentsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Instances</h1>
+          <h1 className="text-2xl font-bold">Agents</h1>
           <p className="text-sm text-muted-foreground">
-            Manage Agents — each represents an agent identity
+            Manage agents — each represents an agent identity
           </p>
         </div>
         <Button
@@ -182,12 +182,14 @@ export function AgentsPage() {
                       <ExternalLink className="h-3 w-3 opacity-50" />
                     </Link>
                     {inst.metadata.labels?.["sympozium.ai/ensemble"] && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 text-blue-400 border-blue-500/30"
-                      >
-                        {inst.metadata.labels["sympozium.ai/ensemble"]}
-                      </Badge>
+                      <Link to={`/ensembles/${inst.metadata.labels["sympozium.ai/ensemble"]}`}>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+                        >
+                          {inst.metadata.labels["sympozium.ai/ensemble"]}
+                        </Badge>
+                      </Link>
                     )}
                     {inst.spec.agents?.default?.lifecycle?.postRun?.some(
                       (h) => h.gate,

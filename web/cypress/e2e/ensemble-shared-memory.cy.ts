@@ -545,12 +545,12 @@ spec:
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("Research Team — shared memory config", () => {
-  const PACK = "research-team";
+  const PACK = "research-delegation-example";
 
   before(() => {
-    // Apply the research-team pack (uses sed to override namespace)
+    // Apply the research-delegation-example pack (uses sed to override namespace)
     cy.exec(
-      `sed 's/namespace: sympozium-system/namespace: default/' ${Cypress.config().projectRoot}/../config/agent-configs/research-team.yaml | kubectl apply -f -`,
+      `sed 's/namespace: sympozium-system/namespace: default/' ${Cypress.config().projectRoot}/../config/agent-configs/research-delegation-example.yaml | kubectl apply -f -`,
     );
     cy.request({
       url: `/api/v1/ensembles/${PACK}?namespace=${NS}`,

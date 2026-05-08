@@ -33,7 +33,7 @@ The objective is to transform `Ensemble` from a static collection of `Agent` tem
 | **SpawnRouter** | `internal/controller/spawn_router.go` | Subscribes to spawn events, creates child AgentRuns, tracks pending delegations, delivers results via NATS |
 | **Blocking delegate tool** | `cmd/agent-runner/tools.go` | `delegate_to_persona` blocks up to 10 min, polls for result file, returns child output to LLM |
 | **Visual canvas** | `web/src/components/ensemble-canvas.tsx` | Per-pack editable canvas + global read-only canvas with live run status highlighting |
-| **Default research-team pack** | `config/agent-configs/research-team.yaml` | 4-persona pack demonstrating all 3 relationship types + shared memory |
+| **Default research-delegation-example pack** | `config/agent-configs/research-delegation-example.yaml` | 4-persona pack demonstrating all 3 relationship types + shared memory |
 | **OTel instrumentation** | `spawnerTracer` in spawner | Traces parent run, instance, spawn depth, target persona attributes |
 
 ### What's missing (to complete the delegation chain)
@@ -149,7 +149,7 @@ Agents need a tool (registered in the agent runner) that:
    {
      "task": "Write a report based on these findings: ...",
      "targetPersona": "writer",
-     "packName": "research-team"
+     "packName": "research-delegation-example"
    }
    ```
 3. The IPC bridge forwards this to the event bus
@@ -218,9 +218,9 @@ The `packName` can be auto-injected by the agent runner from the instance's labe
 
 ---
 
-## 9. Default Pack: research-team
+## 9. Default Pack: research-delegation-example
 
-The `research-team` Ensemble is included in the default packs and demonstrates all three relationship types:
+The `research-delegation-example` Ensemble is included in the default packs and demonstrates all three relationship types:
 
 ```
 Lead ──delegation──► Researcher ──delegation──► Writer ──sequential──► Reviewer
@@ -275,5 +275,5 @@ Currently the pack serves as a visual demo of the relationship graph. To enable 
 | Persona pages | `web/src/pages/personas.tsx`, `web/src/pages/persona-detail.tsx` |
 | Frontend hooks | `web/src/hooks/use-api.ts` |
 | Frontend types | `web/src/lib/api.ts` |
-| Default research pack | `config/personas/research-team.yaml` |
-| Cypress tests | `web/cypress/e2e/ensemble-workflow-canvas.cy.ts`, `web/cypress/e2e/ensemble-research-team-workflow.cy.ts` |
+| Default research pack | `config/personas/research-delegation-example.yaml` |
+| Cypress tests | `web/cypress/e2e/ensemble-workflow-canvas.cy.ts`, `web/cypress/e2e/ensemble-research-delegation-example-workflow.cy.ts` |

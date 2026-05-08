@@ -4,7 +4,7 @@
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: devops-essentials
+  name: devops-pipeline-example
   namespace: sympozium-system
 spec:
   description: "DevOps workflow agents — incident response, cost analysis, and deployment monitoring."

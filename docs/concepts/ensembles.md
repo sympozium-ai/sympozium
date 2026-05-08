@@ -62,7 +62,7 @@ The `workflowType` field on a Ensemble describes the overall orchestration patte
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: research-team
+  name: research-delegation-example
 spec:
   workflowType: delegation
   personas:
@@ -146,7 +146,7 @@ By default, each persona in a Ensemble has its own **private memory** — an iso
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: research-team
+  name: research-delegation-example
 spec:
   sharedMemory:
     enabled: true
@@ -212,7 +212,7 @@ The membrane addresses each of these with a dedicated mechanism.
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: research-team
+  name: research-delegation-example
 spec:
   sharedMemory:
     enabled: true
@@ -264,13 +264,13 @@ Trust groups define which personas can see each other's `trusted` entries. If no
 
 ```yaml
 trustGroups:
-  - name: research-team
+  - name: research-delegation-example
     agentConfigs: ["researcher", "writer"]
   - name: editorial
     agentConfigs: ["writer", "editor"]
 ```
 
-In this example, the writer can see trusted entries from both the researcher (via `research-team`) and the editor (via `editorial`).
+In this example, the writer can see trusted entries from both the researcher (via `research-delegation-example`) and the editor (via `editorial`).
 
 ### Token Budget
 
@@ -364,10 +364,10 @@ Persona nodes show live run status with animated indicators:
 | Pack | Category | Agents | Description |
 |------|----------|--------|-------------|
 | `platform-team` | Platform | Security Guardian, SRE Watchdog, Platform Engineer | Core platform engineering — security audits, cluster health, manifest review |
-| `devops-essentials` | DevOps | Incident Responder, Cost Analyzer | DevOps workflows — incident triage, resource right-sizing |
+| `devops-pipeline-example` | DevOps | Incident Responder, Cost Analyzer | DevOps workflows — incident triage, resource right-sizing |
 | `developer-team` | Development | Tech Lead, Backend Dev, Frontend Dev, QA Engineer, Code Reviewer, DevOps Engineer, Docs Writer | A 2-pizza software development team that collaborates on a single GitHub repository |
-| `research-team` | Research | Lead, Researcher, Writer, Reviewer | A coordinated research and reporting team demonstrating delegation, sequential, and supervision relationships |
-| `observability-mcp-team` | Observability | Grafana Analyst, Log Investigator | Observability workflows using MCP servers for Grafana and Loki |
+| `research-delegation-example` | Research | Lead, Researcher, Writer, Reviewer | A coordinated research and reporting team demonstrating delegation, sequential, and supervision relationships |
+| `observability-mcp-example` | Observability | Grafana Analyst, Log Investigator | Observability workflows using MCP servers for Grafana and Loki |
 
 ## Activating a Pack in the Web UI
 

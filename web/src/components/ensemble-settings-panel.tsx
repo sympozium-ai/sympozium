@@ -110,7 +110,7 @@ export function EnsembleSettingsPanel({
                 name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
               })
             }
-            placeholder="e.g. my-research-team"
+            placeholder="e.g. my-research-delegation-example"
             className="h-8 text-sm font-mono"
           />
           <p className="text-[10px] text-muted-foreground">

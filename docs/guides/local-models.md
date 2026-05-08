@@ -38,10 +38,10 @@ From the instance detail page, trigger an ad-hoc run or connect a channel. The a
 
 ### 4. (Optional) Deploy a Team
 
-The **local-inference** ensemble provides a pre-configured 2-agent team (assistant + coder) that runs entirely on a local model. To use it:
+The **local-inference-example** ensemble provides a pre-configured 2-agent team (assistant + coder) that runs entirely on a local model. To use it:
 
 1. Deploy a model named `qwen3-8b-q4` (use the Qwen3 8B preset)
-2. Navigate to **Ensembles** → **local-inference** → **Activate**
+2. Navigate to **Ensembles** → **local-inference-example** → **Activate**
 3. The ensemble waits for the model to be Ready, then stamps out instances automatically
 
 ## How It Works
@@ -209,7 +209,7 @@ The `contextSize` field controls the maximum token window. Choose based on your 
 
 Larger contexts require more memory. If the inference server OOMs, reduce `contextSize` or increase `resources.memory`.
 
-## The "local-inference" Ensemble
+## The "local-inference-example" Ensemble
 
 Sympozium ships with a default ensemble designed for local models:
 
@@ -219,11 +219,11 @@ Sympozium ships with a default ensemble designed for local models:
 
 **Prerequisites:** Deploy a Model named `qwen3-8b-q4`. The ensemble references it via `modelRef` and waits for it to be Ready.
 
-**Activate via UI:** Ensembles → local-inference → Activate
+**Activate via UI:** Ensembles → local-inference-example → Activate
 
 **Activate via kubectl:**
 ```bash
-kubectl patch ensemble local-inference -n sympozium-system \
+kubectl patch ensemble local-inference-example -n sympozium-system \
   --type merge -p '{"spec":{"enabled":true}}'
 ```
 

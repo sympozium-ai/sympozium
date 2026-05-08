@@ -9,7 +9,7 @@
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
-  name: local-inference
+  name: local-inference-example
   namespace: sympozium-system
 spec:
   description: "A self-contained AI team running entirely on a cluster-local Qwen3 8B model — no external API keys required. Deploy a Model CR first, then activate this ensemble."

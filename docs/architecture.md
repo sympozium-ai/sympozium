@@ -185,7 +185,7 @@ Model CRDs declare GGUF models as Kubernetes resources. The controller downloads
 
 ```mermaid
 graph TB
-    subgraph PACK["Ensemble 'research-team'"]
+    subgraph PACK["Ensemble 'research-delegation-example'"]
         direction TB
         LEAD["Lead<br/><small>coordinates team</small>"]
         RES["Researcher<br/><small>gathers findings</small>"]

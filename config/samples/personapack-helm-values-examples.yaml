@@ -10,7 +10,7 @@
 # Example 1: Enable built-in packs (deployed from charts/sympozium/files/personas/)
 # ─────────────────────────────────────────────────────────────────────────────
 defaultPersonas:
-  enabled: true    # Installs developer-team, devops-essentials, platform-team
+  enabled: true    # Installs developer-team, devops-pipeline-example, platform-team
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 2: Override values for an existing pack post-install

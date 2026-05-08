@@ -251,7 +251,7 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 | Serving mode | `docs/serving-mode.md` | How serving mode works for long-lived agent deployments |
 | Sample CRs | `config/samples/` | Example Agent, AgentRun, SympoziumPolicy, SympoziumSchedule, SkillPack |
 | CRD definitions | `api/v1alpha1/` | Go type definitions for all CRDs |
-| Built-in Ensembles | `config/personas/` | Pre-configured agent bundles (platform-team, devops-essentials) |
+| Built-in Ensembles | `config/personas/` | Pre-configured agent bundles (platform-team, devops-pipeline-example) |
 
 ---
 

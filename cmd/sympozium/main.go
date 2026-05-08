@@ -6671,8 +6671,12 @@ func (m tuiModel) renderPersonasTable(tableH int) string {
 		}
 
 		agentCount := len(pp.Spec.AgentConfigs)
+		name := pp.Name
+		if strings.HasSuffix(name, "-example") {
+			name = "📖 " + name
+		}
 		row := fmt.Sprintf(" %-24s %-14s %-10d %-10d %-12s %-8s",
-			truncate(pp.Name, 24), truncate(cat, 14), agentCount, pp.Status.InstalledCount, phase, age)
+			truncate(name, 24), truncate(cat, 14), agentCount, pp.Status.InstalledCount, phase, age)
 
 		if idx == m.selectedRow {
 			b.WriteString(tuiRowSelectedStyle.Render(padRight(row, m.width)))
