@@ -1546,12 +1546,13 @@ type PatchEnsembleRequest struct {
 
 // AgentConfigPatchSpec allows partial updates to individual personas by name.
 type AgentConfigPatchSpec struct {
-	Name         string   `json:"name"`
-	SystemPrompt *string  `json:"systemPrompt,omitempty"`
-	Skills       []string `json:"skills,omitempty"`
-	Model        *string  `json:"model,omitempty"`
-	Provider     *string  `json:"provider,omitempty"`
-	BaseURL      *string  `json:"baseURL,omitempty"`
+	Name         string                           `json:"name"`
+	SystemPrompt *string                          `json:"systemPrompt,omitempty"`
+	Skills       []string                         `json:"skills,omitempty"`
+	Model        *string                          `json:"model,omitempty"`
+	Provider     *string                          `json:"provider,omitempty"`
+	BaseURL      *string                          `json:"baseURL,omitempty"`
+	Subagents    *sympoziumv1alpha1.SubagentsSpec `json:"subagents,omitempty"`
 }
 
 func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
@@ -1734,6 +1735,9 @@ func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
 				}
 				if patch.BaseURL != nil {
 					pp.Spec.AgentConfigs[i].BaseURL = *patch.BaseURL
+				}
+				if patch.Subagents != nil {
+					pp.Spec.AgentConfigs[i].Subagents = patch.Subagents
 				}
 				break
 			}

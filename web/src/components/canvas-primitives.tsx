@@ -22,7 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Background, Controls, MiniMap } from "@xyflow/react";
-import { Database, Cpu, Zap } from "lucide-react";
+import { Database, Cpu, Zap, Network } from "lucide-react";
 import type {
   AgentConfigSpec,
   AgentConfigRelationship,
@@ -190,6 +190,17 @@ export function AgentConfigNode({ data }: NodeProps<Node<AgentConfigNodeData>>) 
         >
           <Database className="h-2.5 w-2.5" />
           {data.membraneVisibility ? `${data.membraneVisibility}` : "shared memory"}
+        </Badge>
+      )}
+
+      {persona.skills?.includes("subagents") && (
+        <Badge
+          variant="outline"
+          className="text-[9px] px-1 py-0 mb-1 gap-0.5 w-fit border-teal-500/30 text-teal-400"
+          title="Can spawn sub-agents dynamically"
+        >
+          <Network className="h-2.5 w-2.5" />
+          sub-agents
         </Badge>
       )}
 
