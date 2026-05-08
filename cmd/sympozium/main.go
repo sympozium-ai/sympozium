@@ -1313,6 +1313,22 @@ func runInstall(imageTag string, setValues []string) error {
 		return err
 	}
 
+	// ── Pre-flight: stuck namespace ─────────────────────────────────────
+	// If the namespace exists in Terminating state (e.g. from a prior
+	// uninstall whose controller was removed before finalizers were
+	// stripped), clean it up so the install can proceed.
+	if nsPhase, err := exec.Command("kubectl", "get", "namespace", helmNamespace,
+		"-o", "jsonpath={.status.phase}").Output(); err == nil && string(nsPhase) == "Terminating" {
+		fmt.Println("  Namespace is stuck terminating, cleaning up finalizers...")
+		resources := []string{"agentruns", "agents", "sympoziumpolicies", "skillpacks", "sympoziumschedules", "ensembles", "sympoziumconfigs"}
+		for _, res := range resources {
+			stripFinalizers(res)
+		}
+		// Wait for the namespace to be fully removed.
+		fmt.Println("  Waiting for namespace to be deleted...")
+		_ = kubectl("wait", "--for=delete", "namespace/"+helmNamespace, "--timeout=60s")
+	}
+
 	// ── Pre-flight: CRDs ────────────────────────────────────────────────
 	if err := applyCRDs(ch); err != nil {
 		return err
