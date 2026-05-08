@@ -251,6 +251,78 @@ export function AgentConfigPanel({
           </p>
         </div>
 
+        {/* Subagents config (shown when subagents skill is enabled) */}
+        {(draft.skills || []).includes("subagents") && (
+          <div className="rounded-md border border-teal-500/20 bg-teal-500/5 p-2.5 space-y-2">
+            <p className="text-[10px] font-medium text-teal-400">
+              Sub-Agent Limits
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-0.5">
+                <Label className="text-[9px]">Max Depth</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={draft.subagents?.maxDepth ?? 2}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      subagents: {
+                        ...draft.subagents,
+                        maxDepth: parseInt(e.target.value) || 2,
+                      },
+                    })
+                  }
+                  className="h-6 text-[10px] px-1.5"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[9px]">Concurrent</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={draft.subagents?.maxConcurrent ?? 5}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      subagents: {
+                        ...draft.subagents,
+                        maxConcurrent: parseInt(e.target.value) || 5,
+                      },
+                    })
+                  }
+                  className="h-6 text-[10px] px-1.5"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[9px]">Per Agent</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={draft.subagents?.maxChildrenPerAgent ?? 3}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      subagents: {
+                        ...draft.subagents,
+                        maxChildrenPerAgent: parseInt(e.target.value) || 3,
+                      },
+                    })
+                  }
+                  className="h-6 text-[10px] px-1.5"
+                />
+              </div>
+            </div>
+            <p className="text-[9px] text-muted-foreground">
+              Depth: nesting levels. Concurrent: total active runs. Per Agent:
+              children per spawn call.
+            </p>
+          </div>
+        )}
+
         <Separator />
 
         {/* Schedule */}

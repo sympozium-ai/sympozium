@@ -1365,6 +1365,21 @@ export function OnboardingWizard({
                 </div>
               )}
 
+              {/* Subagents info */}
+              {form.skills.includes("subagents") && (
+                <div className="rounded-md border border-teal-500/20 bg-teal-500/5 p-3 space-y-1">
+                  <p className="text-xs font-medium text-teal-400">
+                    Sub-Agents Enabled
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Agents with this skill can dynamically spawn child agents to
+                    parallelize work. Limits (max depth, concurrency, children
+                    per agent) are configured per persona in the ensemble
+                    definition.
+                  </p>
+                </div>
+              )}
+
               {/* Agent Sandbox toggle */}
               <div
                 className={cn(

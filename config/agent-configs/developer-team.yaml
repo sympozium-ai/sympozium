@@ -40,6 +40,15 @@ spec:
     - source: code-reviewer
       target: frontend-dev
       type: supervision
+    - source: code-reviewer
+      target: qa-engineer
+      type: supervision
+    - source: code-reviewer
+      target: devops-engineer
+      type: supervision
+    - source: code-reviewer
+      target: docs-writer
+      type: supervision
   stimulus:
     name: kickoff
     prompt: "Review the repository for open issues and pull requests. Triage unassigned issues, review open PRs, run tests, and submit worthwhile pull requests to improve the project. Focus on code quality, test coverage, and documentation gaps."

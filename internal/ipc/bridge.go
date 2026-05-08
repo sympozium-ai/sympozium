@@ -209,7 +209,9 @@ func (b *Bridge) watchSpawnRequests(ctx context.Context) {
 	}
 }
 
-// handleSpawnRequest processes a spawn request file.
+// handleSpawnRequest processes a spawn request file. It routes persona delegation
+// requests (request-*.json) and ad-hoc subagent requests (subagent-request-*.json)
+// to their respective event bus topics.
 func (b *Bridge) handleSpawnRequest(ctx context.Context, fe FileEvent) {
 	// fsnotify fires both Create and Write for the same file; deduplicate.
 	if _, loaded := b.processedFiles.LoadOrStore(fe.Path, true); loaded {
@@ -226,6 +228,17 @@ func (b *Bridge) handleSpawnRequest(ctx context.Context, fe FileEvent) {
 	metadata := map[string]string{
 		"agentRunID":   b.AgentRunID,
 		"instanceName": b.InstanceName,
+	}
+
+	// Route subagent batch requests to a separate topic.
+	base := filepath.Base(fe.Path)
+	if len(base) > 17 && base[:17] == "subagent-request-" {
+		event, _ := eventbus.NewEvent(eventbus.TopicAgentSubagentRequest, metadata, json.RawMessage(data))
+		if err := b.EventBus.Publish(ctx, eventbus.TopicAgentSubagentRequest, event); err != nil {
+			b.Log.Error(err, "failed to publish subagent spawn request")
+		}
+		b.Log.Info("Forwarded subagent spawn request to control plane")
+		return
 	}
 
 	event, _ := eventbus.NewEvent(eventbus.TopicAgentSpawnRequest, metadata, json.RawMessage(data))
@@ -396,6 +409,12 @@ func (b *Bridge) subscribeToInbound(ctx context.Context) {
 		b.Log.Error(err, "failed to subscribe to delegate result events")
 	}
 
+	// Subscribe to subagent batch results (spawn_subagents tool polls for these files)
+	subagentResultCh, err := b.EventBus.Subscribe(ctx, fmt.Sprintf("%s.%s", eventbus.TopicAgentSubagentResult, b.AgentRunID))
+	if err != nil {
+		b.Log.Error(err, "failed to subscribe to subagent result events")
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -430,6 +449,22 @@ func (b *Bridge) subscribeToInbound(ctx context.Context) {
 					b.Log.Error(err, "failed to write delegate result", "requestId", parsed.RequestID)
 				} else {
 					b.Log.Info("Wrote delegate result", "requestId", parsed.RequestID)
+				}
+			}
+
+		case event := <-subagentResultCh:
+			// Write subagent batch result to /ipc/spawn/subagent-result-{batchId}.json
+			// so the blocking spawn_subagents tool can pick it up.
+			var parsed struct {
+				BatchID string `json:"batchId"`
+			}
+			if json.Unmarshal(event.Data, &parsed) == nil && parsed.BatchID != "" {
+				filename := fmt.Sprintf("subagent-result-%s.json", parsed.BatchID)
+				path := filepath.Join(b.BasePath, DirSpawn, filename)
+				if err := os.WriteFile(path, event.Data, 0640); err != nil {
+					b.Log.Error(err, "failed to write subagent batch result", "batchId", parsed.BatchID)
+				} else {
+					b.Log.Info("Wrote subagent batch result", "batchId", parsed.BatchID)
 				}
 			}
 		}

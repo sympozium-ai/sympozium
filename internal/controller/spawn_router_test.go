@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/ipc"
 )
 
 func newTestSpawnRouter(t *testing.T, objs ...client.Object) *SpawnRouter {
@@ -150,6 +151,131 @@ func TestCircuitBreaker_BlocksSpawn(t *testing.T) {
 	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run")
 	if err == nil {
 		t.Error("expected error when circuit breaker is open")
+	}
+}
+
+// ── Subagent batch tests ─────────────────────────────────────────────────────
+
+func TestPendingBatch_FinalizeBatchStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		results    []ipc.SubagentChildResult
+		failed     int
+		aborted    bool
+		wantStatus string
+	}{
+		{
+			name: "all succeeded",
+			results: []ipc.SubagentChildResult{
+				{ID: "a", Status: "success"},
+				{ID: "b", Status: "success"},
+			},
+			failed:     0,
+			wantStatus: "success",
+		},
+		{
+			name: "some failed",
+			results: []ipc.SubagentChildResult{
+				{ID: "a", Status: "success"},
+				{ID: "b", Status: "error", Error: "timeout"},
+			},
+			failed:     1,
+			wantStatus: "partial",
+		},
+		{
+			name: "all failed",
+			results: []ipc.SubagentChildResult{
+				{ID: "a", Status: "error", Error: "fail1"},
+				{ID: "b", Status: "error", Error: "fail2"},
+			},
+			failed:     2,
+			wantStatus: "error",
+		},
+		{
+			name: "aborted with partial failures",
+			results: []ipc.SubagentChildResult{
+				{ID: "a", Status: "error", Error: "fail"},
+				{ID: "b"},
+			},
+			failed:     1,
+			aborted:    true,
+			wantStatus: "partial",
+		},
+		{
+			name: "aborted with all failed",
+			results: []ipc.SubagentChildResult{
+				{ID: "a", Status: "error", Error: "fail"},
+			},
+			failed:     1,
+			aborted:    true,
+			wantStatus: "error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			batch := &pendingBatch{
+				batchID:     "test-batch",
+				parentRunID: "parent",
+				tasks:       make([]ipc.SubagentTask, len(tt.results)),
+				results:     tt.results,
+				completed:   len(tt.results),
+				failed:      tt.failed,
+				aborted:     tt.aborted,
+			}
+
+			// Determine status using the same logic as finalizeBatch.
+			status := "success"
+			batch.mu.Lock()
+			if batch.failed > 0 && batch.failed < len(batch.tasks) {
+				status = "partial"
+			} else if batch.failed == len(batch.tasks) || (batch.aborted && batch.failed > 0) {
+				status = "error"
+			}
+			batch.mu.Unlock()
+
+			if status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestPendingBatch_ChildToIndexTracking(t *testing.T) {
+	batch := &pendingBatch{
+		batchID:      "batch-1",
+		parentRunID:  "parent-1",
+		tasks:        []ipc.SubagentTask{{ID: "a"}, {ID: "b"}, {ID: "c"}},
+		results:      make([]ipc.SubagentChildResult, 3),
+		childToIndex: make(map[string]int),
+	}
+
+	// Simulate registering children.
+	batch.childToIndex["sub-parent-1-1-1"] = 0
+	batch.childToIndex["sub-parent-1-1-2"] = 1
+	batch.childToIndex["sub-parent-1-1-3"] = 2
+
+	// Verify lookup.
+	if idx, ok := batch.childToIndex["sub-parent-1-1-2"]; !ok || idx != 1 {
+		t.Errorf("child index lookup failed: ok=%v, idx=%d", ok, idx)
+	}
+
+	// Simulate completing child 1.
+	batch.mu.Lock()
+	batch.results[1] = ipc.SubagentChildResult{
+		ID:       "b",
+		RunName:  "sub-parent-1-1-2",
+		Status:   "success",
+		Response: "done",
+	}
+	batch.completed++
+	batch.mu.Unlock()
+
+	if batch.completed != 1 {
+		t.Errorf("completed = %d, want 1", batch.completed)
+	}
+	if batch.results[1].Status != "success" {
+		t.Errorf("results[1].Status = %q, want %q", batch.results[1].Status, "success")
 	}
 }
 

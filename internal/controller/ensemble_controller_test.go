@@ -93,6 +93,64 @@ func TestBuildInstance_ChannelAccessControlPrecedence(t *testing.T) {
 	}
 }
 
+func TestBuildInstance_SubagentsPropagated(t *testing.T) {
+	r := &EnsembleReconciler{}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.EnsembleSpec{},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name:         "lead-analyst",
+		SystemPrompt: "You are the lead analyst.",
+		Subagents: &sympoziumv1alpha1.SubagentsSpec{
+			MaxDepth:            3,
+			MaxConcurrent:       8,
+			MaxChildrenPerAgent: 5,
+		},
+	}
+
+	inst := r.buildAgent(pack, persona, "test-pack-lead-analyst", "")
+
+	sub := inst.Spec.Agents.Default.Subagents
+	if sub == nil {
+		t.Fatal("expected Subagents to be propagated, got nil")
+	}
+	if sub.MaxDepth != 3 {
+		t.Errorf("MaxDepth = %d, want 3", sub.MaxDepth)
+	}
+	if sub.MaxConcurrent != 8 {
+		t.Errorf("MaxConcurrent = %d, want 8", sub.MaxConcurrent)
+	}
+	if sub.MaxChildrenPerAgent != 5 {
+		t.Errorf("MaxChildrenPerAgent = %d, want 5", sub.MaxChildrenPerAgent)
+	}
+}
+
+func TestBuildInstance_SubagentsNilWhenUnset(t *testing.T) {
+	r := &EnsembleReconciler{}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.EnsembleSpec{},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name:         "worker",
+		SystemPrompt: "You are a worker.",
+	}
+
+	inst := r.buildAgent(pack, persona, "test-pack-worker", "")
+
+	if inst.Spec.Agents.Default.Subagents != nil {
+		t.Errorf("expected Subagents to be nil for persona without subagents config, got %+v",
+			inst.Spec.Agents.Default.Subagents)
+	}
+}
+
 // ── Relationship graph validation tests ────────────────────────────────────
 
 func testPersonas(names ...string) []sympoziumv1alpha1.AgentConfigSpec {

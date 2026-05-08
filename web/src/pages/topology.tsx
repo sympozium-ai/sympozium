@@ -51,6 +51,11 @@ import {
   Unlock,
   RotateCcw,
   Zap,
+  GitBranch,
+  GitFork,
+  ListOrdered,
+  Eye,
+  Network,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -148,6 +153,30 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
             <span className="text-[9px] text-cyan-400 shrink-0">{data.runningCount} running</span>
           )}
         </div>
+        {active && (data.hasDelegation || data.hasSequential || data.hasSupervision || data.hasSubagents) && (
+          <div className="flex items-center gap-1 mt-1">
+            {data.hasDelegation && (
+              <span title="Delegation">
+                <GitFork className="h-2.5 w-2.5 text-blue-400/60" />
+              </span>
+            )}
+            {data.hasSequential && (
+              <span title="Sequential">
+                <ListOrdered className="h-2.5 w-2.5 text-amber-400/60" />
+              </span>
+            )}
+            {data.hasSupervision && (
+              <span title="Supervision">
+                <Eye className="h-2.5 w-2.5 text-gray-400/60" />
+              </span>
+            )}
+            {data.hasSubagents && (
+              <span title="Sub-agents">
+                <Network className="h-2.5 w-2.5 text-teal-400/60" />
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </Link>
   );
@@ -212,6 +241,7 @@ interface AgentRunNodeData {
   runName: string;
   task: string;
   phase: string;
+  isSubAgent?: boolean;
   label: string;
   [key: string]: unknown;
 }
@@ -235,12 +265,16 @@ const runPhaseDot: Record<string, string> = {
 function AgentRunNode({ data }: NodeProps<Node<AgentRunNodeData>>) {
   const border = runPhaseBorder[data.phase] || "border-border/50 bg-card";
   const dot = runPhaseDot[data.phase] || "bg-muted-foreground/40";
+  const Icon = data.isSubAgent ? GitBranch : Activity;
+  const iconColor = data.isSubAgent ? "text-teal-400" : "text-cyan-400";
+  const handleColor = data.isSubAgent ? "!bg-teal-400" : "!bg-cyan-400";
 
   return (
     <div className={`rounded border ${border} px-2 py-1 shadow-sm min-w-[100px] max-w-[140px]`}>
-      <Handle type="target" position={Position.Top} className="!bg-cyan-400 !w-1.5 !h-1.5" />
+      <Handle type="target" position={Position.Top} className={`${handleColor} !w-1.5 !h-1.5`} />
+      <Handle type="source" position={Position.Bottom} className={`${handleColor} !w-1.5 !h-1.5`} />
       <div className="flex items-center gap-1">
-        <Activity className="h-2.5 w-2.5 text-cyan-400 shrink-0" />
+        <Icon className={`h-2.5 w-2.5 ${iconColor} shrink-0`} />
         <span className="text-[9px] font-mono truncate">{data.runName.slice(-8)}</span>
         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dot}`} />
       </div>
@@ -330,6 +364,10 @@ interface EnsembleNodeData {
   enabled: boolean;
   personas: string[];
   runningCount: number;
+  hasDelegation?: boolean;
+  hasSequential?: boolean;
+  hasSupervision?: boolean;
+  hasSubagents?: boolean;
   [key: string]: unknown;
 }
 
@@ -659,6 +697,8 @@ function buildTopology(
     const ensId = `ens-${ens.metadata.name}`;
     const configs = ens.spec.agentConfigs || [];
     const personas = configs.map((p) => p.displayName || p.name);
+    const rels = ens.spec.relationships || [];
+    const skills = configs.flatMap((p) => p.skills || []);
 
     nodes.push({
       id: ensId,
@@ -670,6 +710,10 @@ function buildTopology(
         enabled: true,
         personas,
         runningCount: runningByEnsemble[ens.metadata.name] || 0,
+        hasDelegation: rels.some((r) => r.type === "delegation"),
+        hasSequential: rels.some((r) => r.type === "sequential"),
+        hasSupervision: rels.some((r) => r.type === "supervision"),
+        hasSubagents: skills.includes("subagents"),
       },
     });
     addEnsembleEdges(ensId, ens);
@@ -764,8 +808,24 @@ function buildTopology(
       const ref = run.spec?.agentRef;
       if (ref && ref.startsWith(ens.metadata.name + "-")) {
         const runId = `run-${run.metadata.name}`;
-        const personaName = ref.slice(ens.metadata.name.length + 1);
-        const parentPersonaId = `${ensId}-p-${personaName}`;
+        const isSubAgent = !!run.spec?.parent;
+
+        // Determine the edge source: sub-agents connect to their parent run
+        // (if it exists in the active set), otherwise fall back to the persona.
+        let edgeSource: string;
+        if (isSubAgent) {
+          const parentRunId = `run-${run.spec.parent!.runName}`;
+          const parentExists = activeRuns.some(
+            (r) => r.metadata.name === run.spec.parent!.runName,
+          );
+          edgeSource = parentExists
+            ? parentRunId
+            : `${ensId}-p-${ref.slice(ens.metadata.name.length + 1)}`;
+        } else {
+          const personaName = ref.slice(ens.metadata.name.length + 1);
+          edgeSource = `${ensId}-p-${personaName}`;
+        }
+
         nodes.push({
           id: runId,
           type: "agentRun",
@@ -774,14 +834,19 @@ function buildTopology(
             runName: run.metadata.name,
             task: run.spec.task || "",
             phase: run.status?.phase || "Pending",
+            isSubAgent,
             label: run.metadata.name,
           },
         });
         edges.push({
           id: `e-run-${run.metadata.name}`,
-          source: parentPersonaId,
+          source: edgeSource,
           target: runId,
-          style: { stroke: "#22d3ee40", strokeWidth: 1 },
+          style: {
+            stroke: isSubAgent ? "#2dd4bf40" : "#22d3ee40",
+            strokeWidth: 1,
+            ...(isSubAgent ? { strokeDasharray: "4 2" } : {}),
+          },
           animated: true,
         });
       }
@@ -798,6 +863,7 @@ function buildTopology(
   for (const run of activeRuns) {
     if (run.spec?.agentRef && !ensembleAgentRefs.has(run.spec.agentRef)) {
       const runId = `run-${run.metadata.name}`;
+      const isSubAgent = !!run.spec?.parent;
       nodes.push({
         id: runId,
         type: "agentRun",
@@ -806,9 +872,26 @@ function buildTopology(
           runName: run.metadata.name,
           task: run.spec.task || "",
           phase: run.status?.phase || "Pending",
+          isSubAgent,
           label: run.metadata.name,
         },
       });
+      // Connect ad-hoc sub-agents to their parent run if it exists.
+      if (isSubAgent) {
+        const parentRunId = `run-${run.spec.parent!.runName}`;
+        const parentExists = activeRuns.some(
+          (r) => r.metadata.name === run.spec.parent!.runName,
+        );
+        if (parentExists) {
+          edges.push({
+            id: `e-run-${run.metadata.name}`,
+            source: parentRunId,
+            target: runId,
+            style: { stroke: "#2dd4bf40", strokeWidth: 1, strokeDasharray: "4 2" },
+            animated: true,
+          });
+        }
+      }
     }
   }
 

@@ -22,7 +22,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Background, Controls, MiniMap } from "@xyflow/react";
-import { Database, Cpu, Zap } from "lucide-react";
+import { Database, Cpu, Zap, Network } from "lucide-react";
 import type {
   AgentConfigSpec,
   AgentConfigRelationship,
@@ -44,6 +44,8 @@ export interface AgentConfigNodeData {
   runTask?: string;
   hasSharedMemory?: boolean;
   membraneVisibility?: string;
+  /** Number of active sub-agent runs spawned by this persona's runs. */
+  activeSubagents?: number;
   /** Builder-only: true when the persona has name + systemPrompt filled in. */
   isConfigured?: boolean;
   label: string;
@@ -191,6 +193,17 @@ export function AgentConfigNode({ data }: NodeProps<Node<AgentConfigNodeData>>) 
         </Badge>
       )}
 
+      {persona.skills?.includes("subagents") && (
+        <Badge
+          variant="outline"
+          className="text-[9px] px-1 py-0 mb-1 gap-0.5 w-fit border-teal-500/30 text-teal-400"
+          title="Can spawn sub-agents dynamically"
+        >
+          <Network className="h-2.5 w-2.5" />
+          sub-agents
+        </Badge>
+      )}
+
       <div className="flex flex-wrap gap-0.5">
         {persona.skills?.slice(0, 3).map((sk) => (
           <Badge key={sk} variant="secondary" className="text-[9px] px-1 py-0">
@@ -211,6 +224,15 @@ export function AgentConfigNode({ data }: NodeProps<Node<AgentConfigNodeData>>) 
           title={runTask}
         >
           {runTask}
+        </p>
+      )}
+
+      {data.activeSubagents != null && data.activeSubagents > 0 && (
+        <p
+          className="text-[9px] text-teal-400/80 mt-1 truncate"
+          title={`${data.activeSubagents} sub-agent${data.activeSubagents !== 1 ? "s" : ""} running`}
+        >
+          {data.activeSubagents} sub-agent{data.activeSubagents !== 1 ? "s" : ""}
         </p>
       )}
 

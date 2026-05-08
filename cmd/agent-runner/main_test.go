@@ -1109,3 +1109,52 @@ func TestCallAnthropic_EmptyTerminalTurnFallsBack(t *testing.T) {
 		t.Errorf("response should be synthetic message, got: %q", text)
 	}
 }
+
+// ── Tool registration tests ──────────────────────────────────────────────────
+
+func TestDefaultTools_SubagentsDisabledByDefault(t *testing.T) {
+	// Ensure SUBAGENTS_ENABLED is not set.
+	t.Setenv("SUBAGENTS_ENABLED", "")
+
+	tools := defaultTools()
+	for _, tool := range tools {
+		if tool.Name == ToolSpawnSubagents {
+			t.Error("spawn_subagents tool should not be registered when SUBAGENTS_ENABLED is not set")
+		}
+	}
+}
+
+func TestDefaultTools_SubagentsEnabledWhenSet(t *testing.T) {
+	t.Setenv("SUBAGENTS_ENABLED", "true")
+
+	tools := defaultTools()
+	var found bool
+	for _, tool := range tools {
+		if tool.Name == ToolSpawnSubagents {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("spawn_subagents tool should be registered when SUBAGENTS_ENABLED=true")
+	}
+}
+
+func TestDefaultTools_AlwaysIncludesCoreTool(t *testing.T) {
+	tools := defaultTools()
+	var hasExec, hasDelegate bool
+	for _, tool := range tools {
+		if tool.Name == ToolExecuteCommand {
+			hasExec = true
+		}
+		if tool.Name == ToolDelegateToPersona {
+			hasDelegate = true
+		}
+	}
+	if !hasExec {
+		t.Error("execute_command tool should always be registered")
+	}
+	if !hasDelegate {
+		t.Error("delegate_to_persona tool should always be registered")
+	}
+}
