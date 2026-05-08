@@ -15,7 +15,17 @@ spec:
   description: "A self-contained AI team running entirely on a cluster-local Qwen3 8B model — no external API keys required. Deploy a Model CR first, then activate this ensemble."
   category: local
   version: "1.0.0"
+  workflowType: delegation
   modelRef: qwen3-8b-q4
+
+  stimulus:
+    name: local-task
+    prompt: "You are ready to assist. Wait for tasks from the user via channel messages or scheduled work. If no specific task is pending, review the workspace for any open items."
+
+  sharedMemory:
+    enabled: true
+    storageSize: 512Mi
+
   agentConfigs:
     - name: assistant
       displayName: "Local Assistant"
@@ -65,6 +75,11 @@ spec:
           - memory_store
 
   relationships:
+    - source: local-task
+      target: assistant
+      type: stimulus
     - source: assistant
       target: coder
       type: delegation
+      condition: "when the task requires writing or modifying code"
+      timeout: "15m"
