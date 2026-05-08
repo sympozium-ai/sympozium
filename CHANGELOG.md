@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.25](https://github.com/sympozium-ai/sympozium/compare/v0.10.24...v0.10.25) (2026-05-08)
+
+
+### Bug Fixes
+
+* use correct installedPersonas field in ensemble detail page ([b62eea4](https://github.com/sympozium-ai/sympozium/commit/b62eea46f38e92d2d052b0a3b3afa7b1d7a0af71))
+
 ## [0.10.24](https://github.com/sympozium-ai/sympozium/compare/v0.10.23...v0.10.24) (2026-05-08)
 
 
