@@ -353,26 +353,34 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 		return
 	}
 
-	// Validate limits.
-	subagentSpec := inst.Spec.Agents.Default.Subagents
-	if subagentSpec == nil {
-		sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID, "subagents not enabled on this agent")
+	// Validate that the "subagents" skill is attached to the parent run.
+	hasSkill := false
+	for _, s := range parentRun.Spec.Skills {
+		if s.SkillPackRef == "subagents" {
+			hasSkill = true
+			break
+		}
+	}
+	if !hasSkill {
+		sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID, "subagents skill not attached to this agent")
 		return
 	}
 
-	maxChildren := subagentSpec.MaxChildrenPerAgent
-	if maxChildren <= 0 {
-		maxChildren = 3
+	// Read optional limits from SubagentsSpec on the Agent, falling back to defaults.
+	maxChildren, maxDepth := 3, 2
+	if sub := inst.Spec.Agents.Default.Subagents; sub != nil {
+		if sub.MaxChildrenPerAgent > 0 {
+			maxChildren = sub.MaxChildrenPerAgent
+		}
+		if sub.MaxDepth > 0 {
+			maxDepth = sub.MaxDepth
+		}
 	}
+
 	if len(req.Tasks) > maxChildren {
 		sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID,
 			fmt.Sprintf("batch size %d exceeds MaxChildrenPerAgent limit of %d", len(req.Tasks), maxChildren))
 		return
-	}
-
-	maxDepth := subagentSpec.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = 2
 	}
 	depth := 0
 	if parentRun.Spec.Parent != nil {

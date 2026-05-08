@@ -2573,30 +2573,40 @@ func (r *AgentRunReconciler) injectRelationshipContext(ctx context.Context, agen
 }
 
 // injectSubagentsConfig adds SUBAGENTS_ENABLED, SUBAGENTS_MAX_CHILDREN, and
-// SUBAGENTS_MAX_DEPTH env vars to the agent container when the Agent's
-// SubagentsSpec is configured. This enables the spawn_subagents tool.
+// SUBAGENTS_MAX_DEPTH env vars to the agent container when the "subagents"
+// SkillPack is attached. Limits are taken from SubagentsSpec if set, otherwise
+// sensible defaults are used.
 func (r *AgentRunReconciler) injectSubagentsConfig(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, job *batchv1.Job) {
 	if agentRun.Spec.AgentRef == "" {
 		return
 	}
 
+	// Check whether the "subagents" skill is attached to the AgentRun or
+	// the backing Agent. The skill attachment is the gate — users control
+	// access by adding/removing the SkillPack.
+	hasSkill := false
+	for _, s := range agentRun.Spec.Skills {
+		if s.SkillPackRef == "subagents" {
+			hasSkill = true
+			break
+		}
+	}
+	if !hasSkill {
+		return
+	}
+
+	// Look up the Agent for optional limit overrides.
 	var inst sympoziumv1alpha1.Agent
-	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &inst); err != nil {
-		return
-	}
-
-	sub := inst.Spec.Agents.Default.Subagents
-	if sub == nil {
-		return
-	}
-
-	maxChildren := sub.MaxChildrenPerAgent
-	if maxChildren <= 0 {
-		maxChildren = 3
-	}
-	maxDepth := sub.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = 2
+	maxChildren, maxDepth := 3, 2
+	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &inst); err == nil {
+		if sub := inst.Spec.Agents.Default.Subagents; sub != nil {
+			if sub.MaxChildrenPerAgent > 0 {
+				maxChildren = sub.MaxChildrenPerAgent
+			}
+			if sub.MaxDepth > 0 {
+				maxDepth = sub.MaxDepth
+			}
+		}
 	}
 
 	podSpec := &job.Spec.Template.Spec

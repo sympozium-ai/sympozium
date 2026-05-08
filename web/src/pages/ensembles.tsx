@@ -50,6 +50,24 @@ import { formatAge } from "@/lib/utils";
 import type { Ensemble } from "@/lib/api";
 import { GlobalEnsembleCanvas } from "@/components/ensemble-canvas";
 
+/** Lightweight tooltip wrapper — shows after ~300ms on hover. */
+function IconTip({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="relative group">
+      {children}
+      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 whitespace-nowrap rounded bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md border border-border/50 opacity-0 group-hover:opacity-100 transition-opacity delay-300">
+        {label}
+      </span>
+    </span>
+  );
+}
+
 /** Small icons indicating which workflow patterns an ensemble uses. */
 function WorkflowPatterns({ pack }: { pack: Ensemble }) {
   const rels = pack.spec.relationships || [];
@@ -67,24 +85,24 @@ function WorkflowPatterns({ pack }: { pack: Ensemble }) {
   return (
     <div className="flex items-center gap-1.5">
       {hasDelegation && (
-        <span title="Delegation — agents delegate tasks to other agents">
+        <IconTip label="Delegation">
           <GitFork className="h-3.5 w-3.5 text-blue-400" />
-        </span>
+        </IconTip>
       )}
       {hasSequential && (
-        <span title="Sequential — agents run in pipeline order">
+        <IconTip label="Sequential">
           <ListOrdered className="h-3.5 w-3.5 text-amber-400" />
-        </span>
+        </IconTip>
       )}
       {hasSupervision && (
-        <span title="Supervision — agents monitor other agents">
+        <IconTip label="Supervision">
           <Eye className="h-3.5 w-3.5 text-gray-400" />
-        </span>
+        </IconTip>
       )}
       {hasSubagents && (
-        <span title="Sub-agents — agents dynamically spawn child agents">
+        <IconTip label="Sub-agents">
           <Network className="h-3.5 w-3.5 text-teal-400" />
-        </span>
+        </IconTip>
       )}
     </div>
   );
