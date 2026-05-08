@@ -397,7 +397,10 @@ export function EnsemblesPage() {
         mode="persona"
         targetName={wizardPack?.metadata.name}
         agentConfigCount={wizardPack?.spec.agentConfigs?.length ?? 0}
-        availableSkills={(skillPacks || []).map((s) => s.metadata.name)}
+        availableSkills={Array.from(new Set([
+          ...(skillPacks || []).map((s) => s.metadata.name),
+          ...(wizardPack?.spec.agentConfigs || []).flatMap((p) => p.skills || []),
+        ]))}
         defaults={{
           provider: wizardPack?.spec.authRefs?.[0]?.provider || "",
           secretName: wizardPack?.spec.authRefs?.[0]?.secret || "",
