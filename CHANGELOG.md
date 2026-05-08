@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.23](https://github.com/sympozium-ai/sympozium/compare/v0.10.22...v0.10.23) (2026-05-08)
+
+
+### Features
+
+* add subagents skill for ad-hoc sub-agent spawning ([#171](https://github.com/sympozium-ai/sympozium/issues/171)) ([2929a80](https://github.com/sympozium-ai/sympozium/commit/2929a80ea9ccb79dde3cc8d8df03f03b4f105937))
+
+
+### Bug Fixes
+
+* prevent panic when AgentRun has nil Labels map ([#170](https://github.com/sympozium-ai/sympozium/issues/170)) ([6f0792f](https://github.com/sympozium-ai/sympozium/commit/6f0792ff7da72faf76b5f9012337c2d9f35b375c))
+
 ## [0.10.22](https://github.com/sympozium-ai/sympozium/compare/v0.10.21...v0.10.22) (2026-05-07)
 
 

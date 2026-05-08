@@ -398,8 +398,8 @@ type EnsembleStatus struct {
 	// +optional
 	ConsecutiveDelegateFailures int `json:"consecutiveDelegateFailures,omitempty"`
 
-	// AllAgentsServing indicates all agent pods have reached Serving phase.
-	// Used for stimulus edge detection.
+	// AllAgentsServing indicates all agents have reached Running or Serving
+	// phase (infrastructure ready). Used for stimulus edge detection.
 	// +optional
 	AllAgentsServing bool `json:"allAgentsServing,omitempty"`
 

@@ -4891,8 +4891,8 @@ spec:
             properties:
               allAgentsServing:
                 description: |-
-                  AllAgentsServing indicates all agent pods have reached Serving phase.
-                  Used for stimulus edge detection.
+                  AllAgentsServing indicates all agents have reached Running or Serving
+                  phase (infrastructure ready). Used for stimulus edge detection.
                 type: boolean
               circuitBreakerOpen:
                 description: |-

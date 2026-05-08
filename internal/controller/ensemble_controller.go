@@ -264,7 +264,7 @@ func (r *EnsembleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		pack.Status.Phase = "Ready"
 	}
 
-	// Check if all agents are serving for stimulus delivery.
+	// Check if all agents are ready for stimulus delivery.
 	if pack.Spec.Stimulus != nil && installErr == nil {
 		if err := r.reconcileStimulus(ctx, log, pack); err != nil {
 			log.Error(err, "Failed to reconcile stimulus")
@@ -1231,28 +1231,34 @@ func (r *EnsembleReconciler) cleanupSharedMemory(ctx context.Context, log logr.L
 	return nil
 }
 
-// reconcileStimulus checks whether all agents in the ensemble have reached
-// Serving phase. On the transition edge (not-all-serving → all-serving), it
-// creates an AgentRun targeting the stimulus relationship target.
+// reconcileStimulus checks whether all agents in the ensemble are ready
+// (Running or Serving phase). On the transition edge (not-all-ready →
+// all-ready), it creates an AgentRun targeting the stimulus relationship
+// target. We accept "Running" (not just "Serving") because the stimulus
+// typically creates the *first* AgentRun for the target agent.
 func (r *EnsembleReconciler) reconcileStimulus(ctx context.Context, log logr.Logger, pack *sympoziumv1alpha1.Ensemble) error {
-	// Count agents that are serving.
-	servingCount := 0
+	// Count agents whose infrastructure is ready (Running or Serving).
+	// "Running" means the Agent CRD is reconciled and memory deployments
+	// are up; "Serving" means it additionally has active AgentRun pods.
+	// The stimulus creates the *first* AgentRun, so we cannot require
+	// Serving — that would be a deadlock.
+	readyCount := 0
 	for _, ip := range pack.Status.InstalledAgentConfigs {
 		var agent sympoziumv1alpha1.Agent
 		if err := r.Get(ctx, types.NamespacedName{Name: ip.InstanceName, Namespace: pack.Namespace}, &agent); err != nil {
 			continue
 		}
-		if agent.Status.Phase == "Serving" {
-			servingCount++
+		if agent.Status.Phase == "Running" || agent.Status.Phase == "Serving" {
+			readyCount++
 		}
 	}
 
-	allServing := servingCount > 0 && servingCount == len(pack.Status.InstalledAgentConfigs)
-	prevAllServing := pack.Status.AllAgentsServing
-	pack.Status.AllAgentsServing = allServing
+	allReady := readyCount > 0 && readyCount == len(pack.Status.InstalledAgentConfigs)
+	prevAllReady := pack.Status.AllAgentsServing
+	pack.Status.AllAgentsServing = allReady
 
-	// Detect the edge: not-all-serving → all-serving.
-	if !prevAllServing && allServing && !pack.Status.StimulusDelivered {
+	// Detect the edge: not-all-ready → all-ready.
+	if !prevAllReady && allReady && !pack.Status.StimulusDelivered {
 		if err := r.deliverStimulus(ctx, log, pack, "readiness"); err != nil {
 			return err
 		}
