@@ -44,6 +44,8 @@ export interface AgentConfigNodeData {
   runTask?: string;
   hasSharedMemory?: boolean;
   membraneVisibility?: string;
+  /** Number of active sub-agent runs spawned by this persona's runs. */
+  activeSubagents?: number;
   /** Builder-only: true when the persona has name + systemPrompt filled in. */
   isConfigured?: boolean;
   label: string;
@@ -211,6 +213,15 @@ export function AgentConfigNode({ data }: NodeProps<Node<AgentConfigNodeData>>) 
           title={runTask}
         >
           {runTask}
+        </p>
+      )}
+
+      {data.activeSubagents != null && data.activeSubagents > 0 && (
+        <p
+          className="text-[9px] text-teal-400/80 mt-1 truncate"
+          title={`${data.activeSubagents} sub-agent${data.activeSubagents !== 1 ? "s" : ""} running`}
+        >
+          {data.activeSubagents} sub-agent{data.activeSubagents !== 1 ? "s" : ""}
         </p>
       )}
 

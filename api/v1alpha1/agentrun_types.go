@@ -342,13 +342,25 @@ type AgentRunStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// DelegateStatus tracks an in-flight delegation to another persona.
+// DelegateStatus tracks an in-flight delegation to another persona or ad-hoc sub-agent.
 type DelegateStatus struct {
 	// ChildRunName is the name of the spawned AgentRun.
 	ChildRunName string `json:"childRunName"`
 
 	// TargetPersona is the persona name that was delegated to.
-	TargetPersona string `json:"targetPersona"`
+	// Empty for ad-hoc sub-agent spawns (spawn_subagents tool).
+	// +optional
+	TargetPersona string `json:"targetPersona,omitempty"`
+
+	// BatchID correlates children that belong to the same spawn_subagents batch.
+	// Empty for persona-based delegations.
+	// +optional
+	BatchID string `json:"batchId,omitempty"`
+
+	// TaskID is the caller-assigned identifier for this child within a batch.
+	// Empty for persona-based delegations.
+	// +optional
+	TaskID string `json:"taskId,omitempty"`
 
 	// Phase is the child run's current phase.
 	// +optional

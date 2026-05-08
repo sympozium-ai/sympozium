@@ -516,15 +516,36 @@ export function GlobalEnsembleCanvas() {
         buildRunPhaseMap(runs, pack.status?.installedPersonas),
       );
     }
+
+    // Count active sub-agent runs per persona (agentRef).
+    const subagentCounts = new Map<string, number>();
+    const activePhases = new Set(["Running", "Pending", "AwaitingDelegate"]);
+    for (const run of runs || []) {
+      if (
+        run.spec?.parent &&
+        run.status?.phase &&
+        activePhases.has(run.status.phase)
+      ) {
+        const ref = run.spec.agentRef;
+        subagentCounts.set(ref, (subagentCounts.get(ref) || 0) + 1);
+      }
+    }
+
     return layoutedNodes.map((node) => {
       if (node.type !== "persona") return node;
       const packName = (node.data as AgentConfigNodeData).packName || "";
       const personaName = node.id.split("/")[1] || node.id;
       const status = runPhaseMaps.get(packName)?.get(personaName);
-      if (!status) return node;
+      const agentRef = `${packName}-${personaName}`;
+      const activeSubagents = subagentCounts.get(agentRef) || 0;
+      if (!status && !activeSubagents) return node;
       return {
         ...node,
-        data: { ...node.data, runPhase: status.phase, runTask: status.task },
+        data: {
+          ...node.data,
+          ...(status ? { runPhase: status.phase, runTask: status.task } : {}),
+          ...(activeSubagents > 0 ? { activeSubagents } : {}),
+        },
       };
     });
   }, [layoutedNodes, runs, enabledPacks]);
@@ -677,15 +698,36 @@ export function DashboardEnsembleCanvas() {
         buildRunPhaseMap(runs, pack.status?.installedPersonas),
       );
     }
+
+    // Count active sub-agent runs per persona (agentRef).
+    const subagentCounts = new Map<string, number>();
+    const activePhases = new Set(["Running", "Pending", "AwaitingDelegate"]);
+    for (const run of runs || []) {
+      if (
+        run.spec?.parent &&
+        run.status?.phase &&
+        activePhases.has(run.status.phase)
+      ) {
+        const ref = run.spec.agentRef;
+        subagentCounts.set(ref, (subagentCounts.get(ref) || 0) + 1);
+      }
+    }
+
     return dashLayoutNodes.map((node) => {
       if (node.type !== "persona") return node;
-      const packName = (node.data as AgentConfigNodeData).packName || "";
+      const packName = (node.data as AgentConfigNodeData).packName || visiblePacks[0]?.metadata.name || "";
       const personaName = node.id.split("/")[1] || node.id;
       const status = runPhaseMaps.get(packName)?.get(personaName);
-      if (!status) return node;
+      const agentRef = `${packName}-${personaName}`;
+      const activeSubagents = subagentCounts.get(agentRef) || 0;
+      if (!status && !activeSubagents) return node;
       return {
         ...node,
-        data: { ...node.data, runPhase: status.phase, runTask: status.task },
+        data: {
+          ...node.data,
+          ...(status ? { runPhase: status.phase, runTask: status.task } : {}),
+          ...(activeSubagents > 0 ? { activeSubagents } : {}),
+        },
       };
     });
   }, [dashLayoutNodes, runs, visiblePacks]);

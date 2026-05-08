@@ -41,10 +41,54 @@ import {
   Workflow,
   Plus,
   Trash2,
+  GitFork,
+  ListOrdered,
+  Eye,
+  Network,
 } from "lucide-react";
 import { formatAge } from "@/lib/utils";
 import type { Ensemble } from "@/lib/api";
 import { GlobalEnsembleCanvas } from "@/components/ensemble-canvas";
+
+/** Small icons indicating which workflow patterns an ensemble uses. */
+function WorkflowPatterns({ pack }: { pack: Ensemble }) {
+  const rels = pack.spec.relationships || [];
+  const skills = (pack.spec.agentConfigs || []).flatMap((p) => p.skills || []);
+
+  const hasDelegation = rels.some((r) => r.type === "delegation");
+  const hasSequential = rels.some((r) => r.type === "sequential");
+  const hasSupervision = rels.some((r) => r.type === "supervision");
+  const hasSubagents = skills.includes("subagents");
+
+  if (!hasDelegation && !hasSequential && !hasSupervision && !hasSubagents) {
+    return <span className="text-muted-foreground/40 text-xs">—</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {hasDelegation && (
+        <span title="Delegation — agents delegate tasks to other agents">
+          <GitFork className="h-3.5 w-3.5 text-blue-400" />
+        </span>
+      )}
+      {hasSequential && (
+        <span title="Sequential — agents run in pipeline order">
+          <ListOrdered className="h-3.5 w-3.5 text-amber-400" />
+        </span>
+      )}
+      {hasSupervision && (
+        <span title="Supervision — agents monitor other agents">
+          <Eye className="h-3.5 w-3.5 text-gray-400" />
+        </span>
+      )}
+      {hasSubagents && (
+        <span title="Sub-agents — agents dynamically spawn child agents">
+          <Network className="h-3.5 w-3.5 text-teal-400" />
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function EnsemblesPage() {
   const { data, isLoading } = useEnsembles();
@@ -227,6 +271,7 @@ export function EnsemblesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Patterns</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Personas</TableHead>
@@ -248,6 +293,9 @@ export function EnsemblesPage() {
                     {pack.metadata.name}
                     <ExternalLink className="h-3 w-3 opacity-50" />
                   </Link>
+                </TableCell>
+                <TableCell>
+                  <WorkflowPatterns pack={pack} />
                 </TableCell>
                 <TableCell>
                   {pack.spec.category ? (

@@ -26,6 +26,7 @@ const (
 	ToolFetchURL           = "fetch_url"
 	ToolScheduleTask       = "schedule_task"
 	ToolDelegateToPersona  = "delegate_to_persona"
+	ToolSpawnSubagents     = "spawn_subagents"
 )
 
 // ToolDef describes a tool for LLM function calling.
@@ -37,7 +38,7 @@ type ToolDef struct {
 
 // defaultTools returns the set of tools available to the agent.
 func defaultTools() []ToolDef {
-	return []ToolDef{
+	tools := []ToolDef{
 		{
 			Name: ToolExecuteCommand,
 			Description: "Execute a shell command in a Kubernetes skill sidecar container. " +
@@ -223,6 +224,63 @@ func defaultTools() []ToolDef {
 			},
 		},
 	}
+
+	// Conditionally add spawn_subagents tool when subagents are enabled.
+	if os.Getenv("SUBAGENTS_ENABLED") == "true" {
+		tools = append(tools, ToolDef{
+			Name: ToolSpawnSubagents,
+			Description: "Spawn sub-agents to execute tasks in parallel or sequentially. " +
+				"Each sub-agent runs independently as its own AgentRun and returns a result. " +
+				"Use this to break complex work into independent subtasks (parallel) or " +
+				"dependent pipeline steps (sequential). Sub-agents inherit your model, skills, " +
+				"and configuration. Results are returned as an ordered array matching your task order.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tasks": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"id": map[string]any{
+									"type":        "string",
+									"description": "Unique identifier for this task (used to correlate results)",
+								},
+								"task": map[string]any{
+									"type":        "string",
+									"description": "Task description for the sub-agent. Be specific and self-contained.",
+								},
+								"systemPrompt": map[string]any{
+									"type":        "string",
+									"description": "Optional system prompt override for this sub-agent",
+								},
+								"timeout": map[string]any{
+									"type":        "string",
+									"description": "Optional timeout override (e.g. '5m', '10m')",
+								},
+							},
+							"required": []string{"id", "task"},
+						},
+						"minItems":    1,
+						"description": "Array of tasks to execute as sub-agents",
+					},
+					"strategy": map[string]any{
+						"type":        "string",
+						"enum":        []string{"parallel", "sequential"},
+						"description": "Execution strategy: 'parallel' runs all at once, 'sequential' runs one after another. Default: parallel.",
+					},
+					"failurePolicy": map[string]any{
+						"type":        "string",
+						"enum":        []string{"continue", "fail-fast"},
+						"description": "How to handle failures: 'continue' runs all tasks regardless, 'fail-fast' stops on first failure. Default: continue for parallel, fail-fast for sequential.",
+					},
+				},
+				"required": []string{"tasks"},
+			},
+		})
+	}
+
+	return tools
 }
 
 // executeToolCall dispatches a tool call and returns the result string.
@@ -251,6 +309,8 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 		return scheduleTaskTool(args)
 	case ToolDelegateToPersona:
 		return delegateToPersonaTool(args)
+	case ToolSpawnSubagents:
+		return spawnSubagentsTool(args)
 	default:
 		// Check if this is a memory tool from the memory-server sidecar.
 		if isMemoryTool(name) {
@@ -457,6 +517,134 @@ func delegateToPersonaTool(args map[string]any) string {
 
 	log.Printf("Delegation to %q timed out after 10 minutes", targetPersona)
 	return fmt.Sprintf("Error: delegation to '%s' timed out after 10 minutes", targetPersona)
+}
+
+// --- Spawn subagents tool (IPC-based) ---
+
+// spawnSubagentsTool writes a batch spawn request to /ipc/spawn/ and blocks
+// until all sub-agent children complete, returning the aggregated results.
+func spawnSubagentsTool(args map[string]any) string {
+	tasksRaw, ok := args["tasks"]
+	if !ok {
+		return "Error: 'tasks' is required — provide an array of {id, task} objects"
+	}
+	tasksSlice, ok := tasksRaw.([]any)
+	if !ok || len(tasksSlice) == 0 {
+		return "Error: 'tasks' must be a non-empty array"
+	}
+
+	strategy, _ := args["strategy"].(string)
+	if strategy == "" {
+		strategy = "parallel"
+	}
+	failurePolicy, _ := args["failurePolicy"].(string)
+
+	type taskEntry struct {
+		ID           string `json:"id"`
+		Task         string `json:"task"`
+		SystemPrompt string `json:"systemPrompt,omitempty"`
+		Timeout      string `json:"timeout,omitempty"`
+	}
+
+	var tasks []taskEntry
+	for i, t := range tasksSlice {
+		m, ok := t.(map[string]any)
+		if !ok {
+			return fmt.Sprintf("Error: tasks[%d] is not an object", i)
+		}
+		id, _ := m["id"].(string)
+		task, _ := m["task"].(string)
+		if id == "" || task == "" {
+			return fmt.Sprintf("Error: tasks[%d] requires both 'id' and 'task' fields", i)
+		}
+		entry := taskEntry{
+			ID:   id,
+			Task: task,
+		}
+		if sp, ok := m["systemPrompt"].(string); ok {
+			entry.SystemPrompt = sp
+		}
+		if to, ok := m["timeout"].(string); ok {
+			entry.Timeout = to
+		}
+		tasks = append(tasks, entry)
+	}
+
+	batchID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	req := struct {
+		BatchID       string      `json:"batchId"`
+		Strategy      string      `json:"strategy"`
+		FailurePolicy string      `json:"failurePolicy"`
+		Tasks         []taskEntry `json:"tasks"`
+	}{
+		BatchID:       batchID,
+		Strategy:      strategy,
+		FailurePolicy: failurePolicy,
+		Tasks:         tasks,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Sprintf("Error marshalling subagent spawn request: %v", err)
+	}
+
+	dir := "/ipc/spawn"
+	_ = os.MkdirAll(dir, 0o755)
+	reqPath := filepath.Join(dir, fmt.Sprintf("subagent-request-%s.json", batchID))
+	resPath := filepath.Join(dir, fmt.Sprintf("subagent-result-%s.json", batchID))
+
+	if err := os.WriteFile(reqPath, data, 0o644); err != nil {
+		return fmt.Sprintf("Error writing subagent spawn request: %v", err)
+	}
+
+	log.Printf("Spawning %d subagents (strategy=%s, failurePolicy=%s, batchID=%s)",
+		len(tasks), strategy, failurePolicy, batchID)
+
+	// Block until the batch result arrives or timeout.
+	deadline := time.Now().Add(10 * time.Minute)
+	for time.Now().Before(deadline) {
+		resData, err := os.ReadFile(resPath)
+		if err == nil && len(resData) > 0 {
+			var result struct {
+				BatchID string `json:"batchId"`
+				Status  string `json:"status"`
+				Results []struct {
+					ID       string `json:"id"`
+					RunName  string `json:"runName"`
+					Status   string `json:"status"`
+					Response string `json:"response"`
+					Error    string `json:"error"`
+				} `json:"results"`
+			}
+			if json.Unmarshal(resData, &result) == nil {
+				_ = os.Remove(reqPath)
+				_ = os.Remove(resPath)
+
+				var sb strings.Builder
+				sb.WriteString(fmt.Sprintf("Subagent batch %s (status: %s)\n\n", result.Status, result.Status))
+				for _, r := range result.Results {
+					sb.WriteString(fmt.Sprintf("### Task: %s", r.ID))
+					if r.RunName != "" {
+						sb.WriteString(fmt.Sprintf(" (run: %s)", r.RunName))
+					}
+					sb.WriteString("\n")
+					if r.Status == "error" {
+						sb.WriteString(fmt.Sprintf("**Error:** %s\n\n", r.Error))
+					} else {
+						sb.WriteString(fmt.Sprintf("%s\n\n", r.Response))
+					}
+				}
+
+				log.Printf("Subagent batch %s completed (status=%s, results=%d)", batchID, result.Status, len(result.Results))
+				return sb.String()
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	log.Printf("Subagent batch %s timed out after 10 minutes", batchID)
+	return fmt.Sprintf("Error: subagent batch timed out after 10 minutes (batchId=%s)", batchID)
 }
 
 // --- Web fetch tool (runs in the agent container) ---

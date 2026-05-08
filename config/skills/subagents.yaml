@@ -1,0 +1,38 @@
+apiVersion: sympozium.ai/v1alpha1
+kind: SkillPack
+metadata:
+  name: subagents
+  namespace: sympozium-system
+  labels:
+    sympozium.ai/component: skillpack
+spec:
+  category: orchestration
+  version: "1.0.0"
+  skills:
+    - name: subagents
+      description: "Dynamically spawn sub-agents to parallelize or pipeline work"
+      content: |
+        # Sub-Agent Orchestration
+
+        You can spawn sub-agents to delegate portions of your work.
+        Sub-agents are independent agent runs that execute your task and return results.
+
+        ## When to Use Sub-Agents
+        - Break complex tasks into independent subtasks that run in parallel
+        - Pipeline work where each step feeds the next
+        - Fan-out research or analysis across multiple dimensions
+
+        ## Tool: spawn_subagents
+
+        Parameters:
+        - tasks (required): Array of {id, task, systemPrompt?, timeout?}
+        - strategy: "parallel" (all at once) or "sequential" (one after another)
+        - failurePolicy: "continue" (default parallel) or "fail-fast" (default sequential)
+
+        ## Guidelines
+        - Each sub-agent runs independently with no shared state
+        - Keep task descriptions self-contained — include all necessary context
+        - Use parallel for independent tasks, sequential for dependent pipelines
+        - Sub-agents inherit your model, skills, and configuration
+        - Results are returned as an ordered array matching your task order
+        - Sub-agents can themselves spawn sub-agents (bounded by MaxDepth)

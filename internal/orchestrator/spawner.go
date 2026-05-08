@@ -73,6 +73,10 @@ type SpawnRequest struct {
 	// PackName is the Ensemble that owns both the parent and target personas.
 	// Required when TargetPersona is set.
 	PackName string `json:"packName,omitempty"`
+
+	// ChildIndex disambiguates multiple children spawned at the same depth
+	// (e.g. from a spawn_subagents batch). Zero means single spawn (legacy naming).
+	ChildIndex int `json:"childIndex,omitempty"`
 }
 
 // SpawnResult is the result of a spawn operation.
@@ -119,6 +123,9 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 	)
 
 	runName := fmt.Sprintf("sub-%s-%d", req.ParentRunName, req.CurrentDepth+1)
+	if req.ChildIndex > 0 {
+		runName = fmt.Sprintf("sub-%s-%d-%d", req.ParentRunName, req.CurrentDepth+1, req.ChildIndex)
+	}
 	sessionKey := fmt.Sprintf("%s:sub:%s", req.ParentSessionKey, runName)
 
 	span.SetAttributes(attribute.String("run.name", runName))

@@ -2569,8 +2569,13 @@ spec:
                   Populated when the run enters AwaitingDelegate phase.
                 items:
                   description: DelegateStatus tracks an in-flight delegation to another
-                    persona.
+                    persona or ad-hoc sub-agent.
                   properties:
+                    batchId:
+                      description: |-
+                        BatchID correlates children that belong to the same spawn_subagents batch.
+                        Empty for persona-based delegations.
+                      type: string
                     childRunName:
                       description: ChildRunName is the name of the spawned AgentRun.
                       type: string
@@ -2585,12 +2590,17 @@ spec:
                         successfully.
                       type: string
                     targetPersona:
-                      description: TargetPersona is the persona name that was delegated
-                        to.
+                      description: |-
+                        TargetPersona is the persona name that was delegated to.
+                        Empty for ad-hoc sub-agent spawns (spawn_subagents tool).
+                      type: string
+                    taskId:
+                      description: |-
+                        TaskID is the caller-assigned identifier for this child within a batch.
+                        Empty for persona-based delegations.
                       type: string
                   required:
                   - childRunName
-                  - targetPersona
                   type: object
                 type: array
               deploymentName:

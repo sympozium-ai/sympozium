@@ -213,6 +213,12 @@ type AgentConfigSpec struct {
 	// mcp-bridge sidecar.
 	// +optional
 	MCPServers []MCPServerRef `json:"mcpServers,omitempty"`
+
+	// Subagents configures ad-hoc sub-agent spawning limits for this persona.
+	// When set, the generated Agent's SubagentsSpec is populated and the
+	// spawn_subagents tool becomes available (requires the "subagents" SkillPack).
+	// +optional
+	Subagents *SubagentsSpec `json:"subagents,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.

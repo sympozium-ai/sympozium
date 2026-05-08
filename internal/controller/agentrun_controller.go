@@ -511,6 +511,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// delegation/supervision instructions in the system prompt.
 	r.injectRelationshipContext(ctx, agentRun, job)
 
+	// Inject subagents configuration so the spawn_subagents tool is enabled.
+	r.injectSubagentsConfig(ctx, agentRun, job)
+
 	if err := controllerutil.SetControllerReference(agentRun, job, r.Scheme); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting owner reference: %w", err)
 	}
@@ -2565,6 +2568,43 @@ func (r *AgentRunReconciler) injectRelationshipContext(ctx context.Context, agen
 		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env,
 			corev1.EnvVar{Name: "PERSONA_NAME", Value: personaName},
 			corev1.EnvVar{Name: "ENSEMBLE_RELATIONSHIPS", Value: string(data)},
+		)
+	}
+}
+
+// injectSubagentsConfig adds SUBAGENTS_ENABLED, SUBAGENTS_MAX_CHILDREN, and
+// SUBAGENTS_MAX_DEPTH env vars to the agent container when the Agent's
+// SubagentsSpec is configured. This enables the spawn_subagents tool.
+func (r *AgentRunReconciler) injectSubagentsConfig(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, job *batchv1.Job) {
+	if agentRun.Spec.AgentRef == "" {
+		return
+	}
+
+	var inst sympoziumv1alpha1.Agent
+	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &inst); err != nil {
+		return
+	}
+
+	sub := inst.Spec.Agents.Default.Subagents
+	if sub == nil {
+		return
+	}
+
+	maxChildren := sub.MaxChildrenPerAgent
+	if maxChildren <= 0 {
+		maxChildren = 3
+	}
+	maxDepth := sub.MaxDepth
+	if maxDepth <= 0 {
+		maxDepth = 2
+	}
+
+	podSpec := &job.Spec.Template.Spec
+	if len(podSpec.Containers) > 0 {
+		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env,
+			corev1.EnvVar{Name: "SUBAGENTS_ENABLED", Value: "true"},
+			corev1.EnvVar{Name: "SUBAGENTS_MAX_CHILDREN", Value: fmt.Sprintf("%d", maxChildren)},
+			corev1.EnvVar{Name: "SUBAGENTS_MAX_DEPTH", Value: fmt.Sprintf("%d", maxDepth)},
 		)
 	}
 }

@@ -74,6 +74,70 @@ type DelegateResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// SubagentTask defines a single sub-agent task within a batch spawn request.
+type SubagentTask struct {
+	// ID is a caller-assigned identifier for correlating results.
+	ID string `json:"id"`
+
+	// Task is the task description for the sub-agent.
+	Task string `json:"task"`
+
+	// SystemPrompt overrides the parent's system prompt. Empty = inherit parent.
+	SystemPrompt string `json:"systemPrompt,omitempty"`
+
+	// Timeout overrides the parent's run timeout (e.g. "5m"). Empty = inherit parent.
+	Timeout string `json:"timeout,omitempty"`
+}
+
+// SubagentSpawnRequest is written to /ipc/spawn/subagent-request-{batchId}.json
+// by the spawn_subagents tool. The IPC bridge forwards it to the SpawnRouter
+// which creates child AgentRun CRs.
+type SubagentSpawnRequest struct {
+	// BatchID correlates the request with its result.
+	BatchID string `json:"batchId"`
+
+	// Strategy is "parallel" (all at once) or "sequential" (one after another).
+	Strategy string `json:"strategy"`
+
+	// FailurePolicy is "continue" (run all, report failures) or "fail-fast"
+	// (stop on first failure). Defaults: continue for parallel, fail-fast for sequential.
+	FailurePolicy string `json:"failurePolicy"`
+
+	// Tasks is the list of sub-agent tasks to spawn.
+	Tasks []SubagentTask `json:"tasks"`
+}
+
+// SubagentChildResult is a single child's outcome within a batch.
+type SubagentChildResult struct {
+	// ID matches the SubagentTask.ID from the request.
+	ID string `json:"id"`
+
+	// RunName is the name of the child AgentRun CR.
+	RunName string `json:"runName"`
+
+	// Status is "success" or "error".
+	Status string `json:"status"`
+
+	// Response is populated on success.
+	Response string `json:"response,omitempty"`
+
+	// Error is populated on failure.
+	Error string `json:"error,omitempty"`
+}
+
+// SubagentBatchResult is written to /ipc/spawn/subagent-result-{batchId}.json
+// by the IPC bridge when all children in a batch complete.
+type SubagentBatchResult struct {
+	// BatchID matches the SubagentSpawnRequest.BatchID.
+	BatchID string `json:"batchId"`
+
+	// Status is "success" (all succeeded), "partial" (some failed), or "error" (all failed or rejected).
+	Status string `json:"status"`
+
+	// Results contains one entry per task, ordered to match the request's Tasks array.
+	Results []SubagentChildResult `json:"results"`
+}
+
 // ExecRequest is written to /ipc/tools/exec-request-*.json for sandbox execution.
 type ExecRequest struct {
 	ID      string            `json:"id"`

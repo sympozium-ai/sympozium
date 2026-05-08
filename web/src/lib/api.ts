@@ -153,6 +153,12 @@ export interface TokenUsage {
   durationMs: number;
 }
 
+export interface ParentRunRef {
+  runName: string;
+  sessionKey: string;
+  spawnDepth: number;
+}
+
 export interface AgentRunSpec {
   agentRef: string;
   agentId: string;
@@ -165,11 +171,14 @@ export interface AgentRunSpec {
   cleanup?: string;
   mode?: string;
   lifecycle?: LifecycleHooks;
+  parent?: ParentRunRef;
 }
 
 export interface DelegateStatus {
   childRunName: string;
-  targetPersona: string;
+  targetPersona?: string;
+  batchId?: string;
+  taskId?: string;
   phase?: string;
   result?: string;
   error?: string;
@@ -463,6 +472,12 @@ export interface AgentConfigWebEndpoint {
   hostname?: string;
 }
 
+export interface SubagentsSpec {
+  maxDepth?: number;
+  maxConcurrent?: number;
+  maxChildrenPerAgent?: number;
+}
+
 export interface AgentConfigSpec {
   name: string;
   displayName?: string;
@@ -477,6 +492,7 @@ export interface AgentConfigSpec {
   channels?: string[];
   webEndpoint?: AgentConfigWebEndpoint;
   lifecycle?: LifecycleHooks;
+  subagents?: SubagentsSpec;
 }
 
 export interface InstalledAgentConfig {

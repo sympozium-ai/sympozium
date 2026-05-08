@@ -441,6 +441,27 @@ spec:
                       items:
                         type: string
                       type: array
+                    subagents:
+                      description: |-
+                        Subagents configures ad-hoc sub-agent spawning limits for this persona.
+                        When set, the generated Agent's SubagentsSpec is populated and the
+                        spawn_subagents tool becomes available (requires the "subagents" SkillPack).
+                      properties:
+                        maxChildrenPerAgent:
+                          default: 3
+                          description: MaxChildrenPerAgent is the maximum number of
+                            children per agent.
+                          type: integer
+                        maxConcurrent:
+                          default: 5
+                          description: MaxConcurrent is the maximum number of concurrent
+                            agent runs.
+                          type: integer
+                        maxDepth:
+                          default: 2
+                          description: MaxDepth is the maximum nesting depth for sub-agents.
+                          type: integer
+                      type: object
                     systemPrompt:
                       description: SystemPrompt is the system prompt that defines
                         the agent's role and behaviour.

@@ -564,6 +564,7 @@ func (r *EnsembleReconciler) buildAgent(
 					BaseURL:      baseURL,
 					AgentSandbox: pack.Spec.AgentSandbox,
 					Lifecycle:    persona.Lifecycle,
+					Subagents:    persona.Subagents,
 				},
 			},
 			AuthRefs: authRefs,
