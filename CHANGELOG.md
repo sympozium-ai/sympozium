@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.28](https://github.com/sympozium-ai/sympozium/compare/v0.10.27...v0.10.28) (2026-05-09)
+
+
+### Bug Fixes
+
+* correct CHANGELOG header to match actual version 0.10.27 ([3e5ee70](https://github.com/sympozium-ai/sympozium/commit/3e5ee70a943459beaf7d81514b068926921fd9b0))
+
 ## [0.10.27](https://github.com/sympozium-ai/sympozium/compare/v0.8.12...v0.10.27) (2026-05-09)
 
 
