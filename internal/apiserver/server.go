@@ -301,6 +301,9 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -764,6 +767,9 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -1064,6 +1070,9 @@ func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -1093,6 +1102,9 @@ func (s *Server) listSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -1122,6 +1134,9 @@ func (s *Server) listMCPServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -1316,6 +1331,9 @@ func (s *Server) listSchedules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 
@@ -1497,6 +1515,9 @@ func (s *Server) listEnsembles(w http.ResponseWriter, r *http.Request) {
 		filtered = append(filtered, e)
 	}
 
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Name < filtered[j].Name
+	})
 	writeJSON(w, filtered)
 }
 
@@ -3845,6 +3866,9 @@ func (s *Server) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(list.Items, func(i, j int) bool {
+		return list.Items[i].Name < list.Items[j].Name
+	})
 	writeJSON(w, list.Items)
 }
 

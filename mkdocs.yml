@@ -95,6 +95,7 @@ nav:
     - AWS Bedrock: guides/aws-bedrock.md
     - Serving Mode: guides/serving-mode.md
     - Writing Ensembles: guides/writing-ensembles.md
+    - Prompt Engineering: guides/prompt-engineering.md
     - Writing Skills: guides/writing-skills.md
     - Writing Tools: guides/writing-tools.md
     - Writing Integration Tests: guides/writing-integration-tests.md
