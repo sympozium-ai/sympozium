@@ -14,6 +14,7 @@ type RateLimiter struct {
 	maxTokens  float64
 	refillRate float64 // tokens per second
 	lastRefill time.Time
+	nowFunc    func() time.Time // injectable clock for testing
 }
 
 // NewRateLimiter creates a rate limiter with the given requests per minute and burst size.
@@ -37,7 +38,7 @@ func (rl *RateLimiter) Allow() bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	now := time.Now()
+	now := rl.now()
 	elapsed := now.Sub(rl.lastRefill).Seconds()
 	rl.tokens += elapsed * rl.refillRate
 	if rl.tokens > rl.maxTokens {
@@ -50,4 +51,11 @@ func (rl *RateLimiter) Allow() bool {
 		return true
 	}
 	return false
+}
+
+func (rl *RateLimiter) now() time.Time {
+	if rl.nowFunc != nil {
+		return rl.nowFunc()
+	}
+	return time.Now()
 }
