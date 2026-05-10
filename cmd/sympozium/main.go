@@ -90,7 +90,7 @@ Running without a subcommand launches the interactive TUI.`,
 		newInstallCmd(),
 		newUninstallCmd(),
 		newOnboardCmd(),
-		newInstancesCmd(),
+		newAgentsCmd(),
 		newRunsCmd(),
 		newPoliciesCmd(),
 		newSkillsCmd(),
@@ -134,10 +134,10 @@ func initClient() error {
 	return nil
 }
 
-func newInstancesCmd() *cobra.Command {
+func newAgentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "instances",
-		Aliases: []string{"instance", "inst"},
+		Use:     "agents",
+		Aliases: []string{"agent", "inst", "instances"},
 		Short:   "Manage Agents",
 	}
 
@@ -194,7 +194,7 @@ func newInstancesCmd() *cobra.Command {
 				if err := k8sClient.Delete(ctx, inst); err != nil {
 					return err
 				}
-				fmt.Printf("sympoziuminstance/%s deleted\n", args[0])
+				fmt.Printf("agent/%s deleted\n", args[0])
 				return nil
 			},
 		},
@@ -220,7 +220,7 @@ func newRunsCmd() *cobra.Command {
 					return err
 				}
 				w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(w, "NAME\tINSTANCE\tPHASE\tPOD\tTOKENS\tAGE")
+				fmt.Fprintln(w, "NAME\tAGENT\tPHASE\tPOD\tTOKENS\tAGE")
 				for _, run := range list.Items {
 					age := time.Since(run.CreationTimestamp.Time).Round(time.Second)
 					tokens := "-"
@@ -288,7 +288,7 @@ func newPoliciesCmd() *cobra.Command {
 					return err
 				}
 				w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(w, "NAME\tBOUND INSTANCES\tAGE")
+				fmt.Fprintln(w, "NAME\tBOUND AGENTS\tAGE")
 				for _, pol := range list.Items {
 					age := time.Since(pol.CreationTimestamp.Time).Round(time.Second)
 					fmt.Fprintf(w, "%s\t%d\t%s\n", pol.Name, pol.Status.BoundInstances, age)
@@ -605,10 +605,10 @@ func runOnboard() error {
 		namespace = targetNS
 	}
 
-	// ── Step 3: Instance name ────────────────────────────────────────────
+	// ── Step 3: Agent name ──────────────────────────────────────────────
 	fmt.Println("\n📋 Step 3/9 — Create your Agent")
-	fmt.Println("  An instance represents you (or a tenant) in the system.")
-	instanceName := prompt(reader, "  Instance name", "my-agent")
+	fmt.Println("  An agent represents you (or a tenant) in the system.")
+	instanceName := prompt(reader, "  Agent name", "my-agent")
 
 	// ── Step 3: AI provider ──────────────────────────────────────────────
 	fmt.Println("\n📋 Step 4/9 — AI Provider")
@@ -805,7 +805,7 @@ func runOnboard() error {
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  Summary")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Instance:   %s  (namespace: %s)\n", instanceName, namespace)
+	fmt.Printf("  Agent:      %s  (namespace: %s)\n", instanceName, namespace)
 	fmt.Printf("  Provider:   %s  (model: %s)\n", providerName, modelName)
 	if baseURL != "" {
 		fmt.Printf("  Base URL:   %s\n", baseURL)
@@ -941,7 +941,7 @@ spec:
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	fmt.Println("  ─────────────────────────────────────────────────")
-	fmt.Printf("  • Check your instance:   sympozium instances get %s\n", instanceName)
+	fmt.Printf("  • Check your agent:      sympozium agents get %s\n", instanceName)
 	if channelType == "telegram" {
 		fmt.Println("  • Send a message to your Telegram bot — it's live!")
 	}
@@ -1583,8 +1583,8 @@ func generateToken(n int) string {
 type tuiViewKind int
 
 const (
-	viewPersonas tuiViewKind = iota
-	viewInstances
+	viewEnsembles tuiViewKind = iota
+	viewAgents
 	viewRuns
 	viewPolicies
 	viewSkills
@@ -1594,7 +1594,7 @@ const (
 	viewPods
 )
 
-var viewNames = []string{"Personas", "Instances", "Runs", "Policies", "Skills", "Channels", "Schedules", "Gateway", "Pods"}
+var viewNames = []string{"Ensembles", "Agents", "Runs", "Policies", "Skills", "Channels", "Schedules", "Gateway", "Pods"}
 
 // detailPaneState controls the visibility of the right-hand detail pane.
 type detailPaneState int
@@ -1802,13 +1802,13 @@ type suggestion struct {
 }
 
 var slashCommandSuggestions = []suggestion{
-	{"/instances", "List Agents"},
+	{"/agents", "List Agents"},
 	{"/runs", "List AgentRuns"},
 	{"/run", "Create AgentRun: /run <inst> <task>"},
 	{"/abort", "Abort run: /abort <run>"},
 	{"/result", "Show run result: /result <run>"},
 	{"/status", "Cluster or run status"},
-	{"/channels", "View channels for instance"},
+	{"/channels", "View channels for agent"},
 	{"/channel", "Add channel: /channel <inst> <type> <secret>"},
 	{"/pods", "View agent pods: /pods <inst>"},
 	{"/provider", "Set provider: /provider <inst> <provider> <model>"},
@@ -1818,8 +1818,8 @@ var slashCommandSuggestions = []suggestion{
 	{"/delete", "Delete: /delete <type> <name>"},
 	{"/schedule", "Create schedule: /schedule <inst> <cron> <task>"},
 	{"/schedules", "View schedules"},
-	{"/personas", "View Ensembles"},
-	{"/persona", "Manage ensemble: /persona delete <name>"},
+	{"/ensembles", "View Ensembles"},
+	{"/ensemble", "Manage ensemble: /ensemble delete <name>"},
 	{"/memory", "View memory: /memory <inst>"},
 	{"/ns", "Switch namespace: /ns <name>"},
 	{"/onboard", "Interactive setup wizard"},
@@ -1828,12 +1828,12 @@ var slashCommandSuggestions = []suggestion{
 }
 
 var deleteTypeSuggestions = []suggestion{
-	{"instance", "Delete a Agent"},
+	{"agent", "Delete an Agent"},
 	{"run", "Delete an AgentRun"},
 	{"policy", "Delete a SympoziumPolicy"},
 	{"schedule", "Delete a SympoziumSchedule"},
-	{"persona", "Delete a Ensemble"},
-	{"channel", "Remove a channel from instance"},
+	{"ensemble", "Delete an Ensemble"},
+	{"channel", "Remove a channel from agent"},
 }
 
 var channelTypeSuggestions = []suggestion{
@@ -2150,14 +2150,14 @@ func writeGithubTokenCmd(token string) tea.Cmd {
 }
 
 var tuiCommands = []struct{ cmd, desc string }{
-	{"/instances", "List Agents"},
+	{"/agents", "List Agents"},
 	{"/runs", "List AgentRuns"},
 	{"/run <inst> <task>", "Create a new AgentRun"},
 	{"/abort <run>", "Abort a running AgentRun"},
 	{"/result <run>", "Show the LLM response"},
 	{"/status [run]", "Cluster / run status"},
 	{"/channels [inst]", "View channels (tab 5)"},
-	{"/channel <i> <type> <sec>", "Add channel to instance"},
+	{"/channel <i> <type> <sec>", "Add channel to agent"},
 	{"/rmchannel <inst> <type>", "Remove channel"},
 	{"/pods [inst]", "Agent pods (tab 6)"},
 	{"/provider <i> <prov> <mod>", "Set provider/model"},
@@ -2174,12 +2174,12 @@ var tuiCommands = []struct{ cmd, desc string }{
 	{"── Keys ──", ""},
 	{"l", "Logs (pods) / events (resources)"},
 	{"d", "Describe selected resource"},
-	{"Esc", "Go back / return to Instances"},
-	{"R", "Run task on selected instance"},
+	{"Esc", "Go back / return to Agents"},
+	{"R", "Run task on selected agent"},
 	{"O", "Launch onboard wizard"},
 	{"x", "Delete selected resource"},
 	{"e", "Edit memory / heartbeat config"},
-	{"Enter", "Detail / drill in / onboard persona"},
+	{"Enter", "Detail / drill in / onboard ensemble"},
 	{"r", "Refresh data"},
 }
 
@@ -2374,7 +2374,7 @@ type tuiModel struct {
 
 	// Delete confirmation
 	confirmDelete      bool
-	deleteResourceKind string // e.g. "instance", "run", "pod"
+	deleteResourceKind string // e.g. "agent", "run", "pod"
 	deleteResourceName string
 	deleteFunc         func() (string, error) // the actual delete function
 
@@ -2405,20 +2405,20 @@ type tuiModel struct {
 	githubAuthStatus     string // "pending" | "done" | "error"
 	githubAuthMessage    string // success note or error detail
 
-	editSkills              []editSkillItem     // toggleable skills list
-	editChannels            []editChannelItem   // channel bindings
-	editWebEndpoint         editWebEndpointForm // web endpoint config
-	editLifecycle           editLifecycleForm   // lifecycle hooks config
-	editLifecycleHookInput  bool                // sub-modal for hook editing
-	editLifecycleHookTI     textinput.Model     // text input for hook sub-modal
-	editLifecycleHookField  int                 // 0=name, 1=image, 2=command, 3=env
-	editLifecycleHookIdx    int                 // index into preRun/postRun being edited
-	editLifecycleHookIsPost bool                // true if editing postRun, false for preRun
-	editGateway             editGatewayForm     // gateway config
-	showGatewayEditModal    bool                // separate modal for gateway
-	editEnsembleName        string              // non-empty when editing a Ensemble
-	editPersonas            []editPersonaItem   // toggleable personas list
-	editPersonaHeartbeatIdx int                 // index into personaHeartbeatOptions
+	editSkills               []editSkillItem         // toggleable skills list
+	editChannels             []editChannelItem       // channel bindings
+	editWebEndpoint          editWebEndpointForm     // web endpoint config
+	editLifecycle            editLifecycleForm       // lifecycle hooks config
+	editLifecycleHookInput   bool                    // sub-modal for hook editing
+	editLifecycleHookTI      textinput.Model         // text input for hook sub-modal
+	editLifecycleHookField   int                     // 0=name, 1=image, 2=command, 3=env
+	editLifecycleHookIdx     int                     // index into preRun/postRun being edited
+	editLifecycleHookIsPost  bool                    // true if editing postRun, false for preRun
+	editGateway              editGatewayForm         // gateway config
+	showGatewayEditModal     bool                    // separate modal for gateway
+	editEnsembleName         string                  // non-empty when editing a Ensemble
+	editEnsembleAgents       []editEnsembleAgentItem // toggleable agent configs list
+	editEnsembleHeartbeatIdx int                     // index into ensembleHeartbeatOptions
 
 	// Detail pane
 	detailPane       detailPaneState // collapsed, panel, or fullscreen
@@ -2447,7 +2447,7 @@ type editHeartbeatForm struct {
 // editSkillItem represents a toggleable skill in the edit modal.
 type editSkillItem struct {
 	name     string            // SkillPack name
-	enabled  bool              // whether it's in the instance's Skills list
+	enabled  bool              // whether it's in the agent's Skills list
 	category string            // e.g. "kubernetes"
 	params   map[string]string // per-skill params (e.g. repo for github-gitops)
 	hostReq  bool              // whether this skill requests host access
@@ -2457,7 +2457,7 @@ type editSkillItem struct {
 // editChannelItem represents a channel binding in the edit modal.
 type editChannelItem struct {
 	chType    string // telegram, slack, discord, whatsapp
-	enabled   bool   // whether channel is bound to the instance
+	enabled   bool   // whether channel is bound to the agent
 	secretRef string // secret name for credentials
 	tokenKey  string // env var name for the token (e.g. TELEGRAM_BOT_TOKEN)
 }
@@ -2485,9 +2485,9 @@ type editGatewayForm struct {
 
 var editGatewayFieldCount = 7
 
-// editPersonaItem represents a toggleable persona in the Ensemble edit modal.
-type editPersonaItem struct {
-	name        string // persona name within the pack
+// editEnsembleAgentItem represents a toggleable agent config in the Ensemble edit modal.
+type editEnsembleAgentItem struct {
+	name        string // agent config name within the ensemble
 	displayName string // human-readable name
 	enabled     bool   // true = active, false = excluded
 }
@@ -2520,8 +2520,8 @@ var editHeartbeatFieldCount = 6 // schedule, task, type, concurrencyPolicy, incl
 var editTabNames = []string{"Memory", "Heartbeat", "Skills", "Channels", "Web Endpoint", "Lifecycle"}
 var availableChannelTypes = []string{"telegram", "slack", "discord", "whatsapp"}
 
-// personaHeartbeatOptions defines the selectable intervals for Ensemble editing.
-var personaHeartbeatOptions = []struct {
+// ensembleHeartbeatOptions defines the selectable heartbeat intervals for Ensemble editing.
+var ensembleHeartbeatOptions = []struct {
 	label    string
 	interval string // value written to AgentConfigSchedule.Interval
 }{
@@ -2722,16 +2722,16 @@ func newTUIModel(ns string) tuiModel {
 		input:        ti,
 		feedInput:    fi,
 		inputFocused: false,
-		activeView:   viewPersonas,
+		activeView:   viewEnsembles,
 		logLines:     []string{tuiDimStyle.Render("Sympozium TUI ready — press ? for help, / to enter commands")},
 	}
 }
 
-// selectedInstanceForFeed returns the instance name that the feed pane should
+// selectedInstanceForFeed returns the agent name that the feed pane should
 // display runs for, based on the current view and selected row.
 func (m tuiModel) selectedInstanceForFeed() string {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			return m.instances[m.selectedRow].Name
 		}
@@ -3203,7 +3203,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "j", "down":
 				max := editMemoryFieldCount
 				if m.editEnsembleName != "" {
-					max = 1 + len(m.editPersonas) // field 0 = heartbeat, rest = persona toggles
+					max = 1 + len(m.editEnsembleAgents) // field 0 = heartbeat, rest = agent toggles
 				} else if m.editTab == 1 {
 					max = editHeartbeatFieldCount
 				} else if m.editTab == 2 {
@@ -3229,11 +3229,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.editEnsembleName != "" {
 					if m.editField == 0 {
 						// Cycle heartbeat forward on space
-						m.editPersonaHeartbeatIdx = (m.editPersonaHeartbeatIdx + 1) % len(personaHeartbeatOptions)
+						m.editEnsembleHeartbeatIdx = (m.editEnsembleHeartbeatIdx + 1) % len(ensembleHeartbeatOptions)
 					} else {
-						idx := m.editField - 1 // persona toggles start at field 1
-						if idx >= 0 && idx < len(m.editPersonas) {
-							m.editPersonas[idx].enabled = !m.editPersonas[idx].enabled
+						idx := m.editField - 1 // agent toggles start at field 1
+						if idx >= 0 && idx < len(m.editEnsembleAgents) {
+							m.editEnsembleAgents[idx].enabled = !m.editEnsembleAgents[idx].enabled
 						}
 					}
 				} else if m.editTab == 0 {
@@ -3305,7 +3305,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "left", "h":
 				// Cycle enum fields backward
 				if m.editEnsembleName != "" && m.editField == 0 {
-					m.editPersonaHeartbeatIdx = (m.editPersonaHeartbeatIdx + len(personaHeartbeatOptions) - 1) % len(personaHeartbeatOptions)
+					m.editEnsembleHeartbeatIdx = (m.editEnsembleHeartbeatIdx + len(ensembleHeartbeatOptions) - 1) % len(ensembleHeartbeatOptions)
 				} else if m.editTab == 1 {
 					switch m.editField {
 					case 2:
@@ -3318,7 +3318,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "right", "l":
 				// Cycle enum fields forward
 				if m.editEnsembleName != "" && m.editField == 0 {
-					m.editPersonaHeartbeatIdx = (m.editPersonaHeartbeatIdx + 1) % len(personaHeartbeatOptions)
+					m.editEnsembleHeartbeatIdx = (m.editEnsembleHeartbeatIdx + 1) % len(ensembleHeartbeatOptions)
 				} else if m.editTab == 1 {
 					switch m.editField {
 					case 2:
@@ -3366,11 +3366,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.editEnsembleName != "" {
 					if m.editField == 0 {
 						// Cycle heartbeat forward on enter
-						m.editPersonaHeartbeatIdx = (m.editPersonaHeartbeatIdx + 1) % len(personaHeartbeatOptions)
+						m.editEnsembleHeartbeatIdx = (m.editEnsembleHeartbeatIdx + 1) % len(ensembleHeartbeatOptions)
 					} else {
 						idx := m.editField - 1
-						if idx >= 0 && idx < len(m.editPersonas) {
-							m.editPersonas[idx].enabled = !m.editPersonas[idx].enabled
+						if idx >= 0 && idx < len(m.editEnsembleAgents) {
+							m.editEnsembleAgents[idx].enabled = !m.editEnsembleAgents[idx].enabled
 						}
 					}
 				} else if m.editTab == 0 {
@@ -3590,7 +3590,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					inst := m.selectedInstanceForFeed()
 					if inst == "" {
-						m.addLog(tuiErrorStyle.Render("No instance selected"))
+						m.addLog(tuiErrorStyle.Render("No agent selected"))
 						return m, nil
 					}
 					// Build context from prior runs and create a new chat run
@@ -3826,16 +3826,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "esc":
-			// Go back: clear drill-in filter or return to Instances view.
+			// Go back: clear drill-in filter or return to Agents view.
 			if m.drillInstance != "" {
 				m.drillInstance = ""
-				m.activeView = viewInstances
+				m.activeView = viewAgents
 				m.selectedRow = 0
 				m.tableScroll = 0
 				return m, nil
 			}
-			if m.activeView != viewInstances {
-				m.activeView = viewInstances
+			if m.activeView != viewAgents {
+				m.activeView = viewAgents
 				m.selectedRow = 0
 				m.tableScroll = 0
 				return m, nil
@@ -3853,12 +3853,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateSuggestions("/")
 			return m, textinput.Blink
 		case "1":
-			m.activeView = viewPersonas
+			m.activeView = viewEnsembles
 			m.selectedRow = 0
 			m.tableScroll = 0
 			return m, nil
 		case "2":
-			m.activeView = viewInstances
+			m.activeView = viewAgents
 			m.selectedRow = 0
 			m.tableScroll = 0
 			return m, nil
@@ -4095,7 +4095,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// But the step mutation happened in the goroutine — re-apply here.
 			m.wizard.resultMsgs = strings.Split(msg.output, "\n")
 			m.wizard.step = wizStepPersonaDone
-			m.input.Placeholder = "Press Enter to switch to Instances"
+			m.input.Placeholder = "Press Enter to switch to Agents"
 			return m, nil
 		}
 		if msg.err != nil {
@@ -4187,7 +4187,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) activeViewCount() int {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		return len(m.instances)
 	case viewRuns:
 		return len(m.runs)
@@ -4206,7 +4206,7 @@ func (m tuiModel) activeViewCount() int {
 			return 0
 		}
 		return 1 + len(m.gatewayRoutes())
-	case viewPersonas:
+	case viewEnsembles:
 		return len(m.ensembles)
 	}
 	return 0
@@ -4258,7 +4258,7 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 				return tuiRunStatus(m.namespace, name)
 			})
 		}
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			inst := m.instances[m.selectedRow]
 			// Show instance detail: provider config + drill into channels.
@@ -4313,10 +4313,10 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 			m.addLog(fmt.Sprintf("%s │ inst:%s cron:%s type:%s phase:%s runs:%d next:%s",
 				s.Name, s.Spec.AgentRef, s.Spec.Schedule, s.Spec.Type, s.Status.Phase, s.Status.TotalRuns, nextRun))
 		}
-	case viewPersonas:
+	case viewEnsembles:
 		if m.selectedRow < len(m.ensembles) {
 			pp := m.ensembles[m.selectedRow]
-			// Start the persona onboarding wizard with this pack pre-selected.
+			// Start the ensemble onboarding wizard with this pack pre-selected.
 			return m.startPersonaWizard(pp.Name)
 		}
 	}
@@ -4343,7 +4343,7 @@ func (m tuiModel) handleRowLogs() (tea.Model, tea.Cmd) {
 			}
 			m.addLog(tuiDimStyle.Render("No pod yet for run: " + run.Name))
 		}
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			inst := m.instances[m.selectedRow]
 			// Show events for the instance.
@@ -4388,11 +4388,11 @@ func (m tuiModel) handleRowLogs() (tea.Model, tea.Cmd) {
 
 func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			name := m.instances[m.selectedRow].Name
 			return m, m.asyncCmd(func() (string, error) {
-				return tuiDescribeResource(m.namespace, "sympoziuminstance", name)
+				return tuiDescribeResource(m.namespace, "agent", name)
 			})
 		}
 	case viewRuns:
@@ -4430,7 +4430,7 @@ func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 			ch := filtered[m.selectedRow]
 			// Describe the parent instance for the channel.
 			return m, m.asyncCmd(func() (string, error) {
-				return tuiDescribeResource(m.namespace, "sympoziuminstance", ch.InstanceName)
+				return tuiDescribeResource(m.namespace, "agent", ch.InstanceName)
 			})
 		}
 	case viewSchedules:
@@ -4440,11 +4440,11 @@ func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 				return tuiDescribeResource(m.namespace, "sympoziumschedule", name)
 			})
 		}
-	case viewPersonas:
+	case viewEnsembles:
 		if m.selectedRow < len(m.ensembles) {
 			name := m.ensembles[m.selectedRow].Name
 			return m, m.asyncCmd(func() (string, error) {
-				return tuiDescribeResource(m.namespace, "personapack", name)
+				return tuiDescribeResource(m.namespace, "ensemble", name)
 			})
 		}
 	}
@@ -4453,7 +4453,7 @@ func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 
 func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			inst := m.instances[m.selectedRow]
 			name := inst.Name
@@ -4463,16 +4463,16 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			personaName := inst.Labels["sympozium.ai/agent-config"]
 			if packName != "" && personaName != "" {
 				m.confirmDelete = true
-				m.deleteResourceKind = "persona in pack " + packName
+				m.deleteResourceKind = "agent in ensemble " + packName
 				m.deleteResourceName = personaName
 				m.deleteFunc = func() (string, error) {
 					return tuiDisablePackPersona(ns, packName, personaName)
 				}
 			} else {
 				m.confirmDelete = true
-				m.deleteResourceKind = "instance"
+				m.deleteResourceKind = "agent"
 				m.deleteResourceName = name
-				m.deleteFunc = func() (string, error) { return tuiDelete(ns, "instance", name) }
+				m.deleteFunc = func() (string, error) { return tuiDelete(ns, "agent", name) }
 			}
 		}
 	case viewRuns:
@@ -4524,21 +4524,21 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			ns := m.namespace
 			m.deleteFunc = func() (string, error) { return tuiDelete(ns, "schedule", name) }
 		}
-	case viewPersonas:
+	case viewEnsembles:
 		if m.selectedRow < len(m.ensembles) {
 			pack := m.ensembles[m.selectedRow]
 			name := pack.Name
 			ns := m.namespace
-			// Collect all persona names to disable.
+			// Collect all agent config names to disable.
 			var allNames []string
 			for _, p := range pack.Spec.AgentConfigs {
 				allNames = append(allNames, p.Name)
 			}
 			m.confirmDelete = true
-			m.deleteResourceKind = "all personas in pack"
+			m.deleteResourceKind = "all agents in ensemble"
 			m.deleteResourceName = name
 			m.deleteFunc = func() (string, error) {
-				return tuiDisableAllPackPersonas(ns, name, allNames)
+				return tuiDisableAllEnsembleAgents(ns, name, allNames)
 			}
 		}
 	}
@@ -4547,7 +4547,7 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 
 func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow >= len(m.instances) {
 			return m, nil
 		}
@@ -4764,7 +4764,7 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.showEditModal = true
-	case viewPersonas:
+	case viewEnsembles:
 		if m.selectedRow >= len(m.ensembles) {
 			return m, nil
 		}
@@ -4775,13 +4775,13 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 		m.editTab = 0
 		m.editField = 0
 
-		// Detect current heartbeat interval from first persona with a schedule.
-		m.editPersonaHeartbeatIdx = len(personaHeartbeatOptions) - 1 // default: "pack default"
+		// Detect current heartbeat interval from first agent config with a schedule.
+		m.editEnsembleHeartbeatIdx = len(ensembleHeartbeatOptions) - 1 // default: "pack default"
 		for _, p := range pp.Spec.AgentConfigs {
 			if p.Schedule != nil && p.Schedule.Interval != "" {
-				for i, opt := range personaHeartbeatOptions {
+				for i, opt := range ensembleHeartbeatOptions {
 					if opt.interval == p.Schedule.Interval {
-						m.editPersonaHeartbeatIdx = i
+						m.editEnsembleHeartbeatIdx = i
 						break
 					}
 				}
@@ -4789,18 +4789,18 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Build persona toggle list from the pack spec.
+		// Build agent toggle list from the ensemble spec.
 		excluded := make(map[string]bool)
 		for _, e := range pp.Spec.ExcludeAgentConfigs {
 			excluded[e] = true
 		}
-		m.editPersonas = nil
+		m.editEnsembleAgents = nil
 		for _, p := range pp.Spec.AgentConfigs {
 			dn := p.DisplayName
 			if dn == "" {
 				dn = p.Name
 			}
-			m.editPersonas = append(m.editPersonas, editPersonaItem{
+			m.editEnsembleAgents = append(m.editEnsembleAgents, editEnsembleAgentItem{
 				name:        p.Name,
 				displayName: dn,
 				enabled:     !excluded[p.Name],
@@ -5136,12 +5136,12 @@ func (m tuiModel) applyGatewayEdit() tea.Cmd {
 	}
 }
 
-// applyEnsembleEdit saves the persona enable/disable toggles and heartbeat back to the Ensemble.
+// applyEnsembleEdit saves the agent enable/disable toggles and heartbeat back to the Ensemble.
 func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 	ns := m.namespace
-	personas := make([]editPersonaItem, len(m.editPersonas))
-	copy(personas, m.editPersonas)
-	heartbeatInterval := personaHeartbeatOptions[m.editPersonaHeartbeatIdx].interval
+	personas := make([]editEnsembleAgentItem, len(m.editEnsembleAgents))
+	copy(personas, m.editEnsembleAgents)
+	heartbeatInterval := ensembleHeartbeatOptions[m.editEnsembleHeartbeatIdx].interval
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -5150,7 +5150,7 @@ func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 			return cmdResultMsg{err: fmt.Errorf("get Ensemble %q: %w", packName, err)}
 		}
 
-		// Build new ExcludePersonas list from disabled toggles.
+		// Build new ExcludeAgentConfigs list from disabled toggles.
 		var excludes []string
 		for _, p := range personas {
 			if !p.enabled {
@@ -5159,7 +5159,7 @@ func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 		}
 		pack.Spec.ExcludeAgentConfigs = excludes
 
-		// Apply heartbeat interval to all personas with a schedule.
+		// Apply heartbeat interval to all agent configs with a schedule.
 		if heartbeatInterval != "" {
 			for i := range pack.Spec.AgentConfigs {
 				if pack.Spec.AgentConfigs[i].Schedule != nil {
@@ -5179,7 +5179,7 @@ func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 				enabled++
 			}
 		}
-		result := tuiSuccessStyle.Render(fmt.Sprintf("✓ Ensemble %s updated: %d/%d personas enabled", packName, enabled, len(personas)))
+		result := tuiSuccessStyle.Render(fmt.Sprintf("✓ Ensemble %s updated: %d/%d agents enabled", packName, enabled, len(personas)))
 		return cmdResultMsg{output: result}
 	}
 }
@@ -5187,7 +5187,7 @@ func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 func (m tuiModel) handleRunPrompt() (tea.Model, tea.Cmd) {
 	var instName string
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		if m.selectedRow < len(m.instances) {
 			instName = m.instances[m.selectedRow].Name
 		}
@@ -5210,7 +5210,7 @@ func (m tuiModel) handleRunPrompt() (tea.Model, tea.Cmd) {
 		if len(m.instances) > 0 {
 			instName = m.instances[0].Name
 		} else {
-			m.addLog(tuiErrorStyle.Render("No instances available to run against"))
+			m.addLog(tuiErrorStyle.Render("No agents available to run against"))
 			return m, nil
 		}
 	}
@@ -5514,7 +5514,7 @@ func fetchEnsembleSuggestions(ns, prefix string) []suggestion {
 		if prefix == "" || strings.HasPrefix(strings.ToLower(pp.Name), prefix) {
 			desc := pp.Spec.Category
 			if desc == "" {
-				desc = fmt.Sprintf("%d personas", len(pp.Spec.AgentConfigs))
+				desc = fmt.Sprintf("%d agents", len(pp.Spec.AgentConfigs))
 			}
 			out = append(out, suggestion{text: pp.Name, desc: desc})
 		}
@@ -5524,13 +5524,13 @@ func fetchEnsembleSuggestions(ns, prefix string) []suggestion {
 
 func fetchDeleteTargetSuggestions(ns, resourceType, prefix string) []suggestion {
 	switch resourceType {
-	case "instance", "inst":
+	case "agent", "instance", "inst":
 		return fetchInstanceSuggestions(ns, prefix)
 	case "run":
 		return fetchRunSuggestions(ns, prefix, false)
 	case "policy", "pol":
 		return fetchPolicySuggestions(ns, prefix)
-	case "persona":
+	case "ensemble", "persona":
 		return fetchEnsembleSuggestions(ns, prefix)
 	}
 	return nil
@@ -5559,10 +5559,10 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case "/onboard":
 		return m.startOnboardWizard()
 
-	case "/instances", "/inst":
-		m.activeView = viewInstances
+	case "/agents", "/inst", "/instances":
+		m.activeView = viewAgents
 		m.selectedRow = 0
-		m.addLog("Switched to Instances view")
+		m.addLog("Switched to Agents view")
 		return m, nil
 
 	case "/runs":
@@ -5589,7 +5589,7 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.tableScroll = 0
 		if len(args) > 0 {
 			m.drillInstance = args[0]
-			m.addLog(fmt.Sprintf("Channels for instance: %s", args[0]))
+			m.addLog(fmt.Sprintf("Channels for agent: %s", args[0]))
 		} else {
 			m.drillInstance = ""
 			m.addLog("Switched to Channels view (all instances)")
@@ -5602,7 +5602,7 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.tableScroll = 0
 		if len(args) > 0 {
 			m.drillInstance = args[0]
-			m.addLog(fmt.Sprintf("Pods for instance: %s", args[0]))
+			m.addLog(fmt.Sprintf("Pods for agent: %s", args[0]))
 		} else {
 			m.drillInstance = ""
 			m.addLog("Switched to Pods view (all instances)")
@@ -5616,38 +5616,38 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 		m.addLog("Switched to Schedules view")
 		return m, nil
 
-	case "/personas":
-		m.activeView = viewPersonas
+	case "/ensembles", "/personas":
+		m.activeView = viewEnsembles
 		m.selectedRow = 0
 		m.tableScroll = 0
-		m.addLog("Switched to Personas view")
+		m.addLog("Switched to Ensembles view")
 		return m, nil
 
-	case "/persona":
+	case "/ensemble", "/persona":
 		if len(args) < 1 {
-			m.addLog(tuiErrorStyle.Render("Usage: /persona delete <pack-name>"))
-			m.addLog(tuiDimStyle.Render("  Tip: go to the Personas tab and press Enter on a pack to onboard."))
+			m.addLog(tuiErrorStyle.Render("Usage: /ensemble delete <pack-name>"))
+			m.addLog(tuiDimStyle.Render("  Tip: go to the Ensembles tab and press Enter on a pack to onboard."))
 			return m, nil
 		}
 		subCmd := strings.ToLower(args[0])
 		switch subCmd {
 		case "delete":
 			if len(args) < 2 {
-				m.addLog(tuiErrorStyle.Render("Usage: /persona delete <pack-name>"))
+				m.addLog(tuiErrorStyle.Render("Usage: /ensemble delete <pack-name>"))
 				return m, nil
 			}
 			packName := args[1]
 			ns := m.namespace
 			return m, m.asyncCmd(func() (string, error) { return tuiDeleteEnsemble(ns, packName) })
 		default:
-			m.addLog(tuiErrorStyle.Render("Unknown sub-command. Usage: /persona delete <pack-name>"))
-			m.addLog(tuiDimStyle.Render("  Tip: go to the Personas tab and press Enter on a pack to onboard."))
+			m.addLog(tuiErrorStyle.Render("Unknown sub-command. Usage: /ensemble delete <pack-name>"))
+			m.addLog(tuiDimStyle.Render("  Tip: go to the Ensembles tab and press Enter on a pack to onboard."))
 		}
 		return m, nil
 
 	case "/schedule":
 		if len(args) < 3 {
-			m.addLog(tuiErrorStyle.Render("Usage: /schedule <instance> <cron> <task>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /schedule <agent> <cron> <task>"))
 			return m, nil
 		}
 		inst := args[0]
@@ -5657,7 +5657,7 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 
 	case "/memory":
 		if len(args) < 1 {
-			m.addLog(tuiErrorStyle.Render("Usage: /memory <instance>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /memory <agent>"))
 			return m, nil
 		}
 		inst := args[0]
@@ -5665,7 +5665,7 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 
 	case "/channel":
 		if len(args) < 3 {
-			m.addLog(tuiErrorStyle.Render("Usage: /channel <instance> <type> <secret-name>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /channel <agent> <type> <secret-name>"))
 			return m, nil
 		}
 		inst, chType, secret := args[0], args[1], args[2]
@@ -5673,14 +5673,14 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 
 	case "/rmchannel":
 		if len(args) < 2 {
-			m.addLog(tuiErrorStyle.Render("Usage: /rmchannel <instance> <channel-type>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /rmchannel <agent> <channel-type>"))
 			return m, nil
 		}
 		return m, m.asyncCmd(func() (string, error) { return tuiRemoveChannel(m.namespace, args[0], args[1]) })
 
 	case "/provider":
 		if len(args) < 3 {
-			m.addLog(tuiErrorStyle.Render("Usage: /provider <instance> <provider> <model>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /provider <agent> <provider> <model>"))
 			return m, nil
 		}
 		inst, prov, model := args[0], args[1], args[2]
@@ -5688,14 +5688,14 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 
 	case "/baseurl":
 		if len(args) < 2 {
-			m.addLog(tuiErrorStyle.Render("Usage: /baseurl <instance> <url>"))
+			m.addLog(tuiErrorStyle.Render("Usage: /baseurl <agent> <url>"))
 			return m, nil
 		}
 		return m, m.asyncCmd(func() (string, error) { return tuiSetBaseURL(m.namespace, args[0], args[1]) })
 
 	case "/run":
 		if len(args) < 2 {
-			m.addLog(tuiErrorStyle.Render("Usage: /run <instance> <task>  (or press R to quick-run)"))
+			m.addLog(tuiErrorStyle.Render("Usage: /run <agent> <task>  (or press R to quick-run)"))
 			return m, nil
 		}
 		instance := args[0]
@@ -5987,7 +5987,7 @@ func (m tuiModel) renderHeader() string {
 	ns := tuiDimStyle.Render(" ns:") + lipgloss.NewStyle().Foreground(lipgloss.Color("#F5C2E7")).Render(m.namespace)
 
 	counts := tuiDimStyle.Render(" │ ") +
-		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.instances))) + tuiDimStyle.Render(" inst ") +
+		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.instances))) + tuiDimStyle.Render(" agents ") +
 		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.runs))) + tuiDimStyle.Render(" runs ") +
 		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.policies))) + tuiDimStyle.Render(" pol ") +
 		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.channels))) + tuiDimStyle.Render(" ch ") +
@@ -6034,8 +6034,8 @@ func (m tuiModel) renderTable(tableH int) string {
 	var b strings.Builder
 
 	switch m.activeView {
-	case viewInstances:
-		b.WriteString(m.renderInstancesTable(tableH))
+	case viewAgents:
+		b.WriteString(m.renderAgentsTable(tableH))
 	case viewRuns:
 		b.WriteString(m.renderRunsTable(tableH))
 	case viewPolicies:
@@ -6050,8 +6050,8 @@ func (m tuiModel) renderTable(tableH int) string {
 		b.WriteString(m.renderSchedulesTable(tableH))
 	case viewGateway:
 		b.WriteString(m.renderGatewayTable(tableH))
-	case viewPersonas:
-		b.WriteString(m.renderPersonasTable(tableH))
+	case viewEnsembles:
+		b.WriteString(m.renderEnsemblesTable(tableH))
 	}
 
 	return b.String()
@@ -6078,7 +6078,7 @@ func resolveInstanceProvider(inst sympoziumv1alpha1.Agent) string {
 	return "-"
 }
 
-func (m tuiModel) renderInstancesTable(tableH int) string {
+func (m tuiModel) renderAgentsTable(tableH int) string {
 	var b strings.Builder
 
 	header := fmt.Sprintf(" %-22s %-12s %-12s %-16s %-8s %-10s %-8s", "NAME", "PHASE", "PROVIDER", "SKILLS", "PODS", "TOKENS", "AGE")
@@ -6086,7 +6086,7 @@ func (m tuiModel) renderInstancesTable(tableH int) string {
 	b.WriteString("\n")
 
 	if len(m.instances) == 0 {
-		b.WriteString(m.renderEmptyTable(tableH-1, "No instances — press O to onboard or type /onboard"))
+		b.WriteString(m.renderEmptyTable(tableH-1, "No agents — press O to onboard or type /onboard"))
 		return b.String()
 	}
 
@@ -6159,12 +6159,12 @@ func formatTokenCount(n int) string {
 func (m tuiModel) renderRunsTable(tableH int) string {
 	var b strings.Builder
 
-	header := fmt.Sprintf(" %-26s %-18s %-12s %-14s %-18s %-8s", "NAME", "INSTANCE", "PHASE", "TRIGGER", "POD", "AGE")
+	header := fmt.Sprintf(" %-26s %-18s %-12s %-14s %-18s %-8s", "NAME", "AGENT", "PHASE", "TRIGGER", "POD", "AGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
 	if len(m.runs) == 0 {
-		b.WriteString(m.renderEmptyTable(tableH-1, "No runs — try: /run <instance> <task>"))
+		b.WriteString(m.renderEmptyTable(tableH-1, "No runs — try: /run <agent> <task>"))
 		return b.String()
 	}
 
@@ -6268,7 +6268,7 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 func (m tuiModel) renderPoliciesTable(tableH int) string {
 	var b strings.Builder
 
-	header := fmt.Sprintf(" %-26s %-18s %-8s", "NAME", "BOUND INSTANCES", "AGE")
+	header := fmt.Sprintf(" %-26s %-18s %-8s", "NAME", "BOUND AGENTS", "AGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
@@ -6357,13 +6357,13 @@ func (m tuiModel) renderChannelsTable(tableH int) string {
 	if m.drillInstance != "" {
 		filterLabel = " [" + m.drillInstance + "]"
 	}
-	header := fmt.Sprintf(" %-20s %-12s %-22s %-14s %-10s %-20s", "INSTANCE"+filterLabel, "TYPE", "SECRET", "STATUS", "CHECKED", "MESSAGE")
+	header := fmt.Sprintf(" %-20s %-12s %-22s %-14s %-10s %-20s", "AGENT"+filterLabel, "TYPE", "SECRET", "STATUS", "CHECKED", "MESSAGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
 	filtered := m.filteredChannels()
 	if len(filtered) == 0 {
-		msg := "No channels — try: /channel <instance> <type> <secret>"
+		msg := "No channels — try: /channel <agent> <type> <secret>"
 		if m.drillInstance != "" {
 			msg = fmt.Sprintf("No channels on %s — try: /channel %s telegram my-secret", m.drillInstance, m.drillInstance)
 		}
@@ -6424,7 +6424,7 @@ func (m tuiModel) renderPodsTable(tableH int) string {
 	if m.drillInstance != "" {
 		filterLabel = " [" + m.drillInstance + "]"
 	}
-	header := fmt.Sprintf(" %-30s %-20s %-12s %-16s %-16s %-10s %-8s", "NAME"+filterLabel, "INSTANCE", "PHASE", "NODE", "IP", "RESTARTS", "AGE")
+	header := fmt.Sprintf(" %-30s %-20s %-12s %-16s %-16s %-10s %-8s", "NAME"+filterLabel, "AGENT", "PHASE", "NODE", "IP", "RESTARTS", "AGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
@@ -6489,12 +6489,12 @@ func (m tuiModel) renderPodsTable(tableH int) string {
 func (m tuiModel) renderSchedulesTable(tableH int) string {
 	var b strings.Builder
 
-	header := fmt.Sprintf(" %-24s %-18s %-18s %-12s %-10s %-10s %-8s", "NAME", "INSTANCE", "SCHEDULE", "TYPE", "PHASE", "RUNS", "AGE")
+	header := fmt.Sprintf(" %-24s %-18s %-18s %-12s %-10s %-10s %-8s", "NAME", "AGENT", "SCHEDULE", "TYPE", "PHASE", "RUNS", "AGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
 	if len(m.schedules) == 0 {
-		b.WriteString(m.renderEmptyTable(tableH-1, "No schedules — try: /schedule <instance> <cron> <task>"))
+		b.WriteString(m.renderEmptyTable(tableH-1, "No schedules — try: /schedule <agent> <cron> <task>"))
 		return b.String()
 	}
 
@@ -6610,7 +6610,7 @@ func (m tuiModel) renderGatewayTable(tableH int) string {
 	// Routes section
 	routes := m.gatewayRoutes()
 	if rowsUsed < tableH-1 {
-		routeHeader := fmt.Sprintf(" %-22s %-30s %-12s %-40s", "INSTANCE", "HOSTNAME", "STATUS", "URL")
+		routeHeader := fmt.Sprintf(" %-22s %-30s %-12s %-40s", "AGENT", "HOSTNAME", "STATUS", "URL")
 		b.WriteString(tuiColHeaderStyle.Render(padRight(routeHeader, m.width)))
 		b.WriteString("\n")
 		rowsUsed++
@@ -6618,7 +6618,7 @@ func (m tuiModel) renderGatewayTable(tableH int) string {
 
 	if len(routes) == 0 {
 		if rowsUsed < tableH-1 {
-			b.WriteString(m.renderEmptyTable(tableH-1-rowsUsed, "No routes — enable web endpoints on instances"))
+			b.WriteString(m.renderEmptyTable(tableH-1-rowsUsed, "No routes — enable web endpoints on agents"))
 			return b.String()
 		}
 	} else {
@@ -6657,7 +6657,7 @@ func (m tuiModel) renderGatewayTable(tableH int) string {
 	return b.String()
 }
 
-func (m tuiModel) renderPersonasTable(tableH int) string {
+func (m tuiModel) renderEnsemblesTable(tableH int) string {
 	var b strings.Builder
 
 	header := fmt.Sprintf(" %-24s %-14s %-10s %-10s %-12s %-8s", "NAME", "CATEGORY", "AGENTS", "INSTALLED", "PHASE", "AGE")
@@ -6777,7 +6777,7 @@ func (m tuiModel) renderLog(logH int) string {
 // active tab. Channels tab never shows a detail pane (handled by caller).
 func (m tuiModel) renderDetailPane(width, height int) string {
 	switch m.activeView {
-	case viewInstances:
+	case viewAgents:
 		return m.renderDetailFeed(width, height)
 	case viewRuns:
 		return m.renderDetailFeed(width, height)
@@ -6808,7 +6808,7 @@ func (m tuiModel) renderDetailInstanceChannels(width, height int) string {
 
 	if inst == "" {
 		allLines = append(allLines, "")
-		allLines = append(allLines, tuiDimStyle.Render("  Select an instance"))
+		allLines = append(allLines, tuiDimStyle.Render("  Select an agent"))
 		for len(allLines) < height {
 			allLines = append(allLines, "")
 		}
@@ -6902,19 +6902,19 @@ func (m tuiModel) renderDetailSkillRuns(width, height int) string {
 		return padAndJoinLines(allLines, width)
 	}
 
-	// Find instances that use this skill, then find their runs.
-	usingInstances := make(map[string]bool)
+	// Find agents that use this skill, then find their runs.
+	usingAgents := make(map[string]bool)
 	for _, inst := range m.instances {
 		for _, sk := range inst.Spec.Skills {
 			if sk.SkillPackRef == skillName || sk.ConfigMapRef == skillName {
-				usingInstances[inst.Name] = true
+				usingAgents[inst.Name] = true
 			}
 		}
 	}
 
 	var matchedRuns []sympoziumv1alpha1.AgentRun
 	for _, run := range m.runs {
-		if usingInstances[run.Spec.AgentRef] {
+		if usingAgents[run.Spec.AgentRef] {
 			matchedRuns = append(matchedRuns, run)
 		}
 	}
@@ -7045,8 +7045,8 @@ func (m tuiModel) renderDetailPodLogs(width, height int) string {
 	return padAndJoinLines(allLines, width)
 }
 
-// renderDetailFeed shows the conversation feed for the selected instance (used
-// by Instances and Runs tabs).
+// renderDetailFeed shows the conversation feed for the selected agent (used
+// by Agents and Runs tabs).
 func (m tuiModel) renderDetailFeed(width, height int) string {
 	var allLines []string
 
@@ -7220,11 +7220,11 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 		return m.renderFullscreenDetailStatic(w, h, m.renderDetailPodLogs)
 	case viewChannels:
 		// Channels tab: nothing to show fullscreen, fall back to chat
-	case viewInstances:
+	case viewAgents:
 		// Fall through to chat fullscreen (same as Runs tab)
 	}
 
-	// Instances tab, Runs tab and fallback: show the chat fullscreen with input.
+	// Agents tab, Runs tab and fallback: show the chat fullscreen with input.
 	inst := m.selectedInstanceForFeed()
 
 	var allLines []string
@@ -7348,7 +7348,7 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 		if inst != "" {
 			out = append(out, tuiDimStyle.Render(" Press i or Enter to type a message"))
 		} else {
-			out = append(out, tuiDimStyle.Render(" Select an instance first"))
+			out = append(out, tuiDimStyle.Render(" Select an agent first"))
 		}
 	}
 
@@ -7703,20 +7703,20 @@ func (m tuiModel) renderEditModal(base string) string {
 	}
 
 	if m.editEnsembleName != "" {
-		// Ensemble edit — heartbeat interval + persona toggles
+		// Ensemble edit — heartbeat interval + agent toggles
 
 		// Heartbeat interval selector (field 0)
-		hbLabel := personaHeartbeatOptions[m.editPersonaHeartbeatIdx].label
+		hbLabel := ensembleHeartbeatOptions[m.editEnsembleHeartbeatIdx].label
 		hbVal := fmt.Sprintf("◀ %s ▶", hbLabel)
 		renderField(0, "Heartbeat", hbVal)
 		content.WriteString("\n")
 
 		content.WriteString(tuiDimStyle.Render("  Toggle personas on/off:") + "\n\n")
-		if len(m.editPersonas) == 0 {
+		if len(m.editEnsembleAgents) == 0 {
 			content.WriteString(tuiDimStyle.Render("  No personas defined in this pack.") + "\n")
 		} else {
-			for i, p := range m.editPersonas {
-				fieldIdx := i + 1 // persona toggles start at field 1
+			for i, p := range m.editEnsembleAgents {
+				fieldIdx := i + 1 // agent toggles start at field 1
 				tog := "○"
 				if p.enabled {
 					tog = "●"
@@ -8252,12 +8252,12 @@ func tuiListFeatures(ns, policyName string) (string, error) {
 func tuiDelete(ns, resourceType, name string) (string, error) {
 	ctx := context.Background()
 	switch strings.ToLower(resourceType) {
-	case "instance", "inst":
+	case "agent", "instance", "inst":
 		obj := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 		if err := k8sClient.Delete(ctx, obj); err != nil {
-			return "", fmt.Errorf("delete instance: %w", err)
+			return "", fmt.Errorf("delete agent: %w", err)
 		}
-		return tuiSuccessStyle.Render(fmt.Sprintf("✓ Deleted instance: %s", name)), nil
+		return tuiSuccessStyle.Render(fmt.Sprintf("✓ Deleted agent: %s", name)), nil
 	case "run":
 		obj := &sympoziumv1alpha1.AgentRun{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 		if err := k8sClient.Delete(ctx, obj); err != nil {
@@ -8276,14 +8276,14 @@ func tuiDelete(ns, resourceType, name string) (string, error) {
 			return "", fmt.Errorf("delete schedule: %w", err)
 		}
 		return tuiSuccessStyle.Render(fmt.Sprintf("✓ Deleted schedule: %s", name)), nil
-	case "persona":
+	case "ensemble", "persona":
 		obj := &sympoziumv1alpha1.Ensemble{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
 		if err := k8sClient.Delete(ctx, obj); err != nil {
 			return "", fmt.Errorf("delete ensemble: %w", err)
 		}
 		return tuiSuccessStyle.Render(fmt.Sprintf("✓ Deleted Ensemble: %s (owned resources will be garbage-collected)", name)), nil
 	default:
-		return "", fmt.Errorf("unknown type: %s (use: instance, run, policy, schedule, persona, channel)", resourceType)
+		return "", fmt.Errorf("unknown type: %s (use: agent, run, policy, schedule, ensemble, channel)", resourceType)
 	}
 }
 
@@ -8430,7 +8430,7 @@ func tuiDisablePackPersona(ns, packName, personaName string) (string, error) {
 	// Check if already excluded.
 	for _, p := range pack.Spec.ExcludeAgentConfigs {
 		if p == personaName {
-			return tuiDimStyle.Render(fmt.Sprintf("Persona %q is already disabled in pack %s", personaName, packName)), nil
+			return tuiDimStyle.Render(fmt.Sprintf("Agent %q is already disabled in ensemble %s", personaName, packName)), nil
 		}
 	}
 
@@ -8439,10 +8439,10 @@ func tuiDisablePackPersona(ns, packName, personaName string) (string, error) {
 		return "", fmt.Errorf("update Ensemble %q: %w", packName, err)
 	}
 
-	return tuiSuccessStyle.Render(fmt.Sprintf("✓ Disabled persona %q in pack %s (controller will clean up resources)", personaName, packName)), nil
+	return tuiSuccessStyle.Render(fmt.Sprintf("✓ Disabled agent %q in ensemble %s (controller will clean up resources)", personaName, packName)), nil
 }
 
-func tuiDisableAllPackPersonas(ns, packName string, personaNames []string) (string, error) {
+func tuiDisableAllEnsembleAgents(ns, packName string, personaNames []string) (string, error) {
 	ctx := context.Background()
 
 	var pack sympoziumv1alpha1.Ensemble
@@ -9433,8 +9433,8 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		m.inputFocused = false
 		m.input.Blur()
 		m.input.Placeholder = "Type / for commands or press ? for help..."
-		// Switch to Instances view so user sees the newly created agents.
-		m.activeView = viewInstances
+		// Switch to Agents view so user sees the newly created agents.
+		m.activeView = viewAgents
 		m.selectedRow = 0
 		m.tableScroll = 0
 		return m, refreshDataCmd()
@@ -9500,7 +9500,7 @@ func (m tuiModel) renderWizardPanel(h int) string {
 
 	if w.step > wizStepInstanceName {
 		stepNum = 2
-		lines = append(lines, hintStyle.Render("  Instance: ")+valueStyle.Render(w.instanceName))
+		lines = append(lines, hintStyle.Render("  Agent: ")+valueStyle.Render(w.instanceName))
 	}
 	if w.providerName != "" && w.step > wizStepProvider {
 		stepNum = 3
@@ -9576,9 +9576,9 @@ func (m tuiModel) renderWizardPanel(h int) string {
 
 	case wizStepInstanceName:
 		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — Create your Agent"))
-		lines = append(lines, menuStyle.Render("  An instance represents you (or a tenant) in the system."))
+		lines = append(lines, menuStyle.Render("  An agent represents you (or a tenant) in the system."))
 		lines = append(lines, "")
-		lines = append(lines, labelStyle.Render("  Enter instance name:"))
+		lines = append(lines, labelStyle.Render("  Enter agent name:"))
 
 	case wizStepProvider:
 		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — AI Provider"))
@@ -9762,7 +9762,7 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, tuiSepStyle.Render("  "+strings.Repeat("━", 50)))
 		lines = append(lines, labelStyle.Render("  Summary"))
 		lines = append(lines, tuiSepStyle.Render("  "+strings.Repeat("━", 50)))
-		lines = append(lines, hintStyle.Render("  Instance:  ")+valueStyle.Render(w.instanceName)+
+		lines = append(lines, hintStyle.Render("  Agent:     ")+valueStyle.Render(w.instanceName)+
 			hintStyle.Render("  (namespace: ")+valueStyle.Render(w.targetNamespace)+hintStyle.Render(")"))
 		lines = append(lines, hintStyle.Render("  Provider:  ")+valueStyle.Render(w.providerName)+
 			hintStyle.Render("  (model: ")+valueStyle.Render(w.modelName)+hintStyle.Render(")"))
@@ -9890,7 +9890,7 @@ func (m tuiModel) renderPersonaWizardPanel(h int,
 		for _, pp := range m.ensembles {
 			if pp.Name == w.ensembleName {
 				lines = append(lines, hintStyle.Render("  Category: ")+valueStyle.Render(pp.Spec.Category)+
-					hintStyle.Render("  Personas: ")+valueStyle.Render(fmt.Sprintf("%d", len(pp.Spec.AgentConfigs))))
+					hintStyle.Render("  Agents: ")+valueStyle.Render(fmt.Sprintf("%d", len(pp.Spec.AgentConfigs))))
 				for _, p := range pp.Spec.AgentConfigs {
 					name := p.Name
 					if p.DisplayName != "" {
@@ -10107,7 +10107,7 @@ func (m tuiModel) renderPersonaWizardPanel(h int,
 		}
 		lines = append(lines, "")
 		lines = append(lines, hintStyle.Render("  This will create an auth secret and activate the pack."))
-		lines = append(lines, hintStyle.Render("  The controller will stamp out one instance per persona."))
+		lines = append(lines, hintStyle.Render("  The controller will stamp out one Agent per agent config."))
 		lines = append(lines, "")
 
 	case wizStepPersonaApplying:
@@ -10123,7 +10123,7 @@ func (m tuiModel) renderPersonaWizardPanel(h int,
 			}
 		}
 		lines = append(lines, "")
-		lines = append(lines, hintStyle.Render("  Press Enter to switch to Instances view."))
+		lines = append(lines, hintStyle.Render("  Press Enter to switch to Agents view."))
 	}
 
 	if w.err != "" {
@@ -10187,7 +10187,7 @@ func (m tuiModel) renderEnsembleDetailPane(w, h int) string {
 	if pack.Spec.Version != "" {
 		lines = append(lines, labelStyle.Render(" Version:   ")+valueStyle.Render(pack.Spec.Version))
 	}
-	lines = append(lines, labelStyle.Render(" Personas:  ")+valueStyle.Render(fmt.Sprintf("%d", len(pack.Spec.AgentConfigs))))
+	lines = append(lines, labelStyle.Render(" Agents:    ")+valueStyle.Render(fmt.Sprintf("%d", len(pack.Spec.AgentConfigs))))
 	if pack.Spec.Description != "" {
 		lines = append(lines, "")
 		// Word-wrap description to fit the pane.
@@ -10491,8 +10491,8 @@ func tuiPersonaApply(ns string, w *wizardState) (string, error) {
 	if err := k8sClient.Update(ctx, &pack); err != nil {
 		return "", fmt.Errorf("update Ensemble: %w", err)
 	}
-	msgs = append(msgs, tuiSuccessStyle.Render(fmt.Sprintf("✓ Activated Ensemble: %s (%d personas)", w.ensembleName, len(pack.Spec.AgentConfigs))))
-	msgs = append(msgs, tuiDimStyle.Render("  Controller will create instances shortly..."))
+	msgs = append(msgs, tuiSuccessStyle.Render(fmt.Sprintf("✓ Activated Ensemble: %s (%d agents)", w.ensembleName, len(pack.Spec.AgentConfigs))))
+	msgs = append(msgs, tuiDimStyle.Render("  Controller will create agents shortly..."))
 
 	return strings.Join(msgs, "\n"), nil
 }
