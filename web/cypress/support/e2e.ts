@@ -1,5 +1,10 @@
 // Support file — loaded before every spec.
 
+// ── Suppress benign ResizeObserver errors from ReactFlow ────────────────────
+Cypress.on("uncaught:exception", (err) => {
+  if (err.message.includes("ResizeObserver loop")) return false;
+});
+
 // ── Auth: inject API token via visit callback ───────────────────────────────
 // Overrides cy.visit to inject the token into localStorage before the app
 // reads it. Token is read from CYPRESS_API_TOKEN env var.

@@ -1,4 +1,11 @@
-import { useMemo, useCallback, useState, useEffect, useRef } from "react";
+import {
+	useMemo,
+	useCallback,
+	useState,
+	useEffect,
+	useRef,
+	useDeferredValue,
+} from "react";
 import {
 	ReactFlow,
 	type Node,
@@ -219,23 +226,27 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 	// we explicitly call setEdgesState, avoiding the ReactFlow store-sync
 	// loop that useEdgesState triggers on every render.
 
-	// Sync nodes from initialNodes when external data changes (spec edits,
-	// run status), preserving user-dragged positions. We use a ref-based
-	// setNodes so the effect doesn't re-trigger on setNodes identity changes.
+	// Defer initialNodes/initialEdges so that frequent useRuns polling (every
+	// 5s) doesn't synchronously trigger re-renders that could cascade into
+	// ReactFlow's internal store.
+	const deferredNodes = useDeferredValue(initialNodes);
+	const deferredEdges = useDeferredValue(initialEdges);
+
+	// Sync nodes from deferred initialNodes, preserving user-dragged positions.
 	useEffect(() => {
 		setNodesRef.current((prev) => {
 			const posMap = new Map(prev.map((n) => [n.id, n.position]));
-			return initialNodes.map((node) => ({
+			return deferredNodes.map((node) => ({
 				...node,
 				position: posMap.get(node.id) ?? node.position,
 			}));
 		});
-	}, [initialNodes]);
+	}, [deferredNodes]);
 
-	// Sync edges when relationships change.
+	// Sync edges when deferred initialEdges changes.
 	useEffect(() => {
-		setEdgesRef.current(initialEdges);
-	}, [initialEdges]);
+		setEdgesRef.current(deferredEdges);
+	}, [deferredEdges]);
 
 	const onConnect = useCallback(
 		(connection: Connection) => {
@@ -322,12 +333,14 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 
 	// Handlers for ReactFlow drag/transform events (plain useState, not useNodesState).
 	const onNodesChange = useCallback(
-		(changes: NodeChange[]) => setNodesRef.current((prev) => applyNodeChanges(changes, prev)),
+		(changes: NodeChange[]) =>
+			setNodesRef.current((prev) => applyNodeChanges(changes, prev)),
 		[],
 	);
 
 	const onEdgesChange = useCallback(
-		(changes: EdgeChange[]) => setEdgesRef.current((prev) => applyEdgeChanges(changes, prev)),
+		(changes: EdgeChange[]) =>
+			setEdgesRef.current((prev) => applyEdgeChanges(changes, prev)),
 		[],
 	);
 

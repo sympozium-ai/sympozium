@@ -12,10 +12,13 @@ import {
   type Node,
   type Edge,
   type NodeProps,
+  type NodeChange,
+  type EdgeChange,
   Handle,
   Position,
   MarkerType,
-  
+  applyNodeChanges,
+  applyEdgeChanges,
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react";
