@@ -15,8 +15,7 @@ import {
   Handle,
   Position,
   MarkerType,
-  useNodesState,
-  useEdgesState,
+  
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react";
@@ -964,8 +963,24 @@ function TopologyCanvas() {
   const { data: gateway } = useGatewayConfig();
   const { fitView } = useReactFlow();
 
-  const [rfNodes, setNodes, onNodesChange] = useNodesState<Node>([] as Node[]);
-  const [rfEdges, setEdges, onEdgesChange] = useEdgesState<Edge>([] as Edge[]);
+  const [rfNodes, setNodesState] = useState<Node[]>([]);
+  const [rfEdges, setEdgesState] = useState<Edge[]>([]);
+
+  const setNodesRef = useRef(setNodesState);
+  const setEdgesRef = useRef(setEdgesState);
+  setNodesRef.current = setNodesState;
+  setEdgesRef.current = setEdgesState;
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => setNodesRef.current(
+      (prev) => applyNodeChanges(changes, prev)),
+    [],
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => setEdgesRef.current(
+      (prev) => applyEdgeChanges(changes, prev)),
+    [],
+  );
   const [locked, setLocked] = useState(() => localStorage.getItem(TOPO_LOCKED_KEY) === "true");
   const [selectedK8sNode, setSelectedK8sNode] = useState<ProviderNode | null>(null);
 
@@ -1086,8 +1101,8 @@ function TopologyCanvas() {
         }
       }
 
-      setNodes(nodes);
-      setEdges(edges);
+      setNodesRef.current(nodes);
+      setEdgesRef.current(edges);
 
       // Fit view on first load only.
       if (!hasFitRef.current) {
@@ -1097,7 +1112,7 @@ function TopologyCanvas() {
     } else {
       // Entities are the same — just update node data in-place (status, run counts)
       // without changing positions.
-      setNodes((prev) => {
+      setNodesRef.current((prev) => {
         const { nodes: freshNodes } = buildTopology(
           providerNodes || [],
           models || [],
@@ -1117,7 +1132,7 @@ function TopologyCanvas() {
           return n;
         });
       });
-      setEdges(() => {
+      setEdgesRef.current(() => {
         const { edges: freshEdges } = buildTopology(
           providerNodes || [],
           models || [],
@@ -1131,7 +1146,7 @@ function TopologyCanvas() {
         return freshEdges;
       });
     }
-  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint, setNodes, setEdges, fitView]);
+  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint]);
 
   // Save positions to localStorage after any node drag ends.
   const handleNodesChange = useCallback(
@@ -1142,14 +1157,14 @@ function TopologyCanvas() {
       if (hasDragStop) {
         // Use a microtask so state has settled.
         requestAnimationFrame(() => {
-          setNodes((current) => {
+          setNodesRef.current((current) => {
             savePositions(current);
             return current;
           });
         });
       }
     },
-    [onNodesChange, setNodes],
+    [onNodesChange],
   );
 
   function handleReset() {
