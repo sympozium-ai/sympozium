@@ -20,10 +20,12 @@ import {
   type Node,
   type Edge,
   type Connection,
-  useNodesState,
-  useEdgesState,
   MarkerType,
   addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
+  type NodeChange,
+  type EdgeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Badge } from "@/components/ui/badge";
@@ -655,8 +657,30 @@ function BuilderCanvas({
     [relationships],
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodesState] = useState(initialNodes);
+  const [edges, setEdgesState] = useState(initialEdges);
+
+  const setNodesRef = useRef(setNodesState);
+  const setEdgesRef = useRef(setEdgesState);
+  setNodesRef.current = setNodesState;
+  setEdgesRef.current = setEdgesState;
+
+  // Use refs so callbacks and effects can call setNodes/setEdges without
+  // triggering infinite loops (known issue in @xyflow/react v12 with
+  // useNodesState/useEdgesState).
+
+  // Handlers for ReactFlow drag/transform events.
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => setNodesRef.current(
+      (prev) => applyNodeChanges(changes, prev)),
+    [],
+  );
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => setEdgesRef.current(
+      (prev) => applyEdgeChanges(changes, prev)),
+    [],
+  );
+
   const [showAddProvider, setShowAddProvider] = useState(false);
 
   function handleAddProvider(result: AddProviderResult) {
@@ -665,7 +689,7 @@ function BuilderCanvas({
       : result.provider;
     const nodeId = `__prov__${provId}`;
 
-    setNodes((prev) => [
+    setNodesRef.current((prev) => [
       ...prev,
       {
         id: nodeId,
@@ -717,7 +741,7 @@ function BuilderCanvas({
             type: "stimulus" as const,
           },
         ]);
-        setEdges((eds) => {
+        setEdgesRef.current((eds) => {
           const filtered = eds.filter(
             (e) => !e.source.startsWith("__stimulus__"),
           );
@@ -757,7 +781,7 @@ function BuilderCanvas({
           setPersonas((prev) =>
             prev.map((p) => (p.name === connection.target ? updated : p)),
           );
-          setNodes((prev) =>
+          setNodesRef.current((prev) =>
             prev.map((n) =>
               n.id === connection.target
                 ? {
@@ -772,7 +796,7 @@ function BuilderCanvas({
                 : n,
             ),
           );
-          setEdges((eds) =>
+          setEdgesRef.current((eds) =>
             addEdge(
               {
                 ...connection,
@@ -788,7 +812,7 @@ function BuilderCanvas({
       }
       setPendingConnection(connection);
     },
-    [setPendingConnection, personas, setPersonas, setEdges, stimulus, setRelationships],
+    [setPendingConnection, personas, setPersonas, stimulus, setRelationships],
   );
 
   function confirmEdgeType(type: (typeof EDGE_TYPES)[number]) {
@@ -808,7 +832,7 @@ function BuilderCanvas({
       labelStyle: { fontSize: 10, fill: "#9ca3af" },
       animated: type === "delegation",
     };
-    setEdges((eds) => addEdge(newEdge, eds));
+    setEdgesRef.current((eds) => addEdge(newEdge, eds));
     setRelationships((prev) => [
       ...prev,
       {
@@ -836,7 +860,7 @@ function BuilderCanvas({
     setPersonas((prev) => [...prev, newPersona]);
     const cols = Math.max(2, Math.ceil(Math.sqrt(personas.length + 1)));
     const i = personas.length;
-    setNodes((prev) => [
+    setNodesRef.current((prev) => [
       ...prev,
       {
         id: name,
@@ -857,7 +881,7 @@ function BuilderCanvas({
     const newStimulus: StimulusSpec = { name: "startup", prompt: "" };
     setStimulus(newStimulus);
     const nodeId = `__stimulus__${newStimulus.name}`;
-    setNodes((prev) => [
+    setNodesRef.current((prev) => [
       ...prev,
       {
         id: nodeId,
@@ -878,7 +902,7 @@ function BuilderCanvas({
     const oldId = stimulus ? `__stimulus__${stimulus.name}` : "";
     const newId = `__stimulus__${updated.name}`;
     setStimulus(updated);
-    setNodes((prev) =>
+    setNodesRef.current((prev) =>
       prev.map((n) =>
         n.id === oldId
           ? {
@@ -900,7 +924,7 @@ function BuilderCanvas({
             : r,
         ),
       );
-      setEdges((prev) =>
+      setEdgesRef.current((prev) =>
         prev.map((e) =>
           e.source === oldId ? { ...e, source: newId } : e,
         ),
@@ -911,8 +935,8 @@ function BuilderCanvas({
   function deleteStimulus() {
     if (!stimulus) return;
     const nodeId = `__stimulus__${stimulus.name}`;
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setNodesRef.current((prev) => prev.filter((n) => n.id !== nodeId));
+    setEdgesRef.current((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
     setRelationships((prev) => prev.filter((r) => r.type !== "stimulus"));
     setStimulus(null);
     setSelectedStimulus(false);
@@ -921,7 +945,7 @@ function BuilderCanvas({
   function updatePersona(updated: AgentConfigSpec) {
     const oldName = selectedPersona;
     setPersonas((prev) => prev.map((p) => (p.name === oldName ? updated : p)));
-    setNodes((prev) =>
+    setNodesRef.current((prev) =>
       prev.map((n) =>
         n.id === oldName
           ? {
@@ -944,7 +968,7 @@ function BuilderCanvas({
           target: r.target === oldName ? updated.name : r.target,
         })),
       );
-      setEdges((prev) =>
+      setEdgesRef.current((prev) =>
         prev.map((e) => ({
           ...e,
           source: e.source === oldName ? updated.name : e.source,
@@ -963,8 +987,8 @@ function BuilderCanvas({
         (r) => r.source !== selectedPersona && r.target !== selectedPersona,
       ),
     );
-    setNodes((prev) => prev.filter((n) => n.id !== selectedPersona));
-    setEdges((prev) =>
+    setNodesRef.current((prev) => prev.filter((n) => n.id !== selectedPersona));
+    setEdgesRef.current((prev) =>
       prev.filter(
         (e) => e.source !== selectedPersona && e.target !== selectedPersona,
       ),
