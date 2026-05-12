@@ -1,134 +1,180 @@
-# LLMFit Skill (`llmfit`)
+# LLMFit — Hardware Fitness & Model Placement
 
-The `llmfit` SkillPack adds node-level model placement analysis to Sympozium.
+Sympozium integrates [llmfit](https://github.com/AlexsJones/llmfit) (v0.9.24) in two ways:
 
-It uses your `llmfit` project (`github.com/AlexsJones/llmfit`) inside a skill sidecar and lets agents answer questions like:
-
-- "Which node is best for `Qwen/Qwen2.5-Coder-14B-Instruct`?"
-- "Show top coding-model placements across all nodes"
+1. **DaemonSet** — runs on every node, continuously reports hardware specs and model fitness scores. Powers instant model placement, the Cluster Fitness UI, and Prometheus metrics. Deployed by default.
+2. **SkillPack sidecar** — gives agents interactive access to llmfit's MCP tools and cluster probe scripts for ad-hoc queries.
 
 ---
 
-## What it installs
+## DaemonSet (always-on fitness telemetry)
 
-- SkillPack manifest: `config/skills/llmfit.yaml`
-- Sidecar image: `ghcr.io/sympozium-ai/sympozium/skill-llmfit:latest`
-- Sidecar build context: `images/skill-llmfit/`
-  - `Dockerfile`
-  - `tool-executor.sh`
-  - `llmfit-probe-json.sh`
-  - `llmfit-cluster-fit.sh`
+### What it does
 
-Helm bundled copy:
-- `charts/sympozium/files/skills/llmfit.yaml`
+The `sympozium-llmfit-daemon` DaemonSet runs `llmfit serve` on every node, exposing a REST API on port 8787. The controller and API server poll each pod every 60 seconds to build a cluster-wide **FitnessCache** containing:
+
+- Per-node hardware specs (RAM, CPU, GPU, VRAM, backend)
+- Model fitness scores (which models fit on which nodes, at what quality)
+- Installed runtimes (Ollama, vLLM, llama.cpp, etc.)
+
+### Instant model placement
+
+When a Model CR has `placement.mode: auto`, the controller checks the FitnessCache first. If fresh data exists, placement is instant (milliseconds). If the cache is empty — DaemonSet not deployed or still warming up — it falls back to the original probe-pod approach (~3 minutes).
+
+### Helm configuration
+
+```yaml
+llmfit:
+  daemonset:
+    enabled: true           # Deployed by default with Sympozium
+    eventInterval: 60       # Seconds between fitness publications
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    tolerations:
+      - operator: Exists    # Run on all nodes including GPU-tainted
+    nodeSelector: {}
+  liveEviction:
+    enabled: false          # Re-place models when fitness degrades (env: LLMFIT_LIVE_EVICTION=true)
+    checkInterval: 30s
+    degradeThreshold: 0.3   # 30% score drop triggers re-placement
+  webhook:
+    preflightValidation: false  # Reject Model CRs that won't fit (env: LLMFIT_PREFLIGHT_VALIDATION=true)
+```
+
+### Security
+
+- Read-only root filesystem
+- Host path mounts (read-only): `/proc`, `/sys`, `/dev`, `/run/udev` at `/host/*` paths
+- `SYS_PTRACE` capability for `/proc` access
+- Minimal RBAC: `nodes: [get]`
+
+### Prometheus metrics
+
+The controller exposes fitness metrics on its `/metrics` endpoint:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `sympozium_fitness_node_score` | Gauge | `node` | Highest model fitness score for a node |
+| `sympozium_fitness_node_stale` | Gauge | `node` | 1 if node stopped reporting |
+| `sympozium_fitness_node_ram_total_gb` | Gauge | `node` | Total RAM |
+| `sympozium_fitness_node_ram_available_gb` | Gauge | `node` | Available RAM |
+| `sympozium_fitness_node_gpu_vram_gb` | Gauge | `node` | GPU VRAM |
+| `sympozium_fitness_node_gpu_count` | Gauge | `node` | Number of GPUs |
+| `sympozium_fitness_node_model_count` | Gauge | `node` | Models that fit |
+| `sympozium_fitness_cluster_nodes_total` | Gauge | — | Nodes reporting fitness |
+| `sympozium_fitness_cluster_nodes_stale` | Gauge | — | Nodes with stale data |
 
 ---
 
-## Runtime design
+## Fitness API endpoints
 
-### Host access (default for `llmfit`)
+The API server exposes fitness data for the web UI and agent queries:
 
-The built-in `llmfit` sidecar now enables explicit host access by default so node-level hardware probes can read host information directly:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/fitness/nodes` | All nodes with hardware specs and model fit counts |
+| `GET` | `/api/v1/fitness/nodes/{name}` | Single node detail with full model fit list |
+| `GET` | `/api/v1/fitness/runtimes` | Installed inference runtimes per node |
+| `GET` | `/api/v1/fitness/installed-models` | Models downloaded in local runtimes per node |
+| `GET` | `/api/v1/fitness/query?model={q}` | Ranked nodes for a model search query |
+| `GET` | `/api/v1/catalog` | Alphabetized catalog of all models the cluster can run |
+| `POST` | `/api/v1/fitness/simulate` | Simulate deploying a model — shows per-node capacity impact |
+| `GET` | `/api/v1/fitness/cost` | Per-model and per-namespace resource attribution |
 
-- `hostPID: true` (pod-level)
-- Sidecar runs as `root` (`runAsRoot: true`)
-- Read-only host mounts:
-  - `/proc` → `/host/proc`
-  - `/sys` → `/host/sys`
-  - `/dev` → `/host/dev`
-  - `/run/udev` → `/host/run/udev`
+---
 
-The sidecar also exports helper environment variables:
+## Web UI
 
-- `LLMFIT_HOST_PROC=/host/proc`
-- `LLMFIT_HOST_SYS=/host/sys`
-- `LLMFIT_HOST_DEV=/host/dev`
-- `LLMFIT_HOST_UDEV=/host/run/udev`
+### Cluster Fitness page
 
-This is configured in the SkillPack (`spec.sidecar.hostAccess`) and is not globally enabled for other skills.
+Navigate to **Infrastructure > Cluster Fitness** in the sidebar. Three tabs:
 
-### Binary source
+- **Nodes** — card per node showing CPU, RAM, GPU, backend, model fit count, stale indicator
+- **Model Catalog** — alphabetized table of all models that fit on the cluster with scores and fit levels
+- **Query** — live search for specific models with per-node scores, TPS estimates, and memory requirements
 
-The sidecar installs `llmfit` from GitHub releases (v0.5.8+), using architecture-aware assets:
+### Model deploy dialog
 
-- `x86_64-unknown-linux-musl` for `amd64`
-- `aarch64-unknown-linux-musl` for `arm64`
+When deploying a model with auto placement, the dialog shows a **fitness preview** with the top 3 nodes ranked by score, color-coded fit levels, and a "recommended" badge.
 
-This avoids host-level `brew` dependency and keeps installation deterministic in containers.
+### Topology page
 
-### Cluster workflow
+K8s node cards on the topology canvas show RAM, CPU cores, GPU info, backend, and model fit count from the fitness cache.
 
-The primary command is:
+---
+
+## SkillPack sidecar (agent-facing)
+
+The `llmfit` SkillPack (v0.2.0) gives agents four skills:
+
+### `llmfit-cluster-placement`
+
+Probe-based cluster placement using `llmfit-cluster-fit.sh`:
 
 ```bash
 llmfit-cluster-fit.sh --model "Qwen/Qwen2.5-Coder-14B-Instruct" --use-case coding --min-fit good --limit 10
 ```
 
-It:
-1. Discovers nodes with `kubectl get nodes`
-2. Spawns one short-lived probe pod per node (`nodeName` pinned)
-3. Runs `llmfit` on each node (`system` + `recommend --json`)
-4. Aggregates and ranks results in a single JSON payload
+### `llmfit-rest-api-usage`
 
-### REST API compatibility
+Query node-local llmfit REST endpoints when daemons are available.
 
-If node-local daemons already run (`llmfit serve`), agent workflows can query:
+### `llmfit-mcp-tools`
 
-- `/health`
-- `/api/v1/system`
-- `/api/v1/models/top`
-- `/api/v1/models/{name}`
+Structured MCP tools (v0.9.24+) available via `llmfit serve --mcp`:
+
+| Tool | Purpose |
+|------|---------|
+| `get_system_specs` | Node hardware (RAM, GPU, CPU) |
+| `recommend_models` | Ranked models with filters |
+| `search_models` | Free-text model search |
+| `plan_hardware` | Memory/quant/TPS estimates |
+| `get_runtimes` | Installed inference runtimes |
+| `get_installed_models` | Downloaded models |
+
+### `llmfit-fitness-cache`
+
+Query the fitness cache API from agent workflows:
+
+```bash
+curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes | jq .
+curl -s "http://sympozium-apiserver:8080/api/v1/fitness/query?model=Qwen2.5" | jq .
+curl -s http://sympozium-apiserver:8080/api/v1/catalog | jq .
+```
 
 ---
 
-## RBAC
+## Architecture
 
-The skill provisions minimal scoped permissions:
-
-- Namespace: `pods`, `pods/log` (`get/list/watch/create/delete`) for probe lifecycle
-- Cluster: `nodes` (`get/list/watch`) for node discovery
-
-RBAC controls Kubernetes API access only. Host-level access is configured separately via `spec.sidecar.hostAccess`.
-
----
-
-## Usage examples
-
-Preflight (recommended before queries):
-
-```bash
-which llmfit && llmfit --version && which kubectl && which jq
 ```
-
-Top models on default settings:
-
-```bash
-llmfit-cluster-fit.sh --model "*" --min-fit good --limit 10 | jq '.ranked_nodes[:5]'
+llmfit DaemonSet (per node)          SkillPack sidecar (per agent)
+┌──────────────────────┐             ┌──────────────────────┐
+│ llmfit serve         │             │ llmfit serve --mcp   │
+│ REST API :8787       │             │ 6 MCP tools (stdio)  │
+│ /api/v1/system       │             │ + probe scripts      │
+│ /api/v1/models       │             └──────────────────────┘
+└──────────┬───────────┘                     │
+           │ polled every 60s                │ agent tool calls
+           ▼                                 ▼
+┌──────────────────────┐             ┌──────────────────────┐
+│ FitnessCache         │             │ Agent pod            │
+│ (controller +        │             │ (ad-hoc queries)     │
+│  apiserver)          │             └──────────────────────┘
+└──────────┬───────────┘
+           │
+     ┌─────┼──────────┐
+     ▼     ▼          ▼
+  Instant   Fitness   Prometheus
+  placement API       metrics
 ```
-
-Top 5 candidate nodes for a coding model:
-
-```bash
-llmfit-cluster-fit.sh --model "Qwen2.5" --use-case coding --min-fit good --limit 10 | jq '.ranked_nodes[:5]'
-```
-
-Inspect full per-node evidence:
-
-```bash
-llmfit-cluster-fit.sh --model "Qwen2.5" | jq '.node_results'
-```
-
-If `ranked_nodes` is empty at `min-fit=good`, retry with:
-
-```bash
-llmfit-cluster-fit.sh --model "*" --min-fit marginal --limit 10
-llmfit-cluster-fit.sh --model "*" --min-fit too_tight --limit 10
-```
-
-If preflight fails (`llmfit: not found`), this indicates a stale/mismatched sidecar image in-cluster rather than a query issue.
 
 ---
 
 ## Persona integration
 
-`platform-team` now enables `llmfit` for the `sre-watchdog` persona so SRE flows can recommend model placement in chat without manual setup.
+The `platform-team` ensemble enables `llmfit` for the `sre-watchdog` agent. Its heartbeat task queries the fitness API and includes a `## Fitness` section reporting per-node scores, stale nodes, and degradation alerts.

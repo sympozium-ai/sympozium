@@ -103,6 +103,39 @@ The DaemonSet uses `hostNetwork: true` to probe localhost on the host. It runs a
 
 See the [Ollama guide](../guides/ollama.md) for full details on node-based inference.
 
+## llmfit DaemonSet (hardware fitness telemetry)
+
+The llmfit DaemonSet runs on every node, continuously reporting hardware specs and model fitness scores. The controller and API server poll each pod to build a cluster-wide FitnessCache that powers instant model placement, the Cluster Fitness UI, Prometheus metrics, and the fitness API.
+
+```yaml
+llmfit:
+  daemonset:
+    enabled: true           # Deployed by default
+    eventInterval: 60       # Seconds between fitness polls
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    tolerations:
+      - operator: Exists    # Run on all nodes including GPU-tainted
+    nodeSelector: {}
+  liveEviction:
+    enabled: false          # Re-place models when fitness degrades
+    checkInterval: 30s
+    degradeThreshold: 0.3
+  webhook:
+    preflightValidation: false  # Reject Models that won't fit
+```
+
+The DaemonSet mounts `/proc`, `/sys`, `/dev`, `/run/udev` read-only for hardware detection. It runs as non-root with `readOnlyRootFilesystem: true` and `SYS_PTRACE` for `/proc` access. RBAC is minimal: `nodes: [get]`.
+
+When `enabled: true` (default), Model CRs with `placement.mode: auto` use cached fitness data for instant placement instead of spawning probe pods.
+
+See the [llmfit skill docs](../skills/llmfit.md) for full details on the fitness API, web UI, and Prometheus metrics.
+
 ## Agent Sandbox (Kubernetes CRD)
 
 Integrates with [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) for kernel-level isolation (gVisor/Kata), warm pools, and suspend/resume lifecycle. See the [Agent Sandbox concept doc](../concepts/agent-sandbox.md) for details.
