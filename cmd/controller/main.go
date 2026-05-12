@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -15,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -189,12 +191,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.ModelReconciler{
+	modelReconciler := &controller.ModelReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Log:       ctrl.Log.WithName("controllers").WithName("Model"),
 		Clientset: clientset,
-	}).SetupWithManager(mgr); err != nil {
+	}
+	if err := modelReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Model")
 		os.Exit(1)
 	}
@@ -239,6 +242,55 @@ func main() {
 			if err := mgr.Add(spawnRouter); err != nil {
 				setupLog.Error(err, "unable to add spawn router")
 				os.Exit(1)
+			}
+
+			// --- llmfit fitness cache (populates via NATS events or REST API polling) ---
+			fitnessCache := controller.NewFitnessCache(90 * time.Second) // 1.5x default 60s event interval
+
+			// Try NATS subscriber first; fall back to REST API poller.
+			fitnessSub := &controller.FitnessSubscriber{
+				NATSUrl: natsURL,
+				Cache:   fitnessCache,
+				Log:     ctrl.Log.WithName("fitness-subscriber"),
+			}
+			if err := mgr.Add(fitnessSub); err != nil {
+				setupLog.Error(err, "unable to add fitness subscriber")
+				os.Exit(1)
+			}
+
+			// Also start REST API poller as fallback for when llmfit binary
+			// doesn't have the NATS feature compiled in.
+			fitnessPoller := &controller.FitnessPoller{
+				K8sClient: mgr.GetClient(),
+				Cache:     fitnessCache,
+				Log:       ctrl.Log.WithName("fitness-poller"),
+			}
+			if err := mgr.Add(fitnessPoller); err != nil {
+				setupLog.Error(err, "unable to add fitness poller")
+				os.Exit(1)
+			}
+
+			modelReconciler.FitnessCache = fitnessCache
+			ensembleReconciler.FitnessCache = fitnessCache
+
+			// Register Prometheus metrics for fitness data.
+			fitnessMetrics := controller.NewFitnessMetrics(fitnessCache)
+			metrics.Registry.MustRegister(fitnessMetrics)
+			setupLog.Info("llmfit fitness cache enabled — model placement will use cached fitness data")
+
+			// --- llmfit fitness watcher (live model eviction on degradation) ---
+			if os.Getenv("LLMFIT_LIVE_EVICTION") == "true" {
+				fitnessWatcher := &controller.FitnessWatcher{
+					Client:   mgr.GetClient(),
+					Cache:    fitnessCache,
+					EventBus: eb,
+					Log:      ctrl.Log.WithName("fitness-watcher"),
+				}
+				if err := mgr.Add(fitnessWatcher); err != nil {
+					setupLog.Error(err, "unable to add fitness watcher")
+					os.Exit(1)
+				}
+				setupLog.Info("llmfit fitness watcher enabled — models will be re-placed on degradation")
 			}
 
 			setupLog.Info("Channel message router enabled", "natsURL", natsURL)

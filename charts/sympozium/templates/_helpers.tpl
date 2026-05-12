@@ -99,6 +99,15 @@ Node probe image.
 {{- end }}
 
 {{/*
+llmfit daemon image.
+*/}}
+{{- define "sympozium.llmfitDaemonImage" -}}
+{{- $repo := .Values.llmfit.daemonset.image.repository | default (printf "%s/llmfit-daemon" .Values.image.registry) }}
+{{- $tag := .Values.llmfit.daemonset.image.tag | default (include "sympozium.imageTag" .) }}
+{{- printf "%s:%s" $repo $tag }}
+{{- end }}
+
+{{/*
 NATS URL — internal or external.
 */}}
 {{- define "sympozium.natsUrl" -}}

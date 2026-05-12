@@ -6,7 +6,7 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci --ignore-scripts
 COPY web/ .
-RUN npm run build
+RUN npx vite build
 
 # Stage 2: Build Go binary
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder

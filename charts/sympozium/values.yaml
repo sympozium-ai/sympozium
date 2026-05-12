@@ -287,6 +287,40 @@ nodeProbe:
     - operator: Exists
   affinity: {}
 
+# -- llmfit DaemonSet (continuous per-node hardware fitness telemetry)
+llmfit:
+  daemonset:
+    # -- Deploy the llmfit DaemonSet for continuous hardware fitness telemetry.
+    # When enabled, the controller uses cached fitness data for instant model
+    # placement instead of spawning probe pods.
+    enabled: true
+    image:
+      repository: ""  # defaults to {{ .Values.image.registry }}/llmfit-daemon
+      tag: ""
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    # -- Interval in seconds between fitness event publications
+    eventInterval: 60
+    # -- Node selector to limit which nodes run the daemon (default: all nodes)
+    nodeSelector: {}
+    # -- Tolerate all taints so daemon runs on GPU and other tainted nodes
+    tolerations:
+      - operator: Exists
+    affinity: {}
+  # -- Live eviction: re-place models when node fitness degrades
+  liveEviction:
+    enabled: false
+    checkInterval: 30s
+    degradeThreshold: 0.3
+  # -- Pre-flight webhook: reject Model CRs that won't fit anywhere
+  webhook:
+    preflightValidation: false
+
 # -- MCP Bridge (sidecar that connects agents to remote MCP tool servers)
 mcpBridge:
   image:

@@ -4,6 +4,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -15,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/webhook"
 )
 
@@ -72,6 +74,34 @@ func main() {
 			Decoder: decoder,
 		},
 	})
+
+	// Register fitness pre-flight validation webhook (optional).
+	if os.Getenv("LLMFIT_PREFLIGHT_VALIDATION") == "true" {
+		natsURL := os.Getenv("NATS_URL")
+		if natsURL != "" {
+			fitnessCache := controller.NewFitnessCache(90 * time.Second)
+			fitnessSub := &controller.FitnessSubscriber{
+				NATSUrl: natsURL,
+				Cache:   fitnessCache,
+				Log:     log.WithName("fitness-subscriber"),
+			}
+			ctx := ctrl.SetupSignalHandler()
+			go func() {
+				if err := fitnessSub.Start(ctx); err != nil {
+					log.Error(err, "fitness subscriber failed in webhook")
+				}
+			}()
+
+			hookServer.Register("/validate-model-fitness", &ctrlwebhook.Admission{
+				Handler: &webhook.ModelFitnessValidator{
+					Cache:   fitnessCache,
+					Log:     log.WithName("fitness-validator"),
+					Decoder: decoder,
+				},
+			})
+			log.Info("Model fitness pre-flight validation webhook enabled")
+		}
+	}
 
 	log.Info("starting webhook server")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

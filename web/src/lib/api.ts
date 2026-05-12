@@ -788,6 +788,110 @@ export interface CapabilitiesResponse {
   agentSandbox: CapabilityStatus;
 }
 
+// ── Fitness (llmfit DaemonSet telemetry) ─────────────────────────────────────
+
+export interface FitnessGPU {
+  name: string;
+  vram_gb: number;
+  backend: string;
+  count: number;
+  unified_memory: boolean;
+}
+
+export interface FitnessSystemSpecs {
+  total_ram_gb: number;
+  available_ram_gb: number;
+  cpu_cores: number;
+  cpu_name: string;
+  has_gpu: boolean;
+  gpu_vram_gb: number | null;
+  gpu_name: string | null;
+  gpu_count: number;
+  unified_memory: boolean;
+  backend: string;
+  gpus: FitnessGPU[];
+}
+
+export interface FitnessModelFit {
+  name: string;
+  score: number;
+  fit_level: string;
+  runtime: string;
+  best_quant: string;
+  estimated_tps: number;
+  memory_required_gb: number;
+  memory_available_gb: number;
+  utilization_pct: number;
+  category: string;
+}
+
+export interface FitnessRuntime {
+  name: string;
+  installed: boolean;
+}
+
+export interface FitnessInstalledModel {
+  name: string;
+  runtime: string;
+}
+
+export interface FitnessNodeSummary {
+  nodeName: string;
+  lastSeen: string;
+  stale: boolean;
+  system: FitnessSystemSpecs;
+  modelFitCount: number;
+  runtimes?: FitnessRuntime[];
+  installedModels?: FitnessInstalledModel[];
+}
+
+export interface FitnessNodeDetail {
+  NodeName: string;
+  LastSeen: string;
+  System: FitnessSystemSpecs;
+  ModelFits: FitnessModelFit[];
+  Runtimes: FitnessRuntime[];
+  InstalledModels: FitnessInstalledModel[];
+}
+
+export interface FitnessNodesResponse {
+  nodes: FitnessNodeSummary[];
+  total: number;
+}
+
+export interface FitnessNodeResult {
+  nodeName: string;
+  score: number;
+  fitLevel: string;
+  model: FitnessModelFit;
+}
+
+export interface FitnessQueryResponse {
+  query: string;
+  rankedNodes: FitnessNodeResult[];
+}
+
+export interface FitnessRuntimesResponse {
+  nodes: { nodeName: string; runtimes: FitnessRuntime[] }[];
+}
+
+export interface FitnessInstalledModelsResponse {
+  nodes: { nodeName: string; models: FitnessInstalledModel[] }[];
+}
+
+export interface CatalogEntry {
+  modelName: string;
+  bestScore: number;
+  bestNode: string;
+  fitLevel: string;
+  nodes: { nodeName: string; score: number; fitLevel: string }[];
+}
+
+export interface CatalogResponse {
+  models: CatalogEntry[];
+  total: number;
+}
+
 // ── API client ───────────────────────────────────────────────────────────────
 
 /** Typed error so callers can inspect the HTTP status code. */
@@ -1295,6 +1399,35 @@ export const api = {
       apiFetch<ProviderModelsResponse>("/api/v1/providers/bedrock/models", {
         method: "POST",
         body: JSON.stringify(data),
+      }),
+  },
+
+  fitness: {
+    nodes: () =>
+      apiFetch<FitnessNodesResponse>("/api/v1/fitness/nodes", {
+        skipNamespace: true,
+      }),
+    node: (name: string) =>
+      apiFetch<FitnessNodeDetail>(`/api/v1/fitness/nodes/${name}`, {
+        skipNamespace: true,
+      }),
+    runtimes: () =>
+      apiFetch<FitnessRuntimesResponse>("/api/v1/fitness/runtimes", {
+        skipNamespace: true,
+      }),
+    installedModels: () =>
+      apiFetch<FitnessInstalledModelsResponse>(
+        "/api/v1/fitness/installed-models",
+        { skipNamespace: true },
+      ),
+    query: (model: string, minFit?: string) =>
+      apiFetch<FitnessQueryResponse>(
+        `/api/v1/fitness/query?model=${encodeURIComponent(model)}${minFit ? `&min_fit=${minFit}` : ""}`,
+        { skipNamespace: true },
+      ),
+    catalog: () =>
+      apiFetch<CatalogResponse>("/api/v1/catalog", {
+        skipNamespace: true,
       }),
   },
 

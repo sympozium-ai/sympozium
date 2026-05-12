@@ -698,3 +698,55 @@ export function useGatewayMetrics(range_?: string) {
     refetchInterval: 10000,
   });
 }
+
+// ── Fitness (llmfit DaemonSet) ─────────────────────────────────────────────
+
+export function useFitnessNodes() {
+  return useQuery({
+    queryKey: ["fitness", "nodes"],
+    queryFn: api.fitness.nodes,
+    refetchInterval: 30000,
+  });
+}
+
+export function useFitnessNode(name: string) {
+  return useQuery({
+    queryKey: ["fitness", "nodes", name],
+    queryFn: () => api.fitness.node(name),
+    enabled: !!name,
+    refetchInterval: 30000,
+  });
+}
+
+export function useFitnessQuery(model: string, minFit?: string) {
+  return useQuery({
+    queryKey: ["fitness", "query", model, minFit],
+    queryFn: () => api.fitness.query(model, minFit),
+    enabled: !!model,
+    refetchInterval: 30000,
+  });
+}
+
+export function useFitnessRuntimes() {
+  return useQuery({
+    queryKey: ["fitness", "runtimes"],
+    queryFn: api.fitness.runtimes,
+    refetchInterval: 30000,
+  });
+}
+
+export function useFitnessInstalledModels() {
+  return useQuery({
+    queryKey: ["fitness", "installed-models"],
+    queryFn: api.fitness.installedModels,
+    refetchInterval: 30000,
+  });
+}
+
+export function useClusterCatalog() {
+  return useQuery({
+    queryKey: ["catalog"],
+    queryFn: api.fitness.catalog,
+    refetchInterval: 30000,
+  });
+}

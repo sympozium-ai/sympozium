@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
@@ -41,11 +42,12 @@ const systemNamespace = "sympozium-system"
 
 // Server is the Sympozium API server.
 type Server struct {
-	client   client.Client
-	eventBus eventbus.EventBus
-	kube     kubernetes.Interface
-	log      logr.Logger
-	upgrader websocket.Upgrader
+	client       client.Client
+	eventBus     eventbus.EventBus
+	kube         kubernetes.Interface
+	log          logr.Logger
+	upgrader     websocket.Upgrader
+	fitnessCache *controller.FitnessCache // optional: set when llmfit DaemonSet is enabled
 }
 
 // NewServer creates a new API server.
@@ -59,6 +61,11 @@ func NewServer(c client.Client, bus eventbus.EventBus, kube kubernetes.Interface
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+}
+
+// SetFitnessCache sets the fitness cache for fitness API endpoints.
+func (s *Server) SetFitnessCache(cache *controller.FitnessCache) {
+	s.fitnessCache = cache
 }
 
 // Start starts the HTTP server (headless, no embedded UI).
@@ -157,6 +164,16 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 
 	// Node endpoints
 	mux.HandleFunc("GET /api/v1/nodes", s.listClusterNodes)
+
+	// Fitness endpoints (llmfit DaemonSet telemetry)
+	mux.HandleFunc("GET /api/v1/fitness/nodes", s.listFitnessNodes)
+	mux.HandleFunc("GET /api/v1/fitness/nodes/{name}", s.getFitnessNode)
+	mux.HandleFunc("GET /api/v1/fitness/runtimes", s.listFitnessRuntimes)
+	mux.HandleFunc("GET /api/v1/fitness/installed-models", s.listFitnessInstalledModels)
+	mux.HandleFunc("GET /api/v1/fitness/query", s.queryFitness)
+	mux.HandleFunc("GET /api/v1/catalog", s.getCatalog)
+	mux.HandleFunc("POST /api/v1/fitness/simulate", s.handleSimulate)
+	mux.HandleFunc("GET /api/v1/fitness/cost", s.handleCost)
 
 	// Model endpoints (cluster-local inference)
 	mux.HandleFunc("GET /api/v1/models", s.listModels)

@@ -299,6 +299,43 @@ subjects:
     name: sympozium-agent
     namespace: {{ include "sympozium.namespace" . }}
 {{- end }}
+{{- if and .Values.rbac.create .Values.llmfit.daemonset.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sympozium-llmfit-daemon
+  namespace: {{ include "sympozium.namespace" . }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llmfit-daemon
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sympozium.fullname" . }}-llmfit-daemon
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sympozium.fullname" . }}-llmfit-daemon
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sympozium.fullname" . }}-llmfit-daemon
+subjects:
+  - kind: ServiceAccount
+    name: sympozium-llmfit-daemon
+    namespace: {{ include "sympozium.namespace" . }}
+{{- end }}
 {{- if and .Values.rbac.create .Values.nodeProbe.enabled }}
 ---
 apiVersion: v1

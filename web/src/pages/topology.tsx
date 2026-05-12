@@ -37,6 +37,7 @@ import {
   useEnsembles,
   useModels,
   useGatewayConfig,
+  useFitnessNodes,
 } from "@/hooks/use-api";
 import { StimulusDialogProvider, StimulusDialogCtx } from "@/components/canvas-primitives";
 import type { StimulusNodeData } from "@/components/canvas-primitives";
@@ -67,6 +68,7 @@ import type {
   ProviderNode,
   NodeProvider,
   GatewayConfigResponse,
+  FitnessNodeSummary,
 } from "@/lib/api";
 import { Link } from "react-router-dom";
 import Dagre from "@dagrejs/dagre";
@@ -74,6 +76,7 @@ import Dagre from "@dagrejs/dagre";
 // ── Custom node components ────────────────────────────────────────────────────
 
 function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
+  const f = data.fitness;
   return (
     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 min-w-[240px] shadow-md cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-colors">
       <Handle type="target" position={Position.Top} className="!bg-emerald-500 !w-2 !h-2" />
@@ -81,8 +84,24 @@ function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
       <div className="flex items-center gap-2 mb-2">
         <Server className="h-4 w-4 text-emerald-400" />
         <span className="font-semibold text-sm text-emerald-300">{data.name}</span>
+        {f?.stale && (
+          <Badge variant="destructive" className="text-[8px] px-1 py-0">stale</Badge>
+        )}
       </div>
       <p className="text-[10px] text-muted-foreground font-mono mb-1">{data.ip}</p>
+      {f && f.totalRamGb > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground mb-1">
+          <span>{Math.round(f.totalRamGb)} GB RAM</span>
+          <span>{f.cpuCores} cores</span>
+          {f.hasGpu && f.gpuName && (
+            <span className="text-emerald-400">{f.gpuName}{f.gpuVramGb ? ` ${Math.round(f.gpuVramGb)}GB` : ""}</span>
+          )}
+          {!f.hasGpu && (
+            <span>{f.backend || "CPU"}</span>
+          )}
+          <span>{f.modelFitCount} models fit</span>
+        </div>
+      )}
       {data.providers.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">
           {data.providers.map((p) => (
@@ -347,6 +366,17 @@ interface K8sNodeData {
   name: string;
   ip: string;
   providers: { name: string; models: string[] }[];
+  fitness?: {
+    totalRamGb: number;
+    availableRamGb: number;
+    cpuCores: number;
+    hasGpu: boolean;
+    gpuName: string | null;
+    gpuVramGb: number | null;
+    modelFitCount: number;
+    stale: boolean;
+    backend: string;
+  };
   [key: string]: unknown;
 }
 
@@ -419,7 +449,7 @@ const nodeTypes = {
 /** Estimated node dimensions for dagre layout (width, height). */
 const NODE_SIZES: Record<string, [number, number]> = {
   gateway:       [220, 70],
-  k8sNode:       [260, 90],
+  k8sNode:       [280, 110],
   cloudProvider: [180, 50],
   model:         [200, 70],
   ensemble:      [200, 50],
@@ -494,6 +524,7 @@ function buildTopology(
   webEndpointAgents: string[],
   runPhases: RunPhaseMap,
   activeRuns: AgentRun[],
+  fitnessNodes?: FitnessNodeSummary[],
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -559,7 +590,11 @@ function buildTopology(
   }
 
   // ── K8s Nodes ──────────────────────────────────────────────────────────
+  const fitnessMap = new Map(
+    (fitnessNodes || []).map((fn) => [fn.nodeName, fn]),
+  );
   for (const pn of providerNodes) {
+    const fn = fitnessMap.get(pn.nodeName);
     nodes.push({
       id: `node-${pn.nodeName}`,
       type: "k8sNode",
@@ -568,6 +603,19 @@ function buildTopology(
         name: pn.nodeName,
         ip: pn.nodeIP,
         providers: pn.providers.map((p) => ({ name: p.name, models: p.models })),
+        fitness: fn
+          ? {
+              totalRamGb: fn.system.total_ram_gb,
+              availableRamGb: fn.system.available_ram_gb,
+              cpuCores: fn.system.cpu_cores,
+              hasGpu: fn.system.has_gpu,
+              gpuName: fn.system.gpu_name,
+              gpuVramGb: fn.system.gpu_vram_gb,
+              modelFitCount: fn.modelFitCount,
+              stale: fn.stale,
+              backend: fn.system.backend,
+            }
+          : undefined,
       },
     });
   }
@@ -964,6 +1012,7 @@ function TopologyCanvas() {
   const { data: runs } = useRuns();
   const { data: providerNodes } = useProviderNodes(true);
   const { data: gateway } = useGatewayConfig();
+  const { data: fitnessData } = useFitnessNodes();
   const { fitView } = useReactFlow();
 
   const [rfNodes, setNodesState] = useState<Node[]>([]);
@@ -1092,6 +1141,7 @@ function TopologyCanvas() {
         webEndpointAgents,
         runPhases,
         activeRuns,
+        fitnessData?.nodes,
       );
 
       // Apply saved positions if available.
@@ -1125,6 +1175,7 @@ function TopologyCanvas() {
           webEndpointAgents,
           runPhases,
           activeRuns,
+          fitnessData?.nodes,
         );
         const freshMap = new Map(freshNodes.map((n) => [n.id, n]));
         return prev.map((n) => {
@@ -1145,11 +1196,12 @@ function TopologyCanvas() {
           webEndpointAgents,
           runPhases,
           activeRuns,
+          fitnessData?.nodes,
         );
         return freshEdges;
       });
     }
-  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint]);
+  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint, fitnessData]);
 
   // Save positions to localStorage after any node drag ends.
   const handleNodesChange = useCallback(
