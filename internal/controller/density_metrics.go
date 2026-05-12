@@ -5,13 +5,13 @@ import (
 )
 
 const metricsNamespace = "sympozium"
-const metricsSubsystem = "fitness"
+const metricsSubsystem = "density"
 
-// FitnessMetrics exposes Prometheus metrics derived from the FitnessCache.
+// DensityMetrics exposes Prometheus metrics derived from the DensityCache.
 // Implements prometheus.Collector so it can be registered with any registry.
 // Metrics are computed on-the-fly from the cache at scrape time.
-type FitnessMetrics struct {
-	cache *FitnessCache
+type DensityMetrics struct {
+	cache *DensityCache
 
 	nodeScore        *prometheus.Desc
 	nodeStale        *prometheus.Desc
@@ -24,9 +24,9 @@ type FitnessMetrics struct {
 	clusterStale     *prometheus.Desc
 }
 
-// NewFitnessMetrics creates a FitnessMetrics collector for the given cache.
-func NewFitnessMetrics(cache *FitnessCache) *FitnessMetrics {
-	return &FitnessMetrics{
+// NewDensityMetrics creates a DensityMetrics collector for the given cache.
+func NewDensityMetrics(cache *DensityCache) *DensityMetrics {
+	return &DensityMetrics{
 		cache: cache,
 		nodeScore: prometheus.NewDesc(
 			prometheus.BuildFQName(metricsNamespace, metricsSubsystem, "node_score"),
@@ -77,7 +77,7 @@ func NewFitnessMetrics(cache *FitnessCache) *FitnessMetrics {
 }
 
 // Describe implements prometheus.Collector.
-func (m *FitnessMetrics) Describe(ch chan<- *prometheus.Desc) {
+func (m *DensityMetrics) Describe(ch chan<- *prometheus.Desc) {
 	ch <- m.nodeScore
 	ch <- m.nodeStale
 	ch <- m.nodeRAMTotal
@@ -90,7 +90,7 @@ func (m *FitnessMetrics) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect implements prometheus.Collector. Reads from the cache at scrape time.
-func (m *FitnessMetrics) Collect(ch chan<- prometheus.Metric) {
+func (m *DensityMetrics) Collect(ch chan<- prometheus.Metric) {
 	m.cache.mu.RLock()
 	defer m.cache.mu.RUnlock()
 

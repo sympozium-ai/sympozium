@@ -27,7 +27,7 @@ type Proxy struct {
 	k8s          client.Client
 	log          logr.Logger
 	limiter      *RateLimiter
-	FitnessCache *controller.FitnessCache // optional: for capacity-aware routing
+	DensityCache *controller.DensityCache // optional: for capacity-aware routing
 }
 
 // NewProxy creates a new web proxy.

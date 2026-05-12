@@ -79,23 +79,23 @@ func main() {
 	if os.Getenv("LLMFIT_PREFLIGHT_VALIDATION") == "true" {
 		natsURL := os.Getenv("NATS_URL")
 		if natsURL != "" {
-			fitnessCache := controller.NewFitnessCache(90 * time.Second)
-			fitnessSub := &controller.FitnessSubscriber{
+			densityCache := controller.NewDensityCache(90 * time.Second)
+			densitySub := &controller.DensitySubscriber{
 				NATSUrl: natsURL,
-				Cache:   fitnessCache,
-				Log:     log.WithName("fitness-subscriber"),
+				Cache:   densityCache,
+				Log:     log.WithName("density-subscriber"),
 			}
 			ctx := ctrl.SetupSignalHandler()
 			go func() {
-				if err := fitnessSub.Start(ctx); err != nil {
-					log.Error(err, "fitness subscriber failed in webhook")
+				if err := densitySub.Start(ctx); err != nil {
+					log.Error(err, "density subscriber failed in webhook")
 				}
 			}()
 
-			hookServer.Register("/validate-model-fitness", &ctrlwebhook.Admission{
-				Handler: &webhook.ModelFitnessValidator{
-					Cache:   fitnessCache,
-					Log:     log.WithName("fitness-validator"),
+			hookServer.Register("/validate-model-density", &ctrlwebhook.Admission{
+				Handler: &webhook.ModelDensityValidator{
+					Cache:   densityCache,
+					Log:     log.WithName("density-validator"),
 					Decoder: decoder,
 				},
 			})

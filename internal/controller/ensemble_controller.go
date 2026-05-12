@@ -35,7 +35,7 @@ type EnsembleReconciler struct {
 	Scheme       *runtime.Scheme
 	Log          logr.Logger
 	EventBus     eventbus.EventBus
-	FitnessCache *FitnessCache // optional: set when llmfit DaemonSet is enabled
+	DensityCache *DensityCache // optional: set when llmfit DaemonSet is enabled
 }
 
 // defaultObservabilitySpec builds an ObservabilitySpec from env vars injected

@@ -1,4 +1,4 @@
-// Test: Fitness API endpoints — verifies all fitness-related API endpoints
+// Test: Density API endpoints — verifies all fitness-related API endpoints
 // return correct response shapes and handle edge cases.
 //
 // These tests validate the API contract regardless of whether the llmfit
@@ -11,13 +11,13 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
-describe("Fitness API Endpoints", () => {
-  // ── GET /api/v1/fitness/nodes ─────────────────────────────────────────
+describe("Density API Endpoints", () => {
+  // ── GET /api/v1/density/nodes ─────────────────────────────────────────
 
-  describe("GET /api/v1/fitness/nodes", () => {
+  describe("GET /api/v1/density/nodes", () => {
     it("returns 200 with nodes array and total", () => {
       cy.request({
-        url: "/api/v1/fitness/nodes",
+        url: "/api/v1/density/nodes",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -29,7 +29,7 @@ describe("Fitness API Endpoints", () => {
 
     it("node objects have expected shape when data present", () => {
       cy.request({
-        url: "/api/v1/fitness/nodes",
+        url: "/api/v1/density/nodes",
         headers: authHeaders(),
       }).then((resp) => {
         if (resp.body.total === 0) {
@@ -53,12 +53,12 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── GET /api/v1/fitness/nodes/{name} ──────────────────────────────────
+  // ── GET /api/v1/density/nodes/{name} ──────────────────────────────────
 
-  describe("GET /api/v1/fitness/nodes/{name}", () => {
+  describe("GET /api/v1/density/nodes/{name}", () => {
     it("returns 404 for non-existent node", () => {
       cy.request({
-        url: "/api/v1/fitness/nodes/nonexistent-node-xyz",
+        url: "/api/v1/density/nodes/nonexistent-node-xyz",
         headers: authHeaders(),
         failOnStatusCode: false,
       }).then((resp) => {
@@ -68,7 +68,7 @@ describe("Fitness API Endpoints", () => {
 
     it("returns node detail when node exists", () => {
       cy.request({
-        url: "/api/v1/fitness/nodes",
+        url: "/api/v1/density/nodes",
         headers: authHeaders(),
       }).then((resp) => {
         if (resp.body.total === 0) {
@@ -78,7 +78,7 @@ describe("Fitness API Endpoints", () => {
 
         const nodeName = resp.body.nodes[0].nodeName;
         cy.request({
-          url: `/api/v1/fitness/nodes/${nodeName}`,
+          url: `/api/v1/density/nodes/${nodeName}`,
           headers: authHeaders(),
         }).then((detailResp) => {
           expect(detailResp.status).to.eq(200);
@@ -90,12 +90,12 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── GET /api/v1/fitness/runtimes ──────────────────────────────────────
+  // ── GET /api/v1/density/runtimes ──────────────────────────────────────
 
-  describe("GET /api/v1/fitness/runtimes", () => {
+  describe("GET /api/v1/density/runtimes", () => {
     it("returns 200 with nodes array", () => {
       cy.request({
-        url: "/api/v1/fitness/runtimes",
+        url: "/api/v1/density/runtimes",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -104,12 +104,12 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── GET /api/v1/fitness/installed-models ───────────────────────────────
+  // ── GET /api/v1/density/installed-models ───────────────────────────────
 
-  describe("GET /api/v1/fitness/installed-models", () => {
+  describe("GET /api/v1/density/installed-models", () => {
     it("returns 200 with nodes array", () => {
       cy.request({
-        url: "/api/v1/fitness/installed-models",
+        url: "/api/v1/density/installed-models",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -118,12 +118,12 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── GET /api/v1/fitness/query ─────────────────────────────────────────
+  // ── GET /api/v1/density/query ─────────────────────────────────────────
 
-  describe("GET /api/v1/fitness/query", () => {
+  describe("GET /api/v1/density/query", () => {
     it("returns 400 when model parameter is missing", () => {
       cy.request({
-        url: "/api/v1/fitness/query",
+        url: "/api/v1/density/query",
         headers: authHeaders(),
         failOnStatusCode: false,
       }).then((resp) => {
@@ -133,7 +133,7 @@ describe("Fitness API Endpoints", () => {
 
     it("returns 200 with query and rankedNodes", () => {
       cy.request({
-        url: "/api/v1/fitness/query?model=Qwen",
+        url: "/api/v1/density/query?model=Qwen",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -144,7 +144,7 @@ describe("Fitness API Endpoints", () => {
 
     it("returns empty results for non-matching model", () => {
       cy.request({
-        url: "/api/v1/fitness/query?model=nonexistent-model-xyz-12345",
+        url: "/api/v1/density/query?model=nonexistent-model-xyz-12345",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -155,7 +155,7 @@ describe("Fitness API Endpoints", () => {
 
     it("ranked nodes have correct shape when data present", () => {
       cy.request({
-        url: "/api/v1/fitness/query?model=Qwen",
+        url: "/api/v1/density/query?model=Qwen",
         headers: authHeaders(),
       }).then((resp) => {
         if (resp.body.rankedNodes.length === 0) {
@@ -175,7 +175,7 @@ describe("Fitness API Endpoints", () => {
 
     it("results are sorted by score descending", () => {
       cy.request({
-        url: "/api/v1/fitness/query?model=Qwen",
+        url: "/api/v1/density/query?model=Qwen",
         headers: authHeaders(),
       }).then((resp) => {
         const nodes = resp.body.rankedNodes;
@@ -232,13 +232,13 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── POST /api/v1/fitness/simulate ─────────────────────────────────────
+  // ── POST /api/v1/density/simulate ─────────────────────────────────────
 
-  describe("POST /api/v1/fitness/simulate", () => {
+  describe("POST /api/v1/density/simulate", () => {
     it("returns 400 when model field is missing", () => {
       cy.request({
         method: "POST",
-        url: "/api/v1/fitness/simulate",
+        url: "/api/v1/density/simulate",
         headers: authHeaders(),
         body: {},
         failOnStatusCode: false,
@@ -250,7 +250,7 @@ describe("Fitness API Endpoints", () => {
     it("returns 200 with simulation results", () => {
       cy.request({
         method: "POST",
-        url: "/api/v1/fitness/simulate",
+        url: "/api/v1/density/simulate",
         headers: authHeaders(),
         body: { model: "Qwen2.5-7B" },
       }).then((resp) => {
@@ -265,7 +265,7 @@ describe("Fitness API Endpoints", () => {
     it("simulation results have memory fields when data present", () => {
       cy.request({
         method: "POST",
-        url: "/api/v1/fitness/simulate",
+        url: "/api/v1/density/simulate",
         headers: authHeaders(),
         body: { model: "Qwen" },
       }).then((resp) => {
@@ -287,7 +287,7 @@ describe("Fitness API Endpoints", () => {
     it("accepts optional memoryGb override", () => {
       cy.request({
         method: "POST",
-        url: "/api/v1/fitness/simulate",
+        url: "/api/v1/density/simulate",
         headers: authHeaders(),
         body: { model: "Qwen", memoryGb: 48 },
       }).then((resp) => {
@@ -300,12 +300,12 @@ describe("Fitness API Endpoints", () => {
     });
   });
 
-  // ── GET /api/v1/fitness/cost ──────────────────────────────────────────
+  // ── GET /api/v1/density/cost ──────────────────────────────────────────
 
-  describe("GET /api/v1/fitness/cost", () => {
+  describe("GET /api/v1/density/cost", () => {
     it("returns 200 with models and namespaces arrays", () => {
       cy.request({
-        url: "/api/v1/fitness/cost",
+        url: "/api/v1/density/cost",
         headers: authHeaders(),
       }).then((resp) => {
         expect(resp.status).to.eq(200);
@@ -316,7 +316,7 @@ describe("Fitness API Endpoints", () => {
 
     it("model cost entries have expected fields", () => {
       cy.request({
-        url: "/api/v1/fitness/cost",
+        url: "/api/v1/density/cost",
         headers: authHeaders(),
       }).then((resp) => {
         if (resp.body.models.length === 0) {
@@ -334,7 +334,7 @@ describe("Fitness API Endpoints", () => {
 
     it("namespace aggregation is correct", () => {
       cy.request({
-        url: "/api/v1/fitness/cost",
+        url: "/api/v1/density/cost",
         headers: authHeaders(),
       }).then((resp) => {
         if (resp.body.namespaces.length === 0) {

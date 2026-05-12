@@ -43,6 +43,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { to: "/topology", label: "Topology", icon: Network },
+      { to: "/model-density", label: "Model Density", icon: Activity },
     ],
   },
   {
@@ -60,7 +61,6 @@ const navSections: NavSection[] = [
       { to: "/gateway", label: "Gateway", icon: Globe },
       { to: "/policies", label: "Policies", icon: Shield },
       { to: "/models", label: "Models", icon: Cpu },
-      { to: "/cluster-fitness", label: "Cluster Fitness", icon: Activity },
       { to: "/skills", label: "Skills", icon: Wrench },
       { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
       { to: "/settings", label: "Settings", icon: Settings },

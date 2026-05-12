@@ -1,9 +1,9 @@
-// Test: Cluster Fitness page — verifies the fitness UI renders correctly,
+// Test: Model Density page — verifies the fitness UI renders correctly,
 // handles empty state gracefully, and responds to user interaction.
 //
 // When the llmfit DaemonSet is deployed and publishing, the page shows
 // per-node hardware cards, a model catalog, and a search query tab.
-// When fitness data is unavailable, the page shows a helpful empty state.
+// When density data is unavailable, the page shows a helpful empty state.
 
 function authHeaders(): Record<string, string> {
   const token = Cypress.env("API_TOKEN");
@@ -12,21 +12,21 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
-describe("Cluster Fitness Page", () => {
+describe("Model Density Page", () => {
   it("renders the page with correct heading", () => {
-    cy.visit("/cluster-fitness");
-    cy.contains("Cluster Fitness", { timeout: 15000 }).should("be.visible");
-    cy.contains("Real-time hardware fitness data").should("be.visible");
+    cy.visit("/model-density");
+    cy.contains("Model Density", { timeout: 15000 }).should("be.visible");
+    cy.contains("Real-time model density data").should("be.visible");
   });
 
   it("shows empty state or node data", () => {
-    cy.visit("/cluster-fitness");
+    cy.visit("/model-density");
 
     // Wait for the page to load — either we get node cards or the empty state.
     cy.get("body", { timeout: 15000 }).then(($body) => {
-      if ($body.text().includes("No fitness data available")) {
+      if ($body.text().includes("No density data available")) {
         // Empty state: DaemonSet not deployed or no data yet.
-        cy.contains("No fitness data available").should("be.visible");
+        cy.contains("No density data available").should("be.visible");
         cy.contains("Deploy the llmfit DaemonSet").should("be.visible");
       } else {
         // Data present: tabs should be visible.
@@ -39,7 +39,7 @@ describe("Cluster Fitness Page", () => {
 
   it("fitness nodes API returns valid response", () => {
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
       failOnStatusCode: false,
     }).then((resp) => {
@@ -67,15 +67,15 @@ describe("Cluster Fitness Page", () => {
   it("switches between tabs", () => {
     // Only test tab switching if we have data. Otherwise skip gracefully.
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
     }).then((resp) => {
       if (resp.body.total === 0) {
-        cy.log("No fitness data — skipping tab interaction test");
+        cy.log("No density data — skipping tab interaction test");
         return;
       }
 
-      cy.visit("/cluster-fitness");
+      cy.visit("/model-density");
 
       // Nodes tab is default.
       cy.contains("button", "Nodes", { timeout: 15000 }).should("be.visible");
@@ -98,15 +98,15 @@ describe("Cluster Fitness Page", () => {
 
   it("query tab searches for models", () => {
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
     }).then((resp) => {
       if (resp.body.total === 0) {
-        cy.log("No fitness data — skipping query test");
+        cy.log("No density data — skipping query test");
         return;
       }
 
-      cy.visit("/cluster-fitness");
+      cy.visit("/model-density");
       cy.contains("button", "Query", { timeout: 15000 }).click();
 
       // Type a search query.
@@ -125,16 +125,16 @@ describe("Cluster Fitness Page", () => {
 
   it("shows node hardware details when data is present", () => {
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
     }).then((resp) => {
       if (resp.body.total === 0) {
-        cy.log("No fitness data — skipping node card test");
+        cy.log("No density data — skipping node card test");
         return;
       }
 
       const firstNode = resp.body.nodes[0];
-      cy.visit("/cluster-fitness");
+      cy.visit("/model-density");
 
       // Node name should appear in a card.
       cy.contains(firstNode.nodeName, { timeout: 15000 }).should(
@@ -152,10 +152,10 @@ describe("Cluster Fitness Page", () => {
   it("is accessible from the sidebar navigation", () => {
     cy.visit("/dashboard");
 
-    // Find and click the Cluster Fitness nav item.
-    cy.contains("Cluster Fitness", { timeout: 15000 }).click();
-    cy.url().should("include", "/cluster-fitness");
-    cy.contains("Real-time hardware fitness data").should("be.visible");
+    // Find and click the Model Density nav item.
+    cy.contains("Model Density", { timeout: 15000 }).click();
+    cy.url().should("include", "/model-density");
+    cy.contains("Real-time model density data").should("be.visible");
   });
 });
 

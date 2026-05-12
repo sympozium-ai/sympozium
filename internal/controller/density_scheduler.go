@@ -35,7 +35,7 @@ type RankedPlacement struct {
 //   - Unified memory preference for large models on Apple Silicon
 //   - Runtime availability (prefer nodes where the target runtime is installed)
 //   - CPU fallback when no GPU nodes qualify
-func (c *FitnessCache) ScheduleModelPlacement(modelQuery string, pref SchedulePreference) []RankedPlacement {
+func (c *DensityCache) ScheduleModelPlacement(modelQuery string, pref SchedulePreference) []RankedPlacement {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -137,7 +137,7 @@ func (c *FitnessCache) ScheduleModelPlacement(modelQuery string, pref SchedulePr
 }
 
 // HasGPUNodes returns true if any non-stale node in the cache has a GPU.
-func (c *FitnessCache) HasGPUNodes() bool {
+func (c *DensityCache) HasGPUNodes() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, nf := range c.nodes {
@@ -149,7 +149,7 @@ func (c *FitnessCache) HasGPUNodes() bool {
 }
 
 // GPUBackends returns the set of GPU backends available in the cluster.
-func (c *FitnessCache) GPUBackends() []string {
+func (c *DensityCache) GPUBackends() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	seen := make(map[string]bool)

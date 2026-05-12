@@ -274,7 +274,7 @@ Agents in a Ensemble can delegate tasks to other personas using the `delegate_to
 | **Ensembles** | Operator Bundle | Pre-configured agent bundles — the controller stamps out Agents, Schedules, and memory ConfigMaps. Activating a pack is a single TUI action |
 | **MCP servers as CRD** | Deployment + Service | `MCPServer` resources declare external tool providers — the controller manages deployment lifecycle, probes for tools, and the bridge sidecar translates MCP protocol to agent tool calls. Prefixed tool names prevent collisions across providers |
 | **Node probe DaemonSet** | DaemonSet | Discovers host-installed inference providers (Ollama, vLLM) by probing localhost ports — annotates nodes so the control plane can offer model selection and node pinning without manual configuration |
-| **llmfit DaemonSet** | DaemonSet | Runs on every node, continuously reporting hardware specs (RAM, CPU, GPU VRAM) and model fitness scores. The controller and API server poll each pod to build a FitnessCache that powers instant model placement, the Cluster Fitness UI, Prometheus metrics, GPU-aware scheduling, and fitness API endpoints |
+| **llmfit DaemonSet** | DaemonSet | Runs on every node, continuously reporting hardware specs (RAM, CPU, GPU VRAM) and model density scores. The controller and API server poll each pod to build a FitnessCache that powers instant model placement, the Model Density UI, Prometheus metrics, GPU-aware scheduling, and density API endpoints |
 
 ---
 
@@ -294,7 +294,7 @@ sympozium/
 │   ├── node-probe/         # Node probe DaemonSet (inference provider discovery)
 │   └── sympozium/          # CLI + interactive TUI
 ├── images/
-│   ├── llmfit-daemon/      # llmfit DaemonSet (hardware fitness telemetry)
+│   ├── llmfit-daemon/      # llmfit DaemonSet (hardware density telemetry)
 ├── web/                    # Web dashboard (React + TypeScript + Vite)
 ├── internal/               # Internal packages
 │   ├── controller/         # Kubernetes controllers (6 reconcilers)

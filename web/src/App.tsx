@@ -21,7 +21,7 @@ import { ModelDetailPage } from "@/pages/model-detail";
 import { SettingsPage } from "@/pages/settings";
 import { TopologyPage } from "@/pages/topology";
 import { SyntheticMembranePage } from "@/pages/synthetic-membrane";
-import { ClusterFitnessPage } from "@/pages/cluster-fitness";
+import { ModelDensityPage } from "@/pages/model-density";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -65,7 +65,7 @@ export default function App() {
         <Route path="/ensembles/:name" element={<EnsembleDetailPage />} />
         <Route path="/mcp-servers" element={<McpServersPage />} />
         <Route path="/mcp-servers/:name" element={<McpServerDetailPage />} />
-        <Route path="/cluster-fitness" element={<ClusterFitnessPage />} />
+        <Route path="/model-density" element={<ModelDensityPage />} />
         <Route path="/models" element={<ModelsPage />} />
         <Route path="/models/:name" element={<ModelDetailPage />} />
         <Route path="/gateway" element={<GatewayPage />} />

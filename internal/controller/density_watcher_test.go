@@ -27,8 +27,8 @@ func TestContainsIgnoreCase(t *testing.T) {
 	}
 }
 
-func TestFitnessWatcherDefaults(t *testing.T) {
-	fw := &FitnessWatcher{}
+func TestDensityWatcherDefaults(t *testing.T) {
+	fw := &DensityWatcher{}
 
 	// Verify defaults are applied in Start's early path.
 	if fw.CheckInterval == 0 {

@@ -14,21 +14,21 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/controller"
 )
 
-// ModelFitnessValidator is a validating webhook that rejects Model CRs
-// when the FitnessCache shows no node can fit the model. Only active for
+// ModelDensityValidator is a validating webhook that rejects Model CRs
+// when the DensityCache shows no node can fit the model. Only active for
 // CREATE operations on auto-placement models.
 //
 // Gracefully degrades: if the cache is empty (DaemonSet not deployed or
 // still warming up), the request is always allowed.
-type ModelFitnessValidator struct {
-	Cache   *controller.FitnessCache
+type ModelDensityValidator struct {
+	Cache   *controller.DensityCache
 	Log     logr.Logger
 	Decoder admission.Decoder
 }
 
 // Handle validates a Model creation request against the cluster's current
 // hardware fitness data.
-func (v *ModelFitnessValidator) Handle(_ context.Context, req admission.Request) admission.Response {
+func (v *ModelDensityValidator) Handle(_ context.Context, req admission.Request) admission.Response {
 	// Only validate CREATE requests.
 	if req.Operation != admissionv1.Create {
 		return admission.Allowed("fitness check only applies to CREATE")

@@ -9,13 +9,13 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/controller"
 )
 
-// fitnessNodesResponse is the response for GET /api/v1/fitness/nodes.
-type fitnessNodesResponse struct {
-	Nodes []fitnessNodeSummary `json:"nodes"`
+// densityNodesResponse is the response for GET /api/v1/density/nodes.
+type densityNodesResponse struct {
+	Nodes []densityNodeSummary `json:"nodes"`
 	Total int                  `json:"total"`
 }
 
-type fitnessNodeSummary struct {
+type densityNodeSummary struct {
 	NodeName        string                          `json:"nodeName"`
 	LastSeen        string                          `json:"lastSeen"`
 	Stale           bool                            `json:"stale"`
@@ -25,13 +25,13 @@ type fitnessNodeSummary struct {
 	InstalledModels []controller.InstalledModelInfo `json:"installedModels,omitempty"`
 }
 
-// fitnessQueryResponse is the response for GET /api/v1/fitness/query.
-type fitnessQueryResponse struct {
+// densityQueryResponse is the response for GET /api/v1/density/query.
+type densityQueryResponse struct {
 	Query       string              `json:"query"`
-	RankedNodes []fitnessNodeResult `json:"rankedNodes"`
+	RankedNodes []densityNodeResult `json:"rankedNodes"`
 }
 
-type fitnessNodeResult struct {
+type densityNodeResult struct {
 	NodeName string                  `json:"nodeName"`
 	Score    float64                 `json:"score"`
 	FitLevel string                  `json:"fitLevel"`
@@ -58,21 +58,21 @@ type nodeScore struct {
 	FitLevel string  `json:"fitLevel"`
 }
 
-// listFitnessNodes returns all nodes with fitness data.
-// GET /api/v1/fitness/nodes
-func (s *Server) listFitnessNodes(w http.ResponseWriter, r *http.Request) {
-	if s.fitnessCache == nil {
-		writeFitnessJSON(w, fitnessNodesResponse{Nodes: []fitnessNodeSummary{}, Total: 0})
+// listDensityNodes returns all nodes with fitness data.
+// GET /api/v1/density/nodes
+func (s *Server) listDensityNodes(w http.ResponseWriter, r *http.Request) {
+	if s.densityCache == nil {
+		writeDensityJSON(w, densityNodesResponse{Nodes: []densityNodeSummary{}, Total: 0})
 		return
 	}
 
-	all := s.fitnessCache.All()
-	nodes := make([]fitnessNodeSummary, len(all))
+	all := s.densityCache.All()
+	nodes := make([]densityNodeSummary, len(all))
 	for i, nf := range all {
-		nodes[i] = fitnessNodeSummary{
+		nodes[i] = densityNodeSummary{
 			NodeName:        nf.NodeName,
 			LastSeen:        nf.LastSeen.Format("2006-01-02T15:04:05Z"),
-			Stale:           s.fitnessCache.IsStale(nf.NodeName),
+			Stale:           s.densityCache.IsStale(nf.NodeName),
 			System:          nf.System,
 			ModelFitCount:   len(nf.ModelFits),
 			Runtimes:        nf.Runtimes,
@@ -81,32 +81,32 @@ func (s *Server) listFitnessNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].NodeName < nodes[j].NodeName })
-	writeFitnessJSON(w, fitnessNodesResponse{Nodes: nodes, Total: len(nodes)})
+	writeDensityJSON(w, densityNodesResponse{Nodes: nodes, Total: len(nodes)})
 }
 
-// getFitnessNode returns fitness data for a single node.
-// GET /api/v1/fitness/nodes/{name}
-func (s *Server) getFitnessNode(w http.ResponseWriter, r *http.Request) {
+// getDensityNode returns fitness data for a single node.
+// GET /api/v1/density/nodes/{name}
+func (s *Server) getDensityNode(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if s.fitnessCache == nil {
+	if s.densityCache == nil {
 		http.Error(w, "fitness cache not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	nf, ok := s.fitnessCache.Get(name)
+	nf, ok := s.densityCache.Get(name)
 	if !ok {
 		http.Error(w, "node not found in fitness cache", http.StatusNotFound)
 		return
 	}
 
-	writeFitnessJSON(w, nf)
+	writeDensityJSON(w, nf)
 }
 
-// listFitnessRuntimes returns all runtimes across the cluster.
-// GET /api/v1/fitness/runtimes
-func (s *Server) listFitnessRuntimes(w http.ResponseWriter, r *http.Request) {
-	if s.fitnessCache == nil {
-		writeFitnessJSON(w, map[string]interface{}{"nodes": []interface{}{}})
+// listDensityRuntimes returns all runtimes across the cluster.
+// GET /api/v1/density/runtimes
+func (s *Server) listDensityRuntimes(w http.ResponseWriter, r *http.Request) {
+	if s.densityCache == nil {
+		writeDensityJSON(w, map[string]interface{}{"nodes": []interface{}{}})
 		return
 	}
 
@@ -115,7 +115,7 @@ func (s *Server) listFitnessRuntimes(w http.ResponseWriter, r *http.Request) {
 		Runtimes []controller.RuntimeStatus `json:"runtimes"`
 	}
 
-	all := s.fitnessCache.All()
+	all := s.densityCache.All()
 	result := make([]nodeRuntimes, 0, len(all))
 	for _, nf := range all {
 		if len(nf.Runtimes) > 0 {
@@ -123,14 +123,14 @@ func (s *Server) listFitnessRuntimes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeFitnessJSON(w, map[string]interface{}{"nodes": result})
+	writeDensityJSON(w, map[string]interface{}{"nodes": result})
 }
 
-// listFitnessInstalledModels returns installed models across the cluster.
-// GET /api/v1/fitness/installed-models
-func (s *Server) listFitnessInstalledModels(w http.ResponseWriter, r *http.Request) {
-	if s.fitnessCache == nil {
-		writeFitnessJSON(w, map[string]interface{}{"nodes": []interface{}{}})
+// listDensityInstalledModels returns installed models across the cluster.
+// GET /api/v1/density/installed-models
+func (s *Server) listDensityInstalledModels(w http.ResponseWriter, r *http.Request) {
+	if s.densityCache == nil {
+		writeDensityJSON(w, map[string]interface{}{"nodes": []interface{}{}})
 		return
 	}
 
@@ -139,7 +139,7 @@ func (s *Server) listFitnessInstalledModels(w http.ResponseWriter, r *http.Reque
 		Models   []controller.InstalledModelInfo `json:"models"`
 	}
 
-	all := s.fitnessCache.All()
+	all := s.densityCache.All()
 	result := make([]nodeModels, 0, len(all))
 	for _, nf := range all {
 		if len(nf.InstalledModels) > 0 {
@@ -147,12 +147,12 @@ func (s *Server) listFitnessInstalledModels(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	writeFitnessJSON(w, map[string]interface{}{"nodes": result})
+	writeDensityJSON(w, map[string]interface{}{"nodes": result})
 }
 
-// queryFitness returns ranked nodes for a model query.
-// GET /api/v1/fitness/query?model=Qwen2.5&min_fit=good
-func (s *Server) queryFitness(w http.ResponseWriter, r *http.Request) {
+// queryDensity returns ranked nodes for a model query.
+// GET /api/v1/density/query?model=Qwen2.5&min_fit=good
+func (s *Server) queryDensity(w http.ResponseWriter, r *http.Request) {
 	modelQuery := r.URL.Query().Get("model")
 	if modelQuery == "" {
 		http.Error(w, "model query parameter is required", http.StatusBadRequest)
@@ -164,21 +164,21 @@ func (s *Server) queryFitness(w http.ResponseWriter, r *http.Request) {
 		minFit = "marginal"
 	}
 
-	if s.fitnessCache == nil {
-		writeFitnessJSON(w, fitnessQueryResponse{Query: modelQuery})
+	if s.densityCache == nil {
+		writeDensityJSON(w, densityQueryResponse{Query: modelQuery})
 		return
 	}
 
 	queryLower := strings.ToLower(modelQuery)
-	all := s.fitnessCache.All()
+	all := s.densityCache.All()
 
-	var results []fitnessNodeResult
+	var results []densityNodeResult
 	for _, nf := range all {
 		for _, fit := range nf.ModelFits {
 			if !strings.Contains(strings.ToLower(fit.Name), queryLower) {
 				continue
 			}
-			results = append(results, fitnessNodeResult{
+			results = append(results, densityNodeResult{
 				NodeName: nf.NodeName,
 				Score:    fit.Score,
 				FitLevel: fit.FitLevel,
@@ -189,7 +189,7 @@ func (s *Server) queryFitness(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 
-	writeFitnessJSON(w, fitnessQueryResponse{
+	writeDensityJSON(w, densityQueryResponse{
 		Query:       modelQuery,
 		RankedNodes: results,
 	})
@@ -198,12 +198,12 @@ func (s *Server) queryFitness(w http.ResponseWriter, r *http.Request) {
 // getCatalog returns what models the cluster can run, aggregated across nodes.
 // GET /api/v1/catalog
 func (s *Server) getCatalog(w http.ResponseWriter, r *http.Request) {
-	if s.fitnessCache == nil {
-		writeFitnessJSON(w, catalogResponse{Models: []catalogEntry{}, Total: 0})
+	if s.densityCache == nil {
+		writeDensityJSON(w, catalogResponse{Models: []catalogEntry{}, Total: 0})
 		return
 	}
 
-	all := s.fitnessCache.All()
+	all := s.densityCache.All()
 
 	// Aggregate: model name -> list of (node, score, fitLevel).
 	type nodeHit struct {
@@ -241,11 +241,11 @@ func (s *Server) getCatalog(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ModelName < entries[j].ModelName })
 
-	writeFitnessJSON(w, catalogResponse{Models: entries, Total: len(entries)})
+	writeDensityJSON(w, catalogResponse{Models: entries, Total: len(entries)})
 }
 
-// writeFitnessJSON writes a JSON response for fitness endpoints.
-func writeFitnessJSON(w http.ResponseWriter, data interface{}) {
+// writeDensityJSON writes a JSON response for fitness endpoints.
+func writeDensityJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
 }

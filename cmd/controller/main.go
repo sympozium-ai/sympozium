@@ -244,53 +244,53 @@ func main() {
 				os.Exit(1)
 			}
 
-			// --- llmfit fitness cache (populates via NATS events or REST API polling) ---
-			fitnessCache := controller.NewFitnessCache(90 * time.Second) // 1.5x default 60s event interval
+			// --- llmfit density cache (populates via NATS events or REST API polling) ---
+			densityCache := controller.NewDensityCache(90 * time.Second) // 1.5x default 60s event interval
 
 			// Try NATS subscriber first; fall back to REST API poller.
-			fitnessSub := &controller.FitnessSubscriber{
+			densitySub := &controller.DensitySubscriber{
 				NATSUrl: natsURL,
-				Cache:   fitnessCache,
-				Log:     ctrl.Log.WithName("fitness-subscriber"),
+				Cache:   densityCache,
+				Log:     ctrl.Log.WithName("density-subscriber"),
 			}
-			if err := mgr.Add(fitnessSub); err != nil {
-				setupLog.Error(err, "unable to add fitness subscriber")
+			if err := mgr.Add(densitySub); err != nil {
+				setupLog.Error(err, "unable to add density subscriber")
 				os.Exit(1)
 			}
 
 			// Also start REST API poller as fallback for when llmfit binary
 			// doesn't have the NATS feature compiled in.
-			fitnessPoller := &controller.FitnessPoller{
+			densityPoller := &controller.DensityPoller{
 				K8sClient: mgr.GetClient(),
-				Cache:     fitnessCache,
-				Log:       ctrl.Log.WithName("fitness-poller"),
+				Cache:     densityCache,
+				Log:       ctrl.Log.WithName("density-poller"),
 			}
-			if err := mgr.Add(fitnessPoller); err != nil {
-				setupLog.Error(err, "unable to add fitness poller")
+			if err := mgr.Add(densityPoller); err != nil {
+				setupLog.Error(err, "unable to add density poller")
 				os.Exit(1)
 			}
 
-			modelReconciler.FitnessCache = fitnessCache
-			ensembleReconciler.FitnessCache = fitnessCache
+			modelReconciler.DensityCache = densityCache
+			ensembleReconciler.DensityCache = densityCache
 
-			// Register Prometheus metrics for fitness data.
-			fitnessMetrics := controller.NewFitnessMetrics(fitnessCache)
-			metrics.Registry.MustRegister(fitnessMetrics)
-			setupLog.Info("llmfit fitness cache enabled — model placement will use cached fitness data")
+			// Register Prometheus metrics for density data.
+			densityMetrics := controller.NewDensityMetrics(densityCache)
+			metrics.Registry.MustRegister(densityMetrics)
+			setupLog.Info("llmfit density cache enabled — model placement will use cached density data")
 
-			// --- llmfit fitness watcher (live model eviction on degradation) ---
+			// --- llmfit density watcher (live model eviction on degradation) ---
 			if os.Getenv("LLMFIT_LIVE_EVICTION") == "true" {
-				fitnessWatcher := &controller.FitnessWatcher{
+				densityWatcher := &controller.DensityWatcher{
 					Client:   mgr.GetClient(),
-					Cache:    fitnessCache,
+					Cache:    densityCache,
 					EventBus: eb,
-					Log:      ctrl.Log.WithName("fitness-watcher"),
+					Log:      ctrl.Log.WithName("density-watcher"),
 				}
-				if err := mgr.Add(fitnessWatcher); err != nil {
-					setupLog.Error(err, "unable to add fitness watcher")
+				if err := mgr.Add(densityWatcher); err != nil {
+					setupLog.Error(err, "unable to add density watcher")
 					os.Exit(1)
 				}
-				setupLog.Info("llmfit fitness watcher enabled — models will be re-placed on degradation")
+				setupLog.Info("llmfit density watcher enabled — models will be re-placed on degradation")
 			}
 
 			setupLog.Info("Channel message router enabled", "natsURL", natsURL)

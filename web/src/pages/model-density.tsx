@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useFitnessNodes, useFitnessQuery, useClusterCatalog } from "@/hooks/use-api";
+import { useDensityNodes, useDensityQuery, useModelCatalog } from "@/hooks/use-api";
 import {
   Table,
   TableHeader,
@@ -42,11 +42,11 @@ function formatRAM(gb: number) {
   return `${Math.round(gb)} GB`;
 }
 
-export function ClusterFitnessPage() {
+export function ModelDensityPage() {
   const [modelQuery, setModelQuery] = useState("");
-  const { data: nodesData, isLoading: nodesLoading } = useFitnessNodes();
-  const { data: catalogData, isLoading: catalogLoading } = useClusterCatalog();
-  const { data: queryData } = useFitnessQuery(modelQuery);
+  const { data: nodesData, isLoading: nodesLoading } = useDensityNodes();
+  const { data: catalogData, isLoading: catalogLoading } = useModelCatalog();
+  const { data: queryData } = useDensityQuery(modelQuery);
 
   const nodes = nodesData?.nodes || [];
   const catalog = catalogData?.models || [];
@@ -54,9 +54,9 @@ export function ClusterFitnessPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Cluster Fitness</h1>
+        <h1 className="text-2xl font-bold">Model Density</h1>
         <p className="text-muted-foreground">
-          Real-time hardware fitness data from the llmfit DaemonSet
+          Real-time model density data from the llmfit DaemonSet
         </p>
       </div>
 
@@ -70,9 +70,9 @@ export function ClusterFitnessPage() {
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             <Activity className="mx-auto h-10 w-10 mb-3 opacity-50" />
-            <p>No fitness data available.</p>
+            <p>No density data available.</p>
             <p className="text-sm mt-1">
-              Deploy the llmfit DaemonSet to enable cluster fitness monitoring.
+              Deploy the llmfit DaemonSet to enable model density monitoring.
             </p>
           </CardContent>
         </Card>

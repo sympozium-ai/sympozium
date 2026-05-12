@@ -2,19 +2,19 @@
 
 Sympozium integrates [llmfit](https://github.com/AlexsJones/llmfit) (v0.9.24) in two ways:
 
-1. **DaemonSet** — runs on every node, continuously reports hardware specs and model fitness scores. Powers instant model placement, the Cluster Fitness UI, and Prometheus metrics. Deployed by default.
+1. **DaemonSet** — runs on every node, continuously reports hardware specs and model density scores. Powers instant model placement, the Model Density UI, and Prometheus metrics. Deployed by default.
 2. **SkillPack sidecar** — gives agents interactive access to llmfit's MCP tools and cluster probe scripts for ad-hoc queries.
 
 ---
 
-## DaemonSet (always-on fitness telemetry)
+## DaemonSet (always-on density telemetry)
 
 ### What it does
 
 The `sympozium-llmfit-daemon` DaemonSet runs `llmfit serve` on every node, exposing a REST API on port 8787. The controller and API server poll each pod every 60 seconds to build a cluster-wide **FitnessCache** containing:
 
 - Per-node hardware specs (RAM, CPU, GPU, VRAM, backend)
-- Model fitness scores (which models fit on which nodes, at what quality)
+- Model density scores (which models fit on which nodes, at what quality)
 - Installed runtimes (Ollama, vLLM, llama.cpp, etc.)
 
 ### Instant model placement
@@ -59,40 +59,40 @@ The controller exposes fitness metrics on its `/metrics` endpoint:
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `sympozium_fitness_node_score` | Gauge | `node` | Highest model fitness score for a node |
-| `sympozium_fitness_node_stale` | Gauge | `node` | 1 if node stopped reporting |
-| `sympozium_fitness_node_ram_total_gb` | Gauge | `node` | Total RAM |
-| `sympozium_fitness_node_ram_available_gb` | Gauge | `node` | Available RAM |
-| `sympozium_fitness_node_gpu_vram_gb` | Gauge | `node` | GPU VRAM |
-| `sympozium_fitness_node_gpu_count` | Gauge | `node` | Number of GPUs |
-| `sympozium_fitness_node_model_count` | Gauge | `node` | Models that fit |
-| `sympozium_fitness_cluster_nodes_total` | Gauge | — | Nodes reporting fitness |
-| `sympozium_fitness_cluster_nodes_stale` | Gauge | — | Nodes with stale data |
+| `sympozium_density_node_score` | Gauge | `node` | Highest model fitness score for a node |
+| `sympozium_density_node_stale` | Gauge | `node` | 1 if node stopped reporting |
+| `sympozium_density_node_ram_total_gb` | Gauge | `node` | Total RAM |
+| `sympozium_density_node_ram_available_gb` | Gauge | `node` | Available RAM |
+| `sympozium_density_node_gpu_vram_gb` | Gauge | `node` | GPU VRAM |
+| `sympozium_density_node_gpu_count` | Gauge | `node` | Number of GPUs |
+| `sympozium_density_node_model_count` | Gauge | `node` | Models that fit |
+| `sympozium_density_cluster_nodes_total` | Gauge | — | Nodes reporting fitness |
+| `sympozium_density_cluster_nodes_stale` | Gauge | — | Nodes with stale data |
 
 ---
 
-## Fitness API endpoints
+## Density API endpoints
 
-The API server exposes fitness data for the web UI and agent queries:
+The API server exposes density data for the web UI and agent queries:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/fitness/nodes` | All nodes with hardware specs and model fit counts |
-| `GET` | `/api/v1/fitness/nodes/{name}` | Single node detail with full model fit list |
-| `GET` | `/api/v1/fitness/runtimes` | Installed inference runtimes per node |
-| `GET` | `/api/v1/fitness/installed-models` | Models downloaded in local runtimes per node |
-| `GET` | `/api/v1/fitness/query?model={q}` | Ranked nodes for a model search query |
+| `GET` | `/api/v1/density/nodes` | All nodes with hardware specs and model fit counts |
+| `GET` | `/api/v1/density/nodes/{name}` | Single node detail with full model fit list |
+| `GET` | `/api/v1/density/runtimes` | Installed inference runtimes per node |
+| `GET` | `/api/v1/density/installed-models` | Models downloaded in local runtimes per node |
+| `GET` | `/api/v1/density/query?model={q}` | Ranked nodes for a model search query |
 | `GET` | `/api/v1/catalog` | Alphabetized catalog of all models the cluster can run |
-| `POST` | `/api/v1/fitness/simulate` | Simulate deploying a model — shows per-node capacity impact |
-| `GET` | `/api/v1/fitness/cost` | Per-model and per-namespace resource attribution |
+| `POST` | `/api/v1/density/simulate` | Simulate deploying a model — shows per-node capacity impact |
+| `GET` | `/api/v1/density/cost` | Per-model and per-namespace resource attribution |
 
 ---
 
 ## Web UI
 
-### Cluster Fitness page
+### Model Density page
 
-Navigate to **Infrastructure > Cluster Fitness** in the sidebar. Three tabs:
+Navigate to **Infrastructure > Model Density** in the sidebar. Three tabs:
 
 - **Nodes** — card per node showing CPU, RAM, GPU, backend, model fit count, stale indicator
 - **Model Catalog** — alphabetized table of all models that fit on the cluster with scores and fit levels
@@ -100,11 +100,11 @@ Navigate to **Infrastructure > Cluster Fitness** in the sidebar. Three tabs:
 
 ### Model deploy dialog
 
-When deploying a model with auto placement, the dialog shows a **fitness preview** with the top 3 nodes ranked by score, color-coded fit levels, and a "recommended" badge.
+When deploying a model with auto placement, the dialog shows a **density preview** with the top 3 nodes ranked by score, color-coded fit levels, and a "recommended" badge.
 
 ### Topology page
 
-K8s node cards on the topology canvas show RAM, CPU cores, GPU info, backend, and model fit count from the fitness cache.
+K8s node cards on the topology canvas show RAM, CPU cores, GPU info, backend, and model fit count from the density cache.
 
 ---
 
@@ -139,11 +139,11 @@ Structured MCP tools (v0.9.24+) available via `llmfit serve --mcp`:
 
 ### `llmfit-fitness-cache`
 
-Query the fitness cache API from agent workflows:
+Query the density cache API from agent workflows:
 
 ```bash
-curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes | jq .
-curl -s "http://sympozium-apiserver:8080/api/v1/fitness/query?model=Qwen2.5" | jq .
+curl -s http://sympozium-apiserver:8080/api/v1/density/nodes | jq .
+curl -s "http://sympozium-apiserver:8080/api/v1/density/query?model=Qwen2.5" | jq .
 curl -s http://sympozium-apiserver:8080/api/v1/catalog | jq .
 ```
 
@@ -177,4 +177,4 @@ llmfit DaemonSet (per node)          SkillPack sidecar (per agent)
 
 ## Persona integration
 
-The `platform-team` ensemble enables `llmfit` for the `sre-watchdog` agent. Its heartbeat task queries the fitness API and includes a `## Fitness` section reporting per-node scores, stale nodes, and degradation alerts.
+The `platform-team` ensemble enables `llmfit` for the `sre-watchdog` agent. Its heartbeat task queries the density API and includes a `## Density` section reporting per-node scores, stale nodes, and degradation alerts.

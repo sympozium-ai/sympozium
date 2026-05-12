@@ -6,7 +6,7 @@ import {
   useCreateModel,
   useClusterNodes,
   useNamespaces,
-  useFitnessQuery,
+  useDensityQuery,
 } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -184,12 +184,12 @@ export function ModelsPage() {
   const readyNodes = (clusterNodes || []).filter((n) => n.ready);
 
   // Derive a model query for fitness lookup from the deploy form.
-  const fitnessModelQuery =
+  const densityModelQuery =
     serverType === "llama-cpp"
       ? form.name || ""
       : form.modelID || form.name || "";
-  const { data: fitnessData } = useFitnessQuery(
-    form.placement === "auto" ? fitnessModelQuery : "",
+  const { data: densityData } = useDensityQuery(
+    form.placement === "auto" ? densityModelQuery : "",
   );
 
   const filtered = (data || [])
@@ -641,13 +641,13 @@ export function ModelsPage() {
                   : "Pin the inference server to a specific node"}
               </p>
               {form.placement === "auto" &&
-                fitnessData?.rankedNodes &&
-                fitnessData.rankedNodes.length > 0 && (
+                densityData?.rankedNodes &&
+                densityData.rankedNodes.length > 0 && (
                   <div className="mt-2 space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">
-                      Node fitness preview:
+                      Node density preview:
                     </p>
-                    {fitnessData.rankedNodes.slice(0, 3).map((r, i) => (
+                    {densityData.rankedNodes.slice(0, 3).map((r, i) => (
                       <div
                         key={`${r.nodeName}-${i}`}
                         className="flex items-center gap-2 text-xs"

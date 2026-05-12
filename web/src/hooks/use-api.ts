@@ -699,54 +699,54 @@ export function useGatewayMetrics(range_?: string) {
   });
 }
 
-// ── Fitness (llmfit DaemonSet) ─────────────────────────────────────────────
+// ── Model Density (llmfit DaemonSet) ─────────────────────────────────────────────
 
-export function useFitnessNodes() {
+export function useDensityNodes() {
   return useQuery({
-    queryKey: ["fitness", "nodes"],
-    queryFn: api.fitness.nodes,
+    queryKey: ["density", "nodes"],
+    queryFn: api.density.nodes,
     refetchInterval: 30000,
   });
 }
 
-export function useFitnessNode(name: string) {
+export function useDensityNode(name: string) {
   return useQuery({
-    queryKey: ["fitness", "nodes", name],
-    queryFn: () => api.fitness.node(name),
+    queryKey: ["density", "nodes", name],
+    queryFn: () => api.density.node(name),
     enabled: !!name,
     refetchInterval: 30000,
   });
 }
 
-export function useFitnessQuery(model: string, minFit?: string) {
+export function useDensityQuery(model: string, minFit?: string) {
   return useQuery({
-    queryKey: ["fitness", "query", model, minFit],
-    queryFn: () => api.fitness.query(model, minFit),
+    queryKey: ["density", "query", model, minFit],
+    queryFn: () => api.density.query(model, minFit),
     enabled: !!model,
     refetchInterval: 30000,
   });
 }
 
-export function useFitnessRuntimes() {
+export function useDensityRuntimes() {
   return useQuery({
-    queryKey: ["fitness", "runtimes"],
-    queryFn: api.fitness.runtimes,
+    queryKey: ["density", "runtimes"],
+    queryFn: api.density.runtimes,
     refetchInterval: 30000,
   });
 }
 
-export function useFitnessInstalledModels() {
+export function useDensityInstalledModels() {
   return useQuery({
-    queryKey: ["fitness", "installed-models"],
-    queryFn: api.fitness.installedModels,
+    queryKey: ["density", "installed-models"],
+    queryFn: api.density.installedModels,
     refetchInterval: 30000,
   });
 }
 
-export function useClusterCatalog() {
+export function useModelCatalog() {
   return useQuery({
     queryKey: ["catalog"],
-    queryFn: api.fitness.catalog,
+    queryFn: api.density.catalog,
     refetchInterval: 30000,
   });
 }

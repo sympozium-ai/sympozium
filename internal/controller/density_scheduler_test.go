@@ -9,9 +9,9 @@ func ptrFloat(f float64) *float64 { return &f }
 func ptrStr(s string) *string     { return &s }
 
 func TestScheduleModelPlacementGPUPreference(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "cpu-node",
 		LastSeen: time.Now(),
 		System: SystemSpecs{
@@ -22,7 +22,7 @@ func TestScheduleModelPlacementGPUPreference(t *testing.T) {
 			{Name: "Qwen2.5-7B", Score: 50, FitLevel: "marginal", EstimatedTPS: 5},
 		},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "gpu-node",
 		LastSeen: time.Now(),
 		System: SystemSpecs{
@@ -50,9 +50,9 @@ func TestScheduleModelPlacementGPUPreference(t *testing.T) {
 }
 
 func TestScheduleModelPlacementVRAMThreshold(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "small-gpu",
 		LastSeen: time.Now(),
 		System: SystemSpecs{
@@ -63,7 +63,7 @@ func TestScheduleModelPlacementVRAMThreshold(t *testing.T) {
 			{Name: "Llama-3.1-70B", Score: 40, FitLevel: "marginal", EstimatedTPS: 3},
 		},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "big-gpu",
 		LastSeen: time.Now(),
 		System: SystemSpecs{
@@ -90,9 +90,9 @@ func TestScheduleModelPlacementVRAMThreshold(t *testing.T) {
 }
 
 func TestScheduleModelPlacementBackendPreference(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "cuda-node",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: true, Backend: "cuda"},
@@ -100,7 +100,7 @@ func TestScheduleModelPlacementBackendPreference(t *testing.T) {
 			{Name: "Model-X", Score: 70, FitLevel: "good", EstimatedTPS: 30},
 		},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "metal-node",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: true, Backend: "metal", UnifiedMemory: true},
@@ -123,9 +123,9 @@ func TestScheduleModelPlacementBackendPreference(t *testing.T) {
 }
 
 func TestHasGPUNodes(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "cpu-only",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: false},
@@ -135,7 +135,7 @@ func TestHasGPUNodes(t *testing.T) {
 		t.Error("expected no GPU nodes")
 	}
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "gpu-node",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: true},
@@ -147,19 +147,19 @@ func TestHasGPUNodes(t *testing.T) {
 }
 
 func TestGPUBackends(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "n1",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: true, Backend: "cuda"},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "n2",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: true, Backend: "metal"},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "n3",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{HasGPU: false, Backend: "cpu"},

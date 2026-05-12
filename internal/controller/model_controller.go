@@ -47,7 +47,7 @@ type ModelReconciler struct {
 	Scheme       *runtime.Scheme
 	Log          logr.Logger
 	Clientset    kubernetes.Interface
-	FitnessCache *FitnessCache // optional: set when llmfit DaemonSet is enabled
+	DensityCache *DensityCache // optional: set when llmfit DaemonSet is enabled
 }
 
 // +kubebuilder:rbac:groups=sympozium.ai,resources=models,verbs=get;list;watch;create;update;patch;delete
@@ -104,14 +104,14 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 // reconcilePlacing uses llmfit probes to auto-select the best node.
-// When a FitnessCache is available (llmfit DaemonSet enabled), placement
+// When a DensityCache is available (llmfit DaemonSet enabled), placement
 // uses cached fitness data for instant results. Falls back to spawning
 // probe pods when the cache is empty or stale.
 func (r *ModelReconciler) reconcilePlacing(ctx context.Context, model *sympoziumv1alpha1.Model, log logr.Logger) (ctrl.Result, error) {
-	// Fast path: use FitnessCache if available and populated.
-	if r.FitnessCache != nil && r.FitnessCache.NodeCount() > 0 {
+	// Fast path: use DensityCache if available and populated.
+	if r.DensityCache != nil && r.DensityCache.NodeCount() > 0 {
 		modelQuery := r.backendFor(model).ModelQuery(model)
-		bestNode, bestScore, bestMessage := r.FitnessCache.BestNodeForModel(modelQuery, "good")
+		bestNode, bestScore, bestMessage := r.DensityCache.BestNodeForModel(modelQuery, "good")
 		if bestNode != "" {
 			log.Info("Placement via fitness cache", "node", bestNode, "score", bestScore, "model", modelQuery)
 			model.Spec.NodeSelector = map[string]string{"kubernetes.io/hostname": bestNode}

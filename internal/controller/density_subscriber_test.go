@@ -10,8 +10,8 @@ import (
 )
 
 func TestHandleMessageSystem(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}
@@ -58,8 +58,8 @@ func TestHandleMessageSystem(t *testing.T) {
 }
 
 func TestHandleMessageFit(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}
@@ -123,8 +123,8 @@ func TestHandleMessageFit(t *testing.T) {
 }
 
 func TestHandleMessageRuntimes(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}
@@ -161,8 +161,8 @@ func TestHandleMessageRuntimes(t *testing.T) {
 }
 
 func TestHandleMessageInstalled(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}
@@ -198,8 +198,8 @@ func TestHandleMessageInstalled(t *testing.T) {
 }
 
 func TestHandleMessageUnknownType(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}
@@ -225,8 +225,8 @@ func TestHandleMessageUnknownType(t *testing.T) {
 }
 
 func TestHandleMessageHostnameFromSubject(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
-	fs := &FitnessSubscriber{
+	cache := NewDensityCache(90 * time.Second)
+	fs := &DensitySubscriber{
 		Cache: cache,
 		Log:   logrtesting.Log,
 	}

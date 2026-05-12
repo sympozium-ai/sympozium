@@ -13,12 +13,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// FitnessPoller polls llmfit REST APIs on DaemonSet pods to populate the
-// FitnessCache. This is the fallback when the llmfit binary doesn't have
+// DensityPoller polls llmfit REST APIs on DaemonSet pods to populate the
+// DensityCache. This is the fallback when the llmfit binary doesn't have
 // the NATS feature compiled in. Implements manager.Runnable.
-type FitnessPoller struct {
+type DensityPoller struct {
 	K8sClient    client.Client
-	Cache        *FitnessCache
+	Cache        *DensityCache
 	Log          logr.Logger
 	PollInterval time.Duration // default 60s
 	Namespace    string        // sympozium-system
@@ -26,7 +26,7 @@ type FitnessPoller struct {
 }
 
 // Start polls llmfit DaemonSet pods and populates the cache until ctx is cancelled.
-func (fp *FitnessPoller) Start(ctx context.Context) error {
+func (fp *DensityPoller) Start(ctx context.Context) error {
 	if fp.PollInterval == 0 {
 		fp.PollInterval = 60 * time.Second
 	}
@@ -37,7 +37,7 @@ func (fp *FitnessPoller) Start(ctx context.Context) error {
 		fp.Namespace = "sympozium-system"
 	}
 
-	fp.Log.Info("Starting fitness poller",
+	fp.Log.Info("Starting density poller",
 		"interval", fp.PollInterval,
 		"namespace", fp.Namespace,
 	)
@@ -55,7 +55,7 @@ func (fp *FitnessPoller) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			fp.Log.Info("Stopping fitness poller")
+			fp.Log.Info("Stopping density poller")
 			return nil
 		case <-ticker.C:
 			fp.poll(ctx)
@@ -66,7 +66,7 @@ func (fp *FitnessPoller) Start(ctx context.Context) error {
 }
 
 // poll discovers llmfit DaemonSet pods and queries their REST APIs.
-func (fp *FitnessPoller) poll(ctx context.Context) {
+func (fp *DensityPoller) poll(ctx context.Context) {
 	var pods corev1.PodList
 	if err := fp.K8sClient.List(ctx, &pods,
 		client.InNamespace(fp.Namespace),
@@ -90,12 +90,12 @@ func (fp *FitnessPoller) poll(ctx context.Context) {
 }
 
 // pollPod queries a single llmfit pod's REST API and updates the cache.
-func (fp *FitnessPoller) pollPod(nodeName, podIP string) {
+func (fp *DensityPoller) pollPod(nodeName, podIP string) {
 	baseURL := fmt.Sprintf("http://%s:%d", podIP, fp.Port)
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
 	now := time.Now()
-	nf := &NodeFitness{
+	nf := &NodeDensity{
 		NodeName: nodeName,
 		LastSeen: now,
 	}

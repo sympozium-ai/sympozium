@@ -788,9 +788,9 @@ export interface CapabilitiesResponse {
   agentSandbox: CapabilityStatus;
 }
 
-// ── Fitness (llmfit DaemonSet telemetry) ─────────────────────────────────────
+// ── Model Density (llmfit DaemonSet telemetry) ─────────────────────────────────────
 
-export interface FitnessGPU {
+export interface DensityGPU {
   name: string;
   vram_gb: number;
   backend: string;
@@ -798,7 +798,7 @@ export interface FitnessGPU {
   unified_memory: boolean;
 }
 
-export interface FitnessSystemSpecs {
+export interface DensitySystemSpecs {
   total_ram_gb: number;
   available_ram_gb: number;
   cpu_cores: number;
@@ -809,10 +809,10 @@ export interface FitnessSystemSpecs {
   gpu_count: number;
   unified_memory: boolean;
   backend: string;
-  gpus: FitnessGPU[];
+  gpus: DensityGPU[];
 }
 
-export interface FitnessModelFit {
+export interface DensityModelFit {
   name: string;
   score: number;
   fit_level: string;
@@ -825,58 +825,58 @@ export interface FitnessModelFit {
   category: string;
 }
 
-export interface FitnessRuntime {
+export interface DensityRuntime {
   name: string;
   installed: boolean;
 }
 
-export interface FitnessInstalledModel {
+export interface DensityInstalledModel {
   name: string;
   runtime: string;
 }
 
-export interface FitnessNodeSummary {
+export interface DensityNodeSummary {
   nodeName: string;
   lastSeen: string;
   stale: boolean;
-  system: FitnessSystemSpecs;
+  system: DensitySystemSpecs;
   modelFitCount: number;
-  runtimes?: FitnessRuntime[];
-  installedModels?: FitnessInstalledModel[];
+  runtimes?: DensityRuntime[];
+  installedModels?: DensityInstalledModel[];
 }
 
-export interface FitnessNodeDetail {
+export interface DensityNodeDetail {
   NodeName: string;
   LastSeen: string;
-  System: FitnessSystemSpecs;
-  ModelFits: FitnessModelFit[];
-  Runtimes: FitnessRuntime[];
-  InstalledModels: FitnessInstalledModel[];
+  System: DensitySystemSpecs;
+  ModelFits: DensityModelFit[];
+  Runtimes: DensityRuntime[];
+  InstalledModels: DensityInstalledModel[];
 }
 
-export interface FitnessNodesResponse {
-  nodes: FitnessNodeSummary[];
+export interface DensityNodesResponse {
+  nodes: DensityNodeSummary[];
   total: number;
 }
 
-export interface FitnessNodeResult {
+export interface DensityNodeResult {
   nodeName: string;
   score: number;
   fitLevel: string;
-  model: FitnessModelFit;
+  model: DensityModelFit;
 }
 
-export interface FitnessQueryResponse {
+export interface DensityQueryResponse {
   query: string;
-  rankedNodes: FitnessNodeResult[];
+  rankedNodes: DensityNodeResult[];
 }
 
-export interface FitnessRuntimesResponse {
-  nodes: { nodeName: string; runtimes: FitnessRuntime[] }[];
+export interface DensityRuntimesResponse {
+  nodes: { nodeName: string; runtimes: DensityRuntime[] }[];
 }
 
-export interface FitnessInstalledModelsResponse {
-  nodes: { nodeName: string; models: FitnessInstalledModel[] }[];
+export interface DensityInstalledModelsResponse {
+  nodes: { nodeName: string; models: DensityInstalledModel[] }[];
 }
 
 export interface CatalogEntry {
@@ -1402,27 +1402,27 @@ export const api = {
       }),
   },
 
-  fitness: {
+  density: {
     nodes: () =>
-      apiFetch<FitnessNodesResponse>("/api/v1/fitness/nodes", {
+      apiFetch<DensityNodesResponse>("/api/v1/density/nodes", {
         skipNamespace: true,
       }),
     node: (name: string) =>
-      apiFetch<FitnessNodeDetail>(`/api/v1/fitness/nodes/${name}`, {
+      apiFetch<DensityNodeDetail>(`/api/v1/density/nodes/${name}`, {
         skipNamespace: true,
       }),
     runtimes: () =>
-      apiFetch<FitnessRuntimesResponse>("/api/v1/fitness/runtimes", {
+      apiFetch<DensityRuntimesResponse>("/api/v1/density/runtimes", {
         skipNamespace: true,
       }),
     installedModels: () =>
-      apiFetch<FitnessInstalledModelsResponse>(
-        "/api/v1/fitness/installed-models",
+      apiFetch<DensityInstalledModelsResponse>(
+        "/api/v1/density/installed-models",
         { skipNamespace: true },
       ),
     query: (model: string, minFit?: string) =>
-      apiFetch<FitnessQueryResponse>(
-        `/api/v1/fitness/query?model=${encodeURIComponent(model)}${minFit ? `&min_fit=${minFit}` : ""}`,
+      apiFetch<DensityQueryResponse>(
+        `/api/v1/density/query?model=${encodeURIComponent(model)}${minFit ? `&min_fit=${minFit}` : ""}`,
         { skipNamespace: true },
       ),
     catalog: () =>

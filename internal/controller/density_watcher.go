@@ -13,12 +13,12 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
-// FitnessWatcher monitors the FitnessCache for degraded nodes and triggers
+// DensityWatcher monitors the DensityCache for degraded nodes and triggers
 // model re-placement when fitness drops significantly. Implements
 // sigs.k8s.io/controller-runtime manager.Runnable.
-type FitnessWatcher struct {
+type DensityWatcher struct {
 	Client           client.Client
-	Cache            *FitnessCache
+	Cache            *DensityCache
 	EventBus         eventbus.EventBus
 	Log              logr.Logger
 	CheckInterval    time.Duration // how often to check (default 30s)
@@ -26,7 +26,7 @@ type FitnessWatcher struct {
 }
 
 // Start runs the watcher loop until ctx is cancelled.
-func (fw *FitnessWatcher) Start(ctx context.Context) error {
+func (fw *DensityWatcher) Start(ctx context.Context) error {
 	if fw.CheckInterval == 0 {
 		fw.CheckInterval = 30 * time.Second
 	}
@@ -34,7 +34,7 @@ func (fw *FitnessWatcher) Start(ctx context.Context) error {
 		fw.DegradeThreshold = 0.3
 	}
 
-	fw.Log.Info("Starting fitness watcher",
+	fw.Log.Info("Starting density watcher",
 		"interval", fw.CheckInterval,
 		"degradeThreshold", fw.DegradeThreshold,
 	)
@@ -45,7 +45,7 @@ func (fw *FitnessWatcher) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			fw.Log.Info("Stopping fitness watcher")
+			fw.Log.Info("Stopping density watcher")
 			return nil
 		case <-ticker.C:
 			fw.check(ctx)
@@ -55,7 +55,7 @@ func (fw *FitnessWatcher) Start(ctx context.Context) error {
 
 // check iterates all Ready models with auto-placement and evaluates whether
 // the placed node's fitness has degraded.
-func (fw *FitnessWatcher) check(ctx context.Context) {
+func (fw *DensityWatcher) check(ctx context.Context) {
 	var models sympoziumv1alpha1.ModelList
 	if err := fw.Client.List(ctx, &models); err != nil {
 		fw.Log.V(1).Info("Failed to list models for fitness check", "error", err)
@@ -81,13 +81,13 @@ func (fw *FitnessWatcher) check(ctx context.Context) {
 }
 
 // evaluateModel checks a single model's placed node for fitness degradation.
-func (fw *FitnessWatcher) evaluateModel(ctx context.Context, model *sympoziumv1alpha1.Model) {
+func (fw *DensityWatcher) evaluateModel(ctx context.Context, model *sympoziumv1alpha1.Model) {
 	log := fw.Log.WithValues("model", model.Name, "namespace", model.Namespace, "node", model.Status.PlacedNode)
 
 	// Check if the node is stale (stopped reporting).
 	if fw.Cache.IsStale(model.Status.PlacedNode) {
 		log.Info("Placed node is stale — triggering re-placement")
-		fw.triggerEviction(ctx, model, "node stopped reporting fitness data")
+		fw.triggerEviction(ctx, model, "node stopped reporting density data")
 		return
 	}
 
@@ -110,9 +110,9 @@ func (fw *FitnessWatcher) evaluateModel(ctx context.Context, model *sympoziumv1a
 	}
 
 	if !found {
-		// Model not in fitness data at all — may have been evicted from the
+		// Model not in density data at all — may have been evicted from the
 		// node's capability set.
-		log.Info("Model no longer appears in node fitness data — triggering re-placement")
+		log.Info("Model no longer appears in node density data — triggering re-placement")
 		fw.triggerEviction(ctx, model, "model no longer fits on placed node")
 		return
 	}
@@ -137,7 +137,7 @@ func (fw *FitnessWatcher) evaluateModel(ctx context.Context, model *sympoziumv1a
 }
 
 // triggerEviction transitions a model back to Placing so it can be re-placed.
-func (fw *FitnessWatcher) triggerEviction(ctx context.Context, model *sympoziumv1alpha1.Model, reason string) {
+func (fw *DensityWatcher) triggerEviction(ctx context.Context, model *sympoziumv1alpha1.Model, reason string) {
 	log := fw.Log.WithValues("model", model.Name, "namespace", model.Namespace)
 
 	// Clear placement data so reconcilePlacing starts fresh.

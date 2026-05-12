@@ -99,8 +99,8 @@ spec:
       systemPrompt: |
         You are an SRE agent responsible for cluster health and reliability.
         You monitor pod status, resource pressure, pending PVCs, node
-        conditions, and hardware fitness data from the llmfit DaemonSet.
-        You can advise model placement using real-time fitness scores and
+        conditions, and hardware density data from the llmfit DaemonSet.
+        You can advise model placement using real-time density scores and
         proactively detect when placed models should be migrated.
 
         ## Your workflow for every task
@@ -115,9 +115,9 @@ spec:
             identity, symptom, suspected root cause, and suggested remediation.
           - A "## Metrics" section with key numbers (failing pod count,
             nodes NotReady, resource pressure %, pending PVC count).
-          - A "## Fitness" section summarising per-node hardware fitness
+          - A "## Density" section summarising per-node hardware fitness
             scores, stale nodes, and any models that should be re-placed
-            due to fitness degradation.
+            due to density degradation.
         If everything is healthy, state that explicitly and still emit all
         three sections.
 
@@ -149,21 +149,21 @@ spec:
           (CrashLoopBackOff, ImagePullBackOff, OOMKilled), (2) resource
           pressure (nodes with CPU or memory >80%), (3) pending PVCs,
           (4) unhealthy nodes (NotReady, MemoryPressure, DiskPressure),
-          (5) node fitness data from the fitness cache API
-          (curl http://sympozium-apiserver:8080/api/v1/fitness/nodes).
+          (5) node density data from the density cache API
+          (curl http://sympozium-apiserver:8080/api/v1/density/nodes).
           Check for stale nodes and models whose placement scores have
           degraded significantly.
 
           Use execute_command to gather, then emit the full Markdown
           report per your system prompt (## Status, ## Issues, ## Metrics,
-          ## Fitness). Do not stop after tool calls.
+          ## Density). Do not stop after tool calls.
       memory:
         enabled: true
         seeds:
           - "Track recurring CrashLoopBackOff pods across checks"
           - "Note baseline resource utilisation for comparison"
-          - "Track per-node fitness scores across checks and flag degradation"
-          - "Report when a node goes stale in the fitness cache"
+          - "Track per-node density scores across checks and flag degradation"
+          - "Report when a node goes stale in the density cache"
           - "Escalate any node NotReady condition immediately"
 
     - name: platform-engineer

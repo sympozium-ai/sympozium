@@ -37,7 +37,7 @@ import {
   useEnsembles,
   useModels,
   useGatewayConfig,
-  useFitnessNodes,
+  useDensityNodes,
 } from "@/hooks/use-api";
 import { StimulusDialogProvider, StimulusDialogCtx } from "@/components/canvas-primitives";
 import type { StimulusNodeData } from "@/components/canvas-primitives";
@@ -68,7 +68,7 @@ import type {
   ProviderNode,
   NodeProvider,
   GatewayConfigResponse,
-  FitnessNodeSummary,
+  DensityNodeSummary,
 } from "@/lib/api";
 import { Link } from "react-router-dom";
 import Dagre from "@dagrejs/dagre";
@@ -524,7 +524,7 @@ function buildTopology(
   webEndpointAgents: string[],
   runPhases: RunPhaseMap,
   activeRuns: AgentRun[],
-  fitnessNodes?: FitnessNodeSummary[],
+  densityNodes?: DensityNodeSummary[],
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -590,11 +590,11 @@ function buildTopology(
   }
 
   // ── K8s Nodes ──────────────────────────────────────────────────────────
-  const fitnessMap = new Map(
-    (fitnessNodes || []).map((fn) => [fn.nodeName, fn]),
+  const densityMap = new Map(
+    (densityNodes || []).map((fn) => [fn.nodeName, fn]),
   );
   for (const pn of providerNodes) {
-    const fn = fitnessMap.get(pn.nodeName);
+    const fn = densityMap.get(pn.nodeName);
     nodes.push({
       id: `node-${pn.nodeName}`,
       type: "k8sNode",
@@ -1012,7 +1012,7 @@ function TopologyCanvas() {
   const { data: runs } = useRuns();
   const { data: providerNodes } = useProviderNodes(true);
   const { data: gateway } = useGatewayConfig();
-  const { data: fitnessData } = useFitnessNodes();
+  const { data: densityData } = useDensityNodes();
   const { fitView } = useReactFlow();
 
   const [rfNodes, setNodesState] = useState<Node[]>([]);
@@ -1141,7 +1141,7 @@ function TopologyCanvas() {
         webEndpointAgents,
         runPhases,
         activeRuns,
-        fitnessData?.nodes,
+        densityData?.nodes,
       );
 
       // Apply saved positions if available.
@@ -1175,7 +1175,7 @@ function TopologyCanvas() {
           webEndpointAgents,
           runPhases,
           activeRuns,
-          fitnessData?.nodes,
+          densityData?.nodes,
         );
         const freshMap = new Map(freshNodes.map((n) => [n.id, n]));
         return prev.map((n) => {
@@ -1196,12 +1196,12 @@ function TopologyCanvas() {
           webEndpointAgents,
           runPhases,
           activeRuns,
-          fitnessData?.nodes,
+          densityData?.nodes,
         );
         return freshEdges;
       });
     }
-  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint, fitnessData]);
+  }, [providerNodes, models, ensembles, gateway, runningByEnsemble, webEndpointAgents, runPhases, activeRuns, activeRunFingerprint, densityData]);
 
   // Save positions to localStorage after any node drag ends.
   const handleNodesChange = useCallback(

@@ -61,9 +61,9 @@ const (
 	TopicScheduleUpsert       = "schedule.upsert"
 	TopicStimulusDelivered    = "ensemble.stimulus.delivered"
 
-	// Fitness telemetry (from llmfit DaemonSet via FitnessCache)
-	TopicFitnessUpdated     = "fitness.updated"           // per-node fitness snapshot
-	TopicFitnessNodeStale   = "fitness.node.stale"        // node stopped reporting
+	// Density telemetry (from llmfit DaemonSet via FitnessCache)
+	TopicDensityUpdated     = "density.updated"           // per-node fitness snapshot
+	TopicDensityNodeStale   = "density.node.stale"        // node stopped reporting
 	TopicPlacementCompleted = "model.placement.completed" // placement decision recorded
 	TopicModelEviction      = "model.eviction.triggered"  // model being re-placed
 )

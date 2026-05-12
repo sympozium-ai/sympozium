@@ -47,7 +47,7 @@ type Server struct {
 	kube         kubernetes.Interface
 	log          logr.Logger
 	upgrader     websocket.Upgrader
-	fitnessCache *controller.FitnessCache // optional: set when llmfit DaemonSet is enabled
+	densityCache *controller.DensityCache // optional: set when llmfit DaemonSet is enabled
 }
 
 // NewServer creates a new API server.
@@ -63,9 +63,9 @@ func NewServer(c client.Client, bus eventbus.EventBus, kube kubernetes.Interface
 	}
 }
 
-// SetFitnessCache sets the fitness cache for fitness API endpoints.
-func (s *Server) SetFitnessCache(cache *controller.FitnessCache) {
-	s.fitnessCache = cache
+// SetDensityCache sets the fitness cache for fitness API endpoints.
+func (s *Server) SetDensityCache(cache *controller.DensityCache) {
+	s.densityCache = cache
 }
 
 // Start starts the HTTP server (headless, no embedded UI).
@@ -166,14 +166,14 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes", s.listClusterNodes)
 
 	// Fitness endpoints (llmfit DaemonSet telemetry)
-	mux.HandleFunc("GET /api/v1/fitness/nodes", s.listFitnessNodes)
-	mux.HandleFunc("GET /api/v1/fitness/nodes/{name}", s.getFitnessNode)
-	mux.HandleFunc("GET /api/v1/fitness/runtimes", s.listFitnessRuntimes)
-	mux.HandleFunc("GET /api/v1/fitness/installed-models", s.listFitnessInstalledModels)
-	mux.HandleFunc("GET /api/v1/fitness/query", s.queryFitness)
+	mux.HandleFunc("GET /api/v1/density/nodes", s.listDensityNodes)
+	mux.HandleFunc("GET /api/v1/density/nodes/{name}", s.getDensityNode)
+	mux.HandleFunc("GET /api/v1/density/runtimes", s.listDensityRuntimes)
+	mux.HandleFunc("GET /api/v1/density/installed-models", s.listDensityInstalledModels)
+	mux.HandleFunc("GET /api/v1/density/query", s.queryDensity)
 	mux.HandleFunc("GET /api/v1/catalog", s.getCatalog)
-	mux.HandleFunc("POST /api/v1/fitness/simulate", s.handleSimulate)
-	mux.HandleFunc("GET /api/v1/fitness/cost", s.handleCost)
+	mux.HandleFunc("POST /api/v1/density/simulate", s.handleSimulate)
+	mux.HandleFunc("GET /api/v1/density/cost", s.handleCost)
 
 	// Model endpoints (cluster-local inference)
 	mux.HandleFunc("GET /api/v1/models", s.listModels)

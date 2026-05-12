@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// simulateRequest is the body for POST /api/v1/fitness/simulate.
+// simulateRequest is the body for POST /api/v1/density/simulate.
 type simulateRequest struct {
 	Model        string  `json:"model"`
 	Quantization string  `json:"quantization,omitempty"`
@@ -15,7 +15,7 @@ type simulateRequest struct {
 	MemoryGB     float64 `json:"memoryGb,omitempty"` // override memory requirement
 }
 
-// simulateResponse is the response for POST /api/v1/fitness/simulate.
+// simulateResponse is the response for POST /api/v1/density/simulate.
 type simulateResponse struct {
 	Model          string               `json:"model"`
 	RankedNodes    []simulateNodeResult `json:"rankedNodes"`
@@ -32,10 +32,10 @@ type simulateNodeResult struct {
 	UtilizationPct    float64 `json:"utilizationPct"`
 }
 
-// handleSimulate handles POST /api/v1/fitness/simulate.
+// handleSimulate handles POST /api/v1/density/simulate.
 // Simulates deploying a model and returns per-node impact analysis.
 func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
-	if s.fitnessCache == nil {
+	if s.densityCache == nil {
 		http.Error(w, "fitness cache not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -51,7 +51,7 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryLower := strings.ToLower(req.Model)
-	all := s.fitnessCache.All()
+	all := s.densityCache.All()
 
 	var results []simulateNodeResult
 	canFit := false
@@ -92,7 +92,7 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(results, func(i, j int) bool { return results[i].CurrentScore > results[j].CurrentScore })
 
-	writeFitnessJSON(w, simulateResponse{
+	writeDensityJSON(w, simulateResponse{
 		Model:          req.Model,
 		RankedNodes:    results,
 		CanFitAnywhere: canFit,

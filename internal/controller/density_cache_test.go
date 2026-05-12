@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-func TestFitnessCacheUpdateAndGet(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+func TestDensityCacheUpdateAndGet(t *testing.T) {
+	cache := NewDensityCache(90 * time.Second)
 
-	nf := &NodeFitness{
+	nf := &NodeDensity{
 		NodeName: "node-1",
 		LastSeen: time.Now(),
 		System: SystemSpecs{
@@ -43,18 +43,18 @@ func TestFitnessCacheUpdateAndGet(t *testing.T) {
 	}
 }
 
-func TestFitnessCacheMerge(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+func TestDensityCacheMerge(t *testing.T) {
+	cache := NewDensityCache(90 * time.Second)
 
 	// First update: system specs.
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "node-1",
 		LastSeen: time.Now(),
 		System:   SystemSpecs{TotalRAMGb: 64, CPUCores: 16},
 	})
 
 	// Second update: model fits only (system specs should be preserved).
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName:  "node-1",
 		LastSeen:  time.Now(),
 		ModelFits: []ModelFitInfo{{Name: "Llama-3.1-8B", Score: 72.0, FitLevel: "good"}},
@@ -72,10 +72,10 @@ func TestFitnessCacheMerge(t *testing.T) {
 	}
 }
 
-func TestFitnessCacheStaleness(t *testing.T) {
-	cache := NewFitnessCache(100 * time.Millisecond)
+func TestDensityCacheStaleness(t *testing.T) {
+	cache := NewDensityCache(100 * time.Millisecond)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "node-1",
 		LastSeen: time.Now(),
 	})
@@ -95,11 +95,11 @@ func TestFitnessCacheStaleness(t *testing.T) {
 	}
 }
 
-func TestFitnessCacheAll(t *testing.T) {
-	cache := NewFitnessCache(100 * time.Millisecond)
+func TestDensityCacheAll(t *testing.T) {
+	cache := NewDensityCache(100 * time.Millisecond)
 
-	cache.Update(&NodeFitness{NodeName: "fresh", LastSeen: time.Now()})
-	cache.Update(&NodeFitness{NodeName: "stale", LastSeen: time.Now().Add(-200 * time.Millisecond)})
+	cache.Update(&NodeDensity{NodeName: "fresh", LastSeen: time.Now()})
+	cache.Update(&NodeDensity{NodeName: "stale", LastSeen: time.Now().Add(-200 * time.Millisecond)})
 
 	all := cache.All()
 	if len(all) != 1 {
@@ -110,11 +110,11 @@ func TestFitnessCacheAll(t *testing.T) {
 	}
 }
 
-func TestFitnessCacheGarbageCollect(t *testing.T) {
-	cache := NewFitnessCache(50 * time.Millisecond)
+func TestDensityCacheGarbageCollect(t *testing.T) {
+	cache := NewDensityCache(50 * time.Millisecond)
 
-	cache.Update(&NodeFitness{NodeName: "old", LastSeen: time.Now().Add(-200 * time.Millisecond)})
-	cache.Update(&NodeFitness{NodeName: "recent", LastSeen: time.Now()})
+	cache.Update(&NodeDensity{NodeName: "old", LastSeen: time.Now().Add(-200 * time.Millisecond)})
+	cache.Update(&NodeDensity{NodeName: "recent", LastSeen: time.Now()})
 
 	if cache.NodeCount() != 2 {
 		t.Fatalf("expected 2 nodes before GC, got %d", cache.NodeCount())
@@ -132,9 +132,9 @@ func TestFitnessCacheGarbageCollect(t *testing.T) {
 }
 
 func TestBestNodeForModel(t *testing.T) {
-	cache := NewFitnessCache(90 * time.Second)
+	cache := NewDensityCache(90 * time.Second)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "gpu-node-1",
 		LastSeen: time.Now(),
 		ModelFits: []ModelFitInfo{
@@ -142,7 +142,7 @@ func TestBestNodeForModel(t *testing.T) {
 			{Name: "Llama-3.1-70B", Score: 30.0, FitLevel: "marginal", EstimatedTPS: 5.0},
 		},
 	})
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "gpu-node-2",
 		LastSeen: time.Now(),
 		ModelFits: []ModelFitInfo{
@@ -181,9 +181,9 @@ func TestBestNodeForModel(t *testing.T) {
 }
 
 func TestBestNodeForModelSkipsStale(t *testing.T) {
-	cache := NewFitnessCache(50 * time.Millisecond)
+	cache := NewDensityCache(50 * time.Millisecond)
 
-	cache.Update(&NodeFitness{
+	cache.Update(&NodeDensity{
 		NodeName: "stale-node",
 		LastSeen: time.Now().Add(-100 * time.Millisecond),
 		ModelFits: []ModelFitInfo{

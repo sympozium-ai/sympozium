@@ -1,0 +1,18 @@
+{
+  "files": {
+    "src/components/ensemble-canvas.tsx": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 883
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-05-11T12:44:05.496Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-05-11T12:44:05.496Z",
+  "sessionId": "lens-mp0trh9p-d38ca38c"
+}

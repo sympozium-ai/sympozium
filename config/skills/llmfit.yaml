@@ -162,31 +162,31 @@ spec:
         tools:
           - execute_command
 
-    - name: llmfit-fitness-cache
-      description: Query real-time cluster fitness data from the llmfit DaemonSet cache via API
+    - name: llmfit-density-cache
+      description: Query real-time cluster density data from the llmfit DaemonSet cache via API
       content: |
-        # Fitness Cache API
+        # Density Cache API
 
         When the llmfit DaemonSet is enabled, the API server exposes real-time
-        fitness data for all cluster nodes.
+        density data for all cluster nodes.
 
         ## Endpoints
 
         ```bash
-        # All nodes with fitness data
-        curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes | jq .
+        # All nodes with density data
+        curl -s http://sympozium-apiserver:8080/api/v1/density/nodes | jq .
 
         # Single node
-        curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes/gpu-worker-1 | jq .
+        curl -s http://sympozium-apiserver:8080/api/v1/density/nodes/gpu-worker-1 | jq .
 
         # Ranked nodes for a model query
-        curl -s "http://sympozium-apiserver:8080/api/v1/fitness/query?model=Qwen2.5" | jq .
+        curl -s "http://sympozium-apiserver:8080/api/v1/density/query?model=Qwen2.5" | jq .
 
         # Cluster model catalog — what can this cluster run?
         curl -s http://sympozium-apiserver:8080/api/v1/catalog | jq .
 
         # Installed runtimes across all nodes
-        curl -s http://sympozium-apiserver:8080/api/v1/fitness/runtimes | jq .
+        curl -s http://sympozium-apiserver:8080/api/v1/density/runtimes | jq .
         ```
 
         ## When to use

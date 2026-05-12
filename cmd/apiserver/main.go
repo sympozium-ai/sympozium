@@ -110,21 +110,21 @@ func main() {
 
 	server := apiserver.NewServer(k8sClient.GetClient(), bus, kubeClient, log.WithName("apiserver"))
 
-	// Start llmfit fitness poller for fitness API endpoints.
+	// Start llmfit density poller for fitness API endpoints.
 	{
-		fitnessCache := controller.NewFitnessCache(90 * time.Second)
-		fitnessPoller := &controller.FitnessPoller{
+		densityCache := controller.NewDensityCache(90 * time.Second)
+		densityPoller := &controller.DensityPoller{
 			K8sClient: k8sClient.GetClient(),
-			Cache:     fitnessCache,
-			Log:       log.WithName("fitness-poller"),
+			Cache:     densityCache,
+			Log:       log.WithName("density-poller"),
 		}
 		go func() {
-			if err := fitnessPoller.Start(ctx); err != nil {
-				log.Error(err, "fitness poller failed")
+			if err := densityPoller.Start(ctx); err != nil {
+				log.Error(err, "density poller failed")
 			}
 		}()
-		server.SetFitnessCache(fitnessCache)
-		log.Info("llmfit fitness poller enabled for API server")
+		server.SetDensityCache(densityCache)
+		log.Info("llmfit density poller enabled for API server")
 	}
 
 	if serveUI {

@@ -10,8 +10,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// FitnessSubscriber subscribes to raw NATS subjects published by llmfit
-// DaemonSet pods and updates the FitnessCache.
+// DensitySubscriber subscribes to raw NATS subjects published by llmfit
+// DaemonSet pods and updates the DensityCache.
 //
 // llmfit publishes raw NATS (not JetStream) to subjects:
 //
@@ -26,9 +26,9 @@ import (
 //
 // Implements sigs.k8s.io/controller-runtime manager.Runnable so it can be
 // added to the controller manager via mgr.Add().
-type FitnessSubscriber struct {
+type DensitySubscriber struct {
 	NATSUrl string
-	Cache   *FitnessCache
+	Cache   *DensityCache
 	Log     logr.Logger
 }
 
@@ -62,9 +62,9 @@ type llmfitInstalledData struct {
 }
 
 // Start connects to NATS, subscribes to llmfit.> subjects, and populates
-// the FitnessCache until ctx is cancelled.
-func (fs *FitnessSubscriber) Start(ctx context.Context) error {
-	fs.Log.Info("Connecting to NATS for llmfit fitness events", "url", fs.NATSUrl)
+// the DensityCache until ctx is cancelled.
+func (fs *DensitySubscriber) Start(ctx context.Context) error {
+	fs.Log.Info("Connecting to NATS for llmfit density events", "url", fs.NATSUrl)
 
 	nc, err := nats.Connect(fs.NATSUrl,
 		nats.RetryOnFailedConnect(true),
@@ -93,7 +93,7 @@ func (fs *FitnessSubscriber) Start(ctx context.Context) error {
 	}
 	defer func() { _ = sub.Unsubscribe() }()
 
-	fs.Log.Info("Subscribed to llmfit.> for fitness telemetry")
+	fs.Log.Info("Subscribed to llmfit.> for density telemetry")
 
 	// Periodic garbage collection of stale entries.
 	gcTicker := time.NewTicker(5 * time.Minute)
@@ -102,7 +102,7 @@ func (fs *FitnessSubscriber) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			fs.Log.Info("Stopping fitness subscriber")
+			fs.Log.Info("Stopping density subscriber")
 			return nil
 		case <-gcTicker.C:
 			fs.Cache.GarbageCollect()
@@ -111,7 +111,7 @@ func (fs *FitnessSubscriber) Start(ctx context.Context) error {
 }
 
 // handleMessage parses an llmfit NATS event and updates the cache.
-func (fs *FitnessSubscriber) handleMessage(msg *nats.Msg) {
+func (fs *DensitySubscriber) handleMessage(msg *nats.Msg) {
 	var env llmfitEnvelope
 	if err := json.Unmarshal(msg.Data, &env); err != nil {
 		fs.Log.V(1).Info("Failed to unmarshal llmfit event", "error", err, "subject", msg.Subject)
@@ -140,7 +140,7 @@ func (fs *FitnessSubscriber) handleMessage(msg *nats.Msg) {
 			fs.Log.V(1).Info("Failed to unmarshal system data", "error", err, "node", env.Hostname)
 			return
 		}
-		fs.Cache.Update(&NodeFitness{
+		fs.Cache.Update(&NodeDensity{
 			NodeName: env.Hostname,
 			LastSeen: now,
 			System:   data,
@@ -152,7 +152,7 @@ func (fs *FitnessSubscriber) handleMessage(msg *nats.Msg) {
 			fs.Log.V(1).Info("Failed to unmarshal fit data", "error", err, "node", env.Hostname)
 			return
 		}
-		fs.Cache.Update(&NodeFitness{
+		fs.Cache.Update(&NodeDensity{
 			NodeName:  env.Hostname,
 			LastSeen:  now,
 			ModelFits: data.Models,
@@ -164,7 +164,7 @@ func (fs *FitnessSubscriber) handleMessage(msg *nats.Msg) {
 			fs.Log.V(1).Info("Failed to unmarshal runtimes data", "error", err, "node", env.Hostname)
 			return
 		}
-		fs.Cache.Update(&NodeFitness{
+		fs.Cache.Update(&NodeDensity{
 			NodeName: env.Hostname,
 			LastSeen: now,
 			Runtimes: data.Runtimes,
@@ -176,7 +176,7 @@ func (fs *FitnessSubscriber) handleMessage(msg *nats.Msg) {
 			fs.Log.V(1).Info("Failed to unmarshal installed data", "error", err, "node", env.Hostname)
 			return
 		}
-		fs.Cache.Update(&NodeFitness{
+		fs.Cache.Update(&NodeDensity{
 			NodeName:        env.Hostname,
 			LastSeen:        now,
 			InstalledModels: data.Models,

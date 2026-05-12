@@ -1,10 +1,10 @@
-// Test: Model deploy dialog with fitness preview.
+// Test: Model deploy dialog with density preview.
 //
-// When the llmfit DaemonSet is running and fitness data is available,
+// When the llmfit DaemonSet is running and density data is available,
 // the deploy dialog shows per-node fitness scores when auto placement
 // is selected and a model name is entered.
 //
-// When fitness data is unavailable, the dialog works normally without
+// When density data is unavailable, the dialog works normally without
 // the preview — graceful degradation.
 
 function authHeaders(): Record<string, string> {
@@ -14,7 +14,7 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
-describe("Model Deploy — Fitness Preview", () => {
+describe("Model Deploy — Density Preview", () => {
   it("shows auto placement as the default", () => {
     cy.visit("/models");
     cy.contains("button", "Deploy Model", { timeout: 15000 }).click();
@@ -37,14 +37,14 @@ describe("Model Deploy — Fitness Preview", () => {
       .click({ force: true });
   });
 
-  it("shows fitness preview when auto placement and model entered", () => {
-    // First check if fitness data is available.
+  it("shows density preview when auto placement and model entered", () => {
+    // First check if density data is available.
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
     }).then((resp) => {
       if (resp.body.total === 0) {
-        cy.log("No fitness data — fitness preview will not appear, skipping");
+        cy.log("No density data — density preview will not appear, skipping");
         return;
       }
 
@@ -60,7 +60,7 @@ describe("Model Deploy — Fitness Preview", () => {
       // Enter a model name.
       dialog().find("input").first().clear().type("test-fitness-preview");
 
-      // Enter a model ID that should match fitness data.
+      // Enter a model ID that should match density data.
       dialog()
         .contains("label", "HuggingFace Model ID")
         .parent()
@@ -73,15 +73,15 @@ describe("Model Deploy — Fitness Preview", () => {
         .contains("button", "Deploy")
         .scrollIntoView();
 
-      // Check if the fitness preview appears (it polls every 30s).
+      // Check if the density preview appears (it polls every 30s).
       // Give it time to fetch and render.
       cy.wait(2000);
       cy.get("body").then(($body) => {
-        if ($body.text().includes("Node fitness preview")) {
-          cy.contains("Node fitness preview").should("be.visible");
+        if ($body.text().includes("Node density preview")) {
+          cy.contains("Node density preview").should("be.visible");
         } else {
           cy.log(
-            "Fitness preview not shown — model may not match fitness data or polling not complete",
+            "Fitness preview not shown — model may not match density data or polling not complete",
           );
         }
       });
@@ -91,13 +91,13 @@ describe("Model Deploy — Fitness Preview", () => {
     });
   });
 
-  it("hides fitness preview when switching to manual placement", () => {
+  it("hides density preview when switching to manual placement", () => {
     cy.request({
-      url: "/api/v1/fitness/nodes",
+      url: "/api/v1/density/nodes",
       headers: authHeaders(),
     }).then((resp) => {
       if (resp.body.total === 0) {
-        cy.log("No fitness data — skipping manual placement toggle test");
+        cy.log("No density data — skipping manual placement toggle test");
         return;
       }
 
@@ -119,7 +119,7 @@ describe("Model Deploy — Fitness Preview", () => {
         .should("be.visible");
 
       // Fitness preview should NOT be visible.
-      cy.contains("Node fitness preview").should("not.exist");
+      cy.contains("Node density preview").should("not.exist");
 
       // Close dialog.
       dialog().contains("button", "Cancel").click({ force: true });
@@ -128,7 +128,7 @@ describe("Model Deploy — Fitness Preview", () => {
 
   it("fitness query API works for model lookup", () => {
     cy.request({
-      url: "/api/v1/fitness/query?model=Qwen",
+      url: "/api/v1/density/query?model=Qwen",
       headers: authHeaders(),
       failOnStatusCode: false,
     }).then((resp) => {
@@ -141,7 +141,7 @@ describe("Model Deploy — Fitness Preview", () => {
 
   it("fitness query API requires model parameter", () => {
     cy.request({
-      url: "/api/v1/fitness/query",
+      url: "/api/v1/density/query",
       headers: authHeaders(),
       failOnStatusCode: false,
     }).then((resp) => {

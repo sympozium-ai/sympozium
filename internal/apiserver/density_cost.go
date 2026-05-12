@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// costResponse is the response for GET /api/v1/fitness/cost.
+// costResponse is the response for GET /api/v1/density/cost.
 type costResponse struct {
 	Models     []modelCost     `json:"models"`
 	Namespaces []namespaceCost `json:"namespaces"`
@@ -34,7 +34,7 @@ type namespaceCost struct {
 	TotalMemGB float64 `json:"totalMemoryGb"`
 }
 
-// handleCost handles GET /api/v1/fitness/cost.
+// handleCost handles GET /api/v1/density/cost.
 // Correlates deployed models with fitness data for resource attribution.
 func (s *Server) handleCost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -64,7 +64,7 @@ func (s *Server) handleCost(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Enrich with fitness cache data if available.
-		if s.fitnessCache != nil && m.Status.PlacedNode != "" {
+		if s.densityCache != nil && m.Status.PlacedNode != "" {
 			mc.MemoryRequired, mc.UtilizationPct = s.lookupModelCost(ctx, m)
 		}
 
@@ -88,7 +88,7 @@ func (s *Server) handleCost(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(nsCosts, func(i, j int) bool { return nsCosts[i].TotalMemGB > nsCosts[j].TotalMemGB })
 	sort.Slice(modelCosts, func(i, j int) bool { return modelCosts[i].MemoryRequired > modelCosts[j].MemoryRequired })
 
-	writeFitnessJSON(w, costResponse{
+	writeDensityJSON(w, costResponse{
 		Models:     modelCosts,
 		Namespaces: nsCosts,
 	})
@@ -96,7 +96,7 @@ func (s *Server) handleCost(w http.ResponseWriter, r *http.Request) {
 
 // lookupModelCost looks up memory/utilization from the fitness cache for a placed model.
 func (s *Server) lookupModelCost(_ context.Context, m *sympoziumv1alpha1.Model) (memGB float64, utilPct float64) {
-	nf, ok := s.fitnessCache.Get(m.Status.PlacedNode)
+	nf, ok := s.densityCache.Get(m.Status.PlacedNode)
 	if !ok {
 		return 0, 0
 	}

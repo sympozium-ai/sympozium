@@ -1,0 +1,34 @@
+{
+  "version": "v1",
+  "timestamp": 1778503296115,
+  "ruleHash": "af0bbc6102380f74",
+  "queries": [
+    {
+      "id": "dangerously-set-inner-html",
+      "name": "Dangerously Set Inner HTML",
+      "severity": "error",
+      "language": "tsx",
+      "message": "dangerouslySetInnerHTML — XSS risk, sanitize user input",
+      "query": "  (jsx_attribute\n    (property_identifier) @ATTR\n    (#match? @ATTR \"dangerouslySetInnerHTML\"))",
+      "metavars": [
+        "ATTR"
+      ],
+      "defect_class": "injection",
+      "inline_tier": "blocking"
+    },
+    {
+      "id": "no-nested-links",
+      "name": "Nested anchor tags",
+      "severity": "error",
+      "language": "tsx",
+      "message": "Nested <a> tags are invalid HTML and cause unexpected behavior",
+      "query": "  (jsx_element\n    open_tag: (jsx_opening_element\n      (identifier) @OUTER\n      (#eq? @OUTER \"a\"))\n    (jsx_element\n      open_tag: (jsx_opening_element\n        (identifier) @INNER\n        (#eq? @INNER \"a\"))))",
+      "metavars": [
+        "OUTER",
+        "INNER"
+      ],
+      "defect_class": "correctness",
+      "inline_tier": "blocking"
+    }
+  ]
+}

@@ -58,8 +58,8 @@ type InstalledModelInfo struct {
 	Runtime string `json:"runtime"`
 }
 
-// NodeFitness holds the latest llmfit telemetry for a single node.
-type NodeFitness struct {
+// NodeDensity holds the latest llmfit telemetry for a single node.
+type NodeDensity struct {
 	NodeName        string
 	LastSeen        time.Time
 	System          SystemSpecs
@@ -68,25 +68,25 @@ type NodeFitness struct {
 	InstalledModels []InstalledModelInfo
 }
 
-// FitnessCache maintains per-node fitness data from llmfit NATS events.
+// DensityCache maintains per-node density data from llmfit NATS events.
 // Thread-safe for concurrent reads from reconcilers and writes from the
 // NATS subscriber goroutine.
-type FitnessCache struct {
+type DensityCache struct {
 	mu    sync.RWMutex
-	nodes map[string]*NodeFitness
+	nodes map[string]*NodeDensity
 	ttl   time.Duration
 }
 
-// NewFitnessCache creates a new cache. Entries older than ttl are considered stale.
-func NewFitnessCache(ttl time.Duration) *FitnessCache {
-	return &FitnessCache{
-		nodes: make(map[string]*NodeFitness),
+// NewDensityCache creates a new cache. Entries older than ttl are considered stale.
+func NewDensityCache(ttl time.Duration) *DensityCache {
+	return &DensityCache{
+		nodes: make(map[string]*NodeDensity),
 		ttl:   ttl,
 	}
 }
 
-// Update inserts or updates a node's fitness data and refreshes its timestamp.
-func (c *FitnessCache) Update(nf *NodeFitness) {
+// Update inserts or updates a node's density data and refreshes its timestamp.
+func (c *DensityCache) Update(nf *NodeDensity) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -113,8 +113,8 @@ func (c *FitnessCache) Update(nf *NodeFitness) {
 	}
 }
 
-// Get returns the fitness data for a node. Returns false if not found.
-func (c *FitnessCache) Get(nodeName string) (*NodeFitness, bool) {
+// Get returns the density data for a node. Returns false if not found.
+func (c *DensityCache) Get(nodeName string) (*NodeDensity, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	nf, ok := c.nodes[nodeName]
@@ -125,11 +125,11 @@ func (c *FitnessCache) Get(nodeName string) (*NodeFitness, bool) {
 }
 
 // All returns a copy of all non-stale node fitness entries.
-func (c *FitnessCache) All() []*NodeFitness {
+func (c *DensityCache) All() []*NodeDensity {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	now := time.Now()
-	result := make([]*NodeFitness, 0, len(c.nodes))
+	result := make([]*NodeDensity, 0, len(c.nodes))
 	for _, nf := range c.nodes {
 		if now.Sub(nf.LastSeen) <= c.ttl {
 			result = append(result, nf)
@@ -139,7 +139,7 @@ func (c *FitnessCache) All() []*NodeFitness {
 }
 
 // IsStale returns true if the node's data is older than the TTL or not found.
-func (c *FitnessCache) IsStale(nodeName string) bool {
+func (c *DensityCache) IsStale(nodeName string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	nf, ok := c.nodes[nodeName]
@@ -151,12 +151,12 @@ func (c *FitnessCache) IsStale(nodeName string) bool {
 
 // isStaleUnlocked checks staleness without acquiring the lock.
 // Caller must hold at least a read lock.
-func (c *FitnessCache) isStaleUnlocked(nf *NodeFitness) bool {
+func (c *DensityCache) isStaleUnlocked(nf *NodeDensity) bool {
 	return time.Since(nf.LastSeen) > c.ttl
 }
 
 // NodeCount returns the number of nodes in the cache (including stale).
-func (c *FitnessCache) NodeCount() int {
+func (c *DensityCache) NodeCount() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.nodes)
@@ -165,7 +165,7 @@ func (c *FitnessCache) NodeCount() int {
 // BestNodeForModel finds the node with the highest fitness score for the given
 // model query string. Returns the node name, score, and a human-readable message.
 // If no suitable node is found, returns empty string and zero score.
-func (c *FitnessCache) BestNodeForModel(modelQuery string, minFit string) (string, float64, string) {
+func (c *DensityCache) BestNodeForModel(modelQuery string, minFit string) (string, float64, string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -201,7 +201,7 @@ func (c *FitnessCache) BestNodeForModel(modelQuery string, minFit string) (strin
 }
 
 // GarbageCollect removes entries older than 2x the TTL.
-func (c *FitnessCache) GarbageCollect() {
+func (c *DensityCache) GarbageCollect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cutoff := time.Now().Add(-2 * c.ttl)
