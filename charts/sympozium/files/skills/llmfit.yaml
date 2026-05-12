@@ -10,7 +10,7 @@ metadata:
     sympozium.ai/category: sre
 spec:
   category: sre
-  version: "0.1.0"
+  version: "0.2.0"
   source: builtin
   skills:
     - name: llmfit-cluster-placement
@@ -120,6 +120,81 @@ spec:
 
         - Use `llmfit-cluster-fit.sh` when no daemon is running on nodes.
         - Use REST API when your platform already exposes node-local llmfit services.
+      requires:
+        bins:
+          - curl
+          - jq
+        tools:
+          - execute_command
+
+    - name: llmfit-mcp-tools
+      description: Use llmfit MCP server tools for structured model-fit queries (v0.9.24+)
+      content: |
+        # LLMFit MCP Tools (v0.9.24+)
+
+        When running as an MCP server (`llmfit serve --mcp`), llmfit exposes 6
+        structured tools with typed inputs and JSON outputs. These are available
+        directly in the skill sidecar.
+
+        ## Available tools
+
+        | Tool                  | Purpose                                                   |
+        |-----------------------|-----------------------------------------------------------|
+        | `get_system_specs`    | Hardware specs for this node (RAM, GPU, CPU)               |
+        | `recommend_models`    | Top-ranked models with filters (use_case, min_fit, runtime, license, sort) |
+        | `search_models`       | Free-text search across model name, provider, use case     |
+        | `plan_hardware`       | Estimate memory/quant/TPS requirements for a specific model |
+        | `get_runtimes`        | Which inference runtimes are installed (Ollama, MLX, vLLM, etc.) |
+        | `get_installed_models`| What models are downloaded and ready to run locally        |
+
+        ## Example usage via MCP
+
+        The MCP server runs over stdio — agents can invoke tools directly
+        via the MCP protocol. For manual testing:
+
+        ```bash
+        echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_system_specs","arguments":{}},"id":1}' | llmfit serve --mcp
+        ```
+
+      requires:
+        bins:
+          - llmfit
+        tools:
+          - execute_command
+
+    - name: llmfit-fitness-cache
+      description: Query real-time cluster fitness data from the llmfit DaemonSet cache via API
+      content: |
+        # Fitness Cache API
+
+        When the llmfit DaemonSet is enabled, the API server exposes real-time
+        fitness data for all cluster nodes.
+
+        ## Endpoints
+
+        ```bash
+        # All nodes with fitness data
+        curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes | jq .
+
+        # Single node
+        curl -s http://sympozium-apiserver:8080/api/v1/fitness/nodes/gpu-worker-1 | jq .
+
+        # Ranked nodes for a model query
+        curl -s "http://sympozium-apiserver:8080/api/v1/fitness/query?model=Qwen2.5" | jq .
+
+        # Cluster model catalog — what can this cluster run?
+        curl -s http://sympozium-apiserver:8080/api/v1/catalog | jq .
+
+        # Installed runtimes across all nodes
+        curl -s http://sympozium-apiserver:8080/api/v1/fitness/runtimes | jq .
+        ```
+
+        ## When to use
+
+        - Use these endpoints for real-time capacity checks before recommending model deployments.
+        - The data refreshes every 60 seconds from the llmfit DaemonSet.
+        - If endpoints return empty results, the DaemonSet may not be deployed.
+
       requires:
         bins:
           - curl

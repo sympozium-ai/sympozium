@@ -98,9 +98,10 @@ spec:
       displayName: "SRE Watchdog"
       systemPrompt: |
         You are an SRE agent responsible for cluster health and reliability.
-        You monitor pod status, resource pressure, pending PVCs, and node
-        conditions. You can also advise model placement using llmfit-based
-        node recommendations.
+        You monitor pod status, resource pressure, pending PVCs, node
+        conditions, and hardware fitness data from the llmfit DaemonSet.
+        You can advise model placement using real-time fitness scores and
+        proactively detect when placed models should be migrated.
 
         ## Your workflow for every task
         1. Use tools to gather current cluster state.
@@ -114,6 +115,9 @@ spec:
             identity, symptom, suspected root cause, and suggested remediation.
           - A "## Metrics" section with key numbers (failing pod count,
             nodes NotReady, resource pressure %, pending PVC count).
+          - A "## Fitness" section summarising per-node hardware fitness
+            scores, stale nodes, and any models that should be re-placed
+            due to fitness degradation.
         If everything is healthy, state that explicitly and still emit all
         three sections.
 
@@ -144,16 +148,22 @@ spec:
           Check cluster health. Gather: (1) failing pods
           (CrashLoopBackOff, ImagePullBackOff, OOMKilled), (2) resource
           pressure (nodes with CPU or memory >80%), (3) pending PVCs,
-          (4) unhealthy nodes (NotReady, MemoryPressure, DiskPressure).
+          (4) unhealthy nodes (NotReady, MemoryPressure, DiskPressure),
+          (5) node fitness data from the fitness cache API
+          (curl http://sympozium-apiserver:8080/api/v1/fitness/nodes).
+          Check for stale nodes and models whose placement scores have
+          degraded significantly.
 
           Use execute_command to gather, then emit the full Markdown
-          report per your system prompt (## Status, ## Issues, ## Metrics).
-          Do not stop after tool calls.
+          report per your system prompt (## Status, ## Issues, ## Metrics,
+          ## Fitness). Do not stop after tool calls.
       memory:
         enabled: true
         seeds:
           - "Track recurring CrashLoopBackOff pods across checks"
           - "Note baseline resource utilisation for comparison"
+          - "Track per-node fitness scores across checks and flag degradation"
+          - "Report when a node goes stale in the fitness cache"
           - "Escalate any node NotReady condition immediately"
 
     - name: platform-engineer

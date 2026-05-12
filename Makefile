@@ -31,7 +31,8 @@ CHANNELS = telegram whatsapp discord slack
 # All images
 IMAGES = controller apiserver ipc-bridge webhook agent-runner web-proxy node-probe \
          channel-telegram channel-whatsapp channel-discord channel-slack \
-		 skill-k8s-ops skill-sre-observability skill-github-gitops skill-llmfit skill-memory
+		 skill-k8s-ops skill-sre-observability skill-github-gitops skill-llmfit skill-memory \
+		 llmfit-daemon
 
 .PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks integration-tests ux-tests
 
@@ -372,6 +373,7 @@ kind-load-%: ## Load a specific image into Kind (e.g., make kind-load-controller
 kind-reload: docker-build kind-load ## Build all images and load into Kind
 	kubectl rollout restart deployment sympozium-controller-manager -n sympozium-system
 	-kubectl rollout restart daemonset sympozium-node-probe -n sympozium-system 2>/dev/null
+	-kubectl rollout restart daemonset sympozium-llmfit-daemon -n sympozium-system 2>/dev/null
 
 ##@ Deployment
 

@@ -47,6 +47,12 @@ type inferenceBackend interface {
 	ModelQuery(model *sympoziumv1alpha1.Model) string
 }
 
+// ModelQueryForModel returns the llmfit search string for the given model,
+// based on its inference server type. Exported for use by the webhook package.
+func ModelQueryForModel(model *sympoziumv1alpha1.Model) string {
+	return newInferenceBackend(model.Spec.Inference.ServerType).ModelQuery(model)
+}
+
 // newInferenceBackend returns the appropriate backend for the given server type.
 func newInferenceBackend(serverType sympoziumv1alpha1.InferenceServerType) inferenceBackend {
 	switch serverType {

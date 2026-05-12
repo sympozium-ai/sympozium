@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
@@ -21,11 +22,12 @@ type Config struct {
 
 // Proxy is the HTTP proxy that exposes a Sympozium agent as an API.
 type Proxy struct {
-	config   Config
-	eventBus eventbus.EventBus
-	k8s      client.Client
-	log      logr.Logger
-	limiter  *RateLimiter
+	config       Config
+	eventBus     eventbus.EventBus
+	k8s          client.Client
+	log          logr.Logger
+	limiter      *RateLimiter
+	FitnessCache *controller.FitnessCache // optional: for capacity-aware routing
 }
 
 // NewProxy creates a new web proxy.

@@ -6,6 +6,7 @@ import {
   useCreateModel,
   useClusterNodes,
   useNamespaces,
+  useFitnessQuery,
 } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
 import {
@@ -33,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, ExternalLink, Cpu } from "lucide-react";
 import { formatAge, cn } from "@/lib/utils";
 
@@ -180,6 +182,15 @@ export function ModelsPage() {
   });
 
   const readyNodes = (clusterNodes || []).filter((n) => n.ready);
+
+  // Derive a model query for fitness lookup from the deploy form.
+  const fitnessModelQuery =
+    serverType === "llama-cpp"
+      ? form.name || ""
+      : form.modelID || form.name || "";
+  const { data: fitnessData } = useFitnessQuery(
+    form.placement === "auto" ? fitnessModelQuery : "",
+  );
 
   const filtered = (data || [])
     .filter((m) =>
@@ -626,9 +637,46 @@ export function ModelsPage() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 {form.placement === "auto"
-                  ? "llmfit will probe each node and select the best fit for this model"
+                  ? "llmfit will select the best fit for this model using cached fitness data"
                   : "Pin the inference server to a specific node"}
               </p>
+              {form.placement === "auto" &&
+                fitnessData?.rankedNodes &&
+                fitnessData.rankedNodes.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Node fitness preview:
+                    </p>
+                    {fitnessData.rankedNodes.slice(0, 3).map((r, i) => (
+                      <div
+                        key={`${r.nodeName}-${i}`}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <span className="font-mono">{r.nodeName}</span>
+                        <Badge
+                          variant="outline"
+                          className={
+                            r.fitLevel === "perfect"
+                              ? "bg-green-500/15 text-green-700 border-green-500/30"
+                              : r.fitLevel === "good"
+                                ? "bg-yellow-500/15 text-yellow-700 border-yellow-500/30"
+                                : "bg-orange-500/15 text-orange-700 border-orange-500/30"
+                          }
+                        >
+                          {r.fitLevel}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          score {Math.round(r.score)}
+                        </span>
+                        {i === 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            recommended
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
             </div>
             {form.placement === "manual" && readyNodes.length > 1 && (
               <div className="space-y-2">

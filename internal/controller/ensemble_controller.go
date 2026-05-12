@@ -32,9 +32,10 @@ const ensembleFinalizer = "sympozium.ai/ensemble-finalizer"
 // ConfigMaps for each persona defined in the pack.
 type EnsembleReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Log      logr.Logger
-	EventBus eventbus.EventBus
+	Scheme       *runtime.Scheme
+	Log          logr.Logger
+	EventBus     eventbus.EventBus
+	FitnessCache *FitnessCache // optional: set when llmfit DaemonSet is enabled
 }
 
 // defaultObservabilitySpec builds an ObservabilitySpec from env vars injected

@@ -18,6 +18,7 @@ import {
   Settings,
   Network,
   Layers,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -59,6 +60,7 @@ const navSections: NavSection[] = [
       { to: "/gateway", label: "Gateway", icon: Globe },
       { to: "/policies", label: "Policies", icon: Shield },
       { to: "/models", label: "Models", icon: Cpu },
+      { to: "/cluster-fitness", label: "Cluster Fitness", icon: Activity },
       { to: "/skills", label: "Skills", icon: Wrench },
       { to: "/mcp-servers", label: "MCP Servers", icon: Plug },
       { to: "/settings", label: "Settings", icon: Settings },

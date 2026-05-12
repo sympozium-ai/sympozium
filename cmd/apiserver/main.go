@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,6 +21,7 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/apiserver"
+	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/pkg/telemetry"
 	webui "github.com/sympozium-ai/sympozium/web"
@@ -107,6 +109,23 @@ func main() {
 	}
 
 	server := apiserver.NewServer(k8sClient.GetClient(), bus, kubeClient, log.WithName("apiserver"))
+
+	// Start llmfit fitness poller for fitness API endpoints.
+	{
+		fitnessCache := controller.NewFitnessCache(90 * time.Second)
+		fitnessPoller := &controller.FitnessPoller{
+			K8sClient: k8sClient.GetClient(),
+			Cache:     fitnessCache,
+			Log:       log.WithName("fitness-poller"),
+		}
+		go func() {
+			if err := fitnessPoller.Start(ctx); err != nil {
+				log.Error(err, "fitness poller failed")
+			}
+		}()
+		server.SetFitnessCache(fitnessCache)
+		log.Info("llmfit fitness poller enabled for API server")
+	}
 
 	if serveUI {
 		// Extract the "dist" subdirectory from the embedded FS.

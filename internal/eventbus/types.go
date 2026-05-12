@@ -60,6 +60,12 @@ const (
 	TopicAgentSubagentResult  = "agent.subagent.result" // per-run: agent.subagent.result.{parentRunID}
 	TopicScheduleUpsert       = "schedule.upsert"
 	TopicStimulusDelivered    = "ensemble.stimulus.delivered"
+
+	// Fitness telemetry (from llmfit DaemonSet via FitnessCache)
+	TopicFitnessUpdated     = "fitness.updated"           // per-node fitness snapshot
+	TopicFitnessNodeStale   = "fitness.node.stale"        // node stopped reporting
+	TopicPlacementCompleted = "model.placement.completed" // placement decision recorded
+	TopicModelEviction      = "model.eviction.triggered"  // model being re-placed
 )
 
 // NewEvent creates a new event with the current timestamp.
