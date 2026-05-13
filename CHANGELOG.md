@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.29](https://github.com/sympozium-ai/sympozium/compare/v0.10.28...v0.10.29) (2026-05-13)
+
+
+### Features
+
+* add llmfit DaemonSet for continuous cluster hardware fitness telemetry ([#186](https://github.com/sympozium-ai/sympozium/issues/186)) ([ec896fa](https://github.com/sympozium-ai/sympozium/commit/ec896fa37c5ba42f184e08e71e22224df9aaf59d))
+
+
+### Bug Fixes
+
+* update TUI terminology from Personas/Instances to Ensembles/Agents ([#182](https://github.com/sympozium-ai/sympozium/issues/182)) ([7e48fe5](https://github.com/sympozium-ai/sympozium/commit/7e48fe578083190c62999b93f4e107c0adf0a334))
+* **web:** resolve ReactFlow render loop and Cypress test failures ([#184](https://github.com/sympozium-ai/sympozium/issues/184)) ([ad06e12](https://github.com/sympozium-ai/sympozium/commit/ad06e12ca7217f06aebd92aa1901d0c6058087a4))
+
 ## [0.10.28](https://github.com/sympozium-ai/sympozium/compare/v0.10.27...v0.10.28) (2026-05-09)
 
 
