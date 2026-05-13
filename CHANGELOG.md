@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.31](https://github.com/sympozium-ai/sympozium/compare/v0.10.30...v0.10.31) (2026-05-13)
+
+
+### Bug Fixes
+
+* **ci:** add llmfit-daemon to build and release image matrices ([df3f7e1](https://github.com/sympozium-ai/sympozium/commit/df3f7e10c313680b5d9a3b28d8b4edd398edbdda))
+
 ## [0.10.30](https://github.com/sympozium-ai/sympozium/compare/v0.10.29...v0.10.30) (2026-05-13)
 
 
