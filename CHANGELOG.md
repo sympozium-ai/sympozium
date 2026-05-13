@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.30](https://github.com/sympozium-ai/sympozium/compare/v0.10.29...v0.10.30) (2026-05-13)
+
+
+### Bug Fixes
+
+* channelTriggers propagation from Ensembles ([#191](https://github.com/sympozium-ai/sympozium/issues/191)) ([9192ae9](https://github.com/sympozium-ai/sympozium/commit/9192ae914aa8f3c3b0a211c338b107f546b79c56))
+
 ## [0.10.29](https://github.com/sympozium-ai/sympozium/compare/v0.10.28...v0.10.29) (2026-05-13)
 
 
