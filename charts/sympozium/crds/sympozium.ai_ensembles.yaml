@@ -112,6 +112,37 @@ spec:
                         ChannelAccessControl for this agent configuration. Use AllowedChats with Discord
                         channel IDs to route specific Discord channels to this persona.
                       type: object
+                    channelTriggers:
+                      additionalProperties:
+                        description: |-
+                          ChannelTriggerSpec controls when an inbound channel message becomes
+                          an AgentRun. All fields are optional; when omitted the agent triggers
+                          on every accepted message.
+                        properties:
+                          startKeywords:
+                            description: |-
+                              StartKeywords resume a previously-muted agent in a chat (case-
+                              insensitive substring). Only evaluated while the chat is muted;
+                              otherwise ignored. The triggering message itself is consumed by
+                              the resume action and does not produce an AgentRun.
+                            items:
+                              type: string
+                            type: array
+                          stopKeywords:
+                            description: |-
+                              StopKeywords mute the agent in a chat when matched on an inbound
+                              message text (case-insensitive substring). Once muted, subsequent
+                              messages in that chat are dropped until a StartKeywords match
+                              resumes the agent. Has no effect on chats that are already muted.
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      description: |-
+                        ChannelTriggers maps channel types to per-agent-configuration trigger
+                        overrides (start/stop keywords). When set, these take priority over
+                        ensemble-level ChannelTriggers for this agent configuration.
+                      type: object
                     channels:
                       description: |-
                         Channels lists channel types this agent config should be bound to after install.
@@ -613,6 +644,38 @@ spec:
                   ChannelConfigs maps channel types to their credential secret names.
                   Populated during agent config onboarding when users provide channel tokens.
                   The controller uses this to set ConfigRef on generated instances.
+                type: object
+              channelTriggers:
+                additionalProperties:
+                  description: |-
+                    ChannelTriggerSpec controls when an inbound channel message becomes
+                    an AgentRun. All fields are optional; when omitted the agent triggers
+                    on every accepted message.
+                  properties:
+                    startKeywords:
+                      description: |-
+                        StartKeywords resume a previously-muted agent in a chat (case-
+                        insensitive substring). Only evaluated while the chat is muted;
+                        otherwise ignored. The triggering message itself is consumed by
+                        the resume action and does not produce an AgentRun.
+                      items:
+                        type: string
+                      type: array
+                    stopKeywords:
+                      description: |-
+                        StopKeywords mute the agent in a chat when matched on an inbound
+                        message text (case-insensitive substring). Once muted, subsequent
+                        messages in that chat are dropped until a StartKeywords match
+                        resumes the agent. Has no effect on chats that are already muted.
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                description: |-
+                  ChannelTriggers maps channel types to their trigger rules
+                  (start/stop keywords). Propagated as ChannelSpec.Triggers on every
+                  generated Agent. Per-agent-config overrides in
+                  AgentConfigSpec.ChannelTriggers take precedence.
                 type: object
               channelVolumeMounts:
                 additionalProperties:

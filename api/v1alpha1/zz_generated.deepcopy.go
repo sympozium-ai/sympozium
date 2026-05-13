@@ -183,6 +183,22 @@ func (in *AgentConfigSpec) DeepCopyInto(out *AgentConfigSpec) {
 			(*out)[key] = outVal
 		}
 	}
+	if in.ChannelTriggers != nil {
+		in, out := &in.ChannelTriggers, &out.ChannelTriggers
+		*out = make(map[string]*ChannelTriggerSpec, len(*in))
+		for key, val := range *in {
+			var outVal *ChannelTriggerSpec
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				inVal := (*in)[key]
+				in, out := &inVal, &outVal
+				*out = new(ChannelTriggerSpec)
+				(*in).DeepCopyInto(*out)
+			}
+			(*out)[key] = outVal
+		}
+	}
 	if in.MCPServers != nil {
 		in, out := &in.MCPServers, &out.MCPServers
 		*out = make([]MCPServerRef, len(*in))
@@ -1002,6 +1018,22 @@ func (in *EnsembleSpec) DeepCopyInto(out *EnsembleSpec) {
 				inVal := (*in)[key]
 				in, out := &inVal, &outVal
 				*out = new(ChannelAccessControl)
+				(*in).DeepCopyInto(*out)
+			}
+			(*out)[key] = outVal
+		}
+	}
+	if in.ChannelTriggers != nil {
+		in, out := &in.ChannelTriggers, &out.ChannelTriggers
+		*out = make(map[string]*ChannelTriggerSpec, len(*in))
+		for key, val := range *in {
+			var outVal *ChannelTriggerSpec
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				inVal := (*in)[key]
+				in, out := &inVal, &outVal
+				*out = new(ChannelTriggerSpec)
 				(*in).DeepCopyInto(*out)
 			}
 			(*out)[key] = outVal

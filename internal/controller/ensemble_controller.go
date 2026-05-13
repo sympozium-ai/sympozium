@@ -395,6 +395,17 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 						cs.AccessControl = ac
 					}
 				}
+				// Triggers: persona-level overrides take priority over pack defaults.
+				if persona.ChannelTriggers != nil {
+					if tr, ok := persona.ChannelTriggers[ch]; ok {
+						cs.Triggers = tr
+					}
+				}
+				if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
+					if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
+						cs.Triggers = tr
+					}
+				}
 				if v, ok := pack.Spec.ChannelVolumes[ch]; ok {
 					cs.Volumes = v
 				}
@@ -633,6 +644,18 @@ func (r *EnsembleReconciler) buildAgent(
 		} else if pack.Spec.ChannelAccessControl != nil {
 			if ac, ok := pack.Spec.ChannelAccessControl[ch]; ok {
 				cs.AccessControl = ac
+			}
+		}
+		// Apply channel triggers: persona-level overrides take priority
+		// over ensemble-level defaults.
+		if persona.ChannelTriggers != nil {
+			if tr, ok := persona.ChannelTriggers[ch]; ok {
+				cs.Triggers = tr
+			}
+		}
+		if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
+			if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
+				cs.Triggers = tr
 			}
 		}
 		if v, ok := pack.Spec.ChannelVolumes[ch]; ok {

@@ -84,6 +84,13 @@ type EnsembleSpec struct {
 	// +optional
 	ChannelAccessControl map[string]*ChannelAccessControl `json:"channelAccessControl,omitempty"`
 
+	// ChannelTriggers maps channel types to their trigger rules
+	// (start/stop keywords). Propagated as ChannelSpec.Triggers on every
+	// generated Agent. Per-agent-config overrides in
+	// AgentConfigSpec.ChannelTriggers take precedence.
+	// +optional
+	ChannelTriggers map[string]*ChannelTriggerSpec `json:"channelTriggers,omitempty"`
+
 	// ChannelVolumes maps channel type to extra pod volumes injected into
 	// the generated channel deployment (e.g. Vault CSI SecretProviderClass
 	// volume). Mirrors ChannelConfigs/ChannelAccessControl indexing.
@@ -205,6 +212,12 @@ type AgentConfigSpec struct {
 	// channel IDs to route specific Discord channels to this persona.
 	// +optional
 	ChannelAccessControl map[string]*ChannelAccessControl `json:"channelAccessControl,omitempty"`
+
+	// ChannelTriggers maps channel types to per-agent-configuration trigger
+	// overrides (start/stop keywords). When set, these take priority over
+	// ensemble-level ChannelTriggers for this agent configuration.
+	// +optional
+	ChannelTriggers map[string]*ChannelTriggerSpec `json:"channelTriggers,omitempty"`
 
 	// MCPServers configures remote MCP (Model Context Protocol) servers
 	// for this agent configuration. Each entry references an MCPServer CR
