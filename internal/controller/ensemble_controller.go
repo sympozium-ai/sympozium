@@ -384,48 +384,37 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 		if len(persona.Channels) > 0 && !channelSetsEqual(wantChannels, haveChannels) {
 			var channelSpecs []sympoziumv1alpha1.ChannelSpec
 			for _, ch := range persona.Channels {
-				cs := sympoziumv1alpha1.ChannelSpec{Type: ch}
-				if pack.Spec.ChannelConfigs != nil {
-					if secretName, ok := pack.Spec.ChannelConfigs[ch]; ok && secretName != "" {
-						cs.ConfigRef = sympoziumv1alpha1.SecretRef{Secret: secretName}
-					}
-				}
-				if pack.Spec.ChannelAccessControl != nil {
-					if ac, ok := pack.Spec.ChannelAccessControl[ch]; ok {
-						cs.AccessControl = ac
-					}
-				}
-				// Triggers: persona-level overrides take priority over pack defaults.
-				if persona.ChannelTriggers != nil {
-					if tr, ok := persona.ChannelTriggers[ch]; ok {
-						cs.Triggers = tr
-					}
-				}
-				if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
-					if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
-						cs.Triggers = tr
-					}
-				}
-				if v, ok := pack.Spec.ChannelVolumes[ch]; ok {
-					cs.Volumes = v
-				}
-				if vm, ok := pack.Spec.ChannelVolumeMounts[ch]; ok {
-					cs.VolumeMounts = vm
-				}
-				channelSpecs = append(channelSpecs, cs)
+				channelSpecs = append(channelSpecs, sympoziumv1alpha1.ChannelSpec{Type: ch})
 			}
 			existingInst.Spec.Channels = channelSpecs
 			needsUpdate = true
 		}
 
-		// Propagate channel ConfigRef secrets from pack ChannelConfigs.
-		if pack.Spec.ChannelConfigs != nil {
-			for i := range existingInst.Spec.Channels {
-				ch := &existingInst.Spec.Channels[i]
-				if secret, ok := pack.Spec.ChannelConfigs[ch.Type]; ok && ch.ConfigRef.Secret != secret {
-					ch.ConfigRef.Secret = secret
-					needsUpdate = true
-				}
+		// Always reconcile per-channel fields (ConfigRef, AccessControl,
+		// Triggers, Volumes, VolumeMounts) so edits to ensemble/persona
+		// channel configuration propagate without requiring agent recreation.
+		for i := range existingInst.Spec.Channels {
+			ch := &existingInst.Spec.Channels[i]
+			desired := buildChannelSpec(pack, persona, ch.Type)
+			if !reflect.DeepEqual(ch.ConfigRef, desired.ConfigRef) {
+				ch.ConfigRef = desired.ConfigRef
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(ch.AccessControl, desired.AccessControl) {
+				ch.AccessControl = desired.AccessControl
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(ch.Triggers, desired.Triggers) {
+				ch.Triggers = desired.Triggers
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(ch.Volumes, desired.Volumes) {
+				ch.Volumes = desired.Volumes
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(ch.VolumeMounts, desired.VolumeMounts) {
+				ch.VolumeMounts = desired.VolumeMounts
+				needsUpdate = true
 			}
 		}
 
@@ -624,46 +613,7 @@ func (r *EnsembleReconciler) buildAgent(
 
 	// Channels
 	for _, ch := range persona.Channels {
-		cs := sympoziumv1alpha1.ChannelSpec{
-			Type: ch,
-		}
-		// Look up the credential secret from the pack's ChannelConfigs.
-		if pack.Spec.ChannelConfigs != nil {
-			if secretName, ok := pack.Spec.ChannelConfigs[ch]; ok && secretName != "" {
-				cs.ConfigRef = sympoziumv1alpha1.SecretRef{
-					Secret: secretName,
-				}
-			}
-		}
-		// Apply channel access control: persona-level overrides take
-		// priority over ensemble-level defaults.
-		if persona.ChannelAccessControl != nil {
-			if ac, ok := persona.ChannelAccessControl[ch]; ok {
-				cs.AccessControl = ac
-			}
-		} else if pack.Spec.ChannelAccessControl != nil {
-			if ac, ok := pack.Spec.ChannelAccessControl[ch]; ok {
-				cs.AccessControl = ac
-			}
-		}
-		// Apply channel triggers: persona-level overrides take priority
-		// over ensemble-level defaults.
-		if persona.ChannelTriggers != nil {
-			if tr, ok := persona.ChannelTriggers[ch]; ok {
-				cs.Triggers = tr
-			}
-		}
-		if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
-			if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
-				cs.Triggers = tr
-			}
-		}
-		if v, ok := pack.Spec.ChannelVolumes[ch]; ok {
-			cs.Volumes = v
-		}
-		if vm, ok := pack.Spec.ChannelVolumeMounts[ch]; ok {
-			cs.VolumeMounts = vm
-		}
+		cs := buildChannelSpec(pack, persona, ch)
 		inst.Spec.Channels = append(inst.Spec.Channels, cs)
 	}
 
@@ -959,6 +909,45 @@ func channelSetsEqual(a, b map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+// buildChannelSpec computes the desired ChannelSpec for a given channel type
+// from pack and persona configuration. Persona-level overrides take priority
+// over ensemble-level defaults for AccessControl and Triggers.
+func buildChannelSpec(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alpha1.AgentConfigSpec, ch string) sympoziumv1alpha1.ChannelSpec {
+	cs := sympoziumv1alpha1.ChannelSpec{Type: ch}
+	if pack.Spec.ChannelConfigs != nil {
+		if secretName, ok := pack.Spec.ChannelConfigs[ch]; ok && secretName != "" {
+			cs.ConfigRef = sympoziumv1alpha1.SecretRef{Secret: secretName}
+		}
+	}
+	if persona.ChannelAccessControl != nil {
+		if ac, ok := persona.ChannelAccessControl[ch]; ok {
+			cs.AccessControl = ac
+		}
+	}
+	if cs.AccessControl == nil && pack.Spec.ChannelAccessControl != nil {
+		if ac, ok := pack.Spec.ChannelAccessControl[ch]; ok {
+			cs.AccessControl = ac
+		}
+	}
+	if persona.ChannelTriggers != nil {
+		if tr, ok := persona.ChannelTriggers[ch]; ok {
+			cs.Triggers = tr
+		}
+	}
+	if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
+		if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
+			cs.Triggers = tr
+		}
+	}
+	if v, ok := pack.Spec.ChannelVolumes[ch]; ok {
+		cs.Volumes = v
+	}
+	if vm, ok := pack.Spec.ChannelVolumeMounts[ch]; ok {
+		cs.VolumeMounts = vm
+	}
+	return cs
 }
 
 // buildDesiredSkills computes the desired skills list for a persona, matching
