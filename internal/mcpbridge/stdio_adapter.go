@@ -32,9 +32,48 @@ var (
 
 // jsonRPCRequest is a minimal JSON-RPC 2.0 request envelope for method extraction.
 type jsonRPCRequest struct {
-	ID     json.RawMessage `json:"id,omitempty"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
+	JSONRPC string          `json:"jsonrpc,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// ensureJSONRPCEnvelope patches the raw JSON body to include the "jsonrpc"
+// and "id" fields if missing. Strict MCP servers reject messages without
+// these fields. Returns the patched body and updates rpcReq in-place.
+func ensureJSONRPCEnvelope(body []byte, rpcReq *jsonRPCRequest) []byte {
+	needsPatch := false
+	if rpcReq.JSONRPC != "2.0" {
+		rpcReq.JSONRPC = "2.0"
+		needsPatch = true
+	}
+	if rpcReq.ID == nil {
+		rpcReq.ID = json.RawMessage(`1`)
+		needsPatch = true
+	}
+	if !needsPatch {
+		return body
+	}
+
+	// Re-marshal the full envelope to ensure both fields are present.
+	// We unmarshal into a map to preserve any extra fields we don't model.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body // fallback: return original
+	}
+	if _, ok := raw["jsonrpc"]; !ok {
+		raw["jsonrpc"] = json.RawMessage(`"2.0"`)
+	}
+	if _, ok := raw["id"]; !ok {
+		raw["id"] = json.RawMessage(`1`)
+		rpcReq.ID = json.RawMessage(`1`)
+	}
+	patched, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	log.Printf("stdio adapter: patched JSON-RPC envelope for %q", rpcReq.Method)
+	return patched
 }
 
 // StdioAdapter wraps a StdioManager and exposes an HTTP server that translates
@@ -134,9 +173,20 @@ func (a *StdioAdapter) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure the body has a JSON-RPC 2.0 envelope. Some callers may omit
+	// the "jsonrpc" field or the "id" field. Strict MCP servers (e.g.
+	// github/github-mcp-server) reject messages without these fields.
+	// Fixes: https://github.com/sympozium-ai/sympozium/issues/189
+	body = ensureJSONRPCEnvelope(body, &rpcReq)
+
 	// MCP notifications (no "id" field) don't expect a response.
-	// Write to stdin but don't wait for a reply.
-	if rpcReq.ID == nil {
+	// Only treat as notification if the method is NOT a request method.
+	// tools/call, initialize, and tools/list always expect responses.
+	isRequestMethod := rpcReq.Method == "tools/call" ||
+		rpcReq.Method == "initialize" ||
+		rpcReq.Method == "tools/list"
+
+	if rpcReq.ID == nil && !isRequestMethod {
 		log.Printf("stdio adapter: notification %q (no id), write-only", rpcReq.Method)
 		err := a.manager.WriteOnly(ctx, body)
 		if err != nil {

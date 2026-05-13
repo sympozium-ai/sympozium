@@ -58,6 +58,7 @@ rules:
       - sympoziumschedules/finalizers
       - ensembles/finalizers
       - sympoziumconfigs/finalizers
+      - mcpservers/finalizers
       - models/finalizers
     verbs: ["update"]
   # Core resources — controller + skill RBAC delegation
