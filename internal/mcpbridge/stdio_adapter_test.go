@@ -90,6 +90,38 @@ func TestStdioAdapter_JSONRPC(t *testing.T) {
 	}
 }
 
+func TestStdioAdapter_NotificationWriteOnly(t *testing.T) {
+	m := NewStdioManager("cat", nil, nil)
+	if err := m.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer m.Stop()
+
+	a := NewStdioAdapter(m, "test-server", 0)
+	a.ready.Store(true)
+
+	// Send a notification (no id) — should use WriteOnly, not Send
+	rpcReq := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	req := httptest.NewRequest("POST", "/", strings.NewReader(rpcReq))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	a.handleJSONRPC(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Should return a minimal JSON-RPC response for notifications
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+	if resp["jsonrpc"] != "2.0" {
+		t.Errorf("expected jsonrpc 2.0, got %v", resp["jsonrpc"])
+	}
+}
+
 func TestStdioAdapter_JSONRPCWhenDead(t *testing.T) {
 	m := NewStdioManager("cat", nil, nil)
 	// Not started

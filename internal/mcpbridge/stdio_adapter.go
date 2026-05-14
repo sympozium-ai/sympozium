@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -173,21 +174,24 @@ func (a *StdioAdapter) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure the body has a JSON-RPC 2.0 envelope. Some callers may omit
-	// the "jsonrpc" field or the "id" field. Strict MCP servers (e.g.
-	// github/github-mcp-server) reject messages without these fields.
-	// Fixes: https://github.com/sympozium-ai/sympozium/issues/189
-	body = ensureJSONRPCEnvelope(body, &rpcReq)
+	// MCP notifications (method starts with "notifications/") don't expect a
+	// response. Detect them BEFORE ensureJSONRPCEnvelope, which would inject
+	// an "id" field and cause the notification to be treated as a request.
+	isNotification := strings.HasPrefix(rpcReq.Method, "notifications/")
 
-	// MCP notifications (no "id" field) don't expect a response.
-	// Only treat as notification if the method is NOT a request method.
-	// tools/call, initialize, and tools/list always expect responses.
-	isRequestMethod := rpcReq.Method == "tools/call" ||
-		rpcReq.Method == "initialize" ||
-		rpcReq.Method == "tools/list"
-
-	if rpcReq.ID == nil && !isRequestMethod {
-		log.Printf("stdio adapter: notification %q (no id), write-only", rpcReq.Method)
+	if isNotification {
+		log.Printf("stdio adapter: notification %q, write-only", rpcReq.Method)
+		// Ensure jsonrpc field is present but do NOT add an id — notifications must not have one.
+		if rpcReq.JSONRPC != "2.0" {
+			rpcReq.JSONRPC = "2.0"
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(body, &raw); err == nil {
+				raw["jsonrpc"] = json.RawMessage(`"2.0"`)
+				if patched, err := json.Marshal(raw); err == nil {
+					body = patched
+				}
+			}
+		}
 		err := a.manager.WriteOnly(ctx, body)
 		if err != nil {
 			span.RecordError(err)
@@ -200,6 +204,12 @@ func (a *StdioAdapter) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"jsonrpc":"2.0"}`))
 		return
 	}
+
+	// Ensure the body has a JSON-RPC 2.0 envelope. Some callers may omit
+	// the "jsonrpc" field or the "id" field. Strict MCP servers (e.g.
+	// github/github-mcp-server) reject messages without these fields.
+	// Fixes: https://github.com/sympozium-ai/sympozium/issues/189
+	body = ensureJSONRPCEnvelope(body, &rpcReq)
 
 	response, err := a.manager.Send(ctx, body)
 	duration := float64(time.Since(start).Milliseconds())

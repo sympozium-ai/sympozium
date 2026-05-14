@@ -7,70 +7,108 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
-// discoverTools connects to all configured MCP servers, lists their tools,
-// and builds a unified tool manifest with prefixed names.
-// Servers that fail discovery are retried with backoff (6 attempts, 10s apart).
+// serverDiscoveryResult holds the outcome of discovering tools from a single server.
+type serverDiscoveryResult struct {
+	serverName string
+	client     *Client
+	tools      []MCPToolDef
+	err        error
+}
+
+// discoverTools connects to all configured MCP servers concurrently, lists
+// their tools, and builds a unified tool manifest with prefixed names.
+// Each server is retried independently (6 attempts, 10s apart) so a single
+// broken server does not block discovery of the others.
 func (b *Bridge) discoverTools(ctx context.Context) (*MCPToolManifest, error) {
 	manifest := &MCPToolManifest{
 		Tools: []MCPToolDef{},
 	}
 
-	for _, srv := range b.config.Servers {
-		var tools []MCPTool
-		var err error
-		var client *Client
+	results := make([]serverDiscoveryResult, len(b.config.Servers))
+	var wg sync.WaitGroup
 
-		maxRetries := 6
-		retryInterval := 10 * time.Second
+	for i, srv := range b.config.Servers {
+		wg.Add(1)
+		go func(idx int, srv ServerConfig) {
+			defer wg.Done()
+			results[idx] = discoverServerTools(ctx, srv)
+		}(i, srv)
+	}
 
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			client = NewClient(srv)
-			tools, err = client.DiscoverTools(ctx)
-			if err == nil {
-				break
-			}
-			if attempt < maxRetries {
-				log.Printf("WARNING: discover attempt %d/%d failed for %q: %v (retrying in %s)",
-					attempt, maxRetries, srv.Name, err, retryInterval)
-				select {
-				case <-ctx.Done():
-					return manifest, ctx.Err()
-				case <-time.After(retryInterval):
-				}
-			} else {
-				log.Printf("WARNING: all %d discover attempts failed for %q: %v", maxRetries, srv.Name, err)
-			}
-		}
+	wg.Wait()
 
-		if err != nil {
+	// Merge results in config order (deterministic).
+	for _, res := range results {
+		if res.err != nil {
 			continue
 		}
-
-		b.clients[srv.Name] = client
-
-		// Apply allow/deny filtering before registering tools.
-		tools = filterTools(tools, srv.ToolsAllow, srv.ToolsDeny)
-
-		for _, tool := range tools {
-			prefixedName := srv.ToolsPrefix + "_" + tool.Name
-			b.toolIndex[prefixedName] = srv.Name
-
-			manifest.Tools = append(manifest.Tools, MCPToolDef{
-				Name:        prefixedName,
-				Description: tool.Description,
-				Server:      srv.Name,
-				Timeout:     srv.Timeout,
-				InputSchema: tool.InputSchema,
-			})
+		b.clients[res.serverName] = res.client
+		for _, td := range res.tools {
+			b.toolIndex[td.Name] = res.serverName
 		}
-
-		log.Printf("Discovered %d tools from %q (prefix=%q)", len(tools), srv.Name, srv.ToolsPrefix)
+		manifest.Tools = append(manifest.Tools, res.tools...)
+		log.Printf("Discovered %d tools from %q", len(res.tools), res.serverName)
 	}
 
 	return manifest, nil
+}
+
+// discoverServerTools discovers tools from a single MCP server with retries.
+func discoverServerTools(ctx context.Context, srv ServerConfig) serverDiscoveryResult {
+	maxRetries := 6
+	retryInterval := 10 * time.Second
+
+	var tools []MCPTool
+	var err error
+	var client *Client
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		client = NewClient(srv)
+		tools, err = client.DiscoverTools(ctx)
+		if err == nil {
+			break
+		}
+		if attempt < maxRetries {
+			log.Printf("WARNING: discover attempt %d/%d failed for %q: %v (retrying in %s)",
+				attempt, maxRetries, srv.Name, err, retryInterval)
+			select {
+			case <-ctx.Done():
+				return serverDiscoveryResult{serverName: srv.Name, err: ctx.Err()}
+			case <-time.After(retryInterval):
+			}
+		} else {
+			log.Printf("WARNING: all %d discover attempts failed for %q: %v", maxRetries, srv.Name, err)
+		}
+	}
+
+	if err != nil {
+		return serverDiscoveryResult{serverName: srv.Name, err: err}
+	}
+
+	// Apply allow/deny filtering before registering tools.
+	tools = filterTools(tools, srv.ToolsAllow, srv.ToolsDeny)
+
+	var toolDefs []MCPToolDef
+	for _, tool := range tools {
+		prefixedName := srv.ToolsPrefix + "_" + tool.Name
+		toolDefs = append(toolDefs, MCPToolDef{
+			Name:        prefixedName,
+			Description: tool.Description,
+			Server:      srv.Name,
+			Timeout:     srv.Timeout,
+			InputSchema: tool.InputSchema,
+		})
+	}
+
+	return serverDiscoveryResult{
+		serverName: srv.Name,
+		client:     client,
+		tools:      toolDefs,
+	}
 }
 
 // WriteManifest writes the tool manifest atomically to the given path.

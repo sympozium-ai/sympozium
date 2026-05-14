@@ -76,8 +76,12 @@ func (c *Client) initialize(ctx context.Context) error {
 		return err
 	}
 
-	// Send initialized notification (no response expected, but we do it as a best-effort POST)
-	// _ = c.notify(ctx, "notifications/initialized") // TEMP: skip until dec8f88 adapter deployed
+	// Send initialized notification (no response expected) to complete the MCP handshake.
+	// MCP-spec-compliant servers (e.g. Python mcp SDK) will not process tools/list
+	// until they receive this notification.
+	if err := c.notify(ctx, "notifications/initialized"); err != nil {
+		log.Printf("WARNING: notifications/initialized failed for %q: %v", c.serverConfig.Name, err)
+	}
 
 	return nil
 }
