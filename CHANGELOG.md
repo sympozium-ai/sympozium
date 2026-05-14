@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.32](https://github.com/sympozium-ai/sympozium/compare/v0.10.31...v0.10.32) (2026-05-14)
+
+
+### Features
+
+* add Suspended field to MCPServer to prevent crash-looping defaults ([#195](https://github.com/sympozium-ai/sympozium/issues/195)) ([6200f97](https://github.com/sympozium-ai/sympozium/commit/6200f9737bbeef0487f0b3ca7e5bfb902d4b8fa3))
+
+
+### Bug Fixes
+
+* mcp-bridge missing notifications/initialized and sequential discovery ([#197](https://github.com/sympozium-ai/sympozium/issues/197)) ([6e5d4a1](https://github.com/sympozium-ai/sympozium/commit/6e5d4a16c5cac5022952a7f22f551bfa7e32f8ec)), closes [#194](https://github.com/sympozium-ai/sympozium/issues/194)
+
 ## [0.10.31](https://github.com/sympozium-ai/sympozium/compare/v0.10.30...v0.10.31) (2026-05-13)
 
 
