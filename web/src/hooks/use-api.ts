@@ -534,6 +534,7 @@ export function usePatchMcpServer() {
       timeout?: number;
       toolsAllow?: string[];
       toolsDeny?: string[];
+      suspended?: boolean;
     }) => api.mcpServers.patch(name, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });

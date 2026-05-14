@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useMcpServer } from "@/hooks/use-api";
+import { useMcpServer, usePatchMcpServer } from "@/hooks/use-api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { formatAge } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 export function McpServerDetailPage() {
   const { name } = useParams<{ name: string }>();
   const { data: mcp, isLoading } = useMcpServer(name || "");
+  const patchMutation = usePatchMcpServer();
   const [activeTab, setActiveTab] = useState("overview");
 
   if (isLoading) {
@@ -61,6 +63,31 @@ export function McpServerDetailPage() {
         </div>
       </div>
 
+      {mcp.spec.suspended && (
+        <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-yellow-400">
+              This server is suspended
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Configure secrets and tokens, then enable the server.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() =>
+              patchMutation.mutate({
+                name: mcp.metadata.name,
+                suspended: false,
+              })
+            }
+            disabled={patchMutation.isPending}
+          >
+            {patchMutation.isPending ? "Enabling..." : "Enable Server"}
+          </Button>
+        </div>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -76,6 +103,10 @@ export function McpServerDetailPage() {
                 <CardTitle className="text-sm">Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
+                <Row
+                  label="Suspended"
+                  value={mcp.spec.suspended ? "Yes" : "No"}
+                />
                 <Row label="Ready" value={mcp.status?.ready ? "Yes" : "No"} />
                 <Row
                   label="URL"

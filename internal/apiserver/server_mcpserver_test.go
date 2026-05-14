@@ -344,6 +344,9 @@ func TestInstallDefaultMCPServers(t *testing.T) {
 	if got.Spec.ToolsPrefix != "github" {
 		t.Fatalf("expected prefix github, got %s", got.Spec.ToolsPrefix)
 	}
+	if !got.Spec.Suspended {
+		t.Fatal("expected installed default MCPServer to be suspended")
+	}
 
 	// Second call should report already present.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/mcpservers/install-defaults?namespace=default", nil)
@@ -426,6 +429,59 @@ func TestMCPServerAuthToken(t *testing.T) {
 	}
 	if status.Status != "complete" {
 		t.Fatalf("expected complete, got %s", status.Status)
+	}
+}
+
+func TestPatchMCPServerSuspended(t *testing.T) {
+	existing := &sympoziumv1alpha1.MCPServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "suspendable", Namespace: "default"},
+		Spec: sympoziumv1alpha1.MCPServerSpec{
+			TransportType: "http",
+			ToolsPrefix:   "sus",
+			Timeout:       30,
+		},
+	}
+	srv, cl := newTestServer(t, existing)
+
+	// Suspend
+	trueVal := true
+	payload := PatchMCPServerRequest{Suspended: &trueVal}
+	raw, _ := json.Marshal(payload)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/mcpservers/suspendable?namespace=default", bytes.NewReader(raw))
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got sympoziumv1alpha1.MCPServer
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "suspendable", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get mcpserver: %v", err)
+	}
+	if !got.Spec.Suspended {
+		t.Fatal("expected Suspended to be true after patch")
+	}
+
+	// Unsuspend
+	falseVal := false
+	payload2 := PatchMCPServerRequest{Suspended: &falseVal}
+	raw2, _ := json.Marshal(payload2)
+
+	req2 := httptest.NewRequest(http.MethodPatch, "/api/v1/mcpservers/suspendable?namespace=default", bytes.NewReader(raw2))
+	rec2 := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	if err := cl.Get(context.Background(), client.ObjectKey{Name: "suspendable", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get mcpserver: %v", err)
+	}
+	if got.Spec.Suspended {
+		t.Fatal("expected Suspended to be false after unsuspend patch")
 	}
 }
 

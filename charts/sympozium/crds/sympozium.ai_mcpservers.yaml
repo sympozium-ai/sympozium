@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.ready
       name: Ready
       type: boolean
+    - jsonPath: .spec.suspended
+      name: Suspended
+      type: boolean
     - jsonPath: .status.url
       name: URL
       type: string
@@ -176,6 +179,12 @@ spec:
                 description: Replicas for the MCP server deployment.
                 format: int32
                 type: integer
+              suspended:
+                description: |-
+                  Suspended prevents the controller from creating or maintaining
+                  Deployment and Service resources for this MCPServer. Existing
+                  deployments are scaled to zero when suspended. Defaults to false.
+                type: boolean
               timeout:
                 default: 30
                 description: Timeout is the per-request timeout in seconds.

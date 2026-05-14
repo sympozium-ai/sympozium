@@ -639,6 +639,7 @@ export interface MCPServerSpec {
   replicas?: number;
   toolsAllow?: string[];
   toolsDeny?: string[];
+  suspended?: boolean;
 }
 
 export interface MCPServerStatus {
@@ -1234,6 +1235,7 @@ export const api = {
         timeout?: number;
         toolsAllow?: string[];
         toolsDeny?: string[];
+        suspended?: boolean;
       },
     ) =>
       apiFetch<MCPServer>(`/api/v1/mcpservers/${name}`, {

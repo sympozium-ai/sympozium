@@ -9,6 +9,7 @@ import (
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Transport",type=string,JSONPath=`.spec.transportType`
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Suspended",type=boolean,JSONPath=`.spec.suspended`
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.status.url`
 // +kubebuilder:printcolumn:name="Tools",type=integer,JSONPath=`.status.toolCount`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
@@ -56,6 +57,12 @@ type MCPServerSpec struct {
 	// +kubebuilder:default=1
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Suspended prevents the controller from creating or maintaining
+	// Deployment and Service resources for this MCPServer. Existing
+	// deployments are scaled to zero when suspended. Defaults to false.
+	// +optional
+	Suspended bool `json:"suspended,omitempty"`
 
 	// ToolsAllow lists tool names (without prefix) to expose. If set, only these tools are registered.
 	// +optional

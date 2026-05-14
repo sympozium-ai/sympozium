@@ -6,6 +6,7 @@ import {
   useDeleteMcpServer,
   useInstallDefaultMcpServers,
   useMcpServerAuthToken,
+  usePatchMcpServer,
 } from "@/hooks/use-api";
 import {
   Table,
@@ -35,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Trash2, Plus, Download, KeyRound } from "lucide-react";
+import { Eye, Trash2, Plus, Download, KeyRound, Play, Pause } from "lucide-react";
 import { formatAge } from "@/lib/utils";
 
 export function McpServersPage() {
@@ -44,6 +45,7 @@ export function McpServersPage() {
   const deleteMutation = useDeleteMcpServer();
   const installDefaults = useInstallDefaultMcpServers();
   const authTokenMutation = useMcpServerAuthToken();
+  const patchMutation = usePatchMcpServer();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
@@ -259,7 +261,7 @@ export function McpServersPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Transport</TableHead>
-              <TableHead>Ready</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>URL</TableHead>
               <TableHead>Tools</TableHead>
               <TableHead>Prefix</TableHead>
@@ -279,7 +281,11 @@ export function McpServersPage() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {mcp.status?.ready ? (
+                  {mcp.spec.suspended ? (
+                    <Badge variant="destructive" className="text-xs">
+                      Suspended
+                    </Badge>
+                  ) : mcp.status?.ready ? (
                     <Badge variant="default" className="text-xs">
                       Ready
                     </Badge>
@@ -303,6 +309,24 @@ export function McpServersPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={mcp.spec.suspended ? "Enable server" : "Suspend server"}
+                      onClick={() =>
+                        patchMutation.mutate({
+                          name: mcp.metadata.name,
+                          suspended: !mcp.spec.suspended,
+                        })
+                      }
+                      disabled={patchMutation.isPending}
+                    >
+                      {mcp.spec.suspended ? (
+                        <Play className="h-4 w-4" />
+                      ) : (
+                        <Pause className="h-4 w-4" />
+                      )}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

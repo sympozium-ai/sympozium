@@ -1282,6 +1282,7 @@ type PatchMCPServerRequest struct {
 	Timeout       *int     `json:"timeout,omitempty"`
 	ToolsAllow    []string `json:"toolsAllow,omitempty"`
 	ToolsDeny     []string `json:"toolsDeny,omitempty"`
+	Suspended     *bool    `json:"suspended,omitempty"`
 }
 
 func (s *Server) patchMCPServer(w http.ResponseWriter, r *http.Request) {
@@ -1324,6 +1325,9 @@ func (s *Server) patchMCPServer(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ToolsDeny != nil {
 		mcp.Spec.ToolsDeny = req.ToolsDeny
+	}
+	if req.Suspended != nil {
+		mcp.Spec.Suspended = *req.Suspended
 	}
 
 	if err := s.client.Update(r.Context(), &mcp); err != nil {
@@ -2708,6 +2712,7 @@ func (s *Server) installDefaultMCPServers(w http.ResponseWriter, r *http.Request
 			ObjectMeta: metav1.ObjectMeta{Name: src.Name, Namespace: targetNS, Labels: src.Labels, Annotations: src.Annotations},
 			Spec:       src.Spec,
 		}
+		mcp.Spec.Suspended = true
 		if err := s.client.Create(r.Context(), mcp); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
 				resp.AlreadyPresent = append(resp.AlreadyPresent, src.Name)

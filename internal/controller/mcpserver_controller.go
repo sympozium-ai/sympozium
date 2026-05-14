@@ -73,6 +73,11 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
+	// Suspended: scale down existing deployment and update status
+	if mcpServer.Spec.Suspended {
+		return r.reconcileSuspended(ctx, &mcpServer, log)
+	}
+
 	// Ensure Deployment
 	if err := r.reconcileDeployment(ctx, &mcpServer, log); err != nil {
 		return ctrl.Result{}, err
@@ -86,6 +91,51 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Update status
 	return r.updateStatus(ctx, &mcpServer, port, log)
+}
+
+func (r *MCPServerReconciler) reconcileSuspended(ctx context.Context, ms *sympoziumv1alpha1.MCPServer, log logr.Logger) (ctrl.Result, error) {
+	log.Info("MCPServer is suspended — scaling down")
+
+	// Scale existing deployment to zero if it exists
+	var deploy appsv1.Deployment
+	err := r.Get(ctx, types.NamespacedName{Name: ms.Name, Namespace: ms.Namespace}, &deploy)
+	if err == nil {
+		zero := int32(0)
+		if deploy.Spec.Replicas == nil || *deploy.Spec.Replicas != 0 {
+			deploy.Spec.Replicas = &zero
+			if err := r.Update(ctx, &deploy); err != nil {
+				return ctrl.Result{}, err
+			}
+			log.Info("Scaled deployment to zero")
+		}
+	} else if !errors.IsNotFound(err) {
+		return ctrl.Result{}, err
+	}
+
+	ms.Status.Ready = false
+	ms.Status.URL = ""
+	ms.Status.ToolCount = 0
+	ms.Status.Tools = nil
+
+	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
+		Type:               "Suspended",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Suspended",
+		Message:            "MCP server is suspended — configure secrets and tokens, then unsuspend",
+		ObservedGeneration: ms.Generation,
+	})
+	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             "Suspended",
+		Message:            "MCP server is suspended",
+		ObservedGeneration: ms.Generation,
+	})
+
+	if err := r.Status().Update(ctx, ms); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympoziumv1alpha1.MCPServer, log logr.Logger) (ctrl.Result, error) {
@@ -389,6 +439,9 @@ func (r *MCPServerReconciler) updateStatus(ctx context.Context, ms *sympoziumv1a
 		Message:            readyMsg,
 		ObservedGeneration: ms.Generation,
 	})
+
+	// Clear Suspended condition when running
+	meta.RemoveStatusCondition(&ms.Status.Conditions, "Suspended")
 
 	if err := r.Status().Update(ctx, ms); err != nil {
 		return ctrl.Result{}, err
