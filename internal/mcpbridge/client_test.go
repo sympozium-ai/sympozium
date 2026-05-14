@@ -129,6 +129,48 @@ func TestClientDiscoverTools(t *testing.T) {
 	}
 }
 
+func TestClientSendsInitializedNotification(t *testing.T) {
+	var receivedInitialized bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req JSONRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch req.Method {
+		case "initialize":
+			resp := JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      &req.ID,
+			}
+			result, _ := json.Marshal(MCPInitializeResult{
+				ProtocolVersion: "2025-03-26",
+				ServerInfo:      MCPImplementation{Name: "test", Version: "1.0"},
+			})
+			resp.Result = result
+			json.NewEncoder(w).Encode(resp)
+
+		case "notifications/initialized":
+			receivedInitialized = true
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewClient(ServerConfig{Name: "test", URL: srv.URL, Timeout: 10})
+	if err := client.initialize(context.Background()); err != nil {
+		t.Fatalf("initialize failed: %v", err)
+	}
+
+	if !receivedInitialized {
+		t.Fatal("server did not receive notifications/initialized")
+	}
+}
+
 func TestClientCallTool(t *testing.T) {
 	callHandler := func(params MCPToolCallParams) (*MCPToolCallResult, *JSONRPCError) {
 		if params.Name != "my_tool" {
