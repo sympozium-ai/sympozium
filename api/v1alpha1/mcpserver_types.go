@@ -113,6 +113,20 @@ type MCPServerDeployment struct {
 	// ServiceAccountName for RBAC access.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// Volumes are additional pod-level volumes to attach to the MCP
+	// server Deployment. Use this together with VolumeMounts to surface
+	// secrets via CSI drivers (e.g. Vault CSI), config files via
+	// ConfigMaps, etc. The reserved volume name `adapter-bin` is used
+	// internally for stdio transports and must not be reused.
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts are additional volume mounts applied to the MCP
+	// server container. Names must reference entries in Volumes (or any
+	// other volume defined on the pod).
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 type MCPSecretRef struct {

@@ -307,6 +307,8 @@ func (r *MCPServerReconciler) buildStdioPodSpec(ctx context.Context, ms *sympozi
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
 	}
+	podSpec.Volumes = append(podSpec.Volumes, dep.Volumes...)
+	podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, dep.VolumeMounts...)
 
 	if dep.ServiceAccountName != "" {
 		podSpec.ServiceAccountName = dep.ServiceAccountName
@@ -360,10 +362,14 @@ func (r *MCPServerReconciler) buildHTTPPodSpec(ms *sympoziumv1alpha1.MCPServer, 
 
 	if dep.Cmd != "" {
 		container.Command = []string{dep.Cmd}
+	}
+	if len(dep.Args) > 0 {
 		container.Args = dep.Args
 	}
 
+	container.VolumeMounts = append(container.VolumeMounts, dep.VolumeMounts...)
 	podSpec.Containers = []corev1.Container{container}
+	podSpec.Volumes = append(podSpec.Volumes, dep.Volumes...)
 
 	if dep.ServiceAccountName != "" {
 		podSpec.ServiceAccountName = dep.ServiceAccountName
