@@ -1814,7 +1814,7 @@ export function OnboardingWizard({
           {step === "confirm" || step === "channelAction" ? (
             <Button
               size="sm"
-              className="gap-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+              className="gap-1 bg-primary hover:bg-primary/90 text-primary-foreground border-0"
               onClick={next}
               disabled={isPending}
             >
@@ -1844,7 +1844,7 @@ export function OnboardingWizard({
               size="sm"
               onClick={next}
               disabled={!canNext}
-              className="gap-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+              className="gap-1 bg-primary hover:bg-primary/90 text-primary-foreground border-0"
             >
               Next <ChevronRight className="h-4 w-4" />
             </Button>

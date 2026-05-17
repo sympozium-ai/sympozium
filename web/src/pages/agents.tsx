@@ -109,7 +109,7 @@ export function AgentsPage() {
         </div>
         <Button
           size="sm"
-          className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground border-0"
           onClick={() => setWizardOpen(true)}
         >
           <Plus className="mr-2 h-4 w-4" /> Create Agent

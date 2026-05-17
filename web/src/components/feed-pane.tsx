@@ -325,7 +325,7 @@ export function FeedPane({
               />
               <Button
                 size="sm"
-                className="h-8 w-8 p-0 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0"
+                className="h-8 w-8 p-0 bg-primary hover:bg-primary/90 text-primary-foreground border-0"
                 onClick={handleSend}
                 disabled={!message.trim() || createRun.isPending}
               >

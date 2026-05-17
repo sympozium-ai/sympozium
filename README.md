@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="Sympozium TUI demo" width="800px;">
+  <img src="demo.png" alt="Sympozium dashboard" width="800px;">
 </p>
 
 ---
