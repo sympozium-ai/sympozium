@@ -104,7 +104,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       <div
         className={cn(
           "flex h-14 items-center border-b border-border/50 overflow-hidden",
-          collapsed ? "justify-center px-0" : "px-3",
+          collapsed ? "justify-center px-0" : "px-1.5",
         )}
       >
         {collapsed ? (
