@@ -61,7 +61,7 @@ export function LoginPage() {
 
       <Card className="relative z-10 w-full max-w-md border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/20">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold text-2xl shadow-lg shadow-blue-500/25">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-2xl shadow-lg shadow-primary/25">
             S
           </div>
           <CardTitle className="text-2xl font-bold text-white">
@@ -89,7 +89,7 @@ export function LoginPage() {
             )}
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 shadow-lg shadow-blue-500/20"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-lg shadow-primary/20"
               disabled={!token.trim() || loading}
             >
               {loading ? "Verifying…" : "Sign In"}
