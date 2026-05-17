@@ -149,7 +149,7 @@ export function AgentConfigNode({
 
 	return (
 		<div
-			className={`rounded-lg border ${borderStyle} bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] cursor-pointer transition-all ${borderClass}`}
+			className={`border ${borderStyle} bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] cursor-pointer transition-all ${borderClass}`}
 		>
 			<Handle
 				type="target"
@@ -290,11 +290,11 @@ export function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
 
 	return (
 		<div
-			className={`rounded-lg border border-violet-500/40 bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300 ${border}`}
+			className={`border border-primary/40 bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300 ${border}`}
 		>
 			<div className="flex items-center gap-1.5 mb-1">
-				<Cpu className="h-3.5 w-3.5 text-violet-400" />
-				<span className="font-semibold text-sm text-violet-300">
+				<Cpu className="h-3.5 w-3.5 text-primary" />
+				<span className="font-semibold text-sm text-primary">
 					Local Model
 				</span>
 			</div>
@@ -333,7 +333,7 @@ export function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
 			)}
 
 			{model.status?.placedNode && (
-				<p className="text-[9px] text-violet-400/60 truncate mt-0.5">
+				<p className="text-[9px] text-primary/60 truncate mt-0.5">
 					node: {model.status.placedNode}
 				</p>
 			)}
@@ -341,7 +341,7 @@ export function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
 			<Handle
 				type="source"
 				position={Position.Bottom}
-				className="!bg-violet-400 !w-2 !h-2"
+				className="!bg-primary !w-2 !h-2"
 			/>
 		</div>
 	);
@@ -409,11 +409,11 @@ export function ProviderNode({ data }: NodeProps<Node<ProviderNodeData>>) {
 		const border = modelPhaseBorder[phase] || "";
 		return (
 			<div
-				className={`rounded-lg border border-violet-500/40 bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300 ${border}`}
+				className={`border border-primary/40 bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300 ${border}`}
 			>
 				<div className="flex items-center gap-1.5 mb-1">
-					<Cpu className="h-3.5 w-3.5 text-violet-400" />
-					<span className="font-semibold text-sm text-violet-300">
+					<Cpu className="h-3.5 w-3.5 text-primary" />
+					<span className="font-semibold text-sm text-primary">
 						Local Model
 					</span>
 				</div>
@@ -437,7 +437,7 @@ export function ProviderNode({ data }: NodeProps<Node<ProviderNodeData>>) {
 				<Handle
 					type="source"
 					position={Position.Bottom}
-					className="!bg-violet-400 !w-2 !h-2"
+					className="!bg-primary !w-2 !h-2"
 				/>
 			</div>
 		);
@@ -449,7 +449,7 @@ export function ProviderNode({ data }: NodeProps<Node<ProviderNodeData>>) {
 
 	return (
 		<div
-			className={`rounded-lg border ${colors.border} bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300`}
+			className={`border ${colors.border} bg-card shadow-md px-4 py-3 min-w-[180px] max-w-[220px] transition-shadow duration-300`}
 		>
 			<div className="flex items-center gap-1.5 mb-1">
 				<Icon className={`h-3.5 w-3.5 ${colors.text}`} />
@@ -489,7 +489,7 @@ export function StimulusNode({ data }: NodeProps<Node<StimulusNodeData>>) {
 
 	return (
 		<div
-			className={`rounded-lg border border-amber-500/40 bg-card shadow-md px-3 py-2.5 min-w-[160px] max-w-[200px] transition-shadow duration-300 cursor-pointer hover:border-amber-500/60 hover:bg-amber-500/5 ${
+			className={`border border-amber-500/40 bg-card shadow-md px-3 py-2.5 min-w-[160px] max-w-[200px] transition-shadow duration-300 cursor-pointer hover:border-amber-500/60 hover:bg-amber-500/5 ${
 				delivered ? "ring-1 ring-amber-500/40" : ""
 			}`}
 			data-testid="stimulus-node"
@@ -1022,7 +1022,7 @@ export function EdgeTypePicker({
 	onCancel: () => void;
 }) {
 	return (
-		<div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex gap-1 rounded-lg border border-border/60 bg-card shadow-lg p-2">
+		<div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex gap-1 border border-border/60 bg-card shadow-lg p-2">
 			<span className="text-xs text-muted-foreground self-center mr-1">
 				Type:
 			</span>

@@ -78,12 +78,12 @@ import Dagre from "@dagrejs/dagre";
 function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
   const f = data.fitness;
   return (
-    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 min-w-[240px] shadow-md cursor-pointer hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-colors">
-      <Handle type="target" position={Position.Top} className="!bg-emerald-500 !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-emerald-500 !w-2 !h-2" />
+    <div className="border border-foreground/20 bg-card px-4 py-3 min-w-[240px] shadow-md cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
+      <Handle type="target" position={Position.Top} className="!bg-foreground !w-2 !h-2" />
+      <Handle type="source" position={Position.Bottom} className="!bg-foreground !w-2 !h-2" />
       <div className="flex items-center gap-2 mb-2">
-        <Server className="h-4 w-4 text-emerald-400" />
-        <span className="font-semibold text-sm text-emerald-300">{data.name}</span>
+        <Server className="h-4 w-4 text-foreground" />
+        <span className="font-semibold text-sm text-foreground">{data.name}</span>
         {f?.stale && (
           <Badge variant="destructive" className="text-[8px] px-1 py-0">stale</Badge>
         )}
@@ -94,7 +94,7 @@ function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
           <span>{Math.round(f.totalRamGb)} GB RAM</span>
           <span>{f.cpuCores} cores</span>
           {f.hasGpu && f.gpuName && (
-            <span className="text-emerald-400">{f.gpuName}{f.gpuVramGb ? ` ${Math.round(f.gpuVramGb)}GB` : ""}</span>
+            <span className="text-foreground">{f.gpuName}{f.gpuVramGb ? ` ${Math.round(f.gpuVramGb)}GB` : ""}</span>
           )}
           {!f.hasGpu && (
             <span>{f.backend || "CPU"}</span>
@@ -108,7 +108,7 @@ function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
             <Badge
               key={p.name}
               variant="outline"
-              className="text-[9px] border-emerald-500/30 text-emerald-400"
+              className="text-[9px] border-foreground/20 text-foreground"
             >
               {p.name}
               {p.models?.length > 0 && ` (${p.models.length})`}
@@ -129,17 +129,17 @@ function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
         : "text-yellow-400 border-yellow-500/30 bg-yellow-500/5";
 
   return (
-    <div className={`rounded-lg border px-4 py-3 min-w-[180px] shadow-md ${phaseColor}`}>
-      <Handle type="target" position={Position.Top} className="!bg-violet-500 !w-2 !h-2" />
-      <Handle type="source" position={Position.Bottom} className="!bg-violet-500 !w-2 !h-2" />
+    <div className={`border px-4 py-3 min-w-[180px] shadow-md ${phaseColor}`}>
+      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2" />
+      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2" />
       <div className="flex items-center gap-2 mb-1">
-        <Cpu className="h-4 w-4 text-violet-400" />
+        <Cpu className="h-4 w-4 text-muted-foreground" />
         <Link to={`/models/${data.name}?namespace=${data.namespace}`} className="font-semibold text-sm hover:underline">
           {data.name}
         </Link>
       </div>
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <Badge variant="outline" className="text-[9px] border-violet-500/30 text-violet-400">Pod</Badge>
+        <Badge variant="outline" className="text-[9px] border-muted-foreground/30 text-muted-foreground">Pod</Badge>
         <span>{data.serverType || "llama-cpp"}</span>
         {data.gpu > 0 && <span>GPU:{data.gpu}</span>}
         <Badge variant="outline" className="text-[9px]">{data.phase}</Badge>
@@ -152,16 +152,16 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
   const active = data.enabled;
   return (
     <Link to={`/ensembles/${data.name}`} className="block">
-      <div className={`rounded-lg border px-3 py-2 shadow-md transition-colors cursor-pointer ${
+      <div className={`border px-3 py-2 shadow-md transition-colors cursor-pointer ${
         active
-          ? "border-blue-500/30 bg-blue-500/5 hover:border-blue-500/50 hover:bg-blue-500/10"
+          ? "border-primary/30 bg-primary/5 hover:border-primary/50 hover:bg-primary/10"
           : "border-border/20 bg-muted/5 opacity-50 hover:opacity-70"
       }`}>
-        <Handle type="target" position={Position.Top} className={active ? "!bg-blue-500 !w-2 !h-2" : "!bg-muted-foreground/40 !w-2 !h-2"} />
-        <Handle type="source" position={Position.Bottom} className={active ? "!bg-blue-500 !w-2 !h-2" : "!bg-muted-foreground/40 !w-2 !h-2"} />
+        <Handle type="target" position={Position.Top} className={active ? "!bg-primary !w-2 !h-2" : "!bg-muted-foreground/40 !w-2 !h-2"} />
+        <Handle type="source" position={Position.Bottom} className={active ? "!bg-primary !w-2 !h-2" : "!bg-muted-foreground/40 !w-2 !h-2"} />
         <div className="flex items-center gap-2">
-          <Users className={`h-3.5 w-3.5 shrink-0 ${active ? "text-blue-400" : "text-muted-foreground/40"}`} />
-          <span className={`font-medium text-xs truncate max-w-[140px] ${active ? "text-blue-300" : "text-muted-foreground/60"}`}>
+          <Users className={`h-3.5 w-3.5 shrink-0 ${active ? "text-primary" : "text-muted-foreground/40"}`} />
+          <span className={`font-medium text-xs truncate max-w-[140px] ${active ? "text-primary" : "text-muted-foreground/60"}`}>
             {data.name}
           </span>
           <span className="text-[9px] text-muted-foreground/40 shrink-0">
@@ -178,7 +178,7 @@ function EnsembleNode({ data }: NodeProps<Node<EnsembleNodeData>>) {
           <div className="flex items-center gap-1 mt-1">
             {data.hasDelegation && (
               <span title="Delegation">
-                <GitFork className="h-2.5 w-2.5 text-blue-400/60" />
+                <GitFork className="h-2.5 w-2.5 text-primary/60" />
               </span>
             )}
             {data.hasSequential && (
@@ -218,7 +218,7 @@ function TopologyStimulusNode({ data }: NodeProps<Node<TopologyStimulusNodeData>
 
   return (
     <div
-      className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 shadow-sm min-w-[100px] max-w-[160px] cursor-pointer hover:border-amber-500/50 hover:bg-amber-500/10 transition-colors"
+      className="border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 shadow-sm min-w-[100px] max-w-[160px] cursor-pointer hover:border-amber-500/50 hover:bg-amber-500/10 transition-colors"
       onClick={handleClick}
     >
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-1.5 !h-1.5" />
@@ -244,11 +244,11 @@ function PersonaNode({ data }: NodeProps<Node<PersonaNodeData>>) {
         : "bg-muted-foreground/40";
 
   return (
-    <div className="rounded-md border border-border/50 bg-card px-3 py-1.5 shadow-sm min-w-[120px]">
-      <Handle type="target" position={Position.Top} className="!bg-blue-400 !w-1.5 !h-1.5" />
-      <Handle type="source" position={Position.Bottom} className="!bg-blue-400 !w-1.5 !h-1.5" />
+    <div className="border border-border/50 bg-card px-3 py-1.5 shadow-sm min-w-[120px]">
+      <Handle type="target" position={Position.Top} className="!bg-primary !w-1.5 !h-1.5" />
+      <Handle type="source" position={Position.Bottom} className="!bg-primary !w-1.5 !h-1.5" />
       <div className="flex items-center gap-1.5">
-        <User className="h-3 w-3 text-blue-400 shrink-0" />
+        <User className="h-3 w-3 text-primary shrink-0" />
         <span className="text-[11px] font-medium truncate">{data.displayName || data.name}</span>
         {data.runPhase && (
           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
@@ -270,7 +270,7 @@ interface AgentRunNodeData {
 const runPhaseBorder: Record<string, string> = {
   Running: "border-blue-500/50 bg-blue-500/5",
   Pending: "border-yellow-500/50 bg-yellow-500/5",
-  Serving: "border-violet-500/50 bg-violet-500/5",
+  Serving: "border-muted-foreground/50 bg-card",
   PostRunning: "border-amber-500/50 bg-amber-500/5",
   AwaitingDelegate: "border-amber-500/50 bg-amber-500/5",
 };
@@ -291,7 +291,7 @@ function AgentRunNode({ data }: NodeProps<Node<AgentRunNodeData>>) {
   const handleColor = data.isSubAgent ? "!bg-teal-400" : "!bg-cyan-400";
 
   return (
-    <div className={`rounded border ${border} px-2 py-1 shadow-sm min-w-[100px] max-w-[140px]`}>
+    <div className={`border ${border} px-2 py-1 shadow-sm min-w-[100px] max-w-[140px]`}>
       <Handle type="target" position={Position.Top} className={`${handleColor} !w-1.5 !h-1.5`} />
       <Handle type="source" position={Position.Bottom} className={`${handleColor} !w-1.5 !h-1.5`} />
       <div className="flex items-center gap-1">
@@ -323,7 +323,7 @@ function CloudProviderNode({ data }: NodeProps<Node<CloudProviderNodeData>>) {
 function GatewayNode({ data }: NodeProps<Node<GatewayNodeData>>) {
   const configured = data.ready || (data.phase && data.phase !== "Not Configured");
   return (
-    <div className={`rounded-lg border px-4 py-3 min-w-[200px] shadow-md ${
+    <div className={`border px-4 py-3 min-w-[200px] shadow-md ${
       configured
         ? "border-amber-500/30 bg-amber-500/5"
         : "border-border/20 bg-muted/5 opacity-50"
@@ -667,11 +667,11 @@ function buildTopology(
           id: `e-${modelId}-${nodeId}`,
           source: nodeId,
           target: modelId,
-          style: { stroke: "#8b5cf6", strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf6" },
+          style: { stroke: "#8a8c82", strokeWidth: 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#8a8c82" },
           animated: m.status?.phase === "Loading",
           label: "runs on",
-          labelStyle: { fontSize: 9, fill: "#9ca3af" },
+          labelStyle: { fontSize: 9, fill: "#8a8c82" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
         });
@@ -681,8 +681,8 @@ function buildTopology(
         id: `e-${modelId}-node-${providerNodes[0].nodeName}`,
         source: `node-${providerNodes[0].nodeName}`,
         target: modelId,
-        style: { stroke: "#8b5cf680", strokeWidth: 1 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#8b5cf680" },
+        style: { stroke: "#8a8c8280", strokeWidth: 1 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#8a8c8280" },
       });
     }
   }
@@ -704,7 +704,7 @@ function buildTopology(
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
           animated: true,
           label: "inference",
-          labelStyle: { fontSize: 9, fill: "#9ca3af" },
+          labelStyle: { fontSize: 9, fill: "#8a8c82" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
         });
@@ -721,7 +721,7 @@ function buildTopology(
           style: { stroke: edgeColor, strokeWidth: 1.5, strokeDasharray: "4 3" },
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor },
           label: "inference",
-          labelStyle: { fontSize: 9, fill: "#9ca3af" },
+          labelStyle: { fontSize: 9, fill: "#8a8c82" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
         });
@@ -736,7 +736,7 @@ function buildTopology(
         style: { stroke: provEdgeColor, strokeWidth: 1.5, strokeDasharray: "4 3" },
         markerEnd: { type: MarkerType.ArrowClosed, color: provEdgeColor },
         label: "inference",
-        labelStyle: { fontSize: 9, fill: "#9ca3af" },
+        labelStyle: { fontSize: 9, fill: "#8a8c82" },
         labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
         labelBgPadding: [4, 2] as [number, number],
       });
@@ -799,7 +799,7 @@ function buildTopology(
           style: { stroke: "#f59e0b", strokeWidth: 1.5 },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
           label: "triggers",
-          labelStyle: { fontSize: 8, fill: "#9ca3af" },
+          labelStyle: { fontSize: 8, fill: "#8a8c82" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
         });
@@ -824,7 +824,7 @@ function buildTopology(
         id: `e-${ensId}-${pid}`,
         source: ensId,
         target: pid,
-        style: { stroke: "#3b82f640", strokeWidth: 1 },
+        style: { stroke: "#e8562a40", strokeWidth: 1 },
       });
     }
 
@@ -834,9 +834,9 @@ function buildTopology(
       const srcId = `${ensId}-p-${rel.source}`;
       const tgtId = `${ensId}-p-${rel.target}`;
       const relColor =
-        rel.type === "delegation" ? "#60a5fa"
+        rel.type === "delegation" ? "#f0ece4"
           : rel.type === "sequential" ? "#fbbf24"
-            : "#9ca3af";
+            : "#8a8c82";
       edges.push({
         id: `e-rel-${ensId}-${rel.source}-${rel.target}`,
         source: srcId,
@@ -846,7 +846,7 @@ function buildTopology(
           : { stroke: relColor, strokeWidth: 1, strokeDasharray: "4 3" },
         markerEnd: { type: MarkerType.ArrowClosed, color: relColor },
         label: rel.type,
-        labelStyle: { fontSize: 8, fill: "#9ca3af" },
+        labelStyle: { fontSize: 8, fill: "#8a8c82" },
         labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
         labelBgPadding: [4, 2] as [number, number],
         animated: rel.type === "delegation",
@@ -961,7 +961,7 @@ function buildTopology(
           style: { stroke: "#f59e0b", strokeWidth: 1.5, strokeDasharray: "6 3" },
           markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
           label: "web endpoint",
-          labelStyle: { fontSize: 9, fill: "#9ca3af" },
+          labelStyle: { fontSize: 9, fill: "#8a8c82" },
           labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
           labelBgPadding: [4, 2] as [number, number],
         });
@@ -1356,8 +1356,8 @@ function TopologyCanvas() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-300">
-              <Server className="h-4 w-4 text-emerald-400" />
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Server className="h-4 w-4 text-foreground" />
               {selectedK8sNode?.nodeName}
             </DialogTitle>
             <DialogDescription className="font-mono text-xs">
@@ -1376,10 +1376,10 @@ function TopologyCanvas() {
                   {selectedK8sNode.providers.map((p) => (
                     <div
                       key={p.name}
-                      className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-2"
+                      className="border border-foreground/20 bg-card p-2"
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-emerald-300">{p.name}</span>
+                        <span className="font-medium text-foreground">{p.name}</span>
                         <span className="text-[10px] text-muted-foreground font-mono">
                           port {p.port}
                           {p.proxyPort ? ` / proxy ${p.proxyPort}` : ""}
@@ -1391,7 +1391,7 @@ function TopologyCanvas() {
                             <Badge
                               key={m}
                               variant="outline"
-                              className="text-[9px] border-emerald-500/30 text-emerald-400"
+                              className="text-[9px] border-foreground/20 text-foreground"
                             >
                               {m}
                             </Badge>
@@ -1419,11 +1419,11 @@ function TopologyCanvas() {
                   {modelsOnSelectedNode.map((m) => (
                     <div
                       key={m.metadata.name}
-                      className="flex items-center justify-between rounded-md border border-violet-500/20 bg-violet-500/5 px-2 py-1.5"
+                      className="flex items-center justify-between rounded-md border border-muted-foreground/20 bg-card px-2 py-1.5"
                     >
                       <Link
                         to={`/models/${m.metadata.name}?namespace=${m.metadata.namespace}`}
-                        className="font-medium text-xs text-violet-300 hover:underline"
+                        className="font-medium text-xs text-muted-foreground hover:underline"
                       >
                         {m.metadata.name}
                       </Link>
