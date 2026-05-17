@@ -1608,41 +1608,42 @@ const (
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 var (
+	// ── Neo Industrial TUI palette ──────────────────────────────────
 	tuiBannerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#E94560")).
-			Background(lipgloss.Color("#0F0F23"))
+			Foreground(lipgloss.Color("#e8562a")).
+			Background(lipgloss.Color("#1a1a18"))
 
 	tuiTabStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#585B70")).
-			Background(lipgloss.Color("#0F0F23")).
+			Foreground(lipgloss.Color("#8a8c82")).
+			Background(lipgloss.Color("#1a1a18")).
 			Padding(0, 1)
 
 	tuiTabActiveStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#E94560")).
-				Background(lipgloss.Color("#1E1E2E")).
+				Foreground(lipgloss.Color("#e8562a")).
+				Background(lipgloss.Color("#242422")).
 				Padding(0, 1)
 
 	tuiColHeaderStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#74C7EC")).
-				Background(lipgloss.Color("#11111B"))
+				Foreground(lipgloss.Color("#f0ece4")).
+				Background(lipgloss.Color("#1a1a18"))
 
 	tuiRowStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#CDD6F4"))
+			Foreground(lipgloss.Color("#f0ece4"))
 
 	tuiRowAltStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#A6ADC8")).
-			Background(lipgloss.Color("#11111B"))
+			Foreground(lipgloss.Color("#d4cfc6")).
+			Background(lipgloss.Color("#1a1a18"))
 
 	tuiRowSelectedStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#1E1E2E")).
-				Background(lipgloss.Color("#74C7EC"))
+				Foreground(lipgloss.Color("#1a1a18")).
+				Background(lipgloss.Color("#e8562a"))
 
 	tuiDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#585B70"))
+			Foreground(lipgloss.Color("#8a8c82"))
 
 	tuiErrorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F38BA8")).
@@ -1656,78 +1657,78 @@ var (
 			Foreground(lipgloss.Color("#A6E22E"))
 
 	tuiPromptStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E94560")).
+			Foreground(lipgloss.Color("#e8562a")).
 			Bold(true)
 
 	tuiHeaderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#74C7EC")).
+			Foreground(lipgloss.Color("#f0ece4")).
 			Bold(true)
 
 	tuiStatusBarStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#BAC2DE")).
-				Background(lipgloss.Color("#181825"))
+				Foreground(lipgloss.Color("#d4cfc6")).
+				Background(lipgloss.Color("#242422"))
 
 	tuiStatusKeyStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E94560")).
-				Background(lipgloss.Color("#181825")).
+				Foreground(lipgloss.Color("#e8562a")).
+				Background(lipgloss.Color("#242422")).
 				Bold(true)
 
 	tuiLogBorderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#45475A"))
+				Foreground(lipgloss.Color("#333330"))
 
 	tuiSepStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#313244"))
+			Foreground(lipgloss.Color("#333330"))
 
 	tuiCountStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F5C2E7")).
+			Foreground(lipgloss.Color("#e8562a")).
 			Bold(true)
 
 	tuiModalBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("#E94560")).
+				BorderForeground(lipgloss.Color("#e8562a")).
 				Padding(1, 2).
-				Background(lipgloss.Color("#16213E"))
+				Background(lipgloss.Color("#242422"))
 
 	tuiModalTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#E94560")).
-				Background(lipgloss.Color("#16213E"))
+				Foreground(lipgloss.Color("#e8562a")).
+				Background(lipgloss.Color("#242422"))
 
 	tuiModalCmdStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E94560"))
+				Foreground(lipgloss.Color("#e8562a"))
 
 	tuiModalDescStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#A0A0A0"))
+				Foreground(lipgloss.Color("#8a8c82"))
 
 	tuiSuggestStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#CDD6F4")).
-			Background(lipgloss.Color("#1E1E2E")).
+			Foreground(lipgloss.Color("#f0ece4")).
+			Background(lipgloss.Color("#242422")).
 			Padding(0, 1)
 
 	tuiSuggestSelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#1A1A2E")).
-				Background(lipgloss.Color("#E94560")).
+				Foreground(lipgloss.Color("#1a1a18")).
+				Background(lipgloss.Color("#e8562a")).
 				Bold(true).
 				Padding(0, 1)
 
 	tuiSuggestDescStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#666666")).
-				Background(lipgloss.Color("#1E1E2E"))
+				Foreground(lipgloss.Color("#8a8c82")).
+				Background(lipgloss.Color("#242422"))
 
 	tuiSuggestDescSelectedStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#1A1A2E")).
-					Background(lipgloss.Color("#E94560"))
+					Foreground(lipgloss.Color("#1a1a18")).
+					Background(lipgloss.Color("#e8562a"))
 
 	// Feed pane styles
 	tuiFeedTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#F5C2E7")).
+				Foreground(lipgloss.Color("#e8562a")).
 				Bold(true)
 
 	tuiFeedPromptStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#89DCEB"))
+				Foreground(lipgloss.Color("#f0ece4"))
 
 	tuiFeedMetaStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#585B70"))
+				Foreground(lipgloss.Color("#8a8c82"))
 )
 
 func newTUICmd() *cobra.Command {
@@ -5984,7 +5985,7 @@ func (m tuiModel) renderHeader() string {
 		connIcon = tuiErrorStyle.Render(" ●")
 	}
 
-	ns := tuiDimStyle.Render(" ns:") + lipgloss.NewStyle().Foreground(lipgloss.Color("#F5C2E7")).Render(m.namespace)
+	ns := tuiDimStyle.Render(" ns:") + lipgloss.NewStyle().Foreground(lipgloss.Color("#e8562a")).Render(m.namespace)
 
 	counts := tuiDimStyle.Render(" │ ") +
 		tuiCountStyle.Render(fmt.Sprintf("%d", len(m.instances))) + tuiDimStyle.Render(" agents ") +
@@ -6000,7 +6001,7 @@ func (m tuiModel) renderHeader() string {
 	if m.width > w {
 		pad = strings.Repeat(" ", m.width-w)
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("#0F0F23")).Render(left + pad)
+	return lipgloss.NewStyle().Background(lipgloss.Color("#1a1a18")).Render(left + pad)
 }
 
 func (m tuiModel) renderTabBar() string {
@@ -6017,8 +6018,8 @@ func (m tuiModel) renderTabBar() string {
 	if m.drillInstance != "" && (m.activeView == viewChannels || m.activeView == viewPods) {
 		tabs.WriteString(tuiDimStyle.Render(" "))
 		tabs.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F5C2E7")).
-			Background(lipgloss.Color("#0F0F23")).
+			Foreground(lipgloss.Color("#e8562a")).
+			Background(lipgloss.Color("#1a1a18")).
 			Render("⊳ " + m.drillInstance))
 	}
 	left := tabs.String()
@@ -6027,7 +6028,7 @@ func (m tuiModel) renderTabBar() string {
 	if m.width > w {
 		pad = strings.Repeat(" ", m.width-w)
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("#0F0F23")).Render(left + pad)
+	return lipgloss.NewStyle().Background(lipgloss.Color("#1a1a18")).Render(left + pad)
 }
 
 func (m tuiModel) renderTable(tableH int) string {
@@ -6169,9 +6170,9 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 	}
 
 	// Styles for trigger badges.
-	triggerHeartbeat := lipgloss.NewStyle().Foreground(lipgloss.Color("#F5C2E7")).Bold(true)
-	triggerScheduled := lipgloss.NewStyle().Foreground(lipgloss.Color("#89DCEB"))
-	triggerSweep := lipgloss.NewStyle().Foreground(lipgloss.Color("#FAB387"))
+	triggerHeartbeat := lipgloss.NewStyle().Foreground(lipgloss.Color("#e8562a")).Bold(true)
+	triggerScheduled := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4"))
+	triggerSweep := lipgloss.NewStyle().Foreground(lipgloss.Color("#d4cfc6"))
 
 	for i := 0; i < tableH-1; i++ {
 		idx := i + m.tableScroll
@@ -6847,7 +6848,7 @@ func (m tuiModel) renderDetailInstanceChannels(width, height int) string {
 		case "Error", "Disconnected":
 			statusStyle = tuiErrorStyle
 		}
-		line := statusStyle.Render(" "+statusIcon+" ") + lipgloss.NewStyle().Foreground(lipgloss.Color("#CDD6F4")).Render(ch.Type)
+		line := statusStyle.Render(" "+statusIcon+" ") + lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4")).Render(ch.Type)
 		allLines = append(allLines, line)
 
 		secretLine := tuiDimStyle.Render("   secret: " + truncate(ch.SecretRef, contentW-10))
@@ -6948,7 +6949,7 @@ func (m tuiModel) renderDetailSkillRuns(width, height int) string {
 		case "Failed", "Timeout":
 			phaseStyle = tuiErrorStyle
 		}
-		nameLine := " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#CDD6F4")).Render(truncate(run.Name, contentW))
+		nameLine := " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4")).Render(truncate(run.Name, contentW))
 		allLines = append(allLines, nameLine)
 		metaLine := tuiDimStyle.Render("   "+run.Spec.AgentRef+" • ") + phaseStyle.Render(phase) + tuiDimStyle.Render(" • "+age)
 		allLines = append(allLines, metaLine)
@@ -7373,7 +7374,7 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 	if w > lw {
 		pad = strings.Repeat(" ", w-lw)
 	}
-	out = append(out, lipgloss.NewStyle().Background(lipgloss.Color("#181825")).Render(left+pad))
+	out = append(out, lipgloss.NewStyle().Background(lipgloss.Color("#242422")).Render(left+pad))
 
 	return strings.Join(out, "\n")
 }
@@ -7404,7 +7405,7 @@ func (m tuiModel) renderFullscreenDetailStatic(w, h int, renderer func(int, int)
 	if w > lw {
 		pad = strings.Repeat(" ", w-lw)
 	}
-	bar := lipgloss.NewStyle().Background(lipgloss.Color("#181825")).Render(left + pad)
+	bar := lipgloss.NewStyle().Background(lipgloss.Color("#242422")).Render(left + pad)
 
 	return content + "\n" + bar
 }
@@ -7497,7 +7498,7 @@ func (m tuiModel) renderStatusBar() string {
 	if m.width > w {
 		pad = strings.Repeat(" ", m.width-w)
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("#181825")).Render(left + pad)
+	return lipgloss.NewStyle().Background(lipgloss.Color("#242422")).Render(left + pad)
 }
 
 func (m tuiModel) renderDeleteConfirm(base string) string {
@@ -7580,16 +7581,16 @@ func (m tuiModel) renderGatewayEditModal(base string) string {
 	content.WriteString("\n\n")
 
 	highlight := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#1A1A2E")).
-		Background(lipgloss.Color("#E94560")).
+		Foreground(lipgloss.Color("#1a1a18")).
+		Background(lipgloss.Color("#e8562a")).
 		Bold(true)
 	label := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#CDD6F4")).
-		Background(lipgloss.Color("#16213E")).
+		Foreground(lipgloss.Color("#f0ece4")).
+		Background(lipgloss.Color("#242422")).
 		Width(28)
 	value := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#89DCEB")).
-		Background(lipgloss.Color("#16213E"))
+		Foreground(lipgloss.Color("#f0ece4")).
+		Background(lipgloss.Color("#242422"))
 
 	renderField := func(idx int, name string, val string) {
 		lbl := label.Render("  " + name + ":")
@@ -7672,18 +7673,18 @@ func (m tuiModel) renderEditModal(base string) string {
 	}
 
 	highlight := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#1A1A2E")).
-		Background(lipgloss.Color("#E94560")).
+		Foreground(lipgloss.Color("#1a1a18")).
+		Background(lipgloss.Color("#e8562a")).
 		Bold(true)
 
 	label := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#CDD6F4")).
-		Background(lipgloss.Color("#16213E")).
+		Foreground(lipgloss.Color("#f0ece4")).
+		Background(lipgloss.Color("#242422")).
 		Width(20)
 
 	value := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#89DCEB")).
-		Background(lipgloss.Color("#16213E"))
+		Foreground(lipgloss.Color("#f0ece4")).
+		Background(lipgloss.Color("#242422"))
 
 	renderField := func(idx int, name string, val string) {
 		lbl := label.Render("  " + name + ":")
@@ -9468,13 +9469,13 @@ func (m tuiModel) advancePersonaChannelToken() (tea.Model, tea.Cmd) {
 func (m tuiModel) renderWizardPanel(h int) string {
 	w := &m.wizard
 
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E94560"))
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#74C7EC")).Bold(true)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e8562a"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4")).Bold(true)
 	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A6E3A1"))
-	menuStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#CDD6F4"))
-	menuNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F5C2E7")).Bold(true)
+	menuStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4"))
+	menuNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#e8562a")).Bold(true)
 	hintStyle := tuiDimStyle
-	stepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FAB387")).Bold(true)
+	stepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#d4cfc6")).Bold(true)
 
 	// Persona wizard has its own renderer.
 	if w.personaMode {
@@ -10152,11 +10153,11 @@ func (m tuiModel) renderPersonaWizardPanel(h int,
 // renderEnsembleDetailPane renders the right-hand detail pane showing
 // the contents of the selected Ensemble during the persona wizard.
 func (m tuiModel) renderEnsembleDetailPane(w, h int) string {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E94560"))
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#74C7EC")).Bold(true)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e8562a"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4")).Bold(true)
 	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A6E3A1"))
 	dimStyle := tuiDimStyle
-	skillStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FAB387"))
+	skillStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#d4cfc6"))
 
 	var pack *sympoziumv1alpha1.Ensemble
 	for i := range m.ensembles {
@@ -10797,7 +10798,7 @@ func joinPanesHorizontally(left, right string, leftW, rightW int) string {
 		leftLines = leftLines[:len(leftLines)-1]
 	}
 
-	sepStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#313244")).Render("│")
+	sepStr := lipgloss.NewStyle().Foreground(lipgloss.Color("#333330")).Render("│")
 
 	// Never let the right pane make the output taller than the left.
 	maxLines := len(leftLines)
