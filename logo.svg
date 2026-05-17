@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 160" width="600" height="160">
-  <!-- Background — sharp, dark -->
+  <!-- Background -->
   <rect width="600" height="160" fill="#1a1a18"/>
-
-  <!-- Border frame -->
   <rect x="3" y="3" width="594" height="154" fill="none" stroke="#333330" stroke-width="1"/>
 
-  <!-- Corner brackets — orange -->
+  <!-- Corner brackets -->
   <path d="M6 24V6h18" fill="none" stroke="#e8562a" stroke-width="2.5"/>
   <path d="M594 24V6h-18" fill="none" stroke="#e8562a" stroke-width="2.5"/>
   <path d="M6 136v18h18" fill="none" stroke="#e8562a" stroke-width="2.5"/>
@@ -17,33 +15,26 @@
   <rect x="6" y="150" width="4" height="4" fill="#e8562a"/>
   <rect x="590" y="150" width="4" height="4" fill="#e8562a"/>
 
-  <!-- Icon starburst (centered vertically at x=80) -->
-  <g transform="translate(45, 15) scale(0.65)">
-    <!-- Cream arms first -->
-    <line x1="100" y1="38" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="152" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="152" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="48" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="48" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <!-- Clean center -->
-    <rect x="93" y="93" width="14" height="14" fill="#1a1a18"/>
-    <!-- Orange arm below center -->
-    <line x1="100" y1="107" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
-    <!-- Center dot -->
-    <rect x="95" y="95" width="10" height="10" fill="#e8562a"/>
-  </g>
+  <!-- SY monogram mark -->
+  <text x="72" y="112" text-anchor="middle" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="72" font-weight="900" fill="#f0ece4" letter-spacing="-2">
+    SY
+  </text>
+  <rect x="28" y="120" width="88" height="5" fill="#e8562a"/>
 
-  <!-- Wordmark — mono, uppercase -->
-  <text x="175" y="88" font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="48" font-weight="700" fill="#f0ece4" letter-spacing="2">
+  <!-- Divider line -->
+  <line x1="136" y1="30" x2="136" y2="130" stroke="#333330" stroke-width="1"/>
+
+  <!-- Wordmark -->
+  <text x="158" y="88" font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="48" font-weight="700" fill="#f0ece4" letter-spacing="2">
     SYMPOZIUM<tspan fill="#e8562a">.AI</tspan>
   </text>
 
   <!-- Tagline -->
-  <text x="177" y="116" font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="11" fill="#8a8c82" letter-spacing="4">
+  <text x="160" y="116" font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="11" fill="#8a8c82" letter-spacing="4">
     KUBERNETES-NATIVE AGENTIC CONTROL PLANE
   </text>
 
-  <!-- Crosshair ticks on edges -->
+  <!-- Crosshair ticks -->
   <line x1="298" y1="3" x2="302" y2="3" stroke="#e8562a" stroke-width="1"/>
   <line x1="298" y1="157" x2="302" y2="157" stroke="#e8562a" stroke-width="1"/>
   <line x1="3" y1="78" x2="3" y2="82" stroke="#e8562a" stroke-width="1"/>

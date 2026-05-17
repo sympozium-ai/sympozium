@@ -1,41 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
   <!-- Background -->
   <rect width="200" height="200" fill="#1a1a18"/>
-
-  <!-- Border frame -->
   <rect x="4" y="4" width="192" height="192" fill="none" stroke="#333330" stroke-width="1"/>
 
-  <!-- Corner brackets — orange -->
-  <path d="M8 30V8h22" fill="none" stroke="#e8562a" stroke-width="3"/>
-  <path d="M192 30V8h-22" fill="none" stroke="#e8562a" stroke-width="3"/>
-  <path d="M8 170v22h22" fill="none" stroke="#e8562a" stroke-width="3"/>
-  <path d="M192 170v22h-22" fill="none" stroke="#e8562a" stroke-width="3"/>
+  <!-- Corner brackets -->
+  <path d="M8 28V8h20" fill="none" stroke="#e8562a" stroke-width="2.5"/>
+  <path d="M192 28V8h-20" fill="none" stroke="#e8562a" stroke-width="2.5"/>
+  <path d="M8 172v20h20" fill="none" stroke="#e8562a" stroke-width="2.5"/>
+  <path d="M192 172v20h20" fill="none" stroke="#e8562a" stroke-width="2.5"/>
 
-  <!-- Cream arms (drawn first) -->
-  <line x1="100" y1="38" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="152" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="152" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="48" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="48" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-
-  <!-- Clean center — cover the intersection -->
-  <rect x="93" y="93" width="14" height="14" fill="#1a1a18"/>
-
-  <!-- Orange arm — starts below center, no overlap -->
-  <line x1="100" y1="107" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
-
-  <!-- Center dot — on top of everything -->
-  <rect x="95" y="95" width="10" height="10" fill="#e8562a"/>
-
-  <!-- Crosshair marks -->
-  <line x1="96" y1="8" x2="104" y2="8" stroke="#e8562a" stroke-width="1"/>
-  <line x1="96" y1="192" x2="104" y2="192" stroke="#e8562a" stroke-width="1"/>
-  <line x1="8" y1="96" x2="8" y2="104" stroke="#e8562a" stroke-width="1"/>
-  <line x1="192" y1="96" x2="192" y2="104" stroke="#e8562a" stroke-width="1"/>
-
-  <!-- Corner dots -->
-  <rect x="8" y="8" width="4" height="4" fill="#e8562a"/>
-  <rect x="188" y="8" width="4" height="4" fill="#e8562a"/>
-  <rect x="8" y="188" width="4" height="4" fill="#e8562a"/>
-  <rect x="188" y="188" width="4" height="4" fill="#e8562a"/>
+  <!-- Option B: Bold "SYM" monogram — framed, industrial type -->
+  <text x="100" y="128" text-anchor="middle" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="80" font-weight="900" fill="#f0ece4" letter-spacing="-2">
+    SY
+  </text>
+  <!-- Orange accent bar under -->
+  <rect x="40" y="140" width="120" height="6" fill="#e8562a"/>
+  <!-- Registration mark -->
+  <circle cx="172" cy="56" r="10" fill="none" stroke="#f0ece4" stroke-width="2"/>
+  <text x="172" y="61" text-anchor="middle" font-family="'Arial Black', sans-serif" font-size="14" font-weight="900" fill="#f0ece4">R</text>
 </svg>
