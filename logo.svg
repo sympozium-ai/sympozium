@@ -19,13 +19,18 @@
 
   <!-- Icon starburst (centered vertically at x=80) -->
   <g transform="translate(45, 15) scale(0.65)">
-    <line x1="100" y1="100" x2="100" y2="38" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="100" y1="100" x2="152" y2="52" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="100" y1="100" x2="152" y2="148" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="100" y1="100" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
-    <line x1="100" y1="100" x2="48" y2="148" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <line x1="100" y1="100" x2="48" y2="52" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-    <rect x="94" y="94" width="12" height="12" fill="#e8562a"/>
+    <!-- Cream arms first -->
+    <line x1="100" y1="38" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+    <line x1="152" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+    <line x1="152" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+    <line x1="48" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+    <line x1="48" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+    <!-- Clean center -->
+    <rect x="93" y="93" width="14" height="14" fill="#1a1a18"/>
+    <!-- Orange arm below center -->
+    <line x1="100" y1="107" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
+    <!-- Center dot -->
+    <rect x="95" y="95" width="10" height="10" fill="#e8562a"/>
   </g>
 
   <!-- Wordmark — mono, uppercase -->

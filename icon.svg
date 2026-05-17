@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <!-- Background — sharp corners, dark -->
+  <!-- Background -->
   <rect width="200" height="200" fill="#1a1a18"/>
 
   <!-- Border frame -->
@@ -11,16 +11,21 @@
   <path d="M8 170v22h22" fill="none" stroke="#e8562a" stroke-width="3"/>
   <path d="M192 170v22h-22" fill="none" stroke="#e8562a" stroke-width="3"/>
 
-  <!-- Center starburst — white/cream, sharp ends -->
-  <line x1="100" y1="100" x2="100" y2="38" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="100" y1="100" x2="152" y2="52" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="100" y1="100" x2="152" y2="148" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="100" y1="100" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
-  <line x1="100" y1="100" x2="48" y2="148" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
-  <line x1="100" y1="100" x2="48" y2="52" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+  <!-- Cream arms (drawn first) -->
+  <line x1="100" y1="38" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+  <line x1="152" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+  <line x1="152" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+  <line x1="48" y1="148" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
+  <line x1="48" y1="52" x2="100" y2="100" stroke="#f0ece4" stroke-width="10" stroke-linecap="square"/>
 
-  <!-- Center dot -->
-  <rect x="94" y="94" width="12" height="12" fill="#e8562a"/>
+  <!-- Clean center — cover the intersection -->
+  <rect x="93" y="93" width="14" height="14" fill="#1a1a18"/>
+
+  <!-- Orange arm — starts below center, no overlap -->
+  <line x1="100" y1="107" x2="100" y2="162" stroke="#e8562a" stroke-width="10" stroke-linecap="square"/>
+
+  <!-- Center dot — on top of everything -->
+  <rect x="95" y="95" width="10" height="10" fill="#e8562a"/>
 
   <!-- Crosshair marks -->
   <line x1="96" y1="8" x2="104" y2="8" stroke="#e8562a" stroke-width="1"/>
