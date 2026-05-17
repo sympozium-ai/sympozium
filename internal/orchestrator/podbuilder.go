@@ -4,6 +4,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -30,19 +31,40 @@ type PodBuilder struct {
 	ImageTag string
 }
 
-const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
+const defaultImageRegistry = "ghcr.io/sympozium-ai/sympozium"
+
+// imageRegistry is retained for backwards compatibility with code that still
+// references the package-level constant. New code should call
+// resolveImageRegistry() so SYMPOZIUM_IMAGE_REGISTRY can override it.
+const imageRegistry = defaultImageRegistry
+
+// resolveImageRegistry returns the registry used for Sympozium-built images.
+// SYMPOZIUM_IMAGE_REGISTRY (set on the controller deployment from
+// .Values.image.registry) overrides the compiled-in default.
+func resolveImageRegistry() string {
+	if v := os.Getenv("SYMPOZIUM_IMAGE_REGISTRY"); v != "" {
+		return v
+	}
+	return defaultImageRegistry
+}
 
 // NewPodBuilder creates a PodBuilder with default settings.
 // The tag parameter sets the image tag for all Sympozium images (e.g. "v0.0.25").
+// SYMPOZIUM_IMAGE_TAG env var overrides the tag if set (used by the Helm chart
+// to propagate .Values.image.tag to runtime-spawned pods).
 func NewPodBuilder(tag string) *PodBuilder {
+	if v := os.Getenv("SYMPOZIUM_IMAGE_TAG"); v != "" {
+		tag = v
+	}
 	if tag == "" {
 		tag = "latest"
 	}
+	registry := resolveImageRegistry()
 	return &PodBuilder{
-		DefaultAgentImage:     fmt.Sprintf("%s/agent-runner:%s", imageRegistry, tag),
-		DefaultIPCBridgeImage: fmt.Sprintf("%s/ipc-bridge:%s", imageRegistry, tag),
-		DefaultSandboxImage:   fmt.Sprintf("%s/sandbox:%s", imageRegistry, tag),
-		DefaultMCPBridgeImage: fmt.Sprintf("%s/mcp-bridge:%s", imageRegistry, tag),
+		DefaultAgentImage:     fmt.Sprintf("%s/agent-runner:%s", registry, tag),
+		DefaultIPCBridgeImage: fmt.Sprintf("%s/ipc-bridge:%s", registry, tag),
+		DefaultSandboxImage:   fmt.Sprintf("%s/sandbox:%s", registry, tag),
+		DefaultMCPBridgeImage: fmt.Sprintf("%s/mcp-bridge:%s", registry, tag),
 		EventBusURL:           "nats://nats.sympozium-system.svc:4222",
 		ImageTag:              tag,
 	}

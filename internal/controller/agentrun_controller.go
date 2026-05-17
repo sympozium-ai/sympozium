@@ -136,12 +136,18 @@ func (r *AgentRunReconciler) updateStatusWithRetry(ctx context.Context, agentRun
 }
 
 // imageRef returns a fully qualified image reference using the reconciler's tag.
+// Honors SYMPOZIUM_IMAGE_REGISTRY (set by the Helm chart from .Values.image.registry)
+// to allow self-hosting all Sympozium-built images.
 func (r *AgentRunReconciler) imageRef(name string) string {
 	tag := r.ImageTag
 	if tag == "" {
 		tag = "latest"
 	}
-	return fmt.Sprintf("%s/%s:%s", imageRegistry, name, tag)
+	registry := os.Getenv("SYMPOZIUM_IMAGE_REGISTRY")
+	if registry == "" {
+		registry = imageRegistry
+	}
+	return fmt.Sprintf("%s/%s:%s", registry, name, tag)
 }
 
 // resolveOTelEndpoint returns the OTLP endpoint for agent pods.

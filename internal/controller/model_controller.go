@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -40,6 +41,24 @@ const (
 	llmfitProbeLabelKey   = "sympozium.ai/llmfit-probe"
 	placementStartedAnnot = "sympozium.ai/placement-started"
 )
+
+// resolveLLMFitProbeImage returns the skill-llmfit image, honoring
+// SYMPOZIUM_IMAGE_REGISTRY and SYMPOZIUM_IMAGE_TAG (set by the Helm chart).
+// Falls back to the compiled-in llmfitProbeImage when neither is set.
+func resolveLLMFitProbeImage() string {
+	registry := os.Getenv("SYMPOZIUM_IMAGE_REGISTRY")
+	tag := os.Getenv("SYMPOZIUM_IMAGE_TAG")
+	if registry == "" && tag == "" {
+		return llmfitProbeImage
+	}
+	if registry == "" {
+		registry = "ghcr.io/sympozium-ai/sympozium"
+	}
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s/skill-llmfit:%s", registry, tag)
+}
 
 // ModelReconciler reconciles Model objects.
 type ModelReconciler struct {

@@ -46,6 +46,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            # Image registry/tag used by the controller when spawning
+            # runtime pods (agent-runner, ipc-bridge, channel-*, skill sidecars,
+            # mcp-bridge, llmfit probe, web-proxy, memory server, …).
+            # Allows fully self-hosting all Sympozium-built images.
+            - name: SYMPOZIUM_IMAGE_REGISTRY
+              value: {{ .Values.image.registry | quote }}
+            {{- $imgTag := .Values.image.tag | default .Chart.AppVersion }}
+            {{- if $imgTag }}
+            - name: SYMPOZIUM_IMAGE_TAG
+              value: {{ $imgTag | quote }}
+            {{- end }}
             {{- if .Values.observability.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.endpoint | quote }}
