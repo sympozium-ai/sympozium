@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.33](https://github.com/sympozium-ai/sympozium/compare/v0.10.32...v0.10.33) (2026-05-17)
+
+
+### Features
+
+* **web:** neo-industrial UX theme with classic toggle ([#200](https://github.com/sympozium-ai/sympozium/issues/200)) ([5af0144](https://github.com/sympozium-ai/sympozium/commit/5af0144a5543523c21f6d12d4b3941d7cd53b595))
+
 ## [0.10.32](https://github.com/sympozium-ai/sympozium/compare/v0.10.31...v0.10.32) (2026-05-14)
 
 
