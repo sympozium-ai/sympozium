@@ -271,12 +271,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				"sympozium.ai/source":         "channel",
 				"sympozium.ai/source-channel": msg.Channel,
 			},
-			Annotations: map[string]string{
-				"sympozium.ai/reply-channel": msg.Channel,
-				"sympozium.ai/reply-chat-id": msg.ChatID,
-				"sympozium.ai/sender-name":   msg.SenderName,
-				"sympozium.ai/sender-id":     msg.SenderID,
-			},
+			Annotations: channelRunAnnotations(&msg),
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef:   msg.InstanceName,
@@ -383,13 +378,6 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		return
 	}
 
-	replyChannel := run.Annotations["sympozium.ai/reply-channel"]
-	replyChatID := run.Annotations["sympozium.ai/reply-chat-id"]
-
-	if replyChannel == "" {
-		return
-	}
-
 	// Extract the response from the completed event.
 	var result agentResult
 	if err := json.Unmarshal(event.Data, &result); err != nil {
@@ -405,12 +393,12 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		responseText = "(no response)"
 	}
 
-	// Publish outbound message to the channel.
-	outMsg := channelpkg.OutboundMessage{
-		Channel: replyChannel,
-		ChatID:  replyChatID,
-		Text:    responseText,
+	outMsg, ok := outboundFromRunAnnotations(run.Annotations, responseText)
+	if !ok {
+		return
 	}
+	replyChannel := outMsg.Channel
+	replyChatID := outMsg.ChatID
 
 	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{
 		"instanceName": instanceName,
@@ -532,4 +520,40 @@ func stringSliceContains(list []string, val string) bool {
 		}
 	}
 	return false
+}
+
+// channelRunAnnotations builds the AgentRun annotations that record where a
+// channel-sourced run needs to reply. Persisting them on the AgentRun is what
+// lets us reconstruct the OutboundMessage on completion, since the original
+// InboundMessage isn't available at that point. ThreadID is omitted when the
+// inbound message wasn't part of a thread, so non-threaded conversations stay
+// non-threaded on the reply.
+func channelRunAnnotations(msg *channelpkg.InboundMessage) map[string]string {
+	ann := map[string]string{
+		"sympozium.ai/reply-channel": msg.Channel,
+		"sympozium.ai/reply-chat-id": msg.ChatID,
+		"sympozium.ai/sender-name":   msg.SenderName,
+		"sympozium.ai/sender-id":     msg.SenderID,
+	}
+	if msg.ThreadID != "" {
+		ann["sympozium.ai/reply-thread-id"] = msg.ThreadID
+	}
+	return ann
+}
+
+// outboundFromRunAnnotations rebuilds the OutboundMessage to publish for a
+// completed AgentRun, using the reply-* annotations stamped by
+// channelRunAnnotations. The bool is false when the run isn't channel-sourced
+// (reply-channel annotation missing) and the caller should skip it.
+func outboundFromRunAnnotations(annotations map[string]string, text string) (channelpkg.OutboundMessage, bool) {
+	replyChannel := annotations["sympozium.ai/reply-channel"]
+	if replyChannel == "" {
+		return channelpkg.OutboundMessage{}, false
+	}
+	return channelpkg.OutboundMessage{
+		Channel:  replyChannel,
+		ChatID:   annotations["sympozium.ai/reply-chat-id"],
+		ThreadID: annotations["sympozium.ai/reply-thread-id"],
+		Text:     text,
+	}, true
 }
