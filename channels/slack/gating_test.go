@@ -354,6 +354,7 @@ func TestThreadEngagement_TTLEvicts(t *testing.T) {
 		t.Fatal("entry should exist immediately")
 	}
 	time.Sleep(20 * time.Millisecond)
+	te.evictStale()
 	if st := te.get("C1", "T1"); st != nil {
 		t.Fatalf("entry should have been evicted, got %+v", st)
 	}

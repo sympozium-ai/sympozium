@@ -92,17 +92,32 @@ func main() {
 		AppToken: appToken,
 		log:      log,
 		client:   &http.Client{Timeout: 30 * time.Second},
-		cfg:      loadSlackConfig(),
+		cfg:      loadSlackConfig(log),
 		threads:  newThreadEngagement(24 * time.Hour),
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Periodically evict stale thread-engagement entries. Lighter than
+	// scanning the map on every inbound message under load.
+	go ch.threads.sweep(ctx, 5*time.Minute)
+
 	// Resolve the bot's own user ID via auth.test so we can detect
-	// @-mentions in inbound text. Failures are non-fatal — without a
-	// bot ID, classifyKind treats everything as "channel".
-	if id, err := resolveBotUserID(ctx, ch.client, botToken); err != nil {
+	// @-mentions in inbound text. We retry a few times with backoff
+	// because transient network/Slack errors at startup should not
+	// silently disable mention detection.
+	//
+	// When the operator has configured SLACK_ALLOWED_TRIGGERS to
+	// include "mention", a missing bot ID means *every* message gets
+	// classified as "channel" and dropped — the bot would appear dead.
+	// In that case we exit non-zero so Kubernetes restarts the pod
+	// rather than running in a broken state.
+	if id, err := resolveBotUserIDWithRetry(ctx, ch.client, botToken, 5, time.Second); err != nil {
+		if ch.cfg.allowedTriggers[string(kindMention)] {
+			log.Error(err, "failed to resolve bot user ID via auth.test; SLACK_ALLOWED_TRIGGERS includes \"mention\" so the bot cannot function — exiting for pod restart")
+			os.Exit(1)
+		}
 		log.Error(err, "failed to resolve bot user ID via auth.test; @-mention detection disabled")
 	} else {
 		ch.BotID = id
@@ -273,6 +288,48 @@ func (sc *SlackChannel) readSocketMode(ctx context.Context, conn *websocket.Conn
 	}
 }
 
+// gateAndBuildInbound runs the shared gating pipeline for one Slack
+// message event and, on accept, returns the InboundMessage ready to
+// publish to the event bus. Logging of accept/drop decisions happens
+// here so both Socket Mode and Events API paths get consistent
+// observability. Returns (msg, false) when the message must be
+// dropped.
+func (sc *SlackChannel) gateAndBuildInbound(
+	user, channelID, threadTS, ts, channelType, text string,
+) (channel.InboundMessage, bool) {
+	decision, reason := evaluateInbound(sc.cfg, sc.threads,
+		sc.BotID, user, channelID, threadTS, ts, channelType, text)
+
+	kvs := []interface{}{
+		"reason", reason,
+		"sender", user,
+		"chat", channelID,
+		"channelType", channelType,
+		"threadTs", threadTS,
+	}
+	if decision == gateDrop {
+		sc.log.Info("dropped inbound", kvs...)
+		return channel.InboundMessage{}, false
+	}
+	sc.log.Info("accepted inbound", kvs...)
+
+	threadID := threadTS
+	if sc.cfg.threading && threadID == "" {
+		// Promote top-level message to a new thread anchored at its TS.
+		threadID = ts
+	}
+
+	return channel.InboundMessage{
+		SenderID: user,
+		ChatID:   channelID,
+		ThreadID: threadID,
+		Text:     text,
+		Metadata: map[string]string{
+			"ts": ts,
+		},
+	}, true
+}
+
 // handleSocketEvent processes an events_api payload from Socket Mode.
 // The payload wraps an Events API envelope with type "event_callback".
 func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawMessage) {
@@ -301,27 +358,13 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 		return
 	}
 
-	// Slack-pod gating: enforce access + threading + sticky-threads.
-	decision, reason := evaluateInbound(sc.cfg, sc.threads,
-		sc.BotID, inner.Event.User, inner.Event.Channel,
-		inner.Event.ThreadTS, inner.Event.TS, inner.Event.ChannelType, inner.Event.Text)
-	if decision == gateDrop {
-		sc.log.Info("dropped inbound",
-			"reason", reason,
-			"sender", inner.Event.User,
-			"chat", inner.Event.Channel,
-			"channelType", inner.Event.ChannelType,
-			"threadTs", inner.Event.ThreadTS,
-		)
+	msg, ok := sc.gateAndBuildInbound(
+		inner.Event.User, inner.Event.Channel, inner.Event.ThreadTS,
+		inner.Event.TS, inner.Event.ChannelType, inner.Event.Text,
+	)
+	if !ok {
 		return
 	}
-	sc.log.Info("accepted inbound",
-		"reason", reason,
-		"sender", inner.Event.User,
-		"chat", inner.Event.Channel,
-		"channelType", inner.Event.ChannelType,
-		"threadTs", inner.Event.ThreadTS,
-	)
 
 	// Start the root span for the entire message processing trace.
 	ctx, span := slackTracer.Start(ctx, "slack.message.received",
@@ -334,22 +377,6 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 		),
 	)
 	defer span.End()
-
-	threadID := inner.Event.ThreadTS
-	if sc.cfg.threading && threadID == "" {
-		// Promote top-level message to a new thread anchored at its TS.
-		threadID = inner.Event.TS
-	}
-
-	msg := channel.InboundMessage{
-		SenderID: inner.Event.User,
-		ChatID:   inner.Event.Channel,
-		ThreadID: threadID,
-		Text:     inner.Event.Text,
-		Metadata: map[string]string{
-			"ts": inner.Event.TS,
-		},
-	}
 
 	// PublishInbound propagates trace context through NATS headers.
 	if err := sc.PublishInbound(ctx, msg); err != nil {
@@ -446,41 +473,13 @@ func (sc *SlackChannel) handleSlackEvents(w http.ResponseWriter, r *http.Request
 		}
 
 		// Slack-pod gating: enforce access + threading + sticky-threads.
-		decision, reason := evaluateInbound(sc.cfg, sc.threads,
-			sc.BotID, envelope.Event.User, envelope.Event.Channel,
-			envelope.Event.ThreadTS, envelope.Event.TS, envelope.Event.ChannelType, envelope.Event.Text)
-		if decision == gateDrop {
-			sc.log.Info("dropped inbound",
-				"reason", reason,
-				"sender", envelope.Event.User,
-				"chat", envelope.Event.Channel,
-				"channelType", envelope.Event.ChannelType,
-				"threadTs", envelope.Event.ThreadTS,
-			)
+		msg, ok := sc.gateAndBuildInbound(
+			envelope.Event.User, envelope.Event.Channel, envelope.Event.ThreadTS,
+			envelope.Event.TS, envelope.Event.ChannelType, envelope.Event.Text,
+		)
+		if !ok {
 			w.WriteHeader(http.StatusOK)
 			return
-		}
-		sc.log.Info("accepted inbound",
-			"reason", reason,
-			"sender", envelope.Event.User,
-			"chat", envelope.Event.Channel,
-			"channelType", envelope.Event.ChannelType,
-			"threadTs", envelope.Event.ThreadTS,
-		)
-
-		threadID := envelope.Event.ThreadTS
-		if sc.cfg.threading && threadID == "" {
-			threadID = envelope.Event.TS
-		}
-
-		msg := channel.InboundMessage{
-			SenderID: envelope.Event.User,
-			ChatID:   envelope.Event.Channel,
-			ThreadID: threadID,
-			Text:     envelope.Event.Text,
-			Metadata: map[string]string{
-				"ts": envelope.Event.TS,
-			},
 		}
 
 		if err := sc.PublishInbound(r.Context(), msg); err != nil {

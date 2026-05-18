@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-logr/logr"
 )
 
 // slackConfig captures Slack-specific gating configuration injected by the
@@ -24,8 +26,18 @@ type slackConfig struct {
 	allowedChats     map[string]bool // empty means allow all
 }
 
-func loadSlackConfig() *slackConfig {
-	return &slackConfig{
+// validTriggerKinds enumerates the trigger values the gating pipeline
+// understands. Anything else in SLACK_ALLOWED_TRIGGERS is a no-op (and
+// therefore silently blocks that channel unless other kinds are also
+// listed), so loadSlackConfig logs a warning when unknown values appear.
+var validTriggerKinds = map[string]bool{
+	string(kindDM):      true,
+	string(kindMention): true,
+	string(kindChannel): true,
+}
+
+func loadSlackConfig(log logr.Logger) *slackConfig {
+	cfg := &slackConfig{
 		threading:        os.Getenv("SLACK_THREADING") == "true",
 		threadStickiness: os.Getenv("SLACK_THREAD_STICKINESS") == "true",
 		allowedTriggers:  csvToSet(os.Getenv("SLACK_ALLOWED_TRIGGERS")),
@@ -33,6 +45,13 @@ func loadSlackConfig() *slackConfig {
 		deniedSenders:    csvToSet(os.Getenv("SLACK_DENIED_SENDERS")),
 		allowedChats:     csvToSet(os.Getenv("SLACK_ALLOWED_CHATS")),
 	}
+	for v := range cfg.allowedTriggers {
+		if !validTriggerKinds[v] {
+			log.Info("WARNING: SLACK_ALLOWED_TRIGGERS contains unknown value; it will never match",
+				"value", v, "validValues", []string{string(kindDM), string(kindMention), string(kindChannel)})
+		}
+	}
+	return cfg
 }
 
 func csvToSet(s string) map[string]bool {
@@ -131,7 +150,6 @@ func threadKey(chatID, threadTS string) string {
 func (te *threadEngagement) get(chatID, threadTS string) *threadState {
 	te.mu.Lock()
 	defer te.mu.Unlock()
-	te.evictLocked()
 	st, ok := te.entries[threadKey(chatID, threadTS)]
 	if !ok {
 		return nil
@@ -142,7 +160,6 @@ func (te *threadEngagement) get(chatID, threadTS string) *threadState {
 func (te *threadEngagement) update(chatID, threadTS string, fn func(*threadState)) {
 	te.mu.Lock()
 	defer te.mu.Unlock()
-	te.evictLocked()
 	k := threadKey(chatID, threadTS)
 	st, ok := te.entries[k]
 	if !ok {
@@ -153,7 +170,27 @@ func (te *threadEngagement) update(chatID, threadTS string, fn func(*threadState
 	st.lastSeen = time.Now()
 }
 
-func (te *threadEngagement) evictLocked() {
+// sweep periodically evicts stale entries until ctx is cancelled. Run in a
+// goroutine. Cheaper than eviction on every get/update in busy channels.
+func (te *threadEngagement) sweep(ctx context.Context, interval time.Duration) {
+	if te.ttl <= 0 || interval <= 0 {
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			te.evictStale()
+		}
+	}
+}
+
+func (te *threadEngagement) evictStale() {
+	te.mu.Lock()
+	defer te.mu.Unlock()
 	if te.ttl <= 0 {
 		return
 	}
@@ -293,4 +330,30 @@ func resolveBotUserID(ctx context.Context, client *http.Client, botToken string)
 		return "", fmt.Errorf("auth.test: %s", body.Error)
 	}
 	return body.UserID, nil
+}
+
+// resolveBotUserIDWithRetry calls resolveBotUserID with exponential backoff.
+// Returns the bot user ID on success or the last error after attempts is
+// exhausted. Callers decide whether failure is fatal (e.g. when the gating
+// config requires @-mention detection to be useful).
+func resolveBotUserIDWithRetry(ctx context.Context, client *http.Client, botToken string, attempts int, baseDelay time.Duration) (string, error) {
+	var lastErr error
+	delay := baseDelay
+	for i := 0; i < attempts; i++ {
+		id, err := resolveBotUserID(ctx, client, botToken)
+		if err == nil {
+			return id, nil
+		}
+		lastErr = err
+		if i == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(delay):
+		}
+		delay *= 2
+	}
+	return "", lastErr
 }
