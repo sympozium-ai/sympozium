@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.34](https://github.com/sympozium-ai/sympozium/compare/v0.10.33...v0.10.34) (2026-05-18)
+
+
+### Features
+
+* **tui:** update TUI colors to neo-industrial palette ([8402a5e](https://github.com/sympozium-ai/sympozium/commit/8402a5e61f4e5e66ccb7e0e1fa995aae54100ad6))
+* update TUI, topology, and ensemble canvas to industrial palette ([f7a3bc7](https://github.com/sympozium-ai/sympozium/commit/f7a3bc721d95e57728367f056c29c8f6e5b20d3e))
+
+
+### Bug Fixes
+
+* replace remaining gradient buttons with theme-aware primary and update README demo image ([#203](https://github.com/sympozium-ai/sympozium/issues/203)) ([e85c1cf](https://github.com/sympozium-ai/sympozium/commit/e85c1cf95747360692650d3b6006d69575e1066b))
+
 ## [0.10.33](https://github.com/sympozium-ai/sympozium/compare/v0.10.32...v0.10.33) (2026-05-17)
 
 
