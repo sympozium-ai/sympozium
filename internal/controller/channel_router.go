@@ -272,12 +272,12 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				"sympozium.ai/source-channel": msg.Channel,
 			},
 			Annotations: map[string]string{
-				"sympozium.ai/reply-channel":   msg.Channel,
-				"sympozium.ai/reply-chat-id":   msg.ChatID,
-				"sympozium.ai/reply-thread-id": msg.ThreadID,
+				"sympozium.ai/reply-channel":    msg.Channel,
+				"sympozium.ai/reply-chat-id":    msg.ChatID,
+				"sympozium.ai/reply-thread-id":  msg.ThreadID,
 				"sympozium.ai/reply-message-ts": msg.Metadata["ts"],
-				"sympozium.ai/sender-name":     msg.SenderName,
-				"sympozium.ai/sender-id":       msg.SenderID,
+				"sympozium.ai/sender-name":      msg.SenderName,
+				"sympozium.ai/sender-id":        msg.SenderID,
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{

@@ -36,9 +36,9 @@ func TestAccessAllowed(t *testing.T) {
 		deniedSenders:  csvToSet("U3"),
 	}
 	cases := []struct {
-		name           string
-		sender, chat   string
-		want           bool
+		name         string
+		sender, chat string
+		want         bool
 	}{
 		{"chat allowed, sender allowed", "U1", "C1", true},
 		{"chat not in allowlist", "U1", "C9", false},
