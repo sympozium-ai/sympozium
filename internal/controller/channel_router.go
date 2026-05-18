@@ -272,10 +272,12 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				"sympozium.ai/source-channel": msg.Channel,
 			},
 			Annotations: map[string]string{
-				"sympozium.ai/reply-channel": msg.Channel,
-				"sympozium.ai/reply-chat-id": msg.ChatID,
-				"sympozium.ai/sender-name":   msg.SenderName,
-				"sympozium.ai/sender-id":     msg.SenderID,
+				"sympozium.ai/reply-channel":   msg.Channel,
+				"sympozium.ai/reply-chat-id":   msg.ChatID,
+				"sympozium.ai/reply-thread-id": msg.ThreadID,
+				"sympozium.ai/reply-message-ts": msg.Metadata["ts"],
+				"sympozium.ai/sender-name":     msg.SenderName,
+				"sympozium.ai/sender-id":       msg.SenderID,
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
@@ -385,6 +387,8 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 
 	replyChannel := run.Annotations["sympozium.ai/reply-channel"]
 	replyChatID := run.Annotations["sympozium.ai/reply-chat-id"]
+	replyThreadID := run.Annotations["sympozium.ai/reply-thread-id"]
+	replyMessageTS := run.Annotations["sympozium.ai/reply-message-ts"]
 
 	if replyChannel == "" {
 		return
@@ -407,9 +411,13 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 
 	// Publish outbound message to the channel.
 	outMsg := channelpkg.OutboundMessage{
-		Channel: replyChannel,
-		ChatID:  replyChatID,
-		Text:    responseText,
+		Channel:  replyChannel,
+		ChatID:   replyChatID,
+		ThreadID: replyThreadID,
+		Text:     responseText,
+	}
+	if replyMessageTS != "" {
+		outMsg.Metadata = map[string]string{"replyToTS": replyMessageTS}
 	}
 
 	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{

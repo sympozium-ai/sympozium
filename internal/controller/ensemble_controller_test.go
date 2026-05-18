@@ -499,3 +499,55 @@ func TestSkillRefsEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildChannelSpec_SlackOptionsPrecedence(t *testing.T) {
+	packOpts := &sympoziumv1alpha1.SlackChannelOptions{
+		Threading:        true,
+		ThreadStickiness: false,
+		AllowedTriggers:  []string{"mention"},
+	}
+	personaOpts := &sympoziumv1alpha1.SlackChannelOptions{
+		Threading:        true,
+		ThreadStickiness: true,
+		AllowedTriggers:  []string{"mention", "dm"},
+	}
+
+	tests := []struct {
+		name        string
+		channelType string
+		packOpts    *sympoziumv1alpha1.SlackChannelOptions
+		personaOpts *sympoziumv1alpha1.SlackChannelOptions
+		want        *sympoziumv1alpha1.SlackChannelOptions
+	}{
+		{"persona overrides pack", "slack", packOpts, personaOpts, personaOpts},
+		{"pack falls through when persona absent", "slack", packOpts, nil, packOpts},
+		{"nothing set", "slack", nil, nil, nil},
+		{"slack options ignored on non-slack channels", "discord", packOpts, personaOpts, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pack := &sympoziumv1alpha1.Ensemble{
+				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "default"},
+				Spec: sympoziumv1alpha1.EnsembleSpec{
+					SlackOptions: tt.packOpts,
+				},
+			}
+			persona := &sympoziumv1alpha1.AgentConfigSpec{
+				Name:         "alice",
+				SystemPrompt: "x",
+				SlackOptions: tt.personaOpts,
+			}
+			cs := buildChannelSpec(pack, persona, tt.channelType)
+			if tt.want == nil {
+				if cs.Slack != nil {
+					t.Fatalf("expected nil Slack, got %+v", cs.Slack)
+				}
+				return
+			}
+			if cs.Slack != tt.want {
+				t.Fatalf("Slack = %+v, want %+v", cs.Slack, tt.want)
+			}
+		})
+	}
+}

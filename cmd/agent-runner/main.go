@@ -185,6 +185,7 @@ func main() {
 	// agent knows how to reply through the originating channel.
 	sourceChannel := getEnv("SOURCE_CHANNEL", "")
 	sourceChatID := getEnv("SOURCE_CHAT_ID", "")
+	sourceThreadID := getEnv("SOURCE_THREAD_ID", "")
 	if sourceChannel != "" {
 		channelCtx := fmt.Sprintf(
 			"\n\n## Channel Context\n\n"+
@@ -194,8 +195,15 @@ func main() {
 				"questions, or send notifications to the user.",
 			sourceChannel, sourceChatID, sourceChannel, sourceChatID,
 		)
+		if sourceThreadID != "" {
+			channelCtx += fmt.Sprintf(
+				" The originating message is in thread %q — pass threadId=%q to keep "+
+					"replies in the same thread.",
+				sourceThreadID, sourceThreadID,
+			)
+		}
 		systemPrompt += channelCtx
-		log.Printf("channel context injected: channel=%s chatId=%s", sourceChannel, sourceChatID)
+		log.Printf("channel context injected: channel=%s chatId=%s threadId=%s", sourceChannel, sourceChatID, sourceThreadID)
 	}
 
 	// If this agent is part of an ensemble with relationships, inject

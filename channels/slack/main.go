@@ -45,10 +45,13 @@ type SlackChannel struct {
 	channel.BaseChannel
 	BotToken string
 	AppToken string // xapp-... token for Socket Mode (optional)
+	BotID    string // resolved at startup via auth.test, used for @-mention detection
 	log      logr.Logger
 	client   *http.Client
 	healthy  bool
 	mu       sync.RWMutex
+	cfg      *slackConfig
+	threads  *threadEngagement
 }
 
 func main() {
@@ -89,10 +92,22 @@ func main() {
 		AppToken: appToken,
 		log:      log,
 		client:   &http.Client{Timeout: 30 * time.Second},
+		cfg:      loadSlackConfig(),
+		threads:  newThreadEngagement(24 * time.Hour),
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Resolve the bot's own user ID via auth.test so we can detect
+	// @-mentions in inbound text. Failures are non-fatal — without a
+	// bot ID, classifyKind treats everything as "channel".
+	if id, err := resolveBotUserID(ctx, ch.client, botToken); err != nil {
+		log.Error(err, "failed to resolve bot user ID via auth.test; @-mention detection disabled")
+	} else {
+		ch.BotID = id
+		log.Info("Resolved Slack bot user ID", "botId", id)
+	}
 
 	// Initialize OpenTelemetry.
 	tel, telErr := telemetry.Init(ctx, telemetry.Config{})
@@ -264,13 +279,14 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 	var inner struct {
 		Type  string `json:"type"`
 		Event struct {
-			Type     string `json:"type"`
-			User     string `json:"user"`
-			Text     string `json:"text"`
-			Channel  string `json:"channel"`
-			TS       string `json:"ts"`
-			ThreadTS string `json:"thread_ts"`
-			BotID    string `json:"bot_id"`
+			Type        string `json:"type"`
+			User        string `json:"user"`
+			Text        string `json:"text"`
+			Channel     string `json:"channel"`
+			ChannelType string `json:"channel_type"`
+			TS          string `json:"ts"`
+			ThreadTS    string `json:"thread_ts"`
+			BotID       string `json:"bot_id"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &inner); err != nil {
@@ -285,6 +301,28 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 		return
 	}
 
+	// Slack-pod gating: enforce access + threading + sticky-threads.
+	decision, reason := evaluateInbound(sc.cfg, sc.threads,
+		sc.BotID, inner.Event.User, inner.Event.Channel,
+		inner.Event.ThreadTS, inner.Event.TS, inner.Event.ChannelType, inner.Event.Text)
+	if decision == gateDrop {
+		sc.log.Info("dropped inbound",
+			"reason", reason,
+			"sender", inner.Event.User,
+			"chat", inner.Event.Channel,
+			"channelType", inner.Event.ChannelType,
+			"threadTs", inner.Event.ThreadTS,
+		)
+		return
+	}
+	sc.log.Info("accepted inbound",
+		"reason", reason,
+		"sender", inner.Event.User,
+		"chat", inner.Event.Channel,
+		"channelType", inner.Event.ChannelType,
+		"threadTs", inner.Event.ThreadTS,
+	)
+
 	// Start the root span for the entire message processing trace.
 	ctx, span := slackTracer.Start(ctx, "slack.message.received",
 		trace.WithSpanKind(trace.SpanKindServer),
@@ -297,10 +335,16 @@ func (sc *SlackChannel) handleSocketEvent(ctx context.Context, payload json.RawM
 	)
 	defer span.End()
 
+	threadID := inner.Event.ThreadTS
+	if sc.cfg.threading && threadID == "" {
+		// Promote top-level message to a new thread anchored at its TS.
+		threadID = inner.Event.TS
+	}
+
 	msg := channel.InboundMessage{
 		SenderID: inner.Event.User,
 		ChatID:   inner.Event.Channel,
-		ThreadID: inner.Event.ThreadTS,
+		ThreadID: threadID,
 		Text:     inner.Event.Text,
 		Metadata: map[string]string{
 			"ts": inner.Event.TS,
@@ -366,13 +410,14 @@ func (sc *SlackChannel) handleSlackEvents(w http.ResponseWriter, r *http.Request
 		Type      string `json:"type"`
 		Challenge string `json:"challenge"`
 		Event     struct {
-			Type     string `json:"type"`
-			User     string `json:"user"`
-			Text     string `json:"text"`
-			Channel  string `json:"channel"`
-			TS       string `json:"ts"`
-			ThreadTS string `json:"thread_ts"`
-			BotID    string `json:"bot_id"`
+			Type        string `json:"type"`
+			User        string `json:"user"`
+			Text        string `json:"text"`
+			Channel     string `json:"channel"`
+			ChannelType string `json:"channel_type"`
+			TS          string `json:"ts"`
+			ThreadTS    string `json:"thread_ts"`
+			BotID       string `json:"bot_id"`
 		} `json:"event"`
 	}
 
@@ -400,10 +445,38 @@ func (sc *SlackChannel) handleSlackEvents(w http.ResponseWriter, r *http.Request
 			return
 		}
 
+		// Slack-pod gating: enforce access + threading + sticky-threads.
+		decision, reason := evaluateInbound(sc.cfg, sc.threads,
+			sc.BotID, envelope.Event.User, envelope.Event.Channel,
+			envelope.Event.ThreadTS, envelope.Event.TS, envelope.Event.ChannelType, envelope.Event.Text)
+		if decision == gateDrop {
+			sc.log.Info("dropped inbound",
+				"reason", reason,
+				"sender", envelope.Event.User,
+				"chat", envelope.Event.Channel,
+				"channelType", envelope.Event.ChannelType,
+				"threadTs", envelope.Event.ThreadTS,
+			)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		sc.log.Info("accepted inbound",
+			"reason", reason,
+			"sender", envelope.Event.User,
+			"chat", envelope.Event.Channel,
+			"channelType", envelope.Event.ChannelType,
+			"threadTs", envelope.Event.ThreadTS,
+		)
+
+		threadID := envelope.Event.ThreadTS
+		if sc.cfg.threading && threadID == "" {
+			threadID = envelope.Event.TS
+		}
+
 		msg := channel.InboundMessage{
 			SenderID: envelope.Event.User,
 			ChatID:   envelope.Event.Channel,
-			ThreadID: envelope.Event.ThreadTS,
+			ThreadID: threadID,
 			Text:     envelope.Event.Text,
 			Metadata: map[string]string{
 				"ts": envelope.Event.TS,
@@ -512,8 +585,17 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 		"channel": msg.ChatID,
 		"text":    msg.Text,
 	}
-	if msg.ThreadID != "" {
-		payload["thread_ts"] = msg.ThreadID
+	// Resolve the thread to post in:
+	//  1. Explicit ThreadID set by the controller (message originally
+	//     came from inside a thread) — always honoured.
+	//  2. If threading is enabled and the original message has a known
+	//     ts (replyToTS metadata), open a thread anchored at that ts.
+	threadTS := msg.ThreadID
+	if threadTS == "" && sc.cfg != nil && sc.cfg.threading {
+		threadTS = msg.Metadata["replyToTS"]
+	}
+	if threadTS != "" {
+		payload["thread_ts"] = threadTS
 	}
 	return sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
 }

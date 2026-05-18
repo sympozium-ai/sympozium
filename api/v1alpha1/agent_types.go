@@ -313,6 +313,35 @@ type SlackChannelOptions struct {
 	// resumes the chat. Default: "loud_sound".
 	// +optional
 	EmojiOnStart string `json:"emojiOnStart,omitempty"`
+
+	// Threading controls reply placement. When true, replies are sent
+	// in a thread: messages already inside a thread reply in that
+	// thread, and top-level messages get a new thread anchored to the
+	// inbound message. When false (default) replies are posted at the
+	// top level of the channel.
+	// +optional
+	Threading bool `json:"threading,omitempty"`
+
+	// AllowedTriggers gates which inbound message kinds may start an
+	// AgentRun. Values: "mention" (the bot is @-mentioned),
+	// "dm" (direct message to the bot), "channel" (any other channel
+	// or group message). When empty, all kinds trigger the agent.
+	// Composes (AND) with ChannelAccessControl.
+	// +optional
+	AllowedTriggers []string `json:"allowedTriggers,omitempty"`
+
+	// ThreadStickiness, when true together with Threading, lets the
+	// user who originally opened a thread keep talking to the bot
+	// without re-mentioning. The first sender to address the bot in
+	// a thread becomes the thread's "owner". Any message from anyone
+	// other than the owner — even an @-mention from a denied user —
+	// permanently marks the thread "interrupted". Once interrupted,
+	// every subsequent message (including from the owner) must
+	// satisfy AllowedTriggers (e.g. @-mention) to be processed; the
+	// lax free-flow mode never resumes for that thread. Has no
+	// effect when Threading is false.
+	// +optional
+	ThreadStickiness bool `json:"threadStickiness,omitempty"`
 }
 
 // AgentsSpec defines agent configuration.

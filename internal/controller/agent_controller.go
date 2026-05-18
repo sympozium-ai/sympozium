@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -318,6 +319,40 @@ func (r *AgentReconciler) buildChannelDeployment(
 				Name:      "whatsapp-data",
 				MountPath: "/data",
 			},
+		}
+	}
+
+	// Slack-specific configuration (threading, allowed-triggers,
+	// thread stickiness, access control). Slack pod gates inbound
+	// messages itself before publishing to NATS; the controller's
+	// channel router still applies AccessControl as defence in depth.
+	if ch.Type == "slack" {
+		c := &deploy.Spec.Template.Spec.Containers[0]
+		if ch.Slack != nil {
+			if ch.Slack.Threading {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "SLACK_THREADING", Value: "true"})
+			}
+			if ch.Slack.ThreadStickiness {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "SLACK_THREAD_STICKINESS", Value: "true"})
+			}
+			if len(ch.Slack.AllowedTriggers) > 0 {
+				c.Env = append(c.Env, corev1.EnvVar{
+					Name:  "SLACK_ALLOWED_TRIGGERS",
+					Value: strings.Join(ch.Slack.AllowedTriggers, ","),
+				})
+			}
+		}
+		if ch.AccessControl != nil {
+			ac := ch.AccessControl
+			if len(ac.AllowedSenders) > 0 {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "SLACK_ALLOWED_SENDERS", Value: strings.Join(ac.AllowedSenders, ",")})
+			}
+			if len(ac.DeniedSenders) > 0 {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "SLACK_DENIED_SENDERS", Value: strings.Join(ac.DeniedSenders, ",")})
+			}
+			if len(ac.AllowedChats) > 0 {
+				c.Env = append(c.Env, corev1.EnvVar{Name: "SLACK_ALLOWED_CHATS", Value: strings.Join(ac.AllowedChats, ",")})
+			}
 		}
 	}
 

@@ -29,14 +29,15 @@ type InboundMessage struct {
 // the inbound message (Slack ts, Discord snowflake, Telegram message_id,
 // etc.). Channels without reaction support ignore both fields.
 type OutboundMessage struct {
-	Channel         string `json:"channel"`
-	ChatID          string `json:"chatId"`
-	ThreadID        string `json:"threadId,omitempty"`
-	Text            string `json:"text"`
-	Format          string `json:"format,omitempty"` // plain, markdown, html
-	ReplyTo         string `json:"replyTo,omitempty"`
-	Reaction        string `json:"reaction,omitempty"`        // emoji identifier (channel-specific format)
-	TargetMessageID string `json:"targetMessageId,omitempty"` // inbound message id this reaction targets
+	Channel         string            `json:"channel"`
+	ChatID          string            `json:"chatId"`
+	ThreadID        string            `json:"threadId,omitempty"`
+	Text            string            `json:"text"`
+	Format          string            `json:"format,omitempty"` // plain, markdown, html
+	ReplyTo         string            `json:"replyTo,omitempty"`
+	Reaction        string            `json:"reaction,omitempty"`        // emoji identifier (channel-specific format)
+	TargetMessageID string            `json:"targetMessageId,omitempty"` // inbound message id this reaction targets
+	Metadata        map[string]string `json:"metadata,omitempty"`        // channel-specific routing hints (e.g. Slack replyToTS)
 }
 
 // Attachment represents a file or media attachment.

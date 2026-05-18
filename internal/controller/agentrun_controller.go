@@ -2200,6 +2200,11 @@ func (r *AgentRunReconciler) buildContainers(
 			corev1.EnvVar{Name: "SOURCE_CHAT_ID", Value: cid},
 		)
 	}
+	if tid := agentRun.Annotations["sympozium.ai/reply-thread-id"]; tid != "" {
+		containers[0].Env = append(containers[0].Env,
+			corev1.EnvVar{Name: "SOURCE_THREAD_ID", Value: tid},
+		)
+	}
 
 	// Inject per-instance OpenTelemetry configuration.
 	if observability != nil && observability.Enabled {

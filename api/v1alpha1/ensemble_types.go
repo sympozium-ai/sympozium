@@ -91,6 +91,14 @@ type EnsembleSpec struct {
 	// +optional
 	ChannelTriggers map[string]*ChannelTriggerSpec `json:"channelTriggers,omitempty"`
 
+	// SlackOptions configures Slack-specific channel settings
+	// (threading, allowed-triggers, sticky threads). Propagated as
+	// ChannelSpec.Slack on every generated Agent for the slack channel.
+	// Per-agent-config overrides in AgentConfigSpec.SlackOptions take
+	// precedence.
+	// +optional
+	SlackOptions *SlackChannelOptions `json:"slackOptions,omitempty"`
+
 	// ChannelVolumes maps channel type to extra pod volumes injected into
 	// the generated channel deployment (e.g. Vault CSI SecretProviderClass
 	// volume). Mirrors ChannelConfigs/ChannelAccessControl indexing.
@@ -218,6 +226,13 @@ type AgentConfigSpec struct {
 	// ensemble-level ChannelTriggers for this agent configuration.
 	// +optional
 	ChannelTriggers map[string]*ChannelTriggerSpec `json:"channelTriggers,omitempty"`
+
+	// SlackOptions overrides ensemble-level Slack-specific channel
+	// settings (threading, allowed-triggers, sticky threads) for this
+	// agent configuration. When non-nil, replaces the ensemble-level
+	// SlackOptions entirely (no field-level merge).
+	// +optional
+	SlackOptions *SlackChannelOptions `json:"slackOptions,omitempty"`
 
 	// MCPServers configures remote MCP (Model Context Protocol) servers
 	// for this agent configuration. Each entry references an MCPServer CR

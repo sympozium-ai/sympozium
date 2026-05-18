@@ -105,7 +105,8 @@ func defaultTools() []ToolDef {
 			Name: ToolSendChannelMessage,
 			Description: "Send a message to the user via a connected channel (e.g. WhatsApp, Telegram, Discord, Slack). " +
 				"Use this when the user asks you to notify them, send a summary, or deliver any text outside of the task result. " +
-				"If no chatId is provided the message is sent to the device owner (self-chat).",
+				"If no chatId is provided the message is sent to the device owner (self-chat). " +
+				"Optionally pass threadId to post into a specific thread (Slack thread_ts, Discord thread id, etc.).",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -121,6 +122,10 @@ func defaultTools() []ToolDef {
 					"chatId": map[string]any{
 						"type":        "string",
 						"description": "Target chat or group ID. Leave empty to send to the device owner (self-chat).",
+					},
+					"threadId": map[string]any{
+						"type":        "string",
+						"description": "Optional thread identifier to reply within an existing thread (Slack thread_ts, Discord thread id). Omit to post at the channel root.",
 					},
 				},
 				"required": []string{"channel", "text"},
@@ -394,6 +399,7 @@ func sendChannelMessageTool(args map[string]any) string {
 	channel, _ := args["channel"].(string)
 	text, _ := args["text"].(string)
 	chatID, _ := args["chatId"].(string)
+	threadID, _ := args["threadId"].(string)
 
 	if channel == "" {
 		return "Error: 'channel' is required (whatsapp, telegram, discord, slack)"
@@ -403,13 +409,15 @@ func sendChannelMessageTool(args map[string]any) string {
 	}
 
 	msg := struct {
-		Channel string `json:"channel"`
-		ChatID  string `json:"chatId,omitempty"`
-		Text    string `json:"text"`
+		Channel  string `json:"channel"`
+		ChatID   string `json:"chatId,omitempty"`
+		ThreadID string `json:"threadId,omitempty"`
+		Text     string `json:"text"`
 	}{
-		Channel: channel,
-		ChatID:  chatID,
-		Text:    text,
+		Channel:  channel,
+		ChatID:   chatID,
+		ThreadID: threadID,
+		Text:     text,
 	}
 
 	data, err := json.Marshal(msg)
@@ -426,10 +434,13 @@ func sendChannelMessageTool(args map[string]any) string {
 		return fmt.Sprintf("Error writing message file: %v", err)
 	}
 
-	log.Printf("Wrote channel message: channel=%s chatId=%s len=%d", channel, chatID, len(text))
+	log.Printf("Wrote channel message: channel=%s chatId=%s threadId=%s len=%d", channel, chatID, threadID, len(text))
 	target := chatID
 	if target == "" {
 		target = "owner (self)"
+	}
+	if threadID != "" {
+		return fmt.Sprintf("Message sent to %s channel (target: %s, thread: %s)", channel, target, threadID)
 	}
 	return fmt.Sprintf("Message sent to %s channel (target: %s)", channel, target)
 }

@@ -408,6 +408,10 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 				ch.Triggers = desired.Triggers
 				needsUpdate = true
 			}
+			if !reflect.DeepEqual(ch.Slack, desired.Slack) {
+				ch.Slack = desired.Slack
+				needsUpdate = true
+			}
 			if !reflect.DeepEqual(ch.Volumes, desired.Volumes) {
 				ch.Volumes = desired.Volumes
 				needsUpdate = true
@@ -939,6 +943,15 @@ func buildChannelSpec(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alph
 	if cs.Triggers == nil && pack.Spec.ChannelTriggers != nil {
 		if tr, ok := pack.Spec.ChannelTriggers[ch]; ok {
 			cs.Triggers = tr
+		}
+	}
+	// Slack-specific options: persona-level overrides take priority
+	// over ensemble-level. Only applied to the slack channel type.
+	if ch == "slack" {
+		if persona.SlackOptions != nil {
+			cs.Slack = persona.SlackOptions
+		} else if pack.Spec.SlackOptions != nil {
+			cs.Slack = pack.Spec.SlackOptions
 		}
 	}
 	if v, ok := pack.Spec.ChannelVolumes[ch]; ok {
