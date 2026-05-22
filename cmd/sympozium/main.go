@@ -1646,15 +1646,24 @@ var (
 			Foreground(lipgloss.Color("#8a8c82"))
 
 	tuiErrorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F38BA8")).
+			Foreground(lipgloss.Color("#f87171")).
 			Bold(true)
 
 	tuiSuccessStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#A6E3A1")).
+			Foreground(lipgloss.Color("#34d399")).
 			Bold(true)
 
 	tuiRunningStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#A6E22E"))
+			Foreground(lipgloss.Color("#60a5fa"))
+
+	tuiPendingStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#facc15"))
+
+	tuiPostRunningStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#fb923c"))
+
+	tuiServingStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#facc15"))
 
 	tuiPromptStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#e8562a")).
@@ -2330,6 +2339,12 @@ var defaultPersonaChannels = []personaChannelChoice{
 	{chType: "whatsapp", tokenKey: ""}, // QR pairing, no token
 }
 
+type logEntry struct {
+	time  time.Time
+	level string // "info", "warn", "error", "success"
+	text  string
+}
+
 type tuiModel struct {
 	width     int
 	height    int
@@ -2342,6 +2357,12 @@ type tuiModel struct {
 	selectedRow   int
 	tableScroll   int
 	drillInstance string // filtered instance for channels/pods views
+
+	// In-view filter (Ctrl+F)
+	filterMode  bool
+	filterText  string
+	filterInput textinput.Model
+	filteredIdx []int // maps visible row → original data index
 
 	// Wizard
 	wizard wizardState
@@ -2362,7 +2383,9 @@ type tuiModel struct {
 	inputFocused bool
 
 	// Log
-	logLines []string
+	logEntries []logEntry
+	logHidden  bool
+	logScroll  int
 
 	// Cluster
 	namespace string
@@ -2717,14 +2740,21 @@ func newTUIModel(ns string) tuiModel {
 	fi.PromptStyle = tuiPromptStyle
 	fi.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 
+	flt := textinput.New()
+	flt.Placeholder = "Filter..."
+	flt.CharLimit = 128
+	flt.Prompt = "🔍 "
+	flt.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+
 	return tuiModel{
 		namespace:    ns,
 		connected:    k8sClient != nil,
 		input:        ti,
 		feedInput:    fi,
+		filterInput:  flt,
 		inputFocused: false,
 		activeView:   viewEnsembles,
-		logLines:     []string{tuiDimStyle.Render("Sympozium TUI ready — press ? for help, / to enter commands")},
+		logEntries:   []logEntry{{time: time.Now(), level: "info", text: tuiDimStyle.Render("Sympozium TUI ready — press ? for help, / to enter commands")}},
 	}
 }
 
@@ -2733,22 +2763,26 @@ func newTUIModel(ns string) tuiModel {
 func (m tuiModel) selectedInstanceForFeed() string {
 	switch m.activeView {
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			return m.instances[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.instances) {
+			return m.instances[idx].Name
 		}
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			return m.runs[m.selectedRow].Spec.AgentRef
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.runs) {
+			return m.runs[idx].Spec.AgentRef
 		}
 	case viewChannels:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			return filtered[m.selectedRow].InstanceName
+		if idx >= 0 && idx < len(filtered) {
+			return filtered[idx].InstanceName
 		}
 	case viewPods:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			return filtered[m.selectedRow].Instance
+		if idx >= 0 && idx < len(filtered) {
+			return filtered[idx].Instance
 		}
 	}
 	// Fallback: first instance
@@ -3804,6 +3838,39 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tiCmd
 		}
 
+		// Filter mode: keystrokes go to filter input.
+		if m.filterMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.filterMode = false
+				m.filterText = ""
+				m.filterInput.Blur()
+				m.filterInput.SetValue("")
+				m.filteredIdx = nil
+				m.selectedRow = 0
+				m.tableScroll = 0
+				return m, nil
+			case tea.KeyEnter:
+				// Confirm filter, return focus to table.
+				m.filterMode = false
+				m.filterInput.Blur()
+				return m, nil
+			case tea.KeyCtrlC:
+				m.quitting = true
+				return m, tea.Quit
+			}
+			var fiCmd tea.Cmd
+			m.filterInput, fiCmd = m.filterInput.Update(msg)
+			newVal := m.filterInput.Value()
+			if newVal != m.filterText {
+				m.filterText = newVal
+				m.selectedRow = 0
+				m.tableScroll = 0
+				m.rebuildFilteredIdx()
+			}
+			return m, fiCmd
+		}
+
 		// Table / global key handling (input not focused).
 		// Handle arrow keys via Type first (more reliable across terminals).
 		switch msg.Type {
@@ -3826,7 +3893,21 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "ctrl+f":
+			m.filterMode = true
+			m.filterInput.SetValue(m.filterText)
+			m.filterInput.Focus()
+			m.filterInput.CursorEnd()
+			return m, textinput.Blink
 		case "esc":
+			// Clear active filter first.
+			if m.filterText != "" {
+				m.filterText = ""
+				m.filteredIdx = nil
+				m.selectedRow = 0
+				m.tableScroll = 0
+				return m, nil
+			}
 			// Go back: clear drill-in filter or return to Agents view.
 			if m.drillInstance != "" {
 				m.drillInstance = ""
@@ -3909,6 +3990,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeView = tuiViewKind(next)
 			m.selectedRow = 0
 			m.tableScroll = 0
+			m.clearFilter()
 			if m.activeView != viewChannels && m.activeView != viewPods {
 				m.drillInstance = ""
 			}
@@ -3922,6 +4004,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeView = tuiViewKind(prev)
 			m.selectedRow = 0
 			m.tableScroll = 0
+			m.clearFilter()
 			if m.activeView != viewChannels && m.activeView != viewPods {
 				m.drillInstance = ""
 			}
@@ -3935,6 +4018,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeView = tuiViewKind(next)
 			m.selectedRow = 0
 			m.tableScroll = 0
+			m.clearFilter()
 			if m.activeView != viewChannels && m.activeView != viewPods {
 				m.drillInstance = ""
 			}
@@ -3948,6 +4032,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeView = tuiViewKind(prev)
 			m.selectedRow = 0
 			m.tableScroll = 0
+			m.clearFilter()
 			if m.activeView != viewChannels && m.activeView != viewPods {
 				m.drillInstance = ""
 			}
@@ -4008,6 +4093,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailPane = paneFullscreen
 			}
 			return m, nil
+		case "L":
+			m.logHidden = !m.logHidden
+			return m, nil
+		case "{":
+			if m.logScroll < len(m.logEntries) {
+				m.logScroll += 5
+				max := len(m.logEntries)
+				if m.logScroll > max {
+					m.logScroll = max
+				}
+			}
+			return m, nil
+		case "}":
+			m.logScroll -= 5
+			if m.logScroll < 0 {
+				m.logScroll = 0
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -4049,6 +4152,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connected = false
 		} else {
 			m.connected = true
+		}
+		// Rebuild filter indices after data refresh.
+		if m.filterText != "" {
+			m.rebuildFilteredIdx()
 		}
 		// Clamp selection.
 		maxRow := m.activeViewCount() - 1
@@ -4187,6 +4294,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) activeViewCount() int {
+	if m.filterText != "" && len(m.filteredIdx) > 0 {
+		return len(m.filteredIdx)
+	}
 	switch m.activeView {
 	case viewAgents:
 		return len(m.instances)
@@ -4211,6 +4321,130 @@ func (m tuiModel) activeViewCount() int {
 		return len(m.ensembles)
 	}
 	return 0
+}
+
+// activeViewTotalCount returns the unfiltered count for the current view.
+func (m tuiModel) activeViewTotalCount() int {
+	switch m.activeView {
+	case viewAgents:
+		return len(m.instances)
+	case viewRuns:
+		return len(m.runs)
+	case viewPolicies:
+		return len(m.policies)
+	case viewSkills:
+		return len(m.skills)
+	case viewChannels:
+		return len(m.filteredChannels())
+	case viewPods:
+		return len(m.filteredPods())
+	case viewSchedules:
+		return len(m.schedules)
+	case viewGateway:
+		if m.gatewayConfig == nil {
+			return 0
+		}
+		return 1 + len(m.gatewayRoutes())
+	case viewEnsembles:
+		return len(m.ensembles)
+	}
+	return 0
+}
+
+func (m *tuiModel) clearFilter() {
+	m.filterText = ""
+	m.filterMode = false
+	m.filterInput.SetValue("")
+	m.filterInput.Blur()
+	m.filteredIdx = nil
+}
+
+func (m *tuiModel) rebuildFilteredIdx() {
+	if m.filterText == "" {
+		m.filteredIdx = nil
+		return
+	}
+	m.filteredIdx = nil
+	f := m.filterText
+	switch m.activeView {
+	case viewAgents:
+		for i, inst := range m.instances {
+			if matchesFilter(f, inst.Name, string(inst.Status.Phase), resolveInstanceProvider(inst)) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewRuns:
+		for i, run := range m.runs {
+			phase := string(run.Status.Phase)
+			if phase == "" {
+				phase = "Pending"
+			}
+			trigger := run.Labels["sympozium.ai/type"]
+			if matchesFilter(f, run.Name, run.Spec.AgentRef, phase, trigger) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewPolicies:
+		for i, pol := range m.policies {
+			if matchesFilter(f, pol.Name) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewSkills:
+		for i, sk := range m.skills {
+			if matchesFilter(f, sk.Name) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewChannels:
+		filtered := m.filteredChannels()
+		for i, ch := range filtered {
+			if matchesFilter(f, ch.InstanceName, ch.Type) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewPods:
+		filtered := m.filteredPods()
+		for i, p := range filtered {
+			if matchesFilter(f, p.Name, p.Phase, p.Instance) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewSchedules:
+		for i, s := range m.schedules {
+			if matchesFilter(f, s.Name, s.Spec.AgentRef, s.Spec.Schedule) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	case viewEnsembles:
+		for i, e := range m.ensembles {
+			if matchesFilter(f, e.Name) {
+				m.filteredIdx = append(m.filteredIdx, i)
+			}
+		}
+	}
+}
+
+func matchesFilter(filter string, fields ...string) bool {
+	lower := strings.ToLower(filter)
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), lower) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveFilteredRow maps a visible row index to the original data index.
+// Returns the original index, or -1 if out of range.
+func (m tuiModel) resolveFilteredRow() int {
+	if m.filterText == "" || len(m.filteredIdx) == 0 {
+		return m.selectedRow
+	}
+	if m.selectedRow < len(m.filteredIdx) {
+		return m.filteredIdx[m.selectedRow]
+	}
+	return -1
 }
 
 func (m tuiModel) filteredChannels() []channelRow {
@@ -4239,29 +4473,36 @@ func (m tuiModel) filteredPods() []podRow {
 	return out
 }
 
-func (m *tuiModel) addLog(s string) {
-	// Split multi-line output into individual lines so that the log pane
-	// layout (which assumes one visual line per entry) is not broken.
+func (m *tuiModel) addLogEntry(level, s string) {
+	now := time.Now()
 	for _, line := range strings.Split(s, "\n") {
-		m.logLines = append(m.logLines, line)
+		m.logEntries = append(m.logEntries, logEntry{time: now, level: level, text: line})
 	}
-	if len(m.logLines) > maxLogLines {
-		m.logLines = m.logLines[len(m.logLines)-maxLogLines:]
+	if len(m.logEntries) > maxLogLines {
+		m.logEntries = m.logEntries[len(m.logEntries)-maxLogLines:]
 	}
+	// Reset scroll to bottom when new entries arrive.
+	m.logScroll = 0
+}
+
+func (m *tuiModel) addLog(s string) {
+	m.addLogEntry("info", s)
 }
 
 func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 	switch m.activeView {
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			name := m.runs[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.runs) {
+			name := m.runs[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiRunStatus(m.namespace, name)
 			})
 		}
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			inst := m.instances[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.instances) {
+			inst := m.instances[idx]
 			// Show instance detail: provider config + drill into channels.
 			model := inst.Spec.Agents.Default.Model
 			baseURL := inst.Spec.Agents.Default.BaseURL
@@ -4278,16 +4519,18 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 			m.tableScroll = 0
 		}
 	case viewPolicies:
-		if m.selectedRow < len(m.policies) {
-			name := m.policies[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.policies) {
+			name := m.policies[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiListFeatures(m.namespace, name)
 			})
 		}
 	case viewChannels:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			ch := filtered[m.selectedRow]
+		if idx >= 0 && idx < len(filtered) {
+			ch := filtered[idx]
 			detail := fmt.Sprintf("%s/%s │ secret:%s status:%s", ch.InstanceName, ch.Type, ch.SecretRef, ch.Status)
 			if ch.Message != "" {
 				detail += " msg:" + ch.Message
@@ -4298,15 +4541,17 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 			m.addLog(detail)
 		}
 	case viewPods:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			p := filtered[m.selectedRow]
+		if idx >= 0 && idx < len(filtered) {
+			p := filtered[idx]
 			m.addLog(fmt.Sprintf("%s │ inst:%s phase:%s node:%s ip:%s restarts:%d",
 				p.Name, p.Instance, p.Phase, p.Node, p.IP, p.Restarts))
 		}
 	case viewSchedules:
-		if m.selectedRow < len(m.schedules) {
-			s := m.schedules[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.schedules) {
+			s := m.schedules[idx]
 			nextRun := "?"
 			if s.Status.NextRunTime != nil {
 				nextRun = shortDuration(time.Until(s.Status.NextRunTime.Time))
@@ -4315,8 +4560,9 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 				s.Name, s.Spec.AgentRef, s.Spec.Schedule, s.Spec.Type, s.Status.Phase, s.Status.TotalRuns, nextRun))
 		}
 	case viewEnsembles:
-		if m.selectedRow < len(m.ensembles) {
-			pp := m.ensembles[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.ensembles) {
+			pp := m.ensembles[idx]
 			// Start the ensemble onboarding wizard with this pack pre-selected.
 			return m.startPersonaWizard(pp.Name)
 		}
@@ -4327,16 +4573,18 @@ func (m tuiModel) handleRowAction() (tea.Model, tea.Cmd) {
 func (m tuiModel) handleRowLogs() (tea.Model, tea.Cmd) {
 	switch m.activeView {
 	case viewPods:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			podName := filtered[m.selectedRow].Name
+		if idx >= 0 && idx < len(filtered) {
+			podName := filtered[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiPodLogs(m.namespace, podName)
 			})
 		}
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			run := m.runs[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.runs) {
+			run := m.runs[idx]
 			if run.Status.PodName != "" {
 				return m, m.asyncCmd(func() (string, error) {
 					return tuiPodLogs(m.namespace, run.Status.PodName)
@@ -4345,38 +4593,43 @@ func (m tuiModel) handleRowLogs() (tea.Model, tea.Cmd) {
 			m.addLog(tuiDimStyle.Render("No pod yet for run: " + run.Name))
 		}
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			inst := m.instances[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.instances) {
+			inst := m.instances[idx]
 			// Show events for the instance.
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiResourceEvents(m.namespace, "Agent", inst.Name)
 			})
 		}
 	case viewPolicies:
-		if m.selectedRow < len(m.policies) {
-			name := m.policies[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.policies) {
+			name := m.policies[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiResourceEvents(m.namespace, "SympoziumPolicy", name)
 			})
 		}
 	case viewSkills:
-		if m.selectedRow < len(m.skills) {
-			name := m.skills[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.skills) {
+			name := m.skills[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiResourceEvents(m.namespace, "SkillPack", name)
 			})
 		}
 	case viewChannels:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			ch := filtered[m.selectedRow]
+		if idx >= 0 && idx < len(filtered) {
+			ch := filtered[idx]
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiResourceEvents(m.namespace, "Agent", ch.InstanceName)
 			})
 		}
 	case viewSchedules:
-		if m.selectedRow < len(m.schedules) {
-			name := m.schedules[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.schedules) {
+			name := m.schedules[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiResourceEvents(m.namespace, "SympoziumSchedule", name)
 			})
@@ -4390,60 +4643,68 @@ func (m tuiModel) handleRowLogs() (tea.Model, tea.Cmd) {
 func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 	switch m.activeView {
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			name := m.instances[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.instances) {
+			name := m.instances[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "agent", name)
 			})
 		}
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			name := m.runs[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.runs) {
+			name := m.runs[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "agentrun", name)
 			})
 		}
 	case viewPolicies:
-		if m.selectedRow < len(m.policies) {
-			name := m.policies[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.policies) {
+			name := m.policies[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "sympoziumpolicy", name)
 			})
 		}
 	case viewSkills:
-		if m.selectedRow < len(m.skills) {
-			name := m.skills[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.skills) {
+			name := m.skills[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "skillpack", name)
 			})
 		}
 	case viewPods:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			podName := filtered[m.selectedRow].Name
+		if idx >= 0 && idx < len(filtered) {
+			podName := filtered[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "pod", podName)
 			})
 		}
 	case viewChannels:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			ch := filtered[m.selectedRow]
+		if idx >= 0 && idx < len(filtered) {
+			ch := filtered[idx]
 			// Describe the parent instance for the channel.
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "agent", ch.InstanceName)
 			})
 		}
 	case viewSchedules:
-		if m.selectedRow < len(m.schedules) {
-			name := m.schedules[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.schedules) {
+			name := m.schedules[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "sympoziumschedule", name)
 			})
 		}
 	case viewEnsembles:
-		if m.selectedRow < len(m.ensembles) {
-			name := m.ensembles[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.ensembles) {
+			name := m.ensembles[idx].Name
 			return m, m.asyncCmd(func() (string, error) {
 				return tuiDescribeResource(m.namespace, "ensemble", name)
 			})
@@ -4455,8 +4716,9 @@ func (m tuiModel) handleRowDescribe() (tea.Model, tea.Cmd) {
 func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 	switch m.activeView {
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			inst := m.instances[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.instances) {
+			inst := m.instances[idx]
 			name := inst.Name
 			ns := m.namespace
 			// Check if this instance belongs to a Ensemble.
@@ -4477,8 +4739,9 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			}
 		}
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			name := m.runs[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.runs) {
+			name := m.runs[idx].Name
 			m.confirmDelete = true
 			m.deleteResourceKind = "run"
 			m.deleteResourceName = name
@@ -4486,8 +4749,9 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			m.deleteFunc = func() (string, error) { return tuiDelete(ns, "run", name) }
 		}
 	case viewPolicies:
-		if m.selectedRow < len(m.policies) {
-			name := m.policies[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.policies) {
+			name := m.policies[idx].Name
 			m.confirmDelete = true
 			m.deleteResourceKind = "policy"
 			m.deleteResourceName = name
@@ -4495,9 +4759,10 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			m.deleteFunc = func() (string, error) { return tuiDelete(ns, "policy", name) }
 		}
 	case viewChannels:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			ch := filtered[m.selectedRow]
+		if idx >= 0 && idx < len(filtered) {
+			ch := filtered[idx]
 			m.confirmDelete = true
 			m.deleteResourceKind = "channel"
 			m.deleteResourceName = ch.InstanceName + "/" + ch.Type
@@ -4507,9 +4772,10 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			m.deleteFunc = func() (string, error) { return tuiRemoveChannel(ns, instName, chType) }
 		}
 	case viewPods:
+		idx := m.resolveFilteredRow()
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			podName := filtered[m.selectedRow].Name
+		if idx >= 0 && idx < len(filtered) {
+			podName := filtered[idx].Name
 			m.confirmDelete = true
 			m.deleteResourceKind = "pod"
 			m.deleteResourceName = podName
@@ -4517,8 +4783,9 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			m.deleteFunc = func() (string, error) { return tuiDeletePod(ns, podName) }
 		}
 	case viewSchedules:
-		if m.selectedRow < len(m.schedules) {
-			name := m.schedules[m.selectedRow].Name
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.schedules) {
+			name := m.schedules[idx].Name
 			m.confirmDelete = true
 			m.deleteResourceKind = "schedule"
 			m.deleteResourceName = name
@@ -4526,8 +4793,9 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 			m.deleteFunc = func() (string, error) { return tuiDelete(ns, "schedule", name) }
 		}
 	case viewEnsembles:
-		if m.selectedRow < len(m.ensembles) {
-			pack := m.ensembles[m.selectedRow]
+		idx := m.resolveFilteredRow()
+		if idx >= 0 && idx < len(m.ensembles) {
+			pack := m.ensembles[idx]
 			name := pack.Name
 			ns := m.namespace
 			// Collect all agent config names to disable.
@@ -4549,10 +4817,11 @@ func (m tuiModel) handleRowDelete() (tea.Model, tea.Cmd) {
 func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 	switch m.activeView {
 	case viewAgents:
-		if m.selectedRow >= len(m.instances) {
+		idx := m.resolveFilteredRow()
+		if idx < 0 || idx >= len(m.instances) {
 			return m, nil
 		}
-		inst := m.instances[m.selectedRow]
+		inst := m.instances[idx]
 		m.editInstanceName = inst.Name
 		m.editScheduleName = ""
 		m.editTab = 0
@@ -4684,10 +4953,11 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 		}
 		m.showEditModal = true
 	case viewSchedules:
-		if m.selectedRow >= len(m.schedules) {
+		idx := m.resolveFilteredRow()
+		if idx < 0 || idx >= len(m.schedules) {
 			return m, nil
 		}
-		sched := m.schedules[m.selectedRow]
+		sched := m.schedules[idx]
 		m.editScheduleName = sched.Name
 		m.editInstanceName = sched.Spec.AgentRef
 		m.editTab = 1
@@ -4766,10 +5036,11 @@ func (m tuiModel) handleRowEdit() (tea.Model, tea.Cmd) {
 		}
 		m.showEditModal = true
 	case viewEnsembles:
-		if m.selectedRow >= len(m.ensembles) {
+		idx := m.resolveFilteredRow()
+		if idx < 0 || idx >= len(m.ensembles) {
 			return m, nil
 		}
-		pp := m.ensembles[m.selectedRow]
+		pp := m.ensembles[idx]
 		m.editEnsembleName = pp.Name
 		m.editInstanceName = ""
 		m.editScheduleName = ""
@@ -5187,24 +5458,25 @@ func (m tuiModel) applyEnsembleEdit(packName string) tea.Cmd {
 
 func (m tuiModel) handleRunPrompt() (tea.Model, tea.Cmd) {
 	var instName string
+	idx := m.resolveFilteredRow()
 	switch m.activeView {
 	case viewAgents:
-		if m.selectedRow < len(m.instances) {
-			instName = m.instances[m.selectedRow].Name
+		if idx >= 0 && idx < len(m.instances) {
+			instName = m.instances[idx].Name
 		}
 	case viewRuns:
-		if m.selectedRow < len(m.runs) {
-			instName = m.runs[m.selectedRow].Spec.AgentRef
+		if idx >= 0 && idx < len(m.runs) {
+			instName = m.runs[idx].Spec.AgentRef
 		}
 	case viewChannels:
 		filtered := m.filteredChannels()
-		if m.selectedRow < len(filtered) {
-			instName = filtered[m.selectedRow].InstanceName
+		if idx >= 0 && idx < len(filtered) {
+			instName = filtered[idx].InstanceName
 		}
 	case viewPods:
 		filtered := m.filteredPods()
-		if m.selectedRow < len(filtered) {
-			instName = filtered[m.selectedRow].Instance
+		if idx >= 0 && idx < len(filtered) {
+			instName = filtered[idx].Instance
 		}
 	}
 	if instName == "" {
@@ -5895,18 +6167,27 @@ func (m tuiModel) View() string {
 	if len(m.suggestions) > 0 {
 		suggestH = min(len(m.suggestions), 6) + 1
 	}
-	chrome := 1 + 1 + 1 + 1 + 1 + inputH + suggestH + 1 // header+tabs+colhdr+sep(above log)+sep(below log)+input+suggest+statusbar
+	chrome := 1 + 1 + 1 + 1 + inputH + suggestH + 1 // header+tabs+colhdr+sep(below log)+input+suggest+statusbar
+	if !m.logHidden {
+		chrome += 1 // sep(above log)
+	}
 	available := m.height - chrome
 	if available < 4 {
 		available = 4
 	}
-	tableH := available / 2
-	logH := available - tableH
-	if tableH < 2 {
-		tableH = 2
-	}
-	if logH < 3 {
-		logH = 3
+	var tableH, logH int
+	if m.logHidden {
+		tableH = available
+		logH = 0
+	} else {
+		tableH = available / 2
+		logH = available - tableH
+		if tableH < 2 {
+			tableH = 2
+		}
+		if logH < 3 {
+			logH = 3
+		}
 	}
 
 	var view strings.Builder
@@ -5922,12 +6203,14 @@ func (m tuiModel) View() string {
 	// 3-4. Table
 	view.WriteString(m.renderTable(tableH))
 
-	// 5. Separator
-	view.WriteString(tuiSepStyle.Render(strings.Repeat("─", m.width)))
-	view.WriteString("\n")
+	if !m.logHidden {
+		// 5. Separator
+		view.WriteString(tuiSepStyle.Render(strings.Repeat("─", m.width)))
+		view.WriteString("\n")
 
-	// 6. Log pane
-	view.WriteString(m.renderLog(logH))
+		// 6. Log pane
+		view.WriteString(m.renderLog(logH))
+	}
 
 	// 7. Separator
 	view.WriteString(tuiSepStyle.Render(strings.Repeat("─", m.width)))
@@ -5937,9 +6220,15 @@ func (m tuiModel) View() string {
 	if len(m.suggestions) > 0 {
 		view.WriteString(m.renderSuggestions())
 	}
-	if m.inputFocused {
+	if m.filterMode {
+		m.filterInput.Width = m.width - 6
+		view.WriteString(" " + m.filterInput.View())
+	} else if m.inputFocused {
 		m.input.Width = m.width - 4 // reserve space for prompt and padding
 		view.WriteString(" " + m.input.View())
+	} else if m.filterText != "" {
+		badge := tuiDimStyle.Render(" [Filter: ") + lipgloss.NewStyle().Foreground(lipgloss.Color("#e8562a")).Render(m.filterText) + tuiDimStyle.Render("] Press / to enter a command")
+		view.WriteString(badge)
 	} else {
 		view.WriteString(tuiDimStyle.Render(" Press / to enter a command"))
 	}
@@ -6008,6 +6297,9 @@ func (m tuiModel) renderTabBar() string {
 	var tabs strings.Builder
 	for i, name := range viewNames {
 		label := fmt.Sprintf(" %d:%s ", i+1, name)
+		if tuiViewKind(i) == m.activeView && m.filterText != "" && m.filteredIdx != nil {
+			label = fmt.Sprintf(" %d:%s (%d/%d) ", i+1, name, len(m.filteredIdx), m.activeViewTotalCount())
+		}
 		if tuiViewKind(i) == m.activeView {
 			tabs.WriteString(tuiTabActiveStyle.Render(label))
 		} else {
@@ -6099,11 +6391,20 @@ func (m tuiModel) renderAgentsTable(tableH int) string {
 		}
 	}
 
+	dataLen := len(m.instances)
+	if m.filterText != "" && m.filteredIdx != nil {
+		dataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.instances) {
+		visIdx := i + m.tableScroll
+		if visIdx >= dataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
+		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
 		}
 		inst := m.instances[idx]
 		age := shortDuration(time.Since(inst.CreationTimestamp.Time))
@@ -6138,7 +6439,7 @@ func (m tuiModel) renderAgentsTable(tableH int) string {
 		row := fmt.Sprintf(" %-22s %-12s %-12s %-16s %-8d %-10s %-8s",
 			truncate(inst.Name, 22), phase, truncate(provider, 12), truncate(skillStr, 16), inst.Status.ActiveAgentPods, tokStr, age)
 
-		b.WriteString(m.styleRow(idx, row))
+		b.WriteString(m.styleRow(visIdx, row))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -6160,7 +6461,7 @@ func formatTokenCount(n int) string {
 func (m tuiModel) renderRunsTable(tableH int) string {
 	var b strings.Builder
 
-	header := fmt.Sprintf(" %-26s %-18s %-12s %-14s %-18s %-8s", "NAME", "AGENT", "PHASE", "TRIGGER", "POD", "AGE")
+	header := fmt.Sprintf(" %-26s %-18s %-12s %-8s %-8s %-14s %-8s", "NAME", "AGENT", "PHASE", "DUR", "TOKENS", "TRIGGER", "AGE")
 	b.WriteString(tuiColHeaderStyle.Render(padRight(header, m.width)))
 	b.WriteString("\n")
 
@@ -6174,21 +6475,34 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 	triggerScheduled := lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4"))
 	triggerSweep := lipgloss.NewStyle().Foreground(lipgloss.Color("#d4cfc6"))
 
+	runsDataLen := len(m.runs)
+	if m.filterText != "" && m.filteredIdx != nil {
+		runsDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.runs) {
+		visIdx := i + m.tableScroll
+		if visIdx >= runsDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
 		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
+		}
 		run := m.runs[idx]
 		age := shortDuration(time.Since(run.CreationTimestamp.Time))
-		pod := run.Status.PodName
-		if pod == "" {
-			pod = "-"
+		displayName := run.Name
+		if run.Spec.Parent != nil {
+			displayName = "  └ " + displayName
 		}
 		phase := string(run.Status.Phase)
 		if phase == "" {
 			phase = "Pending"
+		}
+		// Add delegate count badge before sandbox indicator.
+		if len(run.Status.Delegates) > 0 {
+			phase = phase + fmt.Sprintf(" [%d]", len(run.Status.Delegates))
 		}
 		// Add agent-sandbox indicator to phase.
 		if run.Status.SandboxName != "" || run.Status.SandboxClaimName != "" {
@@ -6197,6 +6511,22 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 		// Add lifecycle postRun indicator.
 		if run.Status.PostRunJobName != "" && run.Status.Phase == sympoziumv1alpha1.AgentRunPhasePostRunning {
 			phase = "PostRunning ⇢"
+		}
+
+		// Compute duration.
+		dur := "-"
+		if run.Status.StartedAt != nil {
+			end := time.Now()
+			if run.Status.CompletedAt != nil {
+				end = run.Status.CompletedAt.Time
+			}
+			dur = shortDuration(end.Sub(run.Status.StartedAt.Time))
+		}
+
+		// Compute tokens.
+		tok := "-"
+		if run.Status.TokenUsage != nil && run.Status.TokenUsage.TotalTokens > 0 {
+			tok = formatTokenCount(run.Status.TokenUsage.TotalTokens)
 		}
 
 		// Determine trigger source from labels.
@@ -6218,16 +6548,18 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 		}
 
 		// Build row without phase/trigger (we'll colorize them separately).
-		nameCol := fmt.Sprintf(" %-26s %-18s ", truncate(run.Name, 26), truncate(run.Spec.AgentRef, 18))
+		nameCol := fmt.Sprintf(" %-26s %-18s ", truncate(displayName, 26), truncate(run.Spec.AgentRef, 18))
 		phaseCol := fmt.Sprintf("%-12s ", phase)
+		durCol := fmt.Sprintf("%-8s ", dur)
+		tokCol := fmt.Sprintf("%-8s ", tok)
 		trigCol := fmt.Sprintf("%-14s ", truncate(triggerText, 14))
-		restCol := fmt.Sprintf("%-18s %-8s", truncate(pod, 18), age)
+		restCol := fmt.Sprintf("%-8s", age)
 
-		if idx == m.selectedRow {
-			b.WriteString(tuiRowSelectedStyle.Render(padRight(nameCol+phaseCol+trigCol+restCol, m.width)))
+		if visIdx == m.selectedRow {
+			b.WriteString(tuiRowSelectedStyle.Render(padRight(nameCol+phaseCol+durCol+tokCol+trigCol+restCol, m.width)))
 		} else {
 			style := tuiRowStyle
-			if idx%2 == 1 {
+			if visIdx%2 == 1 {
 				style = tuiRowAltStyle
 			}
 			// Colorize phase.
@@ -6235,11 +6567,15 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 			case phase == "Running":
 				phaseCol = tuiRunningStyle.Render(fmt.Sprintf("%-12s ", phase))
 			case strings.HasPrefix(phase, "PostRunning"):
-				phaseCol = tuiRunningStyle.Render(fmt.Sprintf("%-12s ", phase))
-			case phase == "Completed":
+				phaseCol = tuiPostRunningStyle.Render(fmt.Sprintf("%-12s ", phase))
+			case phase == "Completed" || phase == "Succeeded":
 				phaseCol = tuiSuccessStyle.Render(fmt.Sprintf("%-12s ", phase))
 			case phase == "Failed" || phase == "Timeout":
 				phaseCol = tuiErrorStyle.Render(fmt.Sprintf("%-12s ", phase))
+			case phase == "Pending":
+				phaseCol = tuiPendingStyle.Render(fmt.Sprintf("%-12s ", phase))
+			case phase == "Serving":
+				phaseCol = tuiServingStyle.Render(fmt.Sprintf("%-12s ", phase))
 			default:
 				phaseCol = tuiDimStyle.Render(fmt.Sprintf("%-12s ", phase))
 			}
@@ -6254,9 +6590,9 @@ func (m tuiModel) renderRunsTable(tableH int) string {
 			default:
 				trigCol = tuiDimStyle.Render(fmt.Sprintf("%-14s ", truncate(triggerText, 14)))
 			}
-			b.WriteString(style.Render(nameCol) + phaseCol + trigCol + style.Render(restCol))
+			b.WriteString(style.Render(nameCol) + phaseCol + style.Render(durCol+tokCol) + trigCol + style.Render(restCol))
 			// Pad remaining.
-			renderedW := lipgloss.Width(style.Render(nameCol)) + lipgloss.Width(phaseCol) + lipgloss.Width(trigCol) + lipgloss.Width(style.Render(restCol))
+			renderedW := lipgloss.Width(style.Render(nameCol)) + lipgloss.Width(phaseCol) + lipgloss.Width(style.Render(durCol+tokCol)) + lipgloss.Width(trigCol) + lipgloss.Width(style.Render(restCol))
 			if m.width > renderedW {
 				b.WriteString(style.Render(strings.Repeat(" ", m.width-renderedW)))
 			}
@@ -6278,16 +6614,25 @@ func (m tuiModel) renderPoliciesTable(tableH int) string {
 		return b.String()
 	}
 
+	policiesDataLen := len(m.policies)
+	if m.filterText != "" && m.filteredIdx != nil {
+		policiesDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.policies) {
+		visIdx := i + m.tableScroll
+		if visIdx >= policiesDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
+		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
 		}
 		pol := m.policies[idx]
 		age := shortDuration(time.Since(pol.CreationTimestamp.Time))
 		row := fmt.Sprintf(" %-26s %-18d %-8s", truncate(pol.Name, 26), pol.Status.BoundInstances, age)
-		b.WriteString(m.styleRow(idx, row))
+		b.WriteString(m.styleRow(visIdx, row))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -6305,11 +6650,20 @@ func (m tuiModel) renderSkillsTable(tableH int) string {
 		return b.String()
 	}
 
+	skillsDataLen := len(m.skills)
+	if m.filterText != "" && m.filteredIdx != nil {
+		skillsDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.skills) {
+		visIdx := i + m.tableScroll
+		if visIdx >= skillsDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
+		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
 		}
 		sk := m.skills[idx]
 		age := shortDuration(time.Since(sk.CreationTimestamp.Time))
@@ -6322,7 +6676,7 @@ func (m tuiModel) renderSkillsTable(tableH int) string {
 			cm = "-"
 		}
 		row := fmt.Sprintf(" %-24s %-8d %-22s %-8s %-8s", truncate(sk.Name, 24), len(sk.Spec.Skills), truncate(cm, 22), host, age)
-		b.WriteString(m.styleRow(idx, row))
+		b.WriteString(m.styleRow(visIdx, row))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -6372,13 +6726,22 @@ func (m tuiModel) renderChannelsTable(tableH int) string {
 		return b.String()
 	}
 
+	channelsDataLen := len(filtered)
+	if m.filterText != "" && m.filteredIdx != nil {
+		channelsDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(filtered) {
+		visIdx := i + m.tableScroll
+		if visIdx >= channelsDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
 		}
-		ch := filtered[idx]
+		chIdx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			chIdx = m.filteredIdx[visIdx]
+		}
+		ch := filtered[chIdx]
 		checked := ch.LastCheck
 		if checked == "" {
 			checked = "-"
@@ -6392,11 +6755,11 @@ func (m tuiModel) renderChannelsTable(tableH int) string {
 		nameCol := fmt.Sprintf(" %-20s %-12s %-22s ", truncate(ch.InstanceName, 20), ch.Type, truncate(ch.SecretRef, 22))
 		restCol := fmt.Sprintf("%-10s %-20s", checked, truncate(msg, 20))
 
-		if idx == m.selectedRow {
+		if visIdx == m.selectedRow {
 			b.WriteString(tuiRowSelectedStyle.Render(padRight(nameCol+statusCol+restCol, m.width)))
 		} else {
 			style := tuiRowStyle
-			if idx%2 == 1 {
+			if visIdx%2 == 1 {
 				style = tuiRowAltStyle
 			}
 			switch ch.Status {
@@ -6439,13 +6802,22 @@ func (m tuiModel) renderPodsTable(tableH int) string {
 		return b.String()
 	}
 
+	podsDataLen := len(filtered)
+	if m.filterText != "" && m.filteredIdx != nil {
+		podsDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(filtered) {
+		visIdx := i + m.tableScroll
+		if visIdx >= podsDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
 		}
-		p := filtered[idx]
+		pIdx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			pIdx = m.filteredIdx[visIdx]
+		}
+		p := filtered[pIdx]
 		node := p.Node
 		if node == "" {
 			node = "-"
@@ -6459,11 +6831,11 @@ func (m tuiModel) renderPodsTable(tableH int) string {
 		nameCol := fmt.Sprintf(" %-30s %-20s ", truncate(p.Name, 30), truncate(p.Instance, 20))
 		restCol := fmt.Sprintf("%-16s %-16s %-10d %-8s", truncate(node, 16), ip, p.Restarts, p.Age)
 
-		if idx == m.selectedRow {
+		if visIdx == m.selectedRow {
 			b.WriteString(tuiRowSelectedStyle.Render(padRight(nameCol+phaseCol+restCol, m.width)))
 		} else {
 			style := tuiRowStyle
-			if idx%2 == 1 {
+			if visIdx%2 == 1 {
 				style = tuiRowAltStyle
 			}
 			switch p.Phase {
@@ -6473,6 +6845,8 @@ func (m tuiModel) renderPodsTable(tableH int) string {
 				phaseCol = tuiSuccessStyle.Render(fmt.Sprintf("%-12s ", p.Phase))
 			case "Failed":
 				phaseCol = tuiErrorStyle.Render(fmt.Sprintf("%-12s ", p.Phase))
+			case "Pending":
+				phaseCol = tuiPendingStyle.Render(fmt.Sprintf("%-12s ", p.Phase))
 			default:
 				phaseCol = tuiDimStyle.Render(fmt.Sprintf("%-12s ", p.Phase))
 			}
@@ -6499,11 +6873,20 @@ func (m tuiModel) renderSchedulesTable(tableH int) string {
 		return b.String()
 	}
 
+	schedulesDataLen := len(m.schedules)
+	if m.filterText != "" && m.filteredIdx != nil {
+		schedulesDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.schedules) {
+		visIdx := i + m.tableScroll
+		if visIdx >= schedulesDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
+		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
 		}
 		s := m.schedules[idx]
 		age := shortDuration(time.Since(s.CreationTimestamp.Time))
@@ -6521,11 +6904,11 @@ func (m tuiModel) renderSchedulesTable(tableH int) string {
 		phaseCol := fmt.Sprintf("%-10s ", phase)
 		restCol := fmt.Sprintf("%-10d %-8s", s.Status.TotalRuns, age)
 
-		if idx == m.selectedRow {
+		if visIdx == m.selectedRow {
 			b.WriteString(tuiRowSelectedStyle.Render(padRight(nameCol+typeCol+phaseCol+restCol, m.width)))
 		} else {
 			style := tuiRowStyle
-			if idx%2 == 1 {
+			if visIdx%2 == 1 {
 				style = tuiRowAltStyle
 			}
 			switch phase {
@@ -6670,11 +7053,20 @@ func (m tuiModel) renderEnsemblesTable(tableH int) string {
 		return b.String()
 	}
 
+	ensemblesDataLen := len(m.ensembles)
+	if m.filterText != "" && m.filteredIdx != nil {
+		ensemblesDataLen = len(m.filteredIdx)
+	}
+
 	for i := 0; i < tableH-1; i++ {
-		idx := i + m.tableScroll
-		if idx >= len(m.ensembles) {
+		visIdx := i + m.tableScroll
+		if visIdx >= ensemblesDataLen {
 			b.WriteString(strings.Repeat(" ", m.width) + "\n")
 			continue
+		}
+		idx := visIdx
+		if m.filterText != "" && m.filteredIdx != nil {
+			idx = m.filteredIdx[visIdx]
 		}
 		pp := m.ensembles[idx]
 		age := shortDuration(time.Since(pp.CreationTimestamp.Time))
@@ -6695,11 +7087,11 @@ func (m tuiModel) renderEnsemblesTable(tableH int) string {
 		row := fmt.Sprintf(" %-24s %-14s %-10d %-10d %-12s %-8s",
 			truncate(name, 24), truncate(cat, 14), agentCount, pp.Status.InstalledCount, phase, age)
 
-		if idx == m.selectedRow {
+		if visIdx == m.selectedRow {
 			b.WriteString(tuiRowSelectedStyle.Render(padRight(row, m.width)))
 		} else {
 			style := tuiRowStyle
-			if idx%2 == 1 {
+			if visIdx%2 == 1 {
 				style = tuiRowAltStyle
 			}
 			b.WriteString(style.Render(padRight(row, m.width)))
@@ -6744,30 +7136,53 @@ func (m tuiModel) styleRow(idx int, content string) string {
 
 func (m tuiModel) renderLog(logH int) string {
 	var b strings.Builder
-	title := tuiLogBorderStyle.Render("─── Log ")
+	scrollIndicator := ""
+	if m.logScroll > 0 {
+		scrollIndicator = fmt.Sprintf(" [+%d] ", m.logScroll)
+	}
+	title := tuiLogBorderStyle.Render("─── Log " + scrollIndicator)
 	titleW := lipgloss.Width(title)
 	if m.width > titleW {
 		title += tuiSepStyle.Render(strings.Repeat("─", m.width-titleW))
 	}
 	b.WriteString(title + "\n")
 
-	start := len(m.logLines) - (logH - 1)
+	visibleRows := logH - 1
+	end := len(m.logEntries) - m.logScroll
+	if end < 0 {
+		end = 0
+	}
+	start := end - visibleRows
 	if start < 0 {
 		start = 0
 	}
-	visible := m.logLines[start:]
-	maxW := m.width - 1 // 1 for leading space
+	visible := m.logEntries[start:end]
+	maxW := m.width - 1
 	if maxW < 10 {
 		maxW = 10
 	}
-	for i := 0; i < logH-1; i++ {
+	tsStyle := tuiDimStyle
+	for i := 0; i < visibleRows; i++ {
 		if i < len(visible) {
-			line := visible[i]
-			// Truncate to fit pane while preserving ANSI styles.
-			if lipgloss.Width(line) > maxW {
-				line = ansiTruncate(line, maxW)
+			entry := visible[i]
+			ts := tsStyle.Render("[" + entry.time.Format("15:04:05") + "] ")
+			line := entry.text
+			// Apply level-based coloring for entries without existing ANSI.
+			if !strings.Contains(line, "\x1b[") {
+				switch entry.level {
+				case "error":
+					line = tuiErrorStyle.Render(line)
+				case "success":
+					line = tuiSuccessStyle.Render(line)
+				case "warn":
+					line = lipgloss.NewStyle().Foreground(lipgloss.Color("#facc15")).Render(line)
+				}
 			}
-			b.WriteString(" " + line)
+			fullLine := ts + line
+			if lipgloss.Width(fullLine) > maxW {
+				fullLine = ansiTruncate(fullLine, maxW)
+			}
+			b.WriteString(" " + fullLine)
 		}
 		b.WriteString("\n")
 	}
@@ -6948,6 +7363,12 @@ func (m tuiModel) renderDetailSkillRuns(width, height int) string {
 			phaseStyle = tuiRunningStyle
 		case "Failed", "Timeout":
 			phaseStyle = tuiErrorStyle
+		case "Pending":
+			phaseStyle = tuiPendingStyle
+		case "PostRunning":
+			phaseStyle = tuiPostRunningStyle
+		case "Serving":
+			phaseStyle = tuiServingStyle
 		}
 		nameLine := " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f0ece4")).Render(truncate(run.Name, contentW))
 		allLines = append(allLines, nameLine)
@@ -7004,9 +7425,9 @@ func (m tuiModel) renderDetailPodLogs(width, height int) string {
 	// Filter log lines for this pod.
 	podPrefix := podName
 	var podLogs []string
-	for _, line := range m.logLines {
-		if strings.Contains(line, podPrefix) {
-			podLogs = append(podLogs, line)
+	for _, entry := range m.logEntries {
+		if strings.Contains(entry.text, podPrefix) {
+			podLogs = append(podLogs, entry.text)
 		}
 	}
 
@@ -7161,7 +7582,7 @@ func (m tuiModel) renderDetailFeed(width, height int) string {
 			if run.Status.PostRunJobName != "" {
 				postMsg += " (" + run.Status.PostRunJobName + ")"
 			}
-			allLines = append(allLines, tuiRunningStyle.Render(postMsg))
+			allLines = append(allLines, tuiPostRunningStyle.Render(postMsg))
 		case "Failed", "Timeout":
 			errMsg := run.Status.Error
 			if errMsg == "" {
@@ -7170,6 +7591,10 @@ func (m tuiModel) renderDetailFeed(width, height int) string {
 			for _, wl := range wrapText(errMsg, contentW) {
 				allLines = append(allLines, tuiErrorStyle.Render("   ✗ "+wl))
 			}
+		case "Pending":
+			allLines = append(allLines, tuiPendingStyle.Render("   ⏳ Pending..."))
+		case "Serving":
+			allLines = append(allLines, tuiServingStyle.Render("   ⏳ Serving..."))
 		default:
 			allLines = append(allLines, tuiDimStyle.Render("   ⏳ Pending..."))
 		}
@@ -7293,7 +7718,7 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 				if run.Status.PostRunJobName != "" {
 					postMsg += " (" + run.Status.PostRunJobName + ")"
 				}
-				allLines = append(allLines, tuiRunningStyle.Render(postMsg))
+				allLines = append(allLines, tuiPostRunningStyle.Render(postMsg))
 			case "Failed", "Timeout":
 				errMsg := run.Status.Error
 				if errMsg == "" {
@@ -7302,6 +7727,10 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 				for _, wl := range wrapText(errMsg, contentW) {
 					allLines = append(allLines, tuiErrorStyle.Render("   ✗ "+wl))
 				}
+			case "Pending":
+				allLines = append(allLines, tuiPendingStyle.Render("   ⏳ Pending..."))
+			case "Serving":
+				allLines = append(allLines, tuiServingStyle.Render("   ⏳ Serving..."))
 			default:
 				allLines = append(allLines, tuiDimStyle.Render("   ⏳ Pending..."))
 			}
@@ -7457,6 +7886,8 @@ func (m tuiModel) renderStatusBar() string {
 	var keys []string
 	if m.wizard.active {
 		keys = []string{"Esc", "cancel wizard", "Enter", "submit"}
+	} else if m.filterMode {
+		keys = []string{"Esc", "clear filter", "Enter", "confirm"}
 	} else if m.inputFocused {
 		keys = []string{"Esc", "exit input", "Tab", "complete", "Enter", "execute"}
 	} else if m.confirmDelete {
@@ -7467,8 +7898,10 @@ func (m tuiModel) renderStatusBar() string {
 			"1-8", "views",
 			"Enter", "detail",
 			"Esc", "back",
+			"Ctrl+F", "filter",
 			"f", "detail pane",
 			"F", "fullscreen",
+			"L", "toggle logs",
 			"l", "logs",
 			"d", "describe",
 			"R", "run",
