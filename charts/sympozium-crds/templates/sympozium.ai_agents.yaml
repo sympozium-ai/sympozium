@@ -109,6 +109,17 @@ spec:
                           BaseURL overrides the provider's default API endpoint.
                           Use for OpenAI-compatible providers (GitHub Copilot, Azure OpenAI, Ollama, etc.).
                         type: string
+                      env:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Env defines additional environment variables injected into the
+                          agent-runner container of every AgentRun created for this agent
+                          (channel-driven, scheduled, stimulus, web-endpoint, sequential
+                          handoff). Useful for tuning runtime knobs such as
+                          MAX_TOOL_ITERATIONS without forking the agent-runner image.
+                          Values set directly on AgentRunSpec.Env take precedence.
+                        type: object
                       lifecycle:
                         description: |-
                           Lifecycle defines pre and post run hooks for agent runs.

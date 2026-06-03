@@ -590,6 +590,7 @@ func (r *EnsembleReconciler) buildAgent(
 					AgentSandbox:             pack.Spec.AgentSandbox,
 					Lifecycle:                persona.Lifecycle,
 					Subagents:                persona.Subagents,
+					Env:                      persona.Env,
 				},
 			},
 			AuthRefs: authRefs,
@@ -1411,6 +1412,7 @@ func (r *EnsembleReconciler) deliverStimulus(ctx context.Context, log logr.Logge
 			ImagePullSecrets: targetInst.Spec.ImagePullSecrets,
 			Volumes:          targetInst.Spec.Volumes,
 			VolumeMounts:     targetInst.Spec.VolumeMounts,
+			Env:              targetInst.Spec.Agents.Default.Env,
 		},
 	}
 

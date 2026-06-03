@@ -212,6 +212,7 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			SystemPrompt:     memorySystemPrompt(instance),
 			Volumes:          instance.Spec.Volumes,
 			VolumeMounts:     instance.Spec.VolumeMounts,
+			Env:              instance.Spec.Agents.Default.Env,
 		},
 	}
 

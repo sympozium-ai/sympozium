@@ -301,6 +301,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 			SystemPrompt:     memorySystemPrompt(inst),
 			Volumes:          inst.Spec.Volumes,
 			VolumeMounts:     inst.Spec.VolumeMounts,
+			Env:              inst.Spec.Agents.Default.Env,
 		},
 	}
 

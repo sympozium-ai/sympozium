@@ -270,6 +270,14 @@ type AgentConfigSpec struct {
 	// spawn_subagents tool becomes available (requires the "subagents" SkillPack).
 	// +optional
 	Subagents *SubagentsSpec `json:"subagents,omitempty"`
+
+	// Env defines additional environment variables injected into the
+	// agent-runner container of every AgentRun created for this agent
+	// configuration. Propagated to the generated Agent's
+	// AgentConfig.Env, which the controllers then copy onto each
+	// AgentRunSpec.Env.
+	// +optional
+	Env map[string]string `json:"env,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.

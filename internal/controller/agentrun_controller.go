@@ -983,6 +983,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				SystemPrompt:     memorySystemPrompt(&targetInst),
 				Volumes:          targetInst.Spec.Volumes,
 				VolumeMounts:     targetInst.Spec.VolumeMounts,
+				Env:              targetInst.Spec.Agents.Default.Env,
 			},
 		}
 

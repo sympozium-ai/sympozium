@@ -404,6 +404,15 @@ type AgentConfig struct {
 	// Propagated to AgentRunSpec.Lifecycle when runs are created.
 	// +optional
 	Lifecycle *LifecycleHooks `json:"lifecycle,omitempty"`
+
+	// Env defines additional environment variables injected into the
+	// agent-runner container of every AgentRun created for this agent
+	// (channel-driven, scheduled, stimulus, web-endpoint, sequential
+	// handoff). Useful for tuning runtime knobs such as
+	// MAX_TOOL_ITERATIONS without forking the agent-runner image.
+	// Values set directly on AgentRunSpec.Env take precedence.
+	// +optional
+	Env map[string]string `json:"env,omitempty"`
 }
 
 // SandboxSpec defines sandbox configuration.
