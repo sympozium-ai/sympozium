@@ -20,7 +20,7 @@ type anthropicProvider struct {
 	tools    []anthropic.ToolUnionParam
 }
 
-func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef) *anthropicProvider {
+func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) *anthropicProvider {
 	opts := []anthropicoption.RequestOption{
 		anthropicoption.WithMaxRetries(effectiveMaxRetries("anthropic")),
 	}
@@ -32,6 +32,9 @@ func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, too
 	}
 	if baseURL != "" {
 		opts = append(opts, anthropicoption.WithBaseURL(baseURL))
+	}
+	for k, v := range headers {
+		opts = append(opts, anthropicoption.WithHeader(k, v))
 	}
 
 	var anthropicTools []anthropic.ToolUnionParam

@@ -146,6 +146,16 @@ type ModelSpec struct {
 	// AuthSecretRef references the secret containing the API key.
 	AuthSecretRef string `json:"authSecretRef"`
 
+	// ProviderHeaders are additional HTTP headers sent with every LLM provider request.
+	// +optional
+	ProviderHeaders map[string]string `json:"providerHeaders,omitempty"`
+
+	// ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+	// injected as provider request headers. Values from the secret override inline
+	// ProviderHeaders on key collision.
+	// +optional
+	ProviderHeadersSecretRef string `json:"providerHeadersSecretRef,omitempty"`
+
 	// ModelRef references a Model CR by name for cluster-local inference.
 	// When set, provider, baseURL, and authSecretRef are auto-resolved from the Model's status.
 	// +optional

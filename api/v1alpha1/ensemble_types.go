@@ -58,6 +58,18 @@ type EnsembleSpec struct {
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
 
+	// ProviderHeaders are additional HTTP headers sent with every LLM provider request.
+	// Useful for OpenAI-compatible gateways (e.g. Portkey) that use headers for routing
+	// or configuration. Per-agent-config ProviderHeaders override these on key collision.
+	// +optional
+	ProviderHeaders map[string]string `json:"providerHeaders,omitempty"`
+
+	// ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+	// injected as provider request headers. Values from the secret override inline
+	// ProviderHeaders on key collision. Use this for sensitive header values.
+	// +optional
+	ProviderHeadersSecretRef string `json:"providerHeadersSecretRef,omitempty"`
+
 	// ModelRef references a Model CR for cluster-local inference.
 	// When set, the controller resolves the Model's endpoint and configures all
 	// generated instances to use it (provider=openai, baseURL=endpoint, no auth).
@@ -183,6 +195,17 @@ type AgentConfigSpec struct {
 	// BaseURL overrides the ensemble-level base URL for this agent configuration.
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
+
+	// ProviderHeaders overrides ensemble-level provider headers for this agent configuration.
+	// Keys here take precedence over ensemble-level ProviderHeaders.
+	// +optional
+	ProviderHeaders map[string]string `json:"providerHeaders,omitempty"`
+
+	// ProviderHeadersSecretRef overrides the ensemble-level provider headers secret
+	// for this agent configuration. When set, replaces (not merges with) the
+	// ensemble-level ProviderHeadersSecretRef.
+	// +optional
+	ProviderHeadersSecretRef string `json:"providerHeadersSecretRef,omitempty"`
 
 	// Skills lists SkillPack references to mount into the agent pod.
 	// +optional

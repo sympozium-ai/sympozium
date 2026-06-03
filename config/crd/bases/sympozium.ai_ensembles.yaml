@@ -436,6 +436,19 @@ spec:
                         When set, the controller uses this persona's own provider
                         instead of the ensemble-level AuthRefs/BaseURL.
                       type: string
+                    providerHeaders:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        ProviderHeaders overrides ensemble-level provider headers for this agent configuration.
+                        Keys here take precedence over ensemble-level ProviderHeaders.
+                      type: object
+                    providerHeadersSecretRef:
+                      description: |-
+                        ProviderHeadersSecretRef overrides the ensemble-level provider headers secret
+                        for this agent configuration. When set, replaces (not merges with) the
+                        ensemble-level ProviderHeadersSecretRef.
+                      type: string
                     schedule:
                       description: Schedule defines a recurring task for this agent
                         configuration.
@@ -2736,6 +2749,20 @@ spec:
               policyRef:
                 description: PolicyRef references the SympoziumPolicy to apply to
                   all generated instances.
+                type: string
+              providerHeaders:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ProviderHeaders are additional HTTP headers sent with every LLM provider request.
+                  Useful for OpenAI-compatible gateways (e.g. Portkey) that use headers for routing
+                  or configuration. Per-agent-config ProviderHeaders override these on key collision.
+                type: object
+              providerHeadersSecretRef:
+                description: |-
+                  ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+                  injected as provider request headers. Values from the secret override inline
+                  ProviderHeaders on key collision. Use this for sensitive header values.
                 type: string
               relationships:
                 description: |-

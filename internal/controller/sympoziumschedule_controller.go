@@ -230,6 +230,12 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if len(instance.Spec.Agents.Default.NodeSelector) > 0 {
 		agentRun.Spec.Model.NodeSelector = instance.Spec.Agents.Default.NodeSelector
 	}
+	if len(instance.Spec.Agents.Default.ProviderHeaders) > 0 {
+		agentRun.Spec.Model.ProviderHeaders = instance.Spec.Agents.Default.ProviderHeaders
+	}
+	if instance.Spec.Agents.Default.ProviderHeadersSecretRef != "" {
+		agentRun.Spec.Model.ProviderHeadersSecretRef = instance.Spec.Agents.Default.ProviderHeadersSecretRef
+	}
 
 	// Resolve auth secret from the instance.
 	agentRun.Spec.Model.AuthSecretRef = resolveAuthSecret(instance)

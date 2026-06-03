@@ -418,6 +418,21 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			}
 		}
 
+		// Propagate provider headers changes.
+		wantProviderHeaders := mergeProviderHeaders(pack.Spec.ProviderHeaders, persona.ProviderHeaders)
+		if !reflect.DeepEqual(existingInst.Spec.Agents.Default.ProviderHeaders, wantProviderHeaders) {
+			existingInst.Spec.Agents.Default.ProviderHeaders = wantProviderHeaders
+			needsUpdate = true
+		}
+		wantHeadersSecretRef := pack.Spec.ProviderHeadersSecretRef
+		if persona.ProviderHeadersSecretRef != "" {
+			wantHeadersSecretRef = persona.ProviderHeadersSecretRef
+		}
+		if existingInst.Spec.Agents.Default.ProviderHeadersSecretRef != wantHeadersSecretRef {
+			existingInst.Spec.Agents.Default.ProviderHeadersSecretRef = wantHeadersSecretRef
+			needsUpdate = true
+		}
+
 		// Propagate skills changes from persona definition.
 		wantSkills := buildDesiredSkills(pack, persona)
 		if !skillRefsEqual(existingInst.Spec.Skills, wantSkills) {
@@ -544,6 +559,13 @@ func (r *EnsembleReconciler) buildAgent(
 		}
 	}
 
+	// Merge provider headers: ensemble-level base, persona-level overrides.
+	providerHeaders := mergeProviderHeaders(pack.Spec.ProviderHeaders, persona.ProviderHeaders)
+	providerHeadersSecretRef := pack.Spec.ProviderHeadersSecretRef
+	if persona.ProviderHeadersSecretRef != "" {
+		providerHeadersSecretRef = persona.ProviderHeadersSecretRef
+	}
+
 	labels := map[string]string{
 		"sympozium.ai/ensemble":     pack.Name,
 		"sympozium.ai/agent-config": persona.Name,
@@ -561,11 +583,13 @@ func (r *EnsembleReconciler) buildAgent(
 		Spec: sympoziumv1alpha1.AgentSpec{
 			Agents: sympoziumv1alpha1.AgentsSpec{
 				Default: sympoziumv1alpha1.AgentConfig{
-					Model:        model,
-					BaseURL:      baseURL,
-					AgentSandbox: pack.Spec.AgentSandbox,
-					Lifecycle:    persona.Lifecycle,
-					Subagents:    persona.Subagents,
+					Model:                    model,
+					BaseURL:                  baseURL,
+					ProviderHeaders:          providerHeaders,
+					ProviderHeadersSecretRef: providerHeadersSecretRef,
+					AgentSandbox:             pack.Spec.AgentSandbox,
+					Lifecycle:                persona.Lifecycle,
+					Subagents:                persona.Subagents,
 				},
 			},
 			AuthRefs: authRefs,
@@ -899,6 +923,22 @@ func authRefsEqual(a, b []sympoziumv1alpha1.SecretRef) bool {
 		}
 	}
 	return true
+}
+
+// mergeProviderHeaders merges ensemble-level and persona-level provider headers.
+// Persona keys take precedence on collision. Returns nil if both inputs are empty.
+func mergeProviderHeaders(ensembleHeaders, personaHeaders map[string]string) map[string]string {
+	if len(ensembleHeaders) == 0 && len(personaHeaders) == 0 {
+		return nil
+	}
+	merged := make(map[string]string)
+	for k, v := range ensembleHeaders {
+		merged[k] = v
+	}
+	for k, v := range personaHeaders {
+		merged[k] = v
+	}
+	return merged
 }
 
 // channelSetsEqual returns true if two channel sets contain the same types.
@@ -1360,10 +1400,12 @@ func (r *EnsembleReconciler) deliverStimulus(ctx context.Context, log logr.Logge
 			Task:     pack.Spec.Stimulus.Prompt,
 			AgentID:  fmt.Sprintf("stimulus-%s", pack.Spec.Stimulus.Name),
 			Model: sympoziumv1alpha1.ModelSpec{
-				Provider:      resolveProvider(&targetInst),
-				Model:         targetInst.Spec.Agents.Default.Model,
-				BaseURL:       targetInst.Spec.Agents.Default.BaseURL,
-				AuthSecretRef: resolveAuthSecret(&targetInst),
+				Provider:                 resolveProvider(&targetInst),
+				Model:                    targetInst.Spec.Agents.Default.Model,
+				BaseURL:                  targetInst.Spec.Agents.Default.BaseURL,
+				AuthSecretRef:            resolveAuthSecret(&targetInst),
+				ProviderHeaders:          targetInst.Spec.Agents.Default.ProviderHeaders,
+				ProviderHeadersSecretRef: targetInst.Spec.Agents.Default.ProviderHeadersSecretRef,
 			},
 			Skills:           targetInst.Spec.Skills,
 			ImagePullSecrets: targetInst.Spec.ImagePullSecrets,

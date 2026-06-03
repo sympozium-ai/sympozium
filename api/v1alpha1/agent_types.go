@@ -360,6 +360,17 @@ type AgentConfig struct {
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
 
+	// ProviderHeaders are additional HTTP headers sent with every LLM provider request.
+	// Useful for OpenAI-compatible gateways (e.g. Portkey) that use headers for routing.
+	// +optional
+	ProviderHeaders map[string]string `json:"providerHeaders,omitempty"`
+
+	// ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+	// injected as provider request headers. Values from the secret override inline
+	// ProviderHeaders on key collision.
+	// +optional
+	ProviderHeadersSecretRef string `json:"providerHeadersSecretRef,omitempty"`
+
 	// Thinking is the thinking mode (off, low, medium, high).
 	// +optional
 	Thinking string `json:"thinking,omitempty"`

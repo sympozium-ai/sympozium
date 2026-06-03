@@ -209,13 +209,19 @@ func checkLLMConnection(ctx context.Context) canaryCheck {
 	var p LLMProvider
 	var err error
 
+	// Parse provider headers for canary LLM check so gateway connectivity is verified.
+	var canaryHeaders map[string]string
+	if headersJSON := getEnv("MODEL_PROVIDER_HEADERS", ""); headersJSON != "" {
+		_ = json.Unmarshal([]byte(headersJSON), &canaryHeaders)
+	}
+
 	switch provider {
 	case "anthropic":
-		p = newAnthropicProvider(apiKey, baseURL, model, "Respond with exactly: OK", "Say OK", nil)
+		p = newAnthropicProvider(apiKey, baseURL, model, "Respond with exactly: OK", "Say OK", nil, canaryHeaders)
 	case "bedrock":
 		p, err = newBedrockProvider(ctx, model, "Respond with exactly: OK", "Say OK", nil)
 	default:
-		p, err = newOpenAIProvider(provider, apiKey, baseURL, model, "Respond with exactly: OK", "Say OK", nil)
+		p, err = newOpenAIProvider(provider, apiKey, baseURL, model, "Respond with exactly: OK", "Say OK", nil, canaryHeaders)
 	}
 	if err != nil {
 		return canaryCheck{Name: "LLM Connection", Status: "fail", Details: err.Error()}

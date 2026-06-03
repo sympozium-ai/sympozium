@@ -30,7 +30,7 @@ type openaiProvider struct {
 // newOpenAIProvider constructs an openaiProvider with the given config.
 // The provider string determines SDK defaults and telemetry tags
 // ("openai" | "lm-studio" | "ollama" | "azure-openai" | …).
-func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef) (*openaiProvider, error) {
+func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) (*openaiProvider, error) {
 	retries := effectiveMaxRetries(provider)
 	reqTimeout := effectiveRequestTimeout(provider)
 
@@ -66,6 +66,10 @@ func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task stri
 		} else if provider == "unsloth" {
 			opts = append(opts, openaioption.WithBaseURL("http://localhost:8080/v1"))
 		}
+	}
+
+	for k, v := range headers {
+		opts = append(opts, openaioption.WithHeader(k, v))
 	}
 
 	var oaiTools []openai.ChatCompletionToolUnionParam

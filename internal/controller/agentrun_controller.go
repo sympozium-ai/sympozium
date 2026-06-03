@@ -510,6 +510,25 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		}
 	}
 
+	// Resolve provider headers secret and merge into inline headers (in-memory only).
+	if agentRun.Spec.Model.ProviderHeadersSecretRef != "" {
+		var headerSecret corev1.Secret
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: agentRun.Namespace,
+			Name:      agentRun.Spec.Model.ProviderHeadersSecretRef,
+		}, &headerSecret); err == nil {
+			if agentRun.Spec.Model.ProviderHeaders == nil {
+				agentRun.Spec.Model.ProviderHeaders = make(map[string]string)
+			}
+			for k, v := range headerSecret.Data {
+				agentRun.Spec.Model.ProviderHeaders[k] = string(v)
+			}
+		} else {
+			log.Error(err, "failed to resolve providerHeadersSecretRef",
+				"secret", agentRun.Spec.Model.ProviderHeadersSecretRef)
+		}
+	}
+
 	// Build and create the Job
 	job := r.buildJob(agentRun, memoryEnabled, observability, sidecars, mcpServers)
 
@@ -952,10 +971,12 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				Task:     task,
 				AgentID:  fmt.Sprintf("sequential-from-%s", sourcePersona),
 				Model: sympoziumv1alpha1.ModelSpec{
-					Provider:      resolveProvider(&targetInst),
-					Model:         targetInst.Spec.Agents.Default.Model,
-					BaseURL:       targetInst.Spec.Agents.Default.BaseURL,
-					AuthSecretRef: resolveAuthSecret(&targetInst),
+					Provider:                 resolveProvider(&targetInst),
+					Model:                    targetInst.Spec.Agents.Default.Model,
+					BaseURL:                  targetInst.Spec.Agents.Default.BaseURL,
+					AuthSecretRef:            resolveAuthSecret(&targetInst),
+					ProviderHeaders:          targetInst.Spec.Agents.Default.ProviderHeaders,
+					ProviderHeadersSecretRef: targetInst.Spec.Agents.Default.ProviderHeadersSecretRef,
 				},
 				ImagePullSecrets: targetInst.Spec.ImagePullSecrets,
 				Lifecycle:        targetInst.Spec.Agents.Default.Lifecycle,
@@ -1935,6 +1956,14 @@ func (r *AgentRunReconciler) buildContainers(
 				},
 			})
 		}
+	}
+
+	// Inject provider headers as a JSON-encoded env var for the agent-runner.
+	if len(agentRun.Spec.Model.ProviderHeaders) > 0 {
+		headersJSON, _ := json.Marshal(agentRun.Spec.Model.ProviderHeaders)
+		containers[0].Env = append(containers[0].Env,
+			corev1.EnvVar{Name: "MODEL_PROVIDER_HEADERS", Value: string(headersJSON)},
+		)
 	}
 
 	// Inject DRY_RUN flag so the agent-runner skips the LLM call.

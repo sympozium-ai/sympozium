@@ -218,7 +218,7 @@ func TestCallOpenAI_MockServer(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	text, inTok, outTok, _, err := callOpenAI(ctx, "openai", "test-key", srv.URL, "gpt-4o-mini", "You are helpful.", "Say hello", nil)
+	text, inTok, outTok, _, err := callOpenAI(ctx, "openai", "test-key", srv.URL, "gpt-4o-mini", "You are helpful.", "Say hello", nil, nil)
 	if err != nil {
 		t.Fatalf("callOpenAI error: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestCallOpenAI_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	_, _, _, _, err := callOpenAI(ctx, "openai", "bad-key", srv.URL, "gpt-4", "sys", "task", nil)
+	_, _, _, _, err := callOpenAI(ctx, "openai", "bad-key", srv.URL, "gpt-4", "sys", "task", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for 401 response")
 	}
@@ -294,7 +294,7 @@ func TestCallAnthropic_MockServer(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	text, inTok, outTok, _, err := callAnthropic(ctx, "test-anthropic-key", srv.URL, "claude-sonnet-4-20250514", "Be helpful.", "Say hello", nil)
+	text, inTok, outTok, _, err := callAnthropic(ctx, "test-anthropic-key", srv.URL, "claude-sonnet-4-20250514", "Be helpful.", "Say hello", nil, nil)
 	if err != nil {
 		t.Fatalf("callAnthropic error: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestCallAnthropic_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	ctx := t.Context()
-	_, _, _, _, err := callAnthropic(ctx, "bad-key", srv.URL, "claude-sonnet-4-20250514", "sys", "task", nil)
+	_, _, _, _, err := callAnthropic(ctx, "bad-key", srv.URL, "claude-sonnet-4-20250514", "sys", "task", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -337,7 +337,7 @@ func TestCallAnthropic_ServerError(t *testing.T) {
 
 func TestCallOpenAI_AzureRequiresBaseURL(t *testing.T) {
 	ctx := t.Context()
-	_, _, _, _, err := callOpenAI(ctx, "azure-openai", "key", "", "gpt-4", "sys", "task", nil)
+	_, _, _, _, err := callOpenAI(ctx, "azure-openai", "key", "", "gpt-4", "sys", "task", nil, nil)
 	if err == nil {
 		t.Fatal("expected error when azure-openai has no base URL")
 	}
@@ -379,12 +379,12 @@ func TestProviderRouting(t *testing.T) {
 
 	ctx := t.Context()
 
-	callOpenAI(ctx, "openai", "k", openaiSrv.URL, "m", "s", "t", nil)
+	callOpenAI(ctx, "openai", "k", openaiSrv.URL, "m", "s", "t", nil, nil)
 	if !openAICalled {
 		t.Error("expected OpenAI server to be called for openai provider")
 	}
 
-	callAnthropic(ctx, "k", anthropicSrv.URL, "m", "s", "t", nil)
+	callAnthropic(ctx, "k", anthropicSrv.URL, "m", "s", "t", nil, nil)
 	if !anthropicCalled {
 		t.Error("expected Anthropic server to be called for anthropic provider")
 	}
@@ -486,7 +486,7 @@ func TestCallAnthropic_ToolUseFlow(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, inTok, outTok, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /tmp/testfile.txt", tools)
+	text, inTok, outTok, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /tmp/testfile.txt", tools, nil)
 	if err != nil {
 		t.Fatalf("callAnthropic tool-use error: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestCallAnthropic_MultipleToolCalls(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, _, _, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read both", tools)
+	text, _, _, toolCalls, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read both", tools, nil)
 	if err != nil {
 		t.Fatalf("callAnthropic multi-tool error: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestCallAnthropic_ToolErrorIsError(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	text, _, _, _, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /nonexistent/file.txt", tools)
+	text, _, _, _, err := callAnthropic(ctx, "key", srv.URL, "claude-sonnet-4-20250514", "sys", "Read /nonexistent/file.txt", tools, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -725,7 +725,7 @@ func TestCallOpenAI_EmptyTerminalTurnFallsBack(t *testing.T) {
 
 	text, inTok, outTok, toolCalls, err := callOpenAI(t.Context(),
 		"lm-studio", "key", srv.URL, "qwen/qwen3.5-9b",
-		"You are a security scanner.", "Scan the cluster", tools)
+		"You are a security scanner.", "Scan the cluster", tools, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -777,7 +777,7 @@ func TestCallOpenAI_ReasoningContentFallback(t *testing.T) {
 
 	text, _, _, _, err := callOpenAI(t.Context(),
 		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b",
-		"You are a security scanner.", "scan", nil)
+		"You are a security scanner.", "scan", nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -868,7 +868,7 @@ func TestCallOpenAI_ReasoningContentStripsArtifacts(t *testing.T) {
 	defer srv.Close()
 
 	text, _, _, _, err := callOpenAI(t.Context(),
-		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "scan", nil)
+		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "scan", nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1004,7 +1004,7 @@ func TestCallOpenAI_QwenToolCallRecovery(t *testing.T) {
 			}},
 	}
 	text, _, _, toolCalls, err := callOpenAI(t.Context(),
-		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "list pods", tools)
+		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "list pods", tools, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestCallOpenAI_ContentPreferredOverReasoning(t *testing.T) {
 	defer srv.Close()
 
 	text, _, _, _, err := callOpenAI(t.Context(),
-		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "count pods", nil)
+		"lm-studio", "", srv.URL, "qwen/qwen3.5-9b", "sys", "count pods", nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1097,7 +1097,7 @@ func TestCallAnthropic_EmptyTerminalTurnFallsBack(t *testing.T) {
 			}},
 	}
 
-	text, _, _, _, err := callAnthropic(t.Context(), "key", srv.URL, "claude-test", "sys", "Check file", tools)
+	text, _, _, _, err := callAnthropic(t.Context(), "key", srv.URL, "claude-test", "sys", "Check file", tools, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

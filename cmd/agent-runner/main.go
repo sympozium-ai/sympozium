@@ -177,6 +177,15 @@ func main() {
 	memoryEnabled := getEnv("MEMORY_ENABLED", "") == "true"
 	toolsEnabled := getEnv("TOOLS_ENABLED", "") == "true"
 
+	var providerHeaders map[string]string
+	if headersJSON := getEnv("MODEL_PROVIDER_HEADERS", ""); headersJSON != "" {
+		if err := json.Unmarshal([]byte(headersJSON), &providerHeaders); err != nil {
+			log.Printf("WARNING: failed to parse MODEL_PROVIDER_HEADERS: %v", err)
+		} else {
+			log.Printf("provider_headers: %d custom header(s) configured", len(providerHeaders))
+		}
+	}
+
 	// Load skill files and build enhanced system prompt.
 	skills := loadSkills(defaultSkillsDir)
 	systemPrompt = buildSystemPrompt(systemPrompt, skills, toolsEnabled)
@@ -405,12 +414,15 @@ func main() {
 
 	switch provider {
 	case "anthropic":
-		responseText, inputTokens, outputTokens, toolCalls, err = callAnthropic(ctx, apiKey, baseURL, modelName, systemPrompt, task, tools)
+		responseText, inputTokens, outputTokens, toolCalls, err = callAnthropic(ctx, apiKey, baseURL, modelName, systemPrompt, task, tools, providerHeaders)
 	case "bedrock":
+		if len(providerHeaders) > 0 {
+			log.Printf("WARNING: custom provider headers are not supported for the Bedrock provider")
+		}
 		responseText, inputTokens, outputTokens, toolCalls, err = callBedrock(ctx, modelName, systemPrompt, task, tools)
 	default:
 		// OpenAI, Azure OpenAI, Ollama, LM Studio, and any OpenAI-compatible provider
-		responseText, inputTokens, outputTokens, toolCalls, err = callOpenAI(ctx, provider, apiKey, baseURL, modelName, systemPrompt, task, tools)
+		responseText, inputTokens, outputTokens, toolCalls, err = callOpenAI(ctx, provider, apiKey, baseURL, modelName, systemPrompt, task, tools, providerHeaders)
 	}
 
 	elapsed := time.Since(start)
@@ -502,15 +514,15 @@ func main() {
 // callAnthropic dispatches an agent run to the Anthropic provider.
 // Retained as a thin wrapper around newAnthropicProvider + runAgentLoop for
 // backward-compatible test coverage.
-func callAnthropic(ctx context.Context, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef) (string, int, int, int, error) {
-	p := newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task, tools)
+func callAnthropic(ctx context.Context, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) (string, int, int, int, error) {
+	p := newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task, tools, headers)
 	return runAgentLoop(ctx, p)
 }
 
 // callOpenAI dispatches an agent run to the OpenAI-compatible provider path
 // (OpenAI, LM Studio, Ollama, vLLM, Azure OpenAI, …).
-func callOpenAI(ctx context.Context, provider, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef) (string, int, int, int, error) {
-	p, err := newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task, tools)
+func callOpenAI(ctx context.Context, provider, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) (string, int, int, int, error) {
+	p, err := newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task, tools, headers)
 	if err != nil {
 		return "", 0, 0, 0, err
 	}

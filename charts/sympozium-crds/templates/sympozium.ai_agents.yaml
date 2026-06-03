@@ -305,6 +305,19 @@ spec:
                           NodeSelector constrains agent pods to nodes with matching labels.
                           Used for node-pinned inference (e.g., Ollama installed on specific GPU nodes).
                         type: object
+                      providerHeaders:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          ProviderHeaders are additional HTTP headers sent with every LLM provider request.
+                          Useful for OpenAI-compatible gateways (e.g. Portkey) that use headers for routing.
+                        type: object
+                      providerHeadersSecretRef:
+                        description: |-
+                          ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+                          injected as provider request headers. Values from the secret override inline
+                          ProviderHeaders on key collision.
+                        type: string
                       runTimeout:
                         description: |-
                           RunTimeout is the maximum duration for each agent run (e.g. "30m", "1h").

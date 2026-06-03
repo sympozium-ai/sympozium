@@ -377,6 +377,18 @@ spec:
                     description: Provider is the AI provider (openai, anthropic, azure-openai,
                       github-copilot, ollama, etc.).
                     type: string
+                  providerHeaders:
+                    additionalProperties:
+                      type: string
+                    description: ProviderHeaders are additional HTTP headers sent
+                      with every LLM provider request.
+                    type: object
+                  providerHeadersSecretRef:
+                    description: |-
+                      ProviderHeadersSecretRef references a Kubernetes Secret whose data keys are
+                      injected as provider request headers. Values from the secret override inline
+                      ProviderHeaders on key collision.
+                    type: string
                   thinking:
                     description: Thinking mode (off, low, medium, high).
                     type: string
