@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.35](https://github.com/sympozium-ai/sympozium/compare/v0.10.34...v0.10.35) (2026-06-03)
+
+
+### Features
+
+* support custom headers for model provider requests ([#210](https://github.com/sympozium-ai/sympozium/issues/210)) ([8412662](https://github.com/sympozium-ai/sympozium/commit/8412662a1076b5d5a71e3626a69ab32bd95f8037))
+* topology keyboard navigation and demo gif ([2d8b417](https://github.com/sympozium-ai/sympozium/commit/2d8b4176677ee0967ba85f527386d361cff89a02))
+* **tui:** add search/filter, log improvements, status colors, and run table enhancements ([#209](https://github.com/sympozium-ai/sympozium/issues/209)) ([d70da82](https://github.com/sympozium-ai/sympozium/commit/d70da82a6c32d5acfcda666df731723f234d613d))
+
+
+### Bug Fixes
+
+* add watch verb to apiserver secrets RBAC ([3037f65](https://github.com/sympozium-ai/sympozium/commit/3037f65768d6b03b22ff5e1329e8ebe45e902aca))
+* **ci:** disable fail-fast on release image matrix ([50661f8](https://github.com/sympozium-ai/sympozium/commit/50661f8a3a07b8a71e5591821e66acd5f7ab6723))
+* clear stale baseURL when switching to a cloud provider ([6345d1f](https://github.com/sympozium-ai/sympozium/commit/6345d1fe21efac18806c1e84ca70b6f47fb2da62))
+* pass baseURL as wizard default when re-enabling ensemble ([3e8b98d](https://github.com/sympozium-ai/sympozium/commit/3e8b98defff3d90801955ebda4707e3bbbcc363b))
+* preserve ensemble auth config on disable and clean up stale runs ([00ac9e4](https://github.com/sympozium-ai/sympozium/commit/00ac9e468bbb15d2f20140337d4b91436e177352))
+
 ## [0.10.34](https://github.com/sympozium-ai/sympozium/compare/v0.10.33...v0.10.34) (2026-05-18)
 
 
