@@ -208,6 +208,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			Timeout:          &metav1.Duration{Duration: 10 * time.Minute},
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
+			Env:              inst.Spec.Agents.Default.Env,
 		},
 	}
 

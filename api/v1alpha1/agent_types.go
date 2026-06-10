@@ -410,7 +410,10 @@ type AgentConfig struct {
 	// (channel-driven, scheduled, stimulus, web-endpoint, sequential
 	// handoff). Useful for tuning runtime knobs such as
 	// MAX_TOOL_ITERATIONS without forking the agent-runner image.
-	// Values set directly on AgentRunSpec.Env take precedence.
+	// The controller copies these values onto AgentRunSpec.Env when it
+	// creates a run on behalf of the agent; manually-applied AgentRun CRs
+	// are not modified, so any AgentRunSpec.Env set there is preserved
+	// as-is.
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
 }
