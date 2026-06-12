@@ -2832,7 +2832,7 @@ func (m tuiModel) buildConversationContext(instName string) string {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, refreshDataCmd(), tickCmd())
+	return tea.Batch(textinput.Blink, refreshDataCmd(m.namespace), tickCmd())
 }
 
 func tickCmd() tea.Cmd {
@@ -2841,13 +2841,19 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-func refreshDataCmd() tea.Cmd {
+func refreshDataCmd(ns string) tea.Cmd {
 	return func() tea.Msg {
 		if k8sClient == nil {
 			return dataRefreshMsg{}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
+
+		// Scope every list to the active namespace so the TUI only ever
+		// shows resources the user can actually act on. Listing across all
+		// namespaces surfaces e.g. Ensembles that don't exist in `ns`, which
+		// then fail with a misleading "not found" error when selected.
+		inNS := client.InNamespace(ns)
 
 		var (
 			inst      sympoziumv1alpha1.AgentList
@@ -2874,49 +2880,49 @@ func refreshDataCmd() tea.Cmd {
 
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &inst); err != nil {
+			if err := k8sClient.List(ctx, &inst, inNS); err != nil {
 				addErr(fmt.Sprintf("instances: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &runs); err != nil {
+			if err := k8sClient.List(ctx, &runs, inNS); err != nil {
 				addErr(fmt.Sprintf("runs: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &pols); err != nil {
+			if err := k8sClient.List(ctx, &pols, inNS); err != nil {
 				addErr(fmt.Sprintf("policies: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &skls); err != nil {
+			if err := k8sClient.List(ctx, &skls, inNS); err != nil {
 				addErr(fmt.Sprintf("skills: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &scheds); err != nil {
+			if err := k8sClient.List(ctx, &scheds, inNS); err != nil {
 				addErr(fmt.Sprintf("schedules: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/managed-by": "sympozium"}); err != nil {
+			if err := k8sClient.List(ctx, &podList, inNS, client.MatchingLabels{"app.kubernetes.io/managed-by": "sympozium"}); err != nil {
 				addErr(fmt.Sprintf("pods: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &packs); err != nil {
+			if err := k8sClient.List(ctx, &packs, inNS); err != nil {
 				addErr(fmt.Sprintf("ensembles: %v", err))
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if err := k8sClient.List(ctx, &gwConfigs); err != nil {
+			if err := k8sClient.List(ctx, &gwConfigs, inNS); err != nil {
 				addErr(fmt.Sprintf("gatewayconfig: %v", err))
 			}
 		}()
@@ -4073,7 +4079,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Launch onboard wizard (instances view or anytime).
 			return m.startOnboardWizard()
 		case "r":
-			return m, refreshDataCmd()
+			return m, refreshDataCmd(m.namespace)
 		case "f":
 			// Toggle detail pane: collapsed ↔ panel
 			if m.detailPane == paneCollapsed {
@@ -4211,7 +4217,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.output != "" {
 			m.addLog(msg.output)
 		}
-		return m, refreshDataCmd()
+		return m, refreshDataCmd(m.namespace)
 
 	case whatsappQRPollMsg:
 		if m.wizard.active && m.wizard.step == wizStepWhatsAppQR {
@@ -4283,7 +4289,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(refreshDataCmd(), tickCmd())
+		return m, tea.Batch(refreshDataCmd(m.namespace), tickCmd())
 	}
 
 	if m.inputFocused {
@@ -6016,7 +6022,7 @@ func (m tuiModel) handleCommand(input string) (tea.Model, tea.Cmd) {
 		}
 		m.namespace = args[0]
 		m.addLog(tuiSuccessStyle.Render(fmt.Sprintf("✓ Switched to namespace: %s", m.namespace)))
-		return m, refreshDataCmd()
+		return m, refreshDataCmd(m.namespace)
 
 	default:
 		m.addLog(tuiErrorStyle.Render(fmt.Sprintf("Unknown command: %s — press ? for help", cmd)))
@@ -9537,7 +9543,7 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		m.inputFocused = false
 		m.input.Blur()
 		m.input.Placeholder = "Type / for commands or press ? for help..."
-		return m, refreshDataCmd()
+		return m, refreshDataCmd(m.namespace)
 
 	// ── Persona Wizard Steps ─────────────────────────────────────────────
 	case wizStepPersonaPick:
@@ -9871,7 +9877,7 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		m.activeView = viewAgents
 		m.selectedRow = 0
 		m.tableScroll = 0
-		return m, refreshDataCmd()
+		return m, refreshDataCmd(m.namespace)
 	}
 
 	return m, nil
