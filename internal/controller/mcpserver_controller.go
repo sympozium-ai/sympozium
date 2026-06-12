@@ -389,7 +389,7 @@ func (r *MCPServerReconciler) buildHTTPPodSpec(ms *sympoziumv1alpha1.MCPServer, 
 
 	container.VolumeMounts = append(container.VolumeMounts, dep.VolumeMounts...)
 	podSpec.Containers = []corev1.Container{container}
-	podSpec.Volumes = append(podSpec.Volumes, dep.Volumes...)
+	podSpec.Volumes = append([]corev1.Volume(nil), dep.Volumes...)
 
 	if dep.ServiceAccountName != "" {
 		podSpec.ServiceAccountName = dep.ServiceAccountName
