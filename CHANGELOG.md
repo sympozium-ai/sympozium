@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.36](https://github.com/sympozium-ai/sympozium/compare/v0.10.35...v0.10.36) (2026-06-12)
+
+
+### Bug Fixes
+
+* scope TUI resource lists to the active namespace ([#217](https://github.com/sympozium-ai/sympozium/issues/217)) ([6479fe5](https://github.com/sympozium-ai/sympozium/commit/6479fe5f27714f82da20ced42de6218b21018c4a)), closes [#215](https://github.com/sympozium-ai/sympozium/issues/215)
+
 ## [0.10.35](https://github.com/sympozium-ai/sympozium/compare/v0.10.34...v0.10.35) (2026-06-03)
 
 
