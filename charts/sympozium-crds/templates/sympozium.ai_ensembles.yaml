@@ -2881,6 +2881,26 @@ spec:
                         - trusted
                         - private
                         type: string
+                      evidencePolicy:
+                        description: |-
+                          EvidencePolicy configures quality-based filtering for shared memory entries.
+                          When set, auto-context injection only includes entries at or above the
+                          specified evidence quality threshold.
+                        properties:
+                          minKind:
+                            description: |-
+                              MinKind is the minimum evidence kind for auto-context injection.
+                              Entries below this quality threshold are excluded from automatic
+                              injection into agent prompts (but remain searchable via tools).
+                              Ordered from highest to lowest quality:
+                              tool_result > external_source > llm_interpretation > agent_opinion
+                            enum:
+                            - tool_result
+                            - external_source
+                            - llm_interpretation
+                            - agent_opinion
+                            type: string
+                        type: object
                       permeability:
                         description: |-
                           Permeability defines per-agent-config visibility and selectivity rules.

@@ -36,15 +36,27 @@ type apiResponse struct {
 
 // memoryEntry represents a stored memory.
 type memoryEntry struct {
-	ID          int64    `json:"id"`
-	Content     string   `json:"content"`
-	Tags        []string `json:"tags,omitempty"`
-	Visibility  string   `json:"visibility,omitempty"`
-	SourceAgent string   `json:"source_agent,omitempty"`
-	ParentID    int64    `json:"parent_id,omitempty"`
-	Seq         int64    `json:"seq,omitempty"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
+	ID          int64          `json:"id"`
+	Content     string         `json:"content"`
+	Tags        []string       `json:"tags,omitempty"`
+	Visibility  string         `json:"visibility,omitempty"`
+	SourceAgent string         `json:"source_agent,omitempty"`
+	ParentID    int64          `json:"parent_id,omitempty"`
+	Seq         int64          `json:"seq,omitempty"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+	Evidence    *EvidenceTrace `json:"evidence,omitempty"`
+}
+
+// EvidenceTrace captures how a memory entry was derived, enabling
+// quality-based filtering and provenance auditing.
+type EvidenceTrace struct {
+	Kind        string  `json:"kind"`                   // tool_result, external_source, llm_interpretation, agent_opinion
+	ToolCall    string  `json:"tool_call,omitempty"`     // tool name + args that produced this
+	RawResult   string  `json:"raw_result,omitempty"`    // unmodified tool output (truncated)
+	Source      string  `json:"source,omitempty"`        // URL, doc ref, or upstream entry ID
+	Confidence  float64 `json:"confidence,omitempty"`    // 0.0-1.0, set by producing agent
+	DerivedFrom []int64 `json:"derived_from,omitempty"` // entry IDs this was derived from
 }
 
 func main() {
@@ -68,6 +80,9 @@ func main() {
 	}
 	if err := migrateMembraneColumns(db); err != nil {
 		log.Fatalf("failed to run membrane migration: %v", err)
+	}
+	if err := migrateEvidenceColumn(db); err != nil {
+		log.Fatalf("failed to run evidence migration: %v", err)
 	}
 
 	mux := http.NewServeMux()
@@ -97,6 +112,7 @@ func searchHandler(db *sql.DB) http.HandlerFunc {
 			TrustPeers  []string `json:"trust_peers"`
 			AcceptTags  []string `json:"accept_tags"`
 			MaxAge      string   `json:"max_age"`
+			MinKind     string   `json:"min_kind"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			log.Printf("[search] bad request: %v", err)
@@ -113,7 +129,7 @@ func searchHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		log.Printf("[search] query=%q top_k=%d caller=%s", truncateLog(req.Query, 120), req.TopK, req.CallerAgent)
-		results, err := searchMemories(db, req.Query, req.TopK, req.CallerAgent, req.TrustPeers, req.AcceptTags, req.MaxAge)
+		results, err := searchMemories(db, req.Query, req.TopK, req.CallerAgent, req.TrustPeers, req.AcceptTags, req.MaxAge, req.MinKind)
 		if err != nil {
 			log.Printf("[search] error: %v", err)
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
@@ -127,11 +143,12 @@ func searchHandler(db *sql.DB) http.HandlerFunc {
 func storeHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Content     string   `json:"content"`
-			Tags        []string `json:"tags"`
-			Visibility  string   `json:"visibility"`
-			SourceAgent string   `json:"source_agent"`
-			ParentID    int64    `json:"parent_id"`
+			Content     string         `json:"content"`
+			Tags        []string       `json:"tags"`
+			Visibility  string         `json:"visibility"`
+			SourceAgent string         `json:"source_agent"`
+			ParentID    int64          `json:"parent_id"`
+			Evidence    *EvidenceTrace `json:"evidence"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			log.Printf("[store] bad request: %v", err)
@@ -149,7 +166,7 @@ func storeHandler(db *sql.DB) http.HandlerFunc {
 
 		log.Printf("[store] content=%d bytes tags=%v visibility=%s source=%s parent=%d",
 			len(req.Content), req.Tags, req.Visibility, req.SourceAgent, req.ParentID)
-		id, seq, storedAt, err := storeMemory(db, req.Content, req.Tags, req.Visibility, req.SourceAgent, req.ParentID)
+		id, seq, storedAt, err := storeMemory(db, req.Content, req.Tags, req.Visibility, req.SourceAgent, req.ParentID, req.Evidence)
 		if err != nil {
 			log.Printf("[store] error: %v", err)
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
@@ -169,6 +186,8 @@ func listHandler(db *sql.DB) http.HandlerFunc {
 		callerAgent := r.URL.Query().Get("caller_agent")
 		trustPeersStr := r.URL.Query().Get("trust_peers")
 		maxAge := r.URL.Query().Get("max_age")
+		minKind := r.URL.Query().Get("min_kind")
+		sourceAgent := r.URL.Query().Get("source_agent")
 		limit := 20
 		if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
 			limit = l
@@ -180,7 +199,7 @@ func listHandler(db *sql.DB) http.HandlerFunc {
 		}
 
 		log.Printf("[list] tags=%q caller=%s limit=%d", tags, callerAgent, limit)
-		results, err := listMemories(db, tags, limit, callerAgent, trustPeers, maxAge)
+		results, err := listMemories(db, tags, limit, callerAgent, trustPeers, maxAge, minKind, sourceAgent)
 		if err != nil {
 			log.Printf("[list] error: %v", err)
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
@@ -261,7 +280,7 @@ func provenanceHandler(db *sql.DB) http.HandlerFunc {
 
 // --- Core database operations ---
 
-func searchMemories(db *sql.DB, query string, topK int, callerAgent string, trustPeers, acceptTags []string, maxAge string) ([]memoryEntry, error) {
+func searchMemories(db *sql.DB, query string, topK int, callerAgent string, trustPeers, acceptTags []string, maxAge, minKind string) ([]memoryEntry, error) {
 	// Build visibility filter.
 	visFilter, visArgs := buildVisibilityFilter(callerAgent, trustPeers)
 
@@ -271,22 +290,26 @@ func searchMemories(db *sql.DB, query string, topK int, callerAgent string, trus
 	// Build accept tags filter.
 	tagFilter, tagArgs := buildAcceptTagsFilter(acceptTags)
 
+	// Build min kind filter.
+	kindFilter, kindArgs := buildMinKindFilter(minKind)
+
 	// FTS5 search with ranking + membrane filters.
 	allArgs := []any{fts5Query(query)}
 	allArgs = append(allArgs, visArgs...)
 	allArgs = append(allArgs, ageArgs...)
 	allArgs = append(allArgs, tagArgs...)
+	allArgs = append(allArgs, kindArgs...)
 	allArgs = append(allArgs, topK)
 
 	q := fmt.Sprintf(`
-		SELECT m.id, m.content, m.tags, m.visibility, m.source_agent, m.parent_id, m.seq, m.created_at, m.updated_at
+		SELECT m.id, m.content, m.tags, m.visibility, m.source_agent, m.parent_id, m.seq, m.created_at, m.updated_at, m.evidence
 		FROM memories_fts fts
 		JOIN memories m ON m.id = fts.rowid
 		WHERE memories_fts MATCH ?
-		%s %s %s
+		%s %s %s %s
 		ORDER BY rank
 		LIMIT ?
-	`, visFilter, ageFilter, tagFilter)
+	`, visFilter, ageFilter, tagFilter, kindFilter)
 
 	rows, err := db.Query(q, allArgs...)
 	if err != nil {
@@ -295,16 +318,17 @@ func searchMemories(db *sql.DB, query string, topK int, callerAgent string, trus
 		allArgs = append(allArgs, visArgs...)
 		allArgs = append(allArgs, ageArgs...)
 		allArgs = append(allArgs, tagArgs...)
+		allArgs = append(allArgs, kindArgs...)
 		allArgs = append(allArgs, topK)
 
 		q = fmt.Sprintf(`
-			SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at
+			SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at, evidence
 			FROM memories
 			WHERE content LIKE ?
-			%s %s %s
+			%s %s %s %s
 			ORDER BY updated_at DESC
 			LIMIT ?
-		`, visFilter, ageFilter, tagFilter)
+		`, visFilter, ageFilter, tagFilter, kindFilter)
 
 		rows, err = db.Query(q, allArgs...)
 		if err != nil {
@@ -315,9 +339,18 @@ func searchMemories(db *sql.DB, query string, topK int, callerAgent string, trus
 	return scanEntries(rows)
 }
 
-func storeMemory(db *sql.DB, content string, tags []string, visibility, sourceAgent string, parentID int64) (int64, int64, string, error) {
+func storeMemory(db *sql.DB, content string, tags []string, visibility, sourceAgent string, parentID int64, evidence *EvidenceTrace) (int64, int64, string, error) {
 	tagsStr := strings.Join(tags, ",")
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	var evidenceStr string
+	if evidence != nil {
+		b, err := json.Marshal(evidence)
+		if err != nil {
+			return 0, 0, "", fmt.Errorf("marshal evidence: %w", err)
+		}
+		evidenceStr = string(b)
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -330,9 +363,9 @@ func storeMemory(db *sql.DB, content string, tags []string, visibility, sourceAg
 	_ = tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) + 1 FROM memories`).Scan(&nextSeq)
 
 	result, err := tx.Exec(`
-		INSERT INTO memories (content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, content, tagsStr, visibility, sourceAgent, parentID, nextSeq, now, now)
+		INSERT INTO memories (content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at, evidence)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, content, tagsStr, visibility, sourceAgent, parentID, nextSeq, now, now, evidenceStr)
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("store failed: %w", err)
 	}
@@ -344,9 +377,10 @@ func storeMemory(db *sql.DB, content string, tags []string, visibility, sourceAg
 	return id, nextSeq, now, nil
 }
 
-func listMemories(db *sql.DB, tags string, limit int, callerAgent string, trustPeers []string, maxAge string) ([]memoryEntry, error) {
+func listMemories(db *sql.DB, tags string, limit int, callerAgent string, trustPeers []string, maxAge, minKind, sourceAgent string) ([]memoryEntry, error) {
 	visFilter, visArgs := buildVisibilityFilter(callerAgent, trustPeers)
 	ageFilter, ageArgs := buildTimeDecayFilter(maxAge)
+	kindFilter, kindArgs := buildMinKindFilter(minKind)
 
 	var conditions []string
 	var args []any
@@ -355,28 +389,33 @@ func listMemories(db *sql.DB, tags string, limit int, callerAgent string, trustP
 		conditions = append(conditions, "tags LIKE ?")
 		args = append(args, "%"+tags+"%")
 	}
+	if sourceAgent != "" {
+		conditions = append(conditions, "source_agent = ?")
+		args = append(args, sourceAgent)
+	}
 
 	args = append(args, visArgs...)
 	args = append(args, ageArgs...)
+	args = append(args, kindArgs...)
 
 	where := ""
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	// visFilter and ageFilter already include "AND" prefix when non-empty.
-	if where == "" && (visFilter != "" || ageFilter != "") {
+	// visFilter, ageFilter, and kindFilter already include "AND" prefix when non-empty.
+	if where == "" && (visFilter != "" || ageFilter != "" || kindFilter != "") {
 		where = "WHERE 1=1"
 	}
 
 	args = append(args, limit)
 
 	q := fmt.Sprintf(`
-		SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at
+		SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at, evidence
 		FROM memories
-		%s %s %s
+		%s %s %s %s
 		ORDER BY updated_at DESC
 		LIMIT ?
-	`, where, visFilter, ageFilter)
+	`, where, visFilter, ageFilter, kindFilter)
 
 	rows, err := db.Query(q, args...)
 	if err != nil {
@@ -394,18 +433,25 @@ func getProvenanceChain(db *sql.DB, id int64) ([]memoryEntry, error) {
 	for current > 0 && !seen[current] {
 		seen[current] = true
 		row := db.QueryRow(`
-			SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at
+			SELECT id, content, tags, visibility, source_agent, parent_id, seq, created_at, updated_at, evidence
 			FROM memories WHERE id = ?
 		`, current)
 
 		var e memoryEntry
 		var tags string
-		err := row.Scan(&e.ID, &e.Content, &tags, &e.Visibility, &e.SourceAgent, &e.ParentID, &e.Seq, &e.CreatedAt, &e.UpdatedAt)
+		var evidenceStr string
+		err := row.Scan(&e.ID, &e.Content, &tags, &e.Visibility, &e.SourceAgent, &e.ParentID, &e.Seq, &e.CreatedAt, &e.UpdatedAt, &evidenceStr)
 		if err != nil {
 			break
 		}
 		if tags != "" {
 			e.Tags = strings.Split(tags, ",")
+		}
+		if evidenceStr != "" {
+			var ev EvidenceTrace
+			if err := json.Unmarshal([]byte(evidenceStr), &ev); err == nil {
+				e.Evidence = &ev
+			}
 		}
 		chain = append(chain, e)
 		current = e.ParentID
@@ -426,11 +472,18 @@ func scanEntries(rows *sql.Rows) ([]memoryEntry, error) {
 	for rows.Next() {
 		var e memoryEntry
 		var tags string
-		if err := rows.Scan(&e.ID, &e.Content, &tags, &e.Visibility, &e.SourceAgent, &e.ParentID, &e.Seq, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		var evidenceStr string
+		if err := rows.Scan(&e.ID, &e.Content, &tags, &e.Visibility, &e.SourceAgent, &e.ParentID, &e.Seq, &e.CreatedAt, &e.UpdatedAt, &evidenceStr); err != nil {
 			continue
 		}
 		if tags != "" {
 			e.Tags = strings.Split(tags, ",")
+		}
+		if evidenceStr != "" {
+			var ev EvidenceTrace
+			if err := json.Unmarshal([]byte(evidenceStr), &ev); err == nil {
+				e.Evidence = &ev
+			}
 		}
 		results = append(results, e)
 	}
@@ -576,6 +629,59 @@ func migrateMembraneColumns(db *sql.DB) error {
 	}
 	log.Printf("[memory-server] membrane migration complete")
 	return nil
+}
+
+// migrateEvidenceColumn adds the evidence column to an existing database.
+// Idempotent: safe to call on fresh or already-migrated databases.
+func migrateEvidenceColumn(db *sql.DB) error {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('memories') WHERE name='evidence'`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("evidence migration check: %w", err)
+	}
+	if count > 0 {
+		return nil // already migrated
+	}
+
+	log.Printf("[memory-server] running evidence schema migration")
+	if _, err := db.Exec(`ALTER TABLE memories ADD COLUMN evidence TEXT DEFAULT ''`); err != nil {
+		return fmt.Errorf("evidence migration: %w", err)
+	}
+	log.Printf("[memory-server] evidence migration complete")
+	return nil
+}
+
+// evidenceKindRank maps evidence kinds to quality ranks for filtering.
+var evidenceKindRank = map[string]int{
+	"tool_result":        4,
+	"external_source":    3,
+	"llm_interpretation": 2,
+	"agent_opinion":      1,
+}
+
+func buildMinKindFilter(minKind string) (string, []any) {
+	if minKind == "" {
+		return "", nil
+	}
+	rank, ok := evidenceKindRank[minKind]
+	if !ok {
+		return "", nil
+	}
+	// Build SQL that checks the JSON 'kind' field in the evidence column.
+	// Entries with no evidence pass through (backward compatible).
+	var kinds []string
+	for k, r := range evidenceKindRank {
+		if r >= rank {
+			kinds = append(kinds, k)
+		}
+	}
+	conditions := make([]string, len(kinds))
+	args := make([]any, len(kinds))
+	for i, k := range kinds {
+		conditions[i] = "json_extract(evidence, '$.kind') = ?"
+		args[i] = k
+	}
+	return fmt.Sprintf("AND (evidence = '' OR %s)", strings.Join(conditions, " OR ")), args
 }
 
 // fts5Query converts a natural language query into an FTS5 query.

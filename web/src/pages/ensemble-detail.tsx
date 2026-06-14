@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link, useSearchParams, useNavigate } from "react-router-dom";
 import {
   useEnsemble,
   useActivateEnsemble,
   useDeleteEnsemble,
   useSkills,
+  useSharedMemory,
+  useSharedMemoryProvenance,
 } from "@/hooks/use-api";
 import {
   YamlButton,
@@ -37,15 +39,41 @@ import {
   Database,
   Settings,
   Trash2,
+  Eye,
+  Search,
+  Filter,
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
-import type { InstalledAgentConfig } from "@/lib/api";
+import type { InstalledAgentConfig, SharedMemoryEntry } from "@/lib/api";
 import { EnsembleCanvas } from "@/components/ensemble-canvas";
 import {
   OnboardingWizard,
   type WizardResult,
 } from "@/components/onboarding-wizard";
+
+const EVIDENCE_KIND_COLORS: Record<string, string> = {
+  tool_result: "bg-green-500/20 text-green-400 border-green-500/30",
+  external_source: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  llm_interpretation: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  agent_opinion: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+};
+
+const EVIDENCE_KIND_LABELS: Record<string, string> = {
+  tool_result: "tool",
+  external_source: "source",
+  llm_interpretation: "llm",
+  agent_opinion: "opinion",
+};
+
+function EvidenceKindBadge({ kind }: { kind?: string }) {
+  if (!kind) return null;
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${EVIDENCE_KIND_COLORS[kind] || ""}`}>
+      {EVIDENCE_KIND_LABELS[kind] || kind}
+    </span>
+  );
+}
 
 interface PersonaEditState {
   systemPrompt: string;
@@ -68,6 +96,12 @@ export function EnsembleDetailPage() {
     systemPrompt: "",
     skills: [],
   });
+
+  // Memory tab state
+  const [memoryKindFilter, setMemoryKindFilter] = useState<string>("");
+  const [memoryAgentFilter, setMemoryAgentFilter] = useState<string>("");
+  const [expandedEntryId, setExpandedEntryId] = useState<number | null>(null);
+  const [provenanceEntryId, setProvenanceEntryId] = useState<number | null>(null);
 
   // Reset edit state when pack data changes
   useEffect(() => {
@@ -159,6 +193,28 @@ export function EnsembleDetailPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") || "overview";
+
+  const sharedMemoryEnabled = pack?.spec.sharedMemory?.enabled ?? false;
+  const memoryFilters = useMemo(() => ({
+    ...(memoryKindFilter ? { min_kind: memoryKindFilter } : {}),
+    ...(memoryAgentFilter ? { source_agent: memoryAgentFilter } : {}),
+    limit: 50,
+  }), [memoryKindFilter, memoryAgentFilter]);
+
+  const { data: memoryData } = useSharedMemory(
+    sharedMemoryEnabled ? (name || "") : "",
+    memoryFilters,
+  );
+  const { data: provenanceData } = useSharedMemoryProvenance(
+    name || "",
+    provenanceEntryId,
+  );
+
+  const memoryEntries = memoryData?.content ?? [];
+  const sourceAgents = useMemo(() => {
+    const agents = new Set(memoryEntries.map((e) => e.source_agent).filter(Boolean));
+    return Array.from(agents) as string[];
+  }, [memoryEntries]);
   const setTab = (tab: string) => setSearchParams({ tab }, { replace: true });
 
   if (isLoading) {
@@ -255,6 +311,17 @@ export function EnsembleDetailPage() {
                 className="ml-1.5 text-[10px] px-1 py-0"
               >
                 {pack.spec.relationships!.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="memory" disabled={!sharedMemoryEnabled}>
+            Memory
+            {memoryEntries.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1 py-0"
+              >
+                {memoryEntries.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -490,6 +557,194 @@ export function EnsembleDetailPage() {
                 <p className="text-sm text-muted-foreground">
                   Shared memory is not configured for this pack.
                 </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="memory" className="mt-4 space-y-4">
+          {/* Summary cards */}
+          <div className="grid gap-4 sm:grid-cols-4">
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Database className="h-5 w-5 text-blue-400" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Entries</p>
+                  <p className="text-2xl font-bold">{memoryEntries.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tool-Backed</p>
+                  <p className="text-2xl font-bold">
+                    {memoryEntries.filter((e) => e.evidence?.kind === "tool_result").length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Contributors</p>
+                  <p className="text-2xl font-bold">{sourceAgents.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="flex items-center gap-3 p-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Evidence Policy</p>
+                  <p className="text-sm font-medium">
+                    {pack?.spec.sharedMemory?.membrane?.evidencePolicy?.minKind || "none"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filter bar */}
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={memoryKindFilter}
+                  onChange={(e) => setMemoryKindFilter(e.target.value)}
+                  className="rounded border bg-background px-2 py-1 text-sm"
+                >
+                  <option value="">All evidence kinds</option>
+                  <option value="tool_result">Tool Result</option>
+                  <option value="external_source">External Source</option>
+                  <option value="llm_interpretation">LLM Interpretation</option>
+                  <option value="agent_opinion">Agent Opinion</option>
+                </select>
+                <select
+                  value={memoryAgentFilter}
+                  onChange={(e) => setMemoryAgentFilter(e.target.value)}
+                  className="rounded border bg-background px-2 py-1 text-sm"
+                >
+                  <option value="">All agents</option>
+                  {sourceAgents.map((agent) => (
+                    <option key={agent} value={agent}>{agent}</option>
+                  ))}
+                </select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Entries table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Shared Memory Entries</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {memoryEntries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No shared memory entries yet. Agents will populate this as they run.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {memoryEntries.map((entry: SharedMemoryEntry) => (
+                    <div key={entry.id} className="rounded-lg border">
+                      <div
+                        className="flex items-center gap-3 p-3 text-sm cursor-pointer hover:bg-white/5 transition-colors"
+                        onClick={() => setExpandedEntryId(expandedEntryId === entry.id ? null : entry.id)}
+                      >
+                        <span className="font-mono text-xs text-muted-foreground w-8">
+                          #{entry.id}
+                        </span>
+                        <span className="flex-1 truncate">{entry.content.slice(0, 120)}</span>
+                        <EvidenceKindBadge kind={entry.evidence?.kind} />
+                        {entry.evidence?.confidence != null && entry.evidence.confidence > 0 && (
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {(entry.evidence.confidence * 100).toFixed(0)}%
+                          </span>
+                        )}
+                        {entry.source_agent && (
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {entry.source_agent}
+                          </Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          {formatAge(entry.created_at)}
+                        </span>
+                      </div>
+                      {expandedEntryId === entry.id && (
+                        <div className="border-t p-3 space-y-3 bg-muted/20">
+                          <pre className="text-xs whitespace-pre-wrap">{entry.content}</pre>
+                          {entry.evidence && (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground">Evidence Trace</p>
+                              <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                                {entry.evidence.tool_call && (
+                                  <div>
+                                    <span className="text-muted-foreground">Tool call: </span>
+                                    <span className="font-mono">{entry.evidence.tool_call}</span>
+                                  </div>
+                                )}
+                                {entry.evidence.source && (
+                                  <div>
+                                    <span className="text-muted-foreground">Source: </span>
+                                    <span className="font-mono">{entry.evidence.source}</span>
+                                  </div>
+                                )}
+                                {entry.evidence.raw_result && (
+                                  <div className="sm:col-span-2">
+                                    <span className="text-muted-foreground">Raw result: </span>
+                                    <pre className="mt-1 rounded bg-muted/50 p-2 whitespace-pre-wrap max-h-32 overflow-auto">
+                                      {entry.evidence.raw_result}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {entry.tags && entry.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {entry.tags.map((tag, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">{tag}</Badge>
+                              ))}
+                            </div>
+                          )}
+                          {(entry.parent_id ?? 0) > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => setProvenanceEntryId(provenanceEntryId === entry.id ? null : entry.id)}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              {provenanceEntryId === entry.id ? "Hide" : "View"} Provenance
+                            </Button>
+                          )}
+                          {provenanceEntryId === entry.id && provenanceData?.content && (
+                            <div className="border-l-2 border-blue-500/30 pl-3 space-y-2">
+                              <p className="text-xs font-medium text-muted-foreground">Provenance Chain</p>
+                              {provenanceData.content.map((node: SharedMemoryEntry, i: number) => (
+                                <div key={node.id} className="flex items-start gap-2 text-xs">
+                                  <span className="font-mono text-muted-foreground shrink-0">
+                                    {i === provenanceData.content.length - 1 ? ">" : " "}#{node.id}
+                                  </span>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <EvidenceKindBadge kind={node.evidence?.kind} />
+                                      {node.source_agent && (
+                                        <span className="text-muted-foreground">{node.source_agent}</span>
+                                      )}
+                                    </div>
+                                    <p className="text-muted-foreground mt-0.5 truncate">{node.content.slice(0, 100)}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

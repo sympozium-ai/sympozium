@@ -534,6 +534,10 @@ export interface TimeDecaySpec {
   decayFunction?: "linear" | "exponential";
 }
 
+export interface EvidencePolicySpec {
+  minKind?: "tool_result" | "external_source" | "llm_interpretation" | "agent_opinion";
+}
+
 export interface MembraneSpec {
   defaultVisibility?: "public" | "trusted" | "private";
   permeability?: PermeabilityRule[];
@@ -541,6 +545,7 @@ export interface MembraneSpec {
   tokenBudget?: TokenBudgetSpec;
   circuitBreaker?: CircuitBreakerSpec;
   timeDecay?: TimeDecaySpec;
+  evidencePolicy?: EvidencePolicySpec;
 }
 
 export interface SharedMemorySpec {
@@ -599,6 +604,28 @@ export interface EnsembleStatus {
   stimulusDelivered?: boolean;
   stimulusGeneration?: number;
   conditions?: Condition[];
+}
+
+export interface EvidenceTrace {
+  kind: "tool_result" | "external_source" | "llm_interpretation" | "agent_opinion";
+  tool_call?: string;
+  raw_result?: string;
+  source?: string;
+  confidence?: number;
+  derived_from?: number[];
+}
+
+export interface SharedMemoryEntry {
+  id: number;
+  content: string;
+  tags?: string[];
+  visibility?: string;
+  source_agent?: string;
+  parent_id?: number;
+  seq?: number;
+  evidence?: EvidenceTrace;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Ensemble {
@@ -1160,16 +1187,22 @@ export const api = {
       }),
     listSharedMemory: (
       name: string,
-      opts?: { tags?: string; limit?: number },
+      opts?: { tags?: string; limit?: number; min_kind?: string; source_agent?: string },
     ) => {
       const params = new URLSearchParams();
       if (opts?.tags) params.set("tags", opts.tags);
       if (opts?.limit) params.set("limit", String(opts.limit));
+      if (opts?.min_kind) params.set("min_kind", opts.min_kind);
+      if (opts?.source_agent) params.set("source_agent", opts.source_agent);
       const qs = params.toString();
-      return apiFetch<unknown>(
+      return apiFetch<{ success: boolean; content: SharedMemoryEntry[] }>(
         `/api/v1/ensembles/${name}/shared-memory${qs ? `?${qs}` : ""}`,
       );
     },
+    getSharedMemoryProvenance: (name: string, entryId: number) =>
+      apiFetch<{ success: boolean; content: SharedMemoryEntry[] }>(
+        `/api/v1/ensembles/${name}/shared-memory/${entryId}/provenance`,
+      ),
     create: (data: {
       name: string;
       description?: string;

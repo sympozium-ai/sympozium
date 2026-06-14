@@ -115,3 +115,81 @@ func TestPatchEnsembleAutoCreatesProviderSecretWithNewName(t *testing.T) {
 		t.Fatalf("expected OPENAI_API_KEY to be set")
 	}
 }
+
+func TestGetEnsembleSharedMemoryProvenance_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ensembles/does-not-exist/shared-memory/entry-1/provenance?namespace=default", nil)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Ensemble not found") {
+		t.Fatalf("expected 'Ensemble not found' error, got: %s", rec.Body.String())
+	}
+}
+
+func TestGetEnsembleSharedMemoryProvenance_SharedMemoryDisabled(t *testing.T) {
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-ensemble", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "agent-a"}},
+		},
+	}
+	srv, _ := newTestServer(t, ensemble)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ensembles/my-ensemble/shared-memory/entry-1/provenance?namespace=default", nil)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "shared memory not enabled") {
+		t.Fatalf("expected 'shared memory not enabled' error, got: %s", rec.Body.String())
+	}
+}
+
+func TestListEnsembleSharedMemory_MinKindParam(t *testing.T) {
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-ensemble", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "agent-a"}},
+			SharedMemory: &sympoziumv1alpha1.SharedMemorySpec{Enabled: true},
+		},
+	}
+	srv, _ := newTestServer(t, ensemble)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ensembles/my-ensemble/shared-memory?namespace=default&min_kind=insight", nil)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	// The handler passes validation and tries to proxy to the in-cluster shared
+	// memory service which is unreachable in tests, so we expect 502.
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 (proxy to unreachable memory server), got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListEnsembleSharedMemory_SourceAgentParam(t *testing.T) {
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-ensemble", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "agent-a"}},
+			SharedMemory: &sympoziumv1alpha1.SharedMemorySpec{Enabled: true},
+		},
+	}
+	srv, _ := newTestServer(t, ensemble)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ensembles/my-ensemble/shared-memory?namespace=default&source_agent=agent-a", nil)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, "").ServeHTTP(rec, req)
+
+	// The handler passes validation and tries to proxy to the in-cluster shared
+	// memory service which is unreachable in tests, so we expect 502.
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 (proxy to unreachable memory server), got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

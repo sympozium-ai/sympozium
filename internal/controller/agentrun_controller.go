@@ -2559,6 +2559,13 @@ func (r *AgentRunReconciler) injectSharedMemory(ctx context.Context, agentRun *s
 
 			membraneEnvs := resolveMembraneEnvVars(personaName, membrane, pack.Spec.Relationships)
 			podSpec.Containers[0].Env = append(podSpec.Containers[0].Env, membraneEnvs...)
+
+			// Inject evidence policy env var if configured.
+			if membrane.EvidencePolicy != nil && membrane.EvidencePolicy.MinKind != "" {
+				podSpec.Containers[0].Env = append(podSpec.Containers[0].Env,
+					corev1.EnvVar{Name: "WORKFLOW_MEMBRANE_MIN_EVIDENCE_KIND", Value: membrane.EvidencePolicy.MinKind},
+				)
+			}
 		}
 	}
 

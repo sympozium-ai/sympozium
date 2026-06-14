@@ -243,6 +243,16 @@ func formatMemoryContent(raw json.RawMessage) string {
 				}
 				sb.WriteString(fmt.Sprintf(" [%s]", strings.Join(tagStrs, ", ")))
 			}
+			// Show evidence metadata if present.
+			if evidence, ok := entry["evidence"].(map[string]any); ok {
+				if kind, ok := evidence["kind"].(string); ok && kind != "" {
+					sb.WriteString(fmt.Sprintf(" [evidence: %s", kind))
+					if conf, ok := evidence["confidence"].(float64); ok && conf > 0 {
+						sb.WriteString(fmt.Sprintf(", confidence=%.1f", conf))
+					}
+					sb.WriteString("]")
+				}
+			}
 			sb.WriteString("\n")
 			sb.WriteString(content)
 			sb.WriteString("\n")
@@ -409,7 +419,8 @@ var (
 	membraneTrustPeers []string // agent configs in this persona's trust group
 	membraneAcceptTags []string // tags this persona wants to receive
 	membraneExposeTags []string // tags this persona is allowed to expose; entries with non-matching tags are forced private
-	membraneMaxAge     string   // time decay TTL (e.g., "24h")
+	membraneMaxAge         string   // time decay TTL (e.g., "24h")
+	membraneMinEvidenceKind string  // minimum evidence kind filter for queries
 )
 
 // workflowMemoryToolDefs returns tool definitions for the shared workflow memory.
@@ -465,7 +476,34 @@ func workflowMemoryToolDefs() []ToolDef {
 				"description": "Tags for categorization (e.g., ['kafka', 'consumer-lag']). Your persona name is added automatically.",
 			},
 		}
-		storeDesc := "Store a finding in the shared team memory so other personas in the workflow can access it. Entries are automatically tagged with your persona name for attribution."
+		storeProps["evidence"] = map[string]any{
+			"type":        "object",
+			"description": "Evidence trace for provenance tracking. Attach this when storing findings backed by tool outputs or external sources.",
+			"properties": map[string]any{
+				"kind": map[string]any{
+					"type":        "string",
+					"enum":        []string{"tool_result", "external_source", "llm_interpretation", "agent_opinion"},
+					"description": "Evidence quality tier: tool_result (direct tool output), external_source (URL/doc reference), llm_interpretation (model analysis), agent_opinion (subjective assessment).",
+				},
+				"tool_call": map[string]any{
+					"type":        "string",
+					"description": "Tool name and arguments that produced this finding (for tool_result kind).",
+				},
+				"raw_result": map[string]any{
+					"type":        "string",
+					"description": "Unmodified tool output or source content (truncated to key details).",
+				},
+				"source": map[string]any{
+					"type":        "string",
+					"description": "URL, document reference, or upstream memory entry ID.",
+				},
+				"confidence": map[string]any{
+					"type":        "number",
+					"description": "Confidence level from 0.0 to 1.0.",
+				},
+			},
+		}
+		storeDesc := "Store a finding in the shared team memory so other personas in the workflow can access it. Entries are automatically tagged with your persona name for attribution. You can attach an evidence trace to record how the finding was derived."
 
 		// Add membrane parameters when configured.
 		if membraneVisibility != "" {
@@ -669,10 +707,14 @@ func queryWorkflowMemoryContext(task string, maxResults int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	body, _ := json.Marshal(map[string]any{
+	searchBody := map[string]any{
 		"query": query,
 		"top_k": maxResults,
-	})
+	}
+	if membraneMinEvidenceKind != "" {
+		searchBody["min_kind"] = membraneMinEvidenceKind
+	}
+	body, _ := json.Marshal(searchBody)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", workflowMemoryServerURL+"/search", bytes.NewReader(body))
 	if err != nil {
@@ -759,6 +801,7 @@ func initWorkflowMemoryTools() []ToolDef {
 		membraneExposeTags = strings.Split(tags, ",")
 	}
 	membraneMaxAge = os.Getenv("WORKFLOW_MEMBRANE_MAX_AGE")
+	membraneMinEvidenceKind = os.Getenv("WORKFLOW_MEMBRANE_MIN_EVIDENCE_KIND")
 
 	if membraneVisibility != "" {
 		log.Printf("Membrane configured: visibility=%s trust_peers=%v accept_tags=%v max_age=%s",

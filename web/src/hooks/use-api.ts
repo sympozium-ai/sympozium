@@ -442,6 +442,26 @@ export function useCloneEnsemble() {
   });
 }
 
+export function useSharedMemory(
+  ensembleName: string,
+  filters?: { tags?: string; min_kind?: string; source_agent?: string; limit?: number },
+) {
+  return useQuery({
+    queryKey: ["ensembles", ensembleName, "shared-memory", filters],
+    queryFn: () => api.ensembles.listSharedMemory(ensembleName, filters),
+    enabled: !!ensembleName,
+    refetchInterval: 5000,
+  });
+}
+
+export function useSharedMemoryProvenance(ensembleName: string, entryId: number | null) {
+  return useQuery({
+    queryKey: ["ensembles", ensembleName, "shared-memory", entryId, "provenance"],
+    queryFn: () => api.ensembles.getSharedMemoryProvenance(ensembleName, entryId!),
+    enabled: !!ensembleName && entryId !== null,
+  });
+}
+
 // ── MCP Servers ─────────────────────────────────────────────────────────────
 
 export function useInstallDefaultMcpServers() {

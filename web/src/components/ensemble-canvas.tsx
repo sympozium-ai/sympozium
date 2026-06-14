@@ -120,13 +120,9 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 		return m;
 	}, [models]);
 
-	const runPhaseMap = useMemo(
-		() => buildRunPhaseMap(runs, pack.status?.installedPersonas),
-		[runs, pack.status?.installedPersonas],
-	);
-
-	const initialNodes = useMemo(() => {
-		// Derive provider/model nodes from ensemble data.
+	// Compute layout nodes from pack structure only — NOT from runs.
+	// This prevents the canvas from re-laying-out every 5s when useRuns polls.
+	const layoutedNodes = useMemo(() => {
 		const provResult = buildProviderNodesAndEdges(
 			pack,
 			modelMap,
@@ -155,17 +151,10 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 				(p) => p.name === node.id,
 			);
 			if (ip) node.data.agentName = ip.agentName;
-			const status = runPhaseMap.get(node.id);
-			if (status) {
-				node.data.runPhase = status.phase;
-				node.data.runTask = status.task;
-			}
 		}
 
-		// Add provider/model nodes above personas.
 		nodes.push(...provResult.nodes);
 
-		// Add stimulus node if configured.
 		if (pack.spec.stimulus) {
 			const stimulusYOffset = hasProviders ? -60 : -80;
 			nodes.push({
@@ -189,9 +178,22 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 		pack,
 		pack.spec.sharedMemory?.enabled,
 		pack.status?.installedPersonas,
-		runPhaseMap,
 		modelMap,
 	]);
+
+	// Merge run status into nodes without changing layout or identity.
+	const initialNodes = useMemo(() => {
+		const runPhaseMap = buildRunPhaseMap(runs, pack.status?.installedPersonas);
+		return layoutedNodes.map((node) => {
+			if (node.type !== "persona") return node;
+			const status = runPhaseMap.get(node.id);
+			if (!status) return node;
+			return {
+				...node,
+				data: { ...node.data, runPhase: status.phase, runTask: status.task },
+			};
+		});
+	}, [layoutedNodes, runs, pack.status?.installedPersonas]);
 
 	const initialEdges = useMemo(() => {
 		const edges = buildEdges(relationships);
@@ -226,22 +228,49 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 	// we explicitly call setEdgesState, avoiding the ReactFlow store-sync
 	// loop that useEdgesState triggers on every render.
 
-	// Defer initialNodes/initialEdges so that frequent useRuns polling (every
-	// 5s) doesn't synchronously trigger re-renders that could cascade into
-	// ReactFlow's internal store.
-	const deferredNodes = useDeferredValue(initialNodes);
 	const deferredEdges = useDeferredValue(initialEdges);
 
-	// Sync nodes from deferred initialNodes, preserving user-dragged positions.
+	// Single sync effect: merge layout + run status into state, preserving
+	// user-dragged positions. Returns the previous array reference when
+	// nothing has changed to avoid triggering ReactFlow's StoreUpdater loop.
 	useEffect(() => {
 		setNodesRef.current((prev) => {
 			const posMap = new Map(prev.map((n) => [n.id, n.position]));
-			return deferredNodes.map((node) => ({
-				...node,
-				position: posMap.get(node.id) ?? node.position,
-			}));
+			const runPhaseMap = buildRunPhaseMap(runs, pack.status?.installedPersonas);
+			let changed = false;
+			const next = layoutedNodes.map((node) => {
+				const prevNode = prev.find((n) => n.id === node.id);
+				const pos = posMap.get(node.id) ?? node.position;
+
+				// Merge run status for persona nodes.
+				let data = node.data;
+				if (node.type === "persona") {
+					const status = runPhaseMap.get(node.id);
+					data = { ...node.data, runPhase: status?.phase, runTask: status?.task };
+				}
+
+				// Check if anything actually changed vs the previous node.
+				if (prevNode) {
+					const prevData = prevNode.data as AgentConfigNodeData;
+					const nextData = data as AgentConfigNodeData;
+					const dataMatch =
+						prevData.runPhase === nextData.runPhase &&
+						prevData.runTask === nextData.runTask &&
+						prevData.hasSharedMemory === nextData.hasSharedMemory &&
+						prevData.agentName === nextData.agentName;
+					const posMatch =
+						prevNode.position.x === pos.x && prevNode.position.y === pos.y;
+					if (dataMatch && posMatch) return prevNode;
+				}
+
+				changed = true;
+				return { ...node, data, position: pos };
+			});
+			// Also detect added/removed nodes.
+			if (!changed && next.length === prev.length) return prev;
+			return next;
 		});
-	}, [deferredNodes]);
+	}, [layoutedNodes, runs, pack.status?.installedPersonas]);
 
 	// Sync edges when deferred initialEdges changes.
 	useEffect(() => {
@@ -442,9 +471,8 @@ export function EnsembleCanvas({ pack }: EnsembleCanvasProps) {
 						nodes={nodes}
 						edges={displayEdges}
 						onNodesChange={onNodesChange}
-						onNodesInit={() => {
-							// Fit view once on mount; rfDefaults has fitView: false
-							reactFlowRef.current?.fitView({ padding: 0.3 });
+						onInit={(instance) => {
+							instance.fitView({ padding: 0.3 });
 						}}
 						onEdgesChange={onEdgesChange}
 						onConnect={onConnect}

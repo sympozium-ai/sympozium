@@ -150,6 +150,7 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/ensembles/{name}", s.deleteEnsemble)
 	mux.HandleFunc("POST /api/v1/ensembles/{name}/clone", s.cloneEnsemble)
 	mux.HandleFunc("GET /api/v1/ensembles/{name}/shared-memory", s.listEnsembleSharedMemory)
+	mux.HandleFunc("GET /api/v1/ensembles/{name}/shared-memory/{id}/provenance", s.getEnsembleSharedMemoryProvenance)
 	mux.HandleFunc("POST /api/v1/ensembles/{name}/stimulus/trigger", s.triggerStimulus)
 
 	// MCP Server endpoints
@@ -2000,11 +2001,71 @@ func (s *Server) listEnsembleSharedMemory(w http.ResponseWriter, r *http.Request
 		}
 		sharedMemoryURL += sep + "limit=" + limit
 	}
+	if minKind := r.URL.Query().Get("min_kind"); minKind != "" {
+		sep := "?"
+		if strings.Contains(sharedMemoryURL, "?") {
+			sep = "&"
+		}
+		sharedMemoryURL += sep + "min_kind=" + minKind
+	}
+	if sourceAgent := r.URL.Query().Get("source_agent"); sourceAgent != "" {
+		sep := "?"
+		if strings.Contains(sharedMemoryURL, "?") {
+			sep = "&"
+		}
+		sharedMemoryURL += sep + "source_agent=" + sourceAgent
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", sharedMemoryURL, nil)
+	if err != nil {
+		http.Error(w, "failed to create proxy request", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, "shared memory server unreachable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+func (s *Server) getEnsembleSharedMemoryProvenance(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ns := r.URL.Query().Get("namespace")
+	if ns == "" {
+		ns = "default"
+	}
+
+	pp := &sympoziumv1alpha1.Ensemble{}
+	if err := s.client.Get(r.Context(), client.ObjectKey{Name: name, Namespace: ns}, pp); err != nil {
+		if k8serrors.IsNotFound(err) {
+			http.Error(w, "Ensemble not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if pp.Spec.SharedMemory == nil || !pp.Spec.SharedMemory.Enabled {
+		http.Error(w, "shared memory not enabled for this ensemble", http.StatusNotFound)
+		return
+	}
+
+	entryID := r.PathValue("id")
+	provenanceURL := fmt.Sprintf("http://%s-shared-memory.%s.svc:8080/provenance?id=%s", name, ns, entryID)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", provenanceURL, nil)
 	if err != nil {
 		http.Error(w, "failed to create proxy request", http.StatusInternalServerError)
 		return

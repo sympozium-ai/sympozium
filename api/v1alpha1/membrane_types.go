@@ -34,6 +34,12 @@ type MembraneSpec struct {
 	// TimeDecay configures how old entries lose salience in search results.
 	// +optional
 	TimeDecay *TimeDecaySpec `json:"timeDecay,omitempty"`
+
+	// EvidencePolicy configures quality-based filtering for shared memory entries.
+	// When set, auto-context injection only includes entries at or above the
+	// specified evidence quality threshold.
+	// +optional
+	EvidencePolicy *EvidencePolicySpec `json:"evidencePolicy,omitempty"`
 }
 
 // PermeabilityRule defines what an agent config exposes to and accepts from
@@ -103,6 +109,18 @@ type CircuitBreakerSpec struct {
 	// allowing retries. Format: "5m", "1h". Empty means manual reset only.
 	// +optional
 	CooldownDuration string `json:"cooldownDuration,omitempty"`
+}
+
+// EvidencePolicySpec configures evidence quality thresholds for the membrane.
+type EvidencePolicySpec struct {
+	// MinKind is the minimum evidence kind for auto-context injection.
+	// Entries below this quality threshold are excluded from automatic
+	// injection into agent prompts (but remain searchable via tools).
+	// Ordered from highest to lowest quality:
+	// tool_result > external_source > llm_interpretation > agent_opinion
+	// +kubebuilder:validation:Enum=tool_result;external_source;llm_interpretation;agent_opinion
+	// +optional
+	MinKind string `json:"minKind,omitempty"`
 }
 
 // TimeDecaySpec configures salience decay for memory entries.
