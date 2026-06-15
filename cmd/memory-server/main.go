@@ -52,10 +52,10 @@ type memoryEntry struct {
 // quality-based filtering and provenance auditing.
 type EvidenceTrace struct {
 	Kind        string  `json:"kind"`                   // tool_result, external_source, llm_interpretation, agent_opinion
-	ToolCall    string  `json:"tool_call,omitempty"`     // tool name + args that produced this
-	RawResult   string  `json:"raw_result,omitempty"`    // unmodified tool output (truncated)
-	Source      string  `json:"source,omitempty"`        // URL, doc ref, or upstream entry ID
-	Confidence  float64 `json:"confidence,omitempty"`    // 0.0-1.0, set by producing agent
+	ToolCall    string  `json:"tool_call,omitempty"`    // tool name + args that produced this
+	RawResult   string  `json:"raw_result,omitempty"`   // unmodified tool output (truncated)
+	Source      string  `json:"source,omitempty"`       // URL, doc ref, or upstream entry ID
+	Confidence  float64 `json:"confidence,omitempty"`   // 0.0-1.0, set by producing agent
 	DerivedFrom []int64 `json:"derived_from,omitempty"` // entry IDs this was derived from
 }
 

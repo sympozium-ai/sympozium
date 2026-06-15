@@ -415,12 +415,12 @@ var workflowMemoryAccess string
 
 // Membrane configuration (from WORKFLOW_MEMBRANE_* env vars).
 var (
-	membraneVisibility string   // default visibility for entries created by this persona
-	membraneTrustPeers []string // agent configs in this persona's trust group
-	membraneAcceptTags []string // tags this persona wants to receive
-	membraneExposeTags []string // tags this persona is allowed to expose; entries with non-matching tags are forced private
-	membraneMaxAge         string   // time decay TTL (e.g., "24h")
-	membraneMinEvidenceKind string  // minimum evidence kind filter for queries
+	membraneVisibility      string   // default visibility for entries created by this persona
+	membraneTrustPeers      []string // agent configs in this persona's trust group
+	membraneAcceptTags      []string // tags this persona wants to receive
+	membraneExposeTags      []string // tags this persona is allowed to expose; entries with non-matching tags are forced private
+	membraneMaxAge          string   // time decay TTL (e.g., "24h")
+	membraneMinEvidenceKind string   // minimum evidence kind filter for queries
 )
 
 // workflowMemoryToolDefs returns tool definitions for the shared workflow memory.
