@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.36](https://github.com/sympozium-ai/sympozium/compare/v0.10.35...v0.10.36) (2026-06-15)
+
+
+### Features
+
+* evidence traces for shared memory + memory browser UI ([#219](https://github.com/sympozium-ai/sympozium/issues/219)) ([9ec7ccc](https://github.com/sympozium-ai/sympozium/commit/9ec7ccc68b1480c3370934fecaf7a56a94b0292a))
+
+
+### Bug Fixes
+
+* don't hijack canvas zoom/pan keys while typing in inputs ([#221](https://github.com/sympozium-ai/sympozium/issues/221)) ([39940e0](https://github.com/sympozium-ai/sympozium/commit/39940e0f076794076cb22b9bfad7549c2381e912))
+* guard against unreachable cron expressions in schedule controller ([#220](https://github.com/sympozium-ai/sympozium/issues/220)) ([a776f4d](https://github.com/sympozium-ai/sympozium/commit/a776f4daa01d380092447cee2a26cb65416f3395))
+* scope TUI resource lists to the active namespace ([#217](https://github.com/sympozium-ai/sympozium/issues/217)) ([6479fe5](https://github.com/sympozium-ai/sympozium/commit/6479fe5f27714f82da20ced42de6218b21018c4a)), closes [#215](https://github.com/sympozium-ai/sympozium/issues/215)
+
 ## [0.10.35](https://github.com/sympozium-ai/sympozium/compare/v0.10.34...v0.10.35) (2026-06-03)
 
 
