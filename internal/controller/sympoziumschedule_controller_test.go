@@ -288,6 +288,55 @@ func TestSympoziumScheduleReconcile_SkipsWhenServingRunExists(t *testing.T) {
 	}
 }
 
+func TestSympoziumScheduleReconcile_UnreachableCronDoesNotFire(t *testing.T) {
+	now := time.Now()
+	instance := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "inst-unreachable",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{
+					Model: "claude-3-5-sonnet",
+				},
+			},
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "anthropic", Secret: "inst-unreachable-key"},
+			},
+		},
+	}
+	schedule := &sympoziumv1alpha1.SympoziumSchedule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "inst-unreachable-schedule",
+			Namespace:         "default",
+			CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Minute)),
+		},
+		Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+			AgentRef: "inst-unreachable",
+			Schedule: "0 0 31 2 *",
+			Task:     "discovery",
+			Type:     "scheduled",
+		},
+	}
+
+	r, cl := newScheduleTestReconciler(t, instance, schedule)
+	_, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: schedule.Name, Namespace: schedule.Namespace},
+	})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cl.List(context.Background(), &runs, client.InNamespace("default")); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs.Items) != 0 {
+		t.Errorf("expected no AgentRuns for unreachable cron (Feb 31), got %d", len(runs.Items))
+	}
+}
+
 func TestSympoziumScheduleReconcile_ResolvesProviderFromSecretNameFallback(t *testing.T) {
 	now := time.Now()
 	instance := &sympoziumv1alpha1.Agent{

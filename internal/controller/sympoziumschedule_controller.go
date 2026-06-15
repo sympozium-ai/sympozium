@@ -97,11 +97,30 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// First run — compute the interval between two consecutive ticks
 		// and backdate by that amount so the first tick lands before now.
 		firstTick := sched.Next(now)
+		if firstTick.IsZero() {
+			log.Info("cron expression has no reachable next time; parking schedule", "schedule", schedule.Spec.Schedule)
+			schedule.Status.Phase = "Active"
+			schedule.Status.NextRunTime = nil
+			_ = r.Status().Update(ctx, schedule)
+			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+		}
 		secondTick := sched.Next(firstTick)
 		interval := secondTick.Sub(firstTick)
 		lastRun = now.Add(-interval)
 	}
 	nextRun := sched.Next(lastRun)
+
+	// Guard: cron expressions with unreachable dates (e.g. "0 0 31 2 *")
+	// cause sched.Next() to return a zero time after exhausting its search
+	// window. Without this check the controller treats the zero time as
+	// "already past due" and fires on every reconcile.
+	if nextRun.IsZero() {
+		log.Info("cron expression has no reachable next time; parking schedule", "schedule", schedule.Spec.Schedule)
+		schedule.Status.Phase = "Active"
+		schedule.Status.NextRunTime = nil
+		_ = r.Status().Update(ctx, schedule)
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
 
 	// Update status with next run time.
 	nextRunMeta := metav1.NewTime(nextRun)
