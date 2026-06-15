@@ -2,6 +2,22 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "@xyflow/react";
 
 /**
+ * True when the event originated from a field the user is typing into, so the
+ * canvas should leave the keystroke alone (e.g. typing "A" in the stimulus
+ * dialog must insert a character, not zoom the viewport).
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable
+  );
+}
+
+/**
  * Smooth arrow-key panning + A/Z zoom for ReactFlow canvases.
  * Uses requestAnimationFrame for 60fps movement with momentum.
  */
@@ -60,6 +76,8 @@ export function useArrowKeyPan() {
     const TRACKED = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "a", "z"]);
 
     function onKeyDown(e: KeyboardEvent) {
+      // Don't hijack keys while the user is typing in a form field/dialog.
+      if (isEditableTarget(e.target)) return;
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (!TRACKED.has(key)) return;
       e.preventDefault();
