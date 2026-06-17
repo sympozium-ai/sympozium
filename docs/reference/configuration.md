@@ -9,6 +9,8 @@
 | `INSTANCE_NAME` | Channels | Owning Agent name |
 | `MEMORY_ENABLED` | Agent Runner | Whether persistent memory is active |
 | `MAX_TOOL_ITERATIONS` | Agent Runner | Maximum tool-call iterations (default: 50). Can also be set per-run via `spec.env` in AgentRun CR. |
+| `DETAILED_LOG_PATH` | Agent Runner | Directory for untruncated JSONL log files. Empty = disabled. See [Detailed Logging](../guides/detailed-logging.md). |
+| `DETAILED_LOG_MAX_SIZE` | Agent Runner | Max size per log file before rotation (default: `50m`). Supports `m` (MB) and `g` (GB) suffixes. |
 | `TELEGRAM_BOT_TOKEN` | Telegram | Bot API token |
 | `SLACK_BOT_TOKEN` | Slack | Bot OAuth token |
 | `SLACK_APP_TOKEN` | Slack | App-level token for Socket Mode |
