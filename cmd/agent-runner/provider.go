@@ -93,7 +93,13 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 		tokenBudgetAction = v
 	}
 
+	roundLogThreshold := int(float64(maxToolIterations) * 0.9)
 	for i := 0; i < maxToolIterations; i++ {
+		round := i + 1
+		if round%10 == 0 || round >= roundLogThreshold {
+			log.Printf("llm_round [%d/%d]", round, maxToolIterations)
+		}
+
 		chatCtx, chatSpan := obs.startChatSpan(ctx,
 			attribute.String("gen_ai.system", p.Name()),
 			attribute.String("gen_ai.request.model", p.Model()),
