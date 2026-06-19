@@ -31,23 +31,40 @@ var (
 	sidecarToolRegistryMu sync.RWMutex
 )
 
+// sidecarToolWaitDuration controls how long loadSidecarTools waits for
+// sidecar manifests to appear. Not all sidecars publish tool manifests,
+// so we cannot wait for an expected count — we just wait a fixed window
+// and collect whatever has been published by then.
+var sidecarToolWaitDuration = 30 * time.Second
+
 // loadSidecarTools reads all sidecar-tools-*.json manifests from ipcToolsDir
 // and returns ToolDef entries for the LLM tool list. It also populates
-// sidecarToolRegistry for dispatch. Waits up to 5 seconds for at least one
-// manifest to appear (sidecars may still be starting).
+// sidecarToolRegistry for dispatch. Waits up to sidecarToolWaitDuration for
+// manifests to appear (sidecars may still be starting). Polls every second
+// and exits early if no new manifests appear for 5 consecutive seconds after
+// at least one has been found.
 func loadSidecarTools(ipcToolsDir string) []ToolDef {
 	pattern := filepath.Join(ipcToolsDir, "sidecar-tools-*.json")
 
 	var files []string
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(sidecarToolWaitDuration)
+	stableTicks := 0
+	prevCount := 0
 	for time.Now().Before(deadline) {
-		var err error
-		files, err = filepath.Glob(pattern)
-		if err == nil && len(files) > 0 {
-			break
+		found, err := filepath.Glob(pattern)
+		if err == nil {
+			files = found
 		}
-		files = nil
-		time.Sleep(500 * time.Millisecond)
+		if len(files) > 0 && len(files) == prevCount {
+			stableTicks++
+			if stableTicks >= 5 {
+				break
+			}
+		} else {
+			stableTicks = 0
+		}
+		prevCount = len(files)
+		time.Sleep(1 * time.Second)
 	}
 
 	if len(files) == 0 {
