@@ -292,6 +292,10 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			log.Error(err, "failed to create AgentRun")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
+		if schedule.Spec.ConcurrencyPolicy == "Forbid" {
+			log.Info("Run already created for this tick (Forbid policy); skipping duplicate", "run", runName)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		log.Info("scheduled run name collision; trying next suffix",
 			"run", runName, "attempt", attempt+1)
 		nextNum++
