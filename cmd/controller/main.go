@@ -56,6 +56,22 @@ func main() {
 		"Maximum number of completed AgentRuns to keep per instance before pruning oldest.")
 	flag.Parse()
 
+	// Resolve the image tag used for runtime-spawned pods (agent-runner,
+	// memory-server, MCP servers, channel sidecars). The package-level
+	// imageTag default ("latest") is only overridden via -ldflags at build
+	// time, which the fork CI does not set — so the Helm chart propagates
+	// .Values.image.tag through the SYMPOZIUM_IMAGE_TAG env var instead.
+	// Honor it here so the AgentRun and Agent reconcilers stamp the pinned
+	// tag on run pods and the memory sidecar, matching what NewPodBuilder,
+	// the ensemble/mcpserver/model controllers already do. Without this the
+	// controller silently spawns agent-runner:latest — a pre-ISI-1406 image
+	// with no memory autoStore or traceparent propagation, so memory and
+	// chain-trace telemetry never reaches the collector (ISI-1406 / ISI-1417).
+	if v := os.Getenv("SYMPOZIUM_IMAGE_TAG"); v != "" {
+		imageTag = v
+		setupLog.Info("Image tag resolved from SYMPOZIUM_IMAGE_TAG env", "tag", imageTag)
+	}
+
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	// Initialize OpenTelemetry SDK. Falls back to noop if OTEL_EXPORTER_OTLP_ENDPOINT is unset.
