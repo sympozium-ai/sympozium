@@ -261,13 +261,6 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	provider := resolveProvider(inst)
 	authSecret := resolveAuthSecret(inst)
 
-	// Honor the configured run timeout, falling back to the historical 10m
-	// default for channel-driven runs when unset.
-	runTimeout := inst.Spec.Agents.Default.ParseRunTimeout()
-	if runTimeout == nil {
-		runTimeout = &metav1.Duration{Duration: 10 * time.Minute}
-	}
-
 	// Create an AgentRun for the inbound message.
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
@@ -302,7 +295,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				NodeSelector:             inst.Spec.Agents.Default.NodeSelector,
 			},
 			Skills:           inst.Spec.Skills,
-			Timeout:          runTimeout,
+			Timeout:          inst.Spec.Agents.Default.ParseRunTimeout(),
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
 			SystemPrompt:     memorySystemPrompt(inst),

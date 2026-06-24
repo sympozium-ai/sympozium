@@ -251,7 +251,7 @@ func (p *Proxy) executeAgentTask(ctx context.Context, task string, session *mcpS
 				ProviderHeadersSecretRef: inst.Spec.Agents.Default.ProviderHeadersSecretRef,
 			},
 			Skills:           inst.Spec.Skills,
-			Timeout:          &metav1.Duration{Duration: 10 * time.Minute},
+			Timeout:          inst.Spec.Agents.Default.ParseRunTimeout(),
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
 			Env:              inst.Spec.Agents.Default.Env,
