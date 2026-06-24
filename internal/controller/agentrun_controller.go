@@ -387,10 +387,10 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		}
 
 		// Propagate RunTimeout from instance config to AgentRun spec if not already set.
-		if agentRun.Spec.Timeout == nil && instance.Spec.Agents.Default.RunTimeout != "" {
-			if d, err := time.ParseDuration(instance.Spec.Agents.Default.RunTimeout); err == nil && d > 0 {
-				agentRun.Spec.Timeout = &metav1.Duration{Duration: d}
-			}
+		// This is a fallback for manually-applied AgentRun CRs; the run creators
+		// (schedule/channel/delegation/etc.) persist Spec.Timeout at creation time.
+		if agentRun.Spec.Timeout == nil {
+			agentRun.Spec.Timeout = instance.Spec.Agents.Default.ParseRunTimeout()
 		}
 	}
 
@@ -984,6 +984,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				Volumes:          targetInst.Spec.Volumes,
 				VolumeMounts:     targetInst.Spec.VolumeMounts,
 				Env:              targetInst.Spec.Agents.Default.Env,
+				Timeout:          targetInst.Spec.Agents.Default.ParseRunTimeout(),
 			},
 		}
 

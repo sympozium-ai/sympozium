@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -389,9 +391,10 @@ type AgentConfig struct {
 	Subagents *SubagentsSpec `json:"subagents,omitempty"`
 
 	// RunTimeout is the maximum duration for each agent run (e.g. "30m", "1h").
-	// Defaults to 10 minutes for cloud providers and 30 minutes for local
-	// providers (ollama, lm-studio, vllm). Local models are significantly
-	// slower per request, so the longer default prevents premature timeouts.
+	// When empty, the controller watchdog enforces a flat 10-minute cap
+	// regardless of provider, so this must be set explicitly to allow longer
+	// runs. Local models (ollama, lm-studio, vllm) are significantly slower per
+	// request, so a longer value (e.g. "30m") is recommended for them.
 	// +optional
 	RunTimeout string `json:"runTimeout,omitempty"`
 
@@ -416,6 +419,23 @@ type AgentConfig struct {
 	// as-is.
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
+}
+
+// ParseRunTimeout parses the configured RunTimeout string into a
+// *metav1.Duration suitable for AgentRunSpec.Timeout. It returns nil when
+// RunTimeout is empty or fails to parse, in which case the controller watchdog
+// applies its flat 10-minute default. When non-nil, a single persisted
+// AgentRunSpec.Timeout drives all controller-side gates consistently (watchdog,
+// Job activeDeadlineSeconds, and the RUN_TIMEOUT env injection).
+func (c AgentConfig) ParseRunTimeout() *metav1.Duration {
+	if c.RunTimeout == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(c.RunTimeout)
+	if err != nil || d <= 0 {
+		return nil
+	}
+	return &metav1.Duration{Duration: d}
 }
 
 // SandboxSpec defines sandbox configuration.

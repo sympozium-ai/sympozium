@@ -916,6 +916,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
 			Env:              inst.Spec.Agents.Default.Env,
+			Timeout:          inst.Spec.Agents.Default.ParseRunTimeout(),
 		},
 	}
 
@@ -2170,6 +2171,7 @@ func (s *Server) triggerStimulus(w http.ResponseWriter, r *http.Request) {
 			Volumes:          targetInst.Spec.Volumes,
 			VolumeMounts:     targetInst.Spec.VolumeMounts,
 			Env:              targetInst.Spec.Agents.Default.Env,
+			Timeout:          targetInst.Spec.Agents.Default.ParseRunTimeout(),
 		},
 	}
 

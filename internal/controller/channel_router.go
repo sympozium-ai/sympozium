@@ -295,7 +295,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				NodeSelector:             inst.Spec.Agents.Default.NodeSelector,
 			},
 			Skills:           inst.Spec.Skills,
-			Timeout:          &metav1.Duration{Duration: 10 * time.Minute},
+			Timeout:          inst.Spec.Agents.Default.ParseRunTimeout(),
 			ImagePullSecrets: inst.Spec.ImagePullSecrets,
 			Lifecycle:        inst.Spec.Agents.Default.Lifecycle,
 			SystemPrompt:     memorySystemPrompt(inst),

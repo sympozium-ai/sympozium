@@ -278,6 +278,16 @@ type AgentConfigSpec struct {
 	// AgentRunSpec.Env.
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
+
+	// RunTimeout is the maximum duration for each agent run created for this
+	// agent configuration (e.g. "30m", "1h"). Propagated to the generated
+	// Agent's AgentConfig.RunTimeout, which the controllers then persist onto
+	// each AgentRunSpec.Timeout. A persisted timeout drives all controller-side
+	// gates consistently (watchdog, Job activeDeadlineSeconds, and the
+	// RUN_TIMEOUT env), so scheduled/sweep runs can exceed the 10m default.
+	// When empty, the provider-appropriate default applies.
+	// +optional
+	RunTimeout string `json:"runTimeout,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.

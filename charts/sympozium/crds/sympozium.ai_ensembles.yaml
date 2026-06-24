@@ -525,6 +525,16 @@ spec:
                         for this agent configuration. When set, replaces (not merges with) the
                         ensemble-level ProviderHeadersSecretRef.
                       type: string
+                    runTimeout:
+                      description: |-
+                        RunTimeout is the maximum duration for each agent run created for this
+                        agent configuration (e.g. "30m", "1h"). Propagated to the generated
+                        Agent's AgentConfig.RunTimeout, which the controllers then persist onto
+                        each AgentRunSpec.Timeout. A persisted timeout drives all controller-side
+                        gates consistently (watchdog, Job activeDeadlineSeconds, and the
+                        RUN_TIMEOUT env), so scheduled/sweep runs can exceed the 10m default.
+                        When empty, the provider-appropriate default applies.
+                      type: string
                     schedule:
                       description: Schedule defines a recurring task for this agent
                         configuration.

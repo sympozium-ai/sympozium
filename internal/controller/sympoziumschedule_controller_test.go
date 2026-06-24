@@ -487,3 +487,64 @@ func TestSympoziumScheduleReconcile_FiresWhenPipelineIdle(t *testing.T) {
 		t.Errorf("scheduled run ensemble label = %q, want pipe", run.Labels["sympozium.ai/ensemble"])
 	}
 }
+
+// TestSympoziumScheduleReconcile_PersistsRunTimeout verifies that an
+// instance-level RunTimeout is persisted onto the scheduled AgentRun's
+// Spec.Timeout. This is the binding gate for the controller watchdog: without
+// a persisted timeout, scheduled/sweep runs are killed at the 10m hard default
+// regardless of Job activeDeadlineSeconds or the runner's RUN_TIMEOUT env.
+func TestSympoziumScheduleReconcile_PersistsRunTimeout(t *testing.T) {
+	now := time.Now()
+	instance := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "inst-slow",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{
+					Model:      "claude-3-5-sonnet",
+					RunTimeout: "30m",
+				},
+			},
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "anthropic", Secret: "inst-slow-anthropic-key"},
+			},
+		},
+	}
+	schedule := &sympoziumv1alpha1.SympoziumSchedule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "inst-slow-sweep",
+			Namespace:         "default",
+			CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Minute)),
+		},
+		Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+			AgentRef: "inst-slow",
+			Schedule: "* * * * *",
+			Task:     "sweep",
+			Type:     "sweep",
+		},
+	}
+
+	r, cl := newScheduleTestReconciler(t, instance, schedule)
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: schedule.Name, Namespace: schedule.Namespace},
+	}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	run := &sympoziumv1alpha1.AgentRun{}
+	if err := cl.Get(context.Background(), types.NamespacedName{
+		Name:      schedule.Name + "-1",
+		Namespace: schedule.Namespace,
+	}, run); err != nil {
+		t.Fatalf("get created run: %v", err)
+	}
+
+	if run.Spec.Timeout == nil {
+		t.Fatalf("expected Spec.Timeout to be persisted, got nil")
+	}
+	if got, want := run.Spec.Timeout.Duration, 30*time.Minute; got != want {
+		t.Fatalf("Spec.Timeout = %s, want %s", got, want)
+	}
+}
