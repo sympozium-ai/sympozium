@@ -61,7 +61,7 @@ func TestCircuitBreaker_TripsAfterThreshold(t *testing.T) {
 	ctx := context.Background()
 
 	// First failure: should not trip.
-	sr.incrementCircuitBreaker(ctx, "parent-run")
+	sr.incrementCircuitBreaker(ctx, "parent-run", "default")
 	var updated sympoziumv1alpha1.Ensemble
 	sr.Client.Get(ctx, types.NamespacedName{Name: "my-pack", Namespace: "default"}, &updated)
 	if updated.Status.CircuitBreakerOpen {
@@ -72,7 +72,7 @@ func TestCircuitBreaker_TripsAfterThreshold(t *testing.T) {
 	}
 
 	// Second failure: should trip (threshold = 2).
-	sr.incrementCircuitBreaker(ctx, "parent-run")
+	sr.incrementCircuitBreaker(ctx, "parent-run", "default")
 	sr.Client.Get(ctx, types.NamespacedName{Name: "my-pack", Namespace: "default"}, &updated)
 	if !updated.Status.CircuitBreakerOpen {
 		t.Error("circuit breaker should be open after 2 failures")
@@ -107,7 +107,7 @@ func TestCircuitBreaker_ResetsOnSuccess(t *testing.T) {
 	sr := newTestSpawnRouter(t, pack, parentRun)
 	ctx := context.Background()
 
-	sr.resetCircuitBreaker(ctx, "parent-run")
+	sr.resetCircuitBreaker(ctx, "parent-run", "default")
 
 	var updated sympoziumv1alpha1.Ensemble
 	sr.Client.Get(ctx, types.NamespacedName{Name: "my-pack", Namespace: "default"}, &updated)
@@ -148,9 +148,44 @@ func TestCircuitBreaker_BlocksSpawn(t *testing.T) {
 	sr := newTestSpawnRouter(t, pack, parentRun)
 	ctx := context.Background()
 
-	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run")
+	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run", "default")
 	if err == nil {
 		t.Error("expected error when circuit breaker is open")
+	}
+}
+
+func TestCircuitBreaker_UsesParentNamespace(t *testing.T) {
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pack", Namespace: "sympozium-system"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			SharedMemory: &sympoziumv1alpha1.SharedMemorySpec{
+				Enabled: true,
+				Membrane: &sympoziumv1alpha1.MembraneSpec{
+					CircuitBreaker: &sympoziumv1alpha1.CircuitBreakerSpec{
+						ConsecutiveFailures: 2,
+					},
+				},
+			},
+		},
+		Status: sympoziumv1alpha1.EnsembleStatus{
+			CircuitBreakerOpen:          true,
+			ConsecutiveDelegateFailures: 2,
+		},
+	}
+	parentRun := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "parent-run",
+			Namespace: "sympozium-system",
+			Labels:    map[string]string{"sympozium.ai/ensemble": "my-pack"},
+		},
+	}
+
+	sr := newTestSpawnRouter(t, pack, parentRun)
+	ctx := context.Background()
+
+	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run", "sympozium-system")
+	if err == nil {
+		t.Error("expected error when circuit breaker is open in parent namespace")
 	}
 }
 
@@ -296,7 +331,7 @@ func TestCircuitBreaker_NoConfig(t *testing.T) {
 	ctx := context.Background()
 
 	// Should not error when no circuit breaker is configured.
-	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run")
+	err := sr.checkCircuitBreaker(ctx, "my-pack", "parent-run", "default")
 	if err != nil {
 		t.Errorf("expected no error without circuit breaker config, got: %v", err)
 	}

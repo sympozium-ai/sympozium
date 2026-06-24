@@ -39,8 +39,9 @@ type SpawnRouter struct {
 // pendingDelegation tracks the mapping from a child run to the parent that
 // requested it and the request ID for result correlation.
 type pendingDelegation struct {
-	RequestID   string
-	ParentRunID string
+	RequestID       string
+	ParentRunID     string
+	ParentNamespace string
 }
 
 // pendingBatch tracks the state of an in-flight subagent batch spawn.
@@ -112,6 +113,7 @@ func (sr *SpawnRouter) Start(ctx context.Context) error {
 func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.Event) {
 	parentRunID := event.Metadata["agentRunID"]
 	instanceName := event.Metadata["instanceName"]
+	parentNamespace := event.Metadata["namespace"]
 
 	var req ipc.SpawnRequest
 	if err := json.Unmarshal(event.Data, &req); err != nil {
@@ -134,8 +136,15 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 		"requestID", req.RequestID,
 	)
 
+	// Look up the parent AgentRun to get namespace, model, session key, depth.
+	parentRun, err := sr.lookupParentRun(ctx, parentRunID, parentNamespace)
+	if err != nil {
+		sr.Log.Error(err, "failed to look up parent AgentRun", "name", parentRunID, "namespace", parentNamespace)
+		return
+	}
+
 	// Check circuit breaker before spawning.
-	if err := sr.checkCircuitBreaker(ctx, req.PackName, parentRunID); err != nil {
+	if err := sr.checkCircuitBreaker(ctx, req.PackName, parentRunID, parentRun.Namespace); err != nil {
 		sr.Log.Info("Circuit breaker is open, rejecting spawn",
 			"parentRun", parentRunID,
 			"pack", req.PackName,
@@ -143,22 +152,6 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 		)
 		sr.publishDelegateResult(ctx, parentRunID, req.RequestID, "", err.Error())
 		return
-	}
-
-	// Look up the parent AgentRun to get namespace, model, session key, depth.
-	var parentRun sympoziumv1alpha1.AgentRun
-	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: "default"}, &parentRun); err != nil {
-		// Try to find the namespace from the instance.
-		var inst sympoziumv1alpha1.Agent
-		if err2 := sr.Client.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: "default"}, &inst); err2 == nil {
-			if err3 := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: inst.Namespace}, &parentRun); err3 != nil {
-				sr.Log.Error(err3, "failed to look up parent AgentRun", "name", parentRunID)
-				return
-			}
-		} else {
-			sr.Log.Error(err, "failed to look up parent AgentRun", "name", parentRunID)
-			return
-		}
 	}
 
 	depth := 0
@@ -203,8 +196,9 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 
 	// Track the child → parent mapping for result delivery.
 	sr.pending.Store(result.RunName, pendingDelegation{
-		RequestID:   req.RequestID,
-		ParentRunID: parentRunID,
+		RequestID:       req.RequestID,
+		ParentRunID:     parentRunID,
+		ParentNamespace: parentRun.Namespace,
 	})
 
 	// Patch parent run to AwaitingDelegate and populate DelegateStatus.
@@ -257,14 +251,18 @@ func (sr *SpawnRouter) handleChildCompleted(ctx context.Context, event *eventbus
 	response := data.Response
 	if response == "" {
 		var childRun sympoziumv1alpha1.AgentRun
-		if err := sr.Client.Get(ctx, types.NamespacedName{Name: childRunID, Namespace: "default"}, &childRun); err == nil {
+		childNamespace := event.Metadata["namespace"]
+		if childNamespace == "" {
+			childNamespace = pd.ParentNamespace
+		}
+		if err := sr.Client.Get(ctx, types.NamespacedName{Name: childRunID, Namespace: childNamespace}, &childRun); err == nil {
 			response = childRun.Status.Result
 		}
 	}
 
 	sr.publishDelegateResult(ctx, pd.ParentRunID, pd.RequestID, response, "")
-	sr.updateParentDelegateStatus(ctx, pd.ParentRunID, childRunID, sympoziumv1alpha1.AgentRunPhaseSucceeded, response, "")
-	sr.resetCircuitBreaker(ctx, pd.ParentRunID)
+	sr.updateParentDelegateStatus(ctx, pd.ParentRunID, pd.ParentNamespace, childRunID, sympoziumv1alpha1.AgentRunPhaseSucceeded, response, "")
+	sr.resetCircuitBreaker(ctx, pd.ParentRunID, pd.ParentNamespace)
 
 	// Check if this child belongs to a subagent batch.
 	sr.handleBatchChildDone(ctx, childRunID, response, "")
@@ -297,8 +295,8 @@ func (sr *SpawnRouter) handleChildFailed(ctx context.Context, event *eventbus.Ev
 	)
 
 	sr.publishDelegateResult(ctx, pd.ParentRunID, pd.RequestID, "", errMsg)
-	sr.updateParentDelegateStatus(ctx, pd.ParentRunID, childRunID, sympoziumv1alpha1.AgentRunPhaseFailed, "", errMsg)
-	sr.incrementCircuitBreaker(ctx, pd.ParentRunID)
+	sr.updateParentDelegateStatus(ctx, pd.ParentRunID, pd.ParentNamespace, childRunID, sympoziumv1alpha1.AgentRunPhaseFailed, "", errMsg)
+	sr.incrementCircuitBreaker(ctx, pd.ParentRunID, pd.ParentNamespace)
 
 	// Check if this child belongs to a subagent batch.
 	sr.handleBatchChildDone(ctx, childRunID, "", errMsg)
@@ -308,7 +306,7 @@ func (sr *SpawnRouter) handleChildFailed(ctx context.Context, event *eventbus.Ev
 // batch request. Children inherit the parent's config and are tracked as a batch.
 func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbus.Event) {
 	parentRunID := event.Metadata["agentRunID"]
-	instanceName := event.Metadata["instanceName"]
+	parentNamespace := event.Metadata["namespace"]
 
 	var req ipc.SubagentSpawnRequest
 	if err := json.Unmarshal(event.Data, &req); err != nil {
@@ -329,20 +327,11 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 	)
 
 	// Look up the parent AgentRun.
-	var parentRun sympoziumv1alpha1.AgentRun
-	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: "default"}, &parentRun); err != nil {
-		var inst sympoziumv1alpha1.Agent
-		if err2 := sr.Client.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: "default"}, &inst); err2 == nil {
-			if err3 := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: inst.Namespace}, &parentRun); err3 != nil {
-				sr.Log.Error(err3, "failed to look up parent AgentRun for subagent request", "name", parentRunID)
-				sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID, fmt.Sprintf("parent run not found: %v", err3))
-				return
-			}
-		} else {
-			sr.Log.Error(err, "failed to look up parent AgentRun for subagent request", "name", parentRunID)
-			sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID, fmt.Sprintf("parent run not found: %v", err))
-			return
-		}
+	parentRun, err := sr.lookupParentRun(ctx, parentRunID, parentNamespace)
+	if err != nil {
+		sr.Log.Error(err, "failed to look up parent AgentRun for subagent request", "name", parentRunID, "namespace", parentNamespace)
+		sr.publishSubagentBatchError(ctx, parentRunID, req.BatchID, fmt.Sprintf("parent run not found: %v", err))
+		return
 	}
 
 	// Look up the Agent to get SubagentsSpec limits.
@@ -472,8 +461,9 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 
 		// Track child -> parent for result delivery (reuse existing pending map).
 		sr.pending.Store(result.RunName, pendingDelegation{
-			RequestID:   req.BatchID,
-			ParentRunID: parentRunID,
+			RequestID:       req.BatchID,
+			ParentRunID:     parentRunID,
+			ParentNamespace: parentRun.Namespace,
 		})
 
 		// Track child -> batch for batch result aggregation.
@@ -677,8 +667,9 @@ func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingB
 	)
 
 	sr.pending.Store(result.RunName, pendingDelegation{
-		RequestID:   batch.batchID,
-		ParentRunID: batch.parentRunID,
+		RequestID:       batch.batchID,
+		ParentRunID:     batch.parentRunID,
+		ParentNamespace: batch.namespace,
 	})
 
 	batch.mu.Lock()
@@ -826,10 +817,10 @@ func (sr *SpawnRouter) publishDelegateResult(ctx context.Context, parentRunID, r
 
 // updateParentDelegateStatus patches the parent's DelegateStatus entry
 // for the completed child and transitions the parent back to Running.
-func (sr *SpawnRouter) updateParentDelegateStatus(ctx context.Context, parentRunID, childRunID string, phase sympoziumv1alpha1.AgentRunPhase, result, errMsg string) {
+func (sr *SpawnRouter) updateParentDelegateStatus(ctx context.Context, parentRunID, parentNamespace, childRunID string, phase sympoziumv1alpha1.AgentRunPhase, result, errMsg string) {
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var parent sympoziumv1alpha1.AgentRun
-		if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: "default"}, &parent); err != nil {
+		if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: namespaceOrDefault(parentNamespace)}, &parent); err != nil {
 			return err
 		}
 
@@ -871,11 +862,11 @@ func (sr *SpawnRouter) updateParentDelegateStatus(ctx context.Context, parentRun
 // checkCircuitBreaker returns an error if the circuit breaker is open for the
 // given ensemble. The circuit breaker trips after consecutive delegate failures
 // exceed the configured threshold.
-func (sr *SpawnRouter) checkCircuitBreaker(ctx context.Context, packName, parentRunID string) error {
+func (sr *SpawnRouter) checkCircuitBreaker(ctx context.Context, packName, parentRunID, parentNamespace string) error {
 	if packName == "" {
 		return nil
 	}
-	pack, err := sr.getEnsembleForRun(ctx, parentRunID, packName)
+	pack, err := sr.getEnsembleForRun(ctx, parentRunID, parentNamespace, packName)
 	if err != nil || pack == nil {
 		return nil
 	}
@@ -888,8 +879,8 @@ func (sr *SpawnRouter) checkCircuitBreaker(ctx context.Context, packName, parent
 
 // incrementCircuitBreaker increments the consecutive failure counter and
 // opens the circuit breaker if the threshold is crossed.
-func (sr *SpawnRouter) incrementCircuitBreaker(ctx context.Context, parentRunID string) {
-	pack, err := sr.getEnsembleForRunByParent(ctx, parentRunID)
+func (sr *SpawnRouter) incrementCircuitBreaker(ctx context.Context, parentRunID, parentNamespace string) {
+	pack, err := sr.getEnsembleForRunByParent(ctx, parentRunID, parentNamespace)
 	if err != nil || pack == nil {
 		return
 	}
@@ -920,8 +911,8 @@ func (sr *SpawnRouter) incrementCircuitBreaker(ctx context.Context, parentRunID 
 
 // resetCircuitBreaker resets the consecutive failure counter on a successful
 // delegate completion.
-func (sr *SpawnRouter) resetCircuitBreaker(ctx context.Context, parentRunID string) {
-	pack, err := sr.getEnsembleForRunByParent(ctx, parentRunID)
+func (sr *SpawnRouter) resetCircuitBreaker(ctx context.Context, parentRunID, parentNamespace string) {
+	pack, err := sr.getEnsembleForRunByParent(ctx, parentRunID, parentNamespace)
 	if err != nil || pack == nil {
 		return
 	}
@@ -937,11 +928,27 @@ func (sr *SpawnRouter) resetCircuitBreaker(ctx context.Context, parentRunID stri
 	}
 }
 
+func namespaceOrDefault(namespace string) string {
+	if namespace == "" {
+		return "default"
+	}
+	return namespace
+}
+
+// lookupParentRun resolves a parent AgentRun using the namespace emitted by
+// the IPC bridge. Older bridges did not include namespace metadata, so this
+// falls back to default for backward compatibility.
+func (sr *SpawnRouter) lookupParentRun(ctx context.Context, parentRunID, parentNamespace string) (sympoziumv1alpha1.AgentRun, error) {
+	var parentRun sympoziumv1alpha1.AgentRun
+	err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: namespaceOrDefault(parentNamespace)}, &parentRun)
+	return parentRun, err
+}
+
 // getEnsembleForRun looks up the ensemble by name, resolving the namespace
 // from the parent AgentRun.
-func (sr *SpawnRouter) getEnsembleForRun(ctx context.Context, parentRunID, packName string) (*sympoziumv1alpha1.Ensemble, error) {
+func (sr *SpawnRouter) getEnsembleForRun(ctx context.Context, parentRunID, parentNamespace, packName string) (*sympoziumv1alpha1.Ensemble, error) {
 	var parentRun sympoziumv1alpha1.AgentRun
-	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: "default"}, &parentRun); err != nil {
+	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: namespaceOrDefault(parentNamespace)}, &parentRun); err != nil {
 		return nil, err
 	}
 	var pack sympoziumv1alpha1.Ensemble
@@ -952,9 +959,9 @@ func (sr *SpawnRouter) getEnsembleForRun(ctx context.Context, parentRunID, packN
 }
 
 // getEnsembleForRunByParent resolves the ensemble from a parent AgentRun's labels.
-func (sr *SpawnRouter) getEnsembleForRunByParent(ctx context.Context, parentRunID string) (*sympoziumv1alpha1.Ensemble, error) {
+func (sr *SpawnRouter) getEnsembleForRunByParent(ctx context.Context, parentRunID, parentNamespace string) (*sympoziumv1alpha1.Ensemble, error) {
 	var parentRun sympoziumv1alpha1.AgentRun
-	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: "default"}, &parentRun); err != nil {
+	if err := sr.Client.Get(ctx, types.NamespacedName{Name: parentRunID, Namespace: namespaceOrDefault(parentNamespace)}, &parentRun); err != nil {
 		return nil, err
 	}
 	packName := parentRun.Labels["sympozium.ai/ensemble"]

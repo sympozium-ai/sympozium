@@ -20,11 +20,13 @@ func main() {
 	var basePath string
 	var agentRunID string
 	var instanceName string
+	var agentNamespace string
 	var eventBusURL string
 
 	flag.StringVar(&basePath, "ipc-path", "/ipc", "Base path for IPC directory")
 	flag.StringVar(&agentRunID, "agent-run-id", os.Getenv("AGENT_RUN_ID"), "Agent run ID")
 	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "Agent name")
+	flag.StringVar(&agentNamespace, "namespace", os.Getenv("AGENT_NAMESPACE"), "Agent namespace")
 	flag.StringVar(&eventBusURL, "event-bus-url", os.Getenv("EVENT_BUS_URL"), "Event bus (NATS) URL")
 	flag.Parse()
 
@@ -49,7 +51,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	bridge := ipc.NewBridge(basePath, agentRunID, instanceName, bus, log)
+	bridge := ipc.NewBridge(basePath, agentRunID, instanceName, bus, log, agentNamespace)
 	if err := bridge.Start(ctx); err != nil {
 		log.Error(err, "bridge failed")
 		os.Exit(1)

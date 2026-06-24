@@ -35,6 +35,7 @@ type Bridge struct {
 	BasePath           string // Root IPC path (e.g., /ipc)
 	AgentRunID         string
 	InstanceName       string
+	AgentNamespace     string
 	EventBus           eventbus.EventBus
 	Log                logr.Logger
 	Watcher            *Watcher
@@ -44,16 +45,33 @@ type Bridge struct {
 }
 
 // NewBridge creates a new IPC bridge.
-func NewBridge(basePath, agentRunID, instanceName string, bus eventbus.EventBus, log logr.Logger) *Bridge {
+func NewBridge(basePath, agentRunID, instanceName string, bus eventbus.EventBus, log logr.Logger, agentNamespace ...string) *Bridge {
+	namespace := os.Getenv("AGENT_NAMESPACE")
+	if len(agentNamespace) > 0 {
+		namespace = agentNamespace[0]
+	}
 	return &Bridge{
 		BasePath:           basePath,
 		AgentRunID:         agentRunID,
 		InstanceName:       instanceName,
+		AgentNamespace:     namespace,
 		EventBus:           bus,
 		Log:                log,
 		agentDone:          make(chan struct{}),
 		SuppressCompletion: os.Getenv("GATE_SUPPRESS_COMPLETION") == "true",
 	}
+}
+
+// metadata returns the standard event metadata for messages emitted by this bridge.
+func (b *Bridge) metadata() map[string]string {
+	metadata := map[string]string{
+		"agentRunID":   b.AgentRunID,
+		"instanceName": b.InstanceName,
+	}
+	if b.AgentNamespace != "" {
+		metadata["namespace"] = b.AgentNamespace
+	}
+	return metadata
 }
 
 // Start initializes the IPC directory structure, starts file watchers,
@@ -144,10 +162,7 @@ func (b *Bridge) handleOutputFile(ctx context.Context, fe FileEvent) {
 	}
 
 	filename := filepath.Base(fe.Path)
-	metadata := map[string]string{
-		"agentRunID":   b.AgentRunID,
-		"instanceName": b.InstanceName,
-	}
+	metadata := b.metadata()
 
 	switch {
 	case filename == "result.json":
@@ -225,10 +240,7 @@ func (b *Bridge) handleSpawnRequest(ctx context.Context, fe FileEvent) {
 		return
 	}
 
-	metadata := map[string]string{
-		"agentRunID":   b.AgentRunID,
-		"instanceName": b.InstanceName,
-	}
+	metadata := b.metadata()
 
 	// Route subagent batch requests to a separate topic.
 	base := filepath.Base(fe.Path)
@@ -285,10 +297,7 @@ func (b *Bridge) handleExecRequest(ctx context.Context, fe FileEvent) {
 		return
 	}
 
-	metadata := map[string]string{
-		"agentRunID":   b.AgentRunID,
-		"instanceName": b.InstanceName,
-	}
+	metadata := b.metadata()
 
 	event, _ := eventbus.NewEvent(eventbus.TopicToolExecRequest, metadata, json.RawMessage(data))
 	if err := b.EventBus.Publish(ctx, eventbus.TopicToolExecRequest, event); err != nil {
@@ -329,10 +338,7 @@ func (b *Bridge) handleOutboundMessage(ctx context.Context, fe FileEvent) {
 		return
 	}
 
-	metadata := map[string]string{
-		"agentRunID":   b.AgentRunID,
-		"instanceName": b.InstanceName,
-	}
+	metadata := b.metadata()
 
 	event, _ := eventbus.NewEvent(eventbus.TopicChannelMessageSend, metadata, json.RawMessage(data))
 	if err := b.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, event); err != nil {
@@ -373,10 +379,7 @@ func (b *Bridge) handleScheduleRequest(ctx context.Context, fe FileEvent) {
 		return
 	}
 
-	metadata := map[string]string{
-		"agentRunID":   b.AgentRunID,
-		"instanceName": b.InstanceName,
-	}
+	metadata := b.metadata()
 
 	event, _ := eventbus.NewEvent(eventbus.TopicScheduleUpsert, metadata, json.RawMessage(data))
 	if err := b.EventBus.Publish(ctx, eventbus.TopicScheduleUpsert, event); err != nil {
