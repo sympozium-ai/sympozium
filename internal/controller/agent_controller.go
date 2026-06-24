@@ -684,6 +684,13 @@ func (r *AgentReconciler) reconcileMemoryDeployment(ctx context.Context, log log
 							Env: []corev1.EnvVar{
 								{Name: "MEMORY_DB_PATH", Value: "/data/memory.db"},
 								{Name: "MEMORY_PORT", Value: "8080"},
+								// OTel wiring so the memory sidecar emits
+								// sympozium.memory.read / .write counters
+								// (ISI-1406 gap 6). Keyed on endpoint presence.
+								{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: resolveOTelEndpoint(instance)},
+								{Name: "OTEL_EXPORTER_OTLP_PROTOCOL", Value: "grpc"},
+								{Name: "OTEL_SERVICE_NAME", Value: fmt.Sprintf("sympozium-memory-%s", instance.Name)},
+								{Name: "MEMORY_AGENT", Value: instance.Name},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "memory-db", MountPath: "/data"},

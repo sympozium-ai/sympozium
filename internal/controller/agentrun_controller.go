@@ -54,6 +54,29 @@ var (
 	agentDurationHist, _ = controllerMeter.Float64Histogram("sympozium.agent.duration_ms", metric.WithUnit("ms"), metric.WithDescription("Agent run duration"))
 	controllerErrors, _  = controllerMeter.Int64Counter("sympozium.errors", metric.WithUnit("{error}"), metric.WithDescription("Errors encountered"))
 
+	// Multi-agent (Ensemble) observability instruments — added for sequential
+	// crews where single-agent metrics lose the cross-phase picture (ISI-1406).
+
+	// handoffLatency measures the wall-clock gap between one sequential phase
+	// completing and its successor being created. Without it the dead time
+	// between BMAD phases is invisible. Labelled from/to so a dashboard can see
+	// which handoff is slow. Low cardinality: persona names are a fixed set.
+	handoffLatency, _ = controllerMeter.Float64Histogram("sympozium.handoff.latency_ms",
+		metric.WithUnit("ms"), metric.WithDescription("Latency between a sequential phase completing and its successor starting"))
+
+	// accessDecisions is the complement to the sympozium.access.denied span
+	// attribute: a counter over channel-access decisions so a denial *rate*
+	// (denied / total) is computable. decision=allowed|denied.
+	accessDecisions, _ = controllerMeter.Int64Counter("sympozium.access.decisions",
+		metric.WithUnit("{decision}"), metric.WithDescription("Channel access-control decisions (allowed/denied)"))
+
+	// contextInputTokens records the per-phase input-token count at completion.
+	// gen_ai.usage.input_tokens balloons across a sequential chain as each phase
+	// inherits the growing handoff context; this histogram breaks it down by
+	// instance/ensemble so context-window growth per phase is visible.
+	contextInputTokens, _ = controllerMeter.Int64Histogram("sympozium.agent.context.input_tokens",
+		metric.WithUnit("{token}"), metric.WithDescription("Input (context-window) tokens consumed per agent phase"))
+
 	// Web endpoint server-mode metrics.
 	webEndpointServing, _         = controllerMeter.Int64UpDownCounter("sympozium.web_endpoint.serving", metric.WithUnit("{deployment}"), metric.WithDescription("Active server-mode Deployments"))
 	webEndpointGatewayNotReady, _ = controllerMeter.Int64Counter("sympozium.web_endpoint.gateway_not_ready", metric.WithUnit("{check}"), metric.WithDescription("Gateway check failures"))
@@ -956,10 +979,24 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 
 		// Create the successor AgentRun.
 		runName := fmt.Sprintf("%s-seq-%d", targetAgentName, time.Now().UnixMilli()%100000)
+
+		// Sequential chain tracing (ISI-1406 gap 2): carry the predecessor's
+		// W3C traceparent onto the successor so the whole BMAD chain stitches
+		// into one distributed trace. reconcilePending reads this annotation
+		// (extractTraceparent) and starts the successor's create_job span as a
+		// child of it, then re-stamps the annotation with that child span for
+		// the agent pod's TRACEPARENT env — keeping the trace unbroken across
+		// every phase instead of N disconnected single-phase traces.
+		successorAnnotations := map[string]string{}
+		if tp := agentRun.Annotations["otel.dev/traceparent"]; tp != "" {
+			successorAnnotations["otel.dev/traceparent"] = tp
+		}
+
 		successorRun := &sympoziumv1alpha1.AgentRun{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      runName,
-				Namespace: agentRun.Namespace,
+				Name:        runName,
+				Namespace:   agentRun.Namespace,
+				Annotations: successorAnnotations,
 				Labels: map[string]string{
 					"sympozium.ai/instance":        targetAgentName,
 					"sympozium.ai/ensemble":        ensembleName,
@@ -1012,6 +1049,19 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 		}
 		log.Info("Created sequential successor run", "run", runName, "target", targetPersona)
 		triggered = true
+
+		// Handoff latency (ISI-1406 gap 3): the dead time between the
+		// predecessor completing and this successor being created. Previously
+		// invisible — each phase was an independent span. from/to are persona
+		// names (bounded cardinality) so a dashboard can spot a slow handoff.
+		if agentRun.Status.CompletedAt != nil {
+			gapMs := time.Since(agentRun.Status.CompletedAt.Time).Milliseconds()
+			handoffLatency.Record(ctx, float64(gapMs), metric.WithAttributes(
+				attribute.String("from", sourcePersona),
+				attribute.String("to", targetPersona),
+				attribute.String("sympozium.ensemble", ensembleName),
+			))
+		}
 	}
 
 	// Mark this run as having triggered its successors to prevent duplicates.
@@ -3332,6 +3382,23 @@ func (r *AgentRunReconciler) succeedRun(ctx context.Context, agentRun *sympozium
 		agentDurationHist.Record(ctx, float64(usage.DurationMs), runAttrs)
 	}
 
+	// Per-phase context-window size (ISI-1406 gap 4). In a sequential crew each
+	// phase inherits the growing handoff card, so input tokens climb chain-wide;
+	// recording them per instance/ensemble here makes the per-phase growth
+	// curve visible instead of a single ballooning gen_ai.usage.input_tokens.
+	if usage != nil && usage.InputTokens > 0 {
+		ensemble := agentRun.Labels["sympozium.ai/ensemble"]
+		sequential := "false"
+		if agentRun.Labels["sympozium.ai/sequential-from"] != "" {
+			sequential = "true"
+		}
+		contextInputTokens.Record(ctx, int64(usage.InputTokens), metric.WithAttributes(
+			attribute.String("sympozium.instance", agentRun.Spec.AgentRef),
+			attribute.String("sympozium.ensemble", ensemble),
+			attribute.String("sympozium.sequential", sequential),
+		))
+	}
+
 	// Logging
 	logAttrs := []any{
 		"agent_run", agentRun.Name,
@@ -3550,6 +3617,54 @@ func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log lo
 }
 
 // failRun marks an AgentRun as failed
+// classifyFailureReason buckets a free-form failure string into a small,
+// bounded set of reason codes suitable for a metric label. Keeping the label
+// space tiny is deliberate: the raw reason (e.g. an LLM error body or a model
+// name) is high-cardinality and belongs on the AgentRun status / span, not on
+// a counter dimension. The buckets distinguish the failure modes an operator
+// of a sequential crew actually needs to tell apart: timeout vs OOM vs LLM
+// error vs policy vs budget vs infrastructure.
+func classifyFailureReason(reason string) string {
+	r := strings.ToLower(reason)
+	switch {
+	case r == "":
+		return "unknown"
+	case strings.Contains(r, "timeout") || strings.Contains(r, "deadline") || strings.Contains(r, "deadlineexceeded"):
+		return "timeout"
+	case strings.Contains(r, "oom") || strings.Contains(r, "out of memory") || strings.Contains(r, "oomkilled"):
+		return "oom"
+	case strings.Contains(r, "policy") || strings.Contains(r, "denied") || strings.Contains(r, "gate hook"):
+		return "policy"
+	case strings.Contains(r, "token budget") || strings.Contains(r, "budget exceeded") || strings.Contains(r, "quota"):
+		return "token_budget"
+	case strings.Contains(r, "model") && (strings.Contains(r, "not found") || strings.Contains(r, "not ready")):
+		return "model_unavailable"
+	case strings.Contains(r, "delegate"):
+		return "delegate_failed"
+	case strings.Contains(r, "llm") || strings.Contains(r, "completion") || strings.Contains(r, "rate limit") ||
+		strings.Contains(r, "context length") || strings.Contains(r, "api error") || strings.Contains(r, "upstream"):
+		return "llm_error"
+	case strings.Contains(r, "job not found") || strings.Contains(r, "pod") || strings.Contains(r, "image") ||
+		strings.Contains(r, "create") || strings.Contains(r, "job failed"):
+		return "infra"
+	default:
+		return "other"
+	}
+}
+
+// recordChannelAccess increments the channel access-control decision counter
+// (ISI-1406 gap 5). Emitting both allowed and denied decisions makes a denial
+// *rate* computable — the pre-existing sympozium.access.denied span attribute
+// only marks denials and has no denominator. Defined here (same package) so
+// channel_router.go can record without importing the metric package directly.
+func recordChannelAccess(ctx context.Context, decision, channel, instance string) {
+	accessDecisions.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("decision", decision),
+		attribute.String("sympozium.channel", channel),
+		attribute.String("sympozium.instance", instance),
+	))
+}
+
 func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string) error {
 	now := metav1.Now()
 
@@ -3562,14 +3677,19 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 		return err
 	}
 
-	// Record failure metrics
+	// Record failure metrics. The reason label buckets the free-form failure
+	// string into a small, fixed set so timeout / OOM / LLM error / policy no
+	// longer collapse into one undifferentiated "failed" total (ISI-1406 gap 1).
+	failReason := classifyFailureReason(reason)
 	failAttrs := metric.WithAttributes(
 		attribute.String("sympozium.agent.status", "failed"),
 		attribute.String("sympozium.instance", agentRun.Spec.AgentRef),
+		attribute.String("reason", failReason),
 	)
 	agentRunsTotal.Add(ctx, 1, failAttrs)
 	controllerErrors.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("error.type", "agent_run_failed"),
+		attribute.String("reason", failReason),
 		attribute.String("sympozium.instance", agentRun.Spec.AgentRef),
 	))
 
@@ -3577,6 +3697,7 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 	slog.ErrorContext(ctx, "agent.run.failed",
 		"agent_run", agentRun.Name,
 		"instance", agentRun.Spec.AgentRef,
+		"reason", failReason,
 		"error", reason,
 	)
 
@@ -3585,6 +3706,7 @@ func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1a
 		metadata := map[string]string{
 			"agentRunID":   agentRun.Name,
 			"instanceName": agentRun.Spec.AgentRef,
+			"reason":       failReason,
 		}
 		data := map[string]string{"error": reason}
 		event, err := eventbus.NewEvent(eventbus.TopicAgentRunFailed, metadata, data)

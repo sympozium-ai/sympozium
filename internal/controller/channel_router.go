@@ -242,6 +242,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	// Enforce channel access control before creating an AgentRun.
 	if allowed, denyMsg := checkChannelAccess(inst, &msg); !allowed {
 		span.SetAttributes(attribute.Bool("sympozium.access.denied", true))
+		recordChannelAccess(ctx, "denied", msg.Channel, msg.InstanceName)
 		cr.Log.Info("Channel message denied by access control",
 			"instance", msg.InstanceName, "channel", msg.Channel,
 			"senderId", msg.SenderID, "chatId", msg.ChatID)
@@ -250,6 +251,8 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		}
 		return
 	}
+	// Complementary positive signal so denial rate = denied / (allowed+denied).
+	recordChannelAccess(ctx, "allowed", msg.Channel, msg.InstanceName)
 
 	// Evaluate stop/start keyword triggers (mute state, reactions).
 	// Returns false when the message must not be turned into an AgentRun.
