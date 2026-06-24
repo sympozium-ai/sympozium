@@ -2524,6 +2524,18 @@ func buildObservabilityEnv(agentRun *sympoziumv1alpha1.AgentRun, obs *sympoziumv
 		{Name: "SYMPOZIUM_OTEL_ENABLED", Value: "true"},
 	}
 
+	// Propagate the W3C traceparent so the agent-runner's spans parent off the
+	// controller's reconcile/chain trace instead of starting a fresh root
+	// (ISI-1406 gap 2). The controller writes otel.dev/traceparent for every
+	// AgentRun (and sequential Ensemble phases inherit one shared traceparent);
+	// the agent-runner reads TRACEPARENT via os.Getenv. This is the active env
+	// path actually attached to the agent + ipc-bridge containers — the earlier
+	// inline agentEnv injection was assembled into a slice that was never
+	// applied to the pod, so chain spans stayed disconnected.
+	if tp := agentRun.Annotations["otel.dev/traceparent"]; tp != "" {
+		env = append(env, corev1.EnvVar{Name: "TRACEPARENT", Value: tp})
+	}
+
 	if obs.OTLPEndpoint != "" {
 		env = append(env,
 			corev1.EnvVar{Name: "SYMPOZIUM_OTEL_OTLP_ENDPOINT", Value: obs.OTLPEndpoint},
