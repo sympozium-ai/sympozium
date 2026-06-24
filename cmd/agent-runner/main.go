@@ -459,7 +459,7 @@ func main() {
 	// Must be synchronous — the process exits shortly after this point,
 	// so a goroutine would be killed before the HTTP POST completes.
 	if res.Status == "success" && res.Response != "" {
-		autoStoreMemory(task, res.Response)
+		autoStoreMemory(ctx, task, res.Response)
 	}
 
 	// Extract and emit memory update before stripping markers from the response.

@@ -488,7 +488,7 @@ func TestAutoStoreMemory_StoresContent(t *testing.T) {
 	memoryServerURL = srv.URL
 	defer func() { memoryServerURL = old }()
 
-	autoStoreMemory("list pods", "There are 3 pods running.")
+	autoStoreMemory(context.Background(), "list pods", "There are 3 pods running.")
 
 	// autoStoreMemory is synchronous, so gotBody must be populated by now.
 	if gotBody == nil {
@@ -522,7 +522,7 @@ func TestAutoStoreMemory_TruncatesLongContent(t *testing.T) {
 
 	longTask := strings.Repeat("x", 1000)
 	longResponse := strings.Repeat("y", 2000)
-	autoStoreMemory(longTask, longResponse)
+	autoStoreMemory(context.Background(), longTask, longResponse)
 
 	content, _ := gotBody["content"].(string)
 	// Task truncated to 500 + "...", response to 1000 + "..."
@@ -540,7 +540,7 @@ func TestAutoStoreMemory_NoopWithoutServer(t *testing.T) {
 	defer func() { memoryServerURL = old }()
 
 	// Should not panic or error.
-	autoStoreMemory("task", "response")
+	autoStoreMemory(context.Background(), "task", "response")
 }
 
 func TestExecuteMemoryTool_RetriesWithRecovery(t *testing.T) {

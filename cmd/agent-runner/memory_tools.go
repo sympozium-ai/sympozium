@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Memory tool name constants.
@@ -36,8 +38,16 @@ func isMemoryTool(name string) bool {
 // Set from MEMORY_SERVER_URL env var at startup.
 var memoryServerURL string
 
-// memoryHTTPClient is a shared HTTP client with reasonable timeouts.
-var memoryHTTPClient = &http.Client{Timeout: 5 * time.Second}
+// memoryHTTPClient is a shared HTTP client with reasonable timeouts. The
+// otelhttp transport injects the W3C traceparent header into every request and
+// emits a client span per call, so memory reads/writes appear as spans nested
+// under the agent run trace and connect to the memory-server's server span
+// (ISI-1406 gap 6 — "spans on the memory part"). When OTel is disabled the
+// global propagator/tracer are no-ops, so this adds no header and no span.
+var memoryHTTPClient = &http.Client{
+	Timeout:   5 * time.Second,
+	Transport: otelhttp.NewTransport(http.DefaultTransport),
+}
 
 const (
 	memoryMaxRetries  = 3
@@ -335,8 +345,11 @@ func queryMemoryContext(task string, maxResults int) string {
 
 // autoStoreMemory stores a summary of the completed task and response in the
 // memory server so future agent runs have context. This is fire-and-forget —
-// errors are logged but do not affect the agent run.
-func autoStoreMemory(task, response string) {
+// errors are logged but do not affect the agent run. The parent context carries
+// the agent run span so the auto-store write emits a span under the run trace
+// (ISI-1406 gap 6); previously this used context.Background(), which detached
+// the write from the trace and left memory writes span-less.
+func autoStoreMemory(parent context.Context, task, response string) {
 	if memoryServerURL == "" {
 		return
 	}
@@ -353,7 +366,7 @@ func autoStoreMemory(task, response string) {
 
 	content := fmt.Sprintf("Task: %s\n\nResponse: %s", task, response)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 
 	body := map[string]any{

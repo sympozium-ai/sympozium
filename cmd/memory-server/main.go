@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/sympozium-ai/sympozium/pkg/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -198,9 +199,26 @@ func main() {
 		fmt.Fprint(w, "ok")
 	})
 
+	// Wrap the router with otelhttp so each memory operation emits a server
+	// span (ISI-1406 gap 6 — "spans on the memory part"). The handler extracts
+	// the W3C traceparent from the incoming request (the agent-runner injects it
+	// via its otelhttp client), so memory reads/writes nest under the agent's
+	// run trace and the full BMAD chain instead of appearing as orphans. Spans
+	// are named by route (e.g. "memory POST /store"); /health is left
+	// uninstrumented to avoid probe noise. No-op when OTel is disabled — the
+	// global TracerProvider is then a noop and spans are dropped cheaply.
+	handler := otelhttp.NewHandler(mux, "memory-server",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return "memory " + r.Method + " " + r.URL.Path
+		}),
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			return r.URL.Path != "/health"
+		}),
+	)
+
 	addr := ":" + port
 	log.Printf("[memory-server] listening on %s, db=%s", addr, dbPath)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
