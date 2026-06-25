@@ -1577,10 +1577,10 @@ func TestLifecycleRBACRules_ConfigMapAccess(t *testing.T) {
 
 	run := newTestRunWithLifecycle(
 		[]sympoziumv1alpha1.LifecycleHookContainer{
-			{Name: "create-cm", Image: "bitnami/kubectl:latest", Command: []string{"kubectl", "create", "configmap", "test", "--from-literal=key=value"}},
+			{Name: "create-cm", Image: "soldevelo/kubectl:1.36", Command: []string{"kubectl", "create", "configmap", "test", "--from-literal=key=value"}},
 		},
 		[]sympoziumv1alpha1.LifecycleHookContainer{
-			{Name: "delete-cm", Image: "bitnami/kubectl:latest", Command: []string{"kubectl", "delete", "configmap", "test"}},
+			{Name: "delete-cm", Image: "soldevelo/kubectl:1.36", Command: []string{"kubectl", "delete", "configmap", "test"}},
 		},
 		rules,
 	)

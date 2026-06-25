@@ -103,7 +103,7 @@ spec:
         command: ["sh", "-c", "echo 'LIFECYCLE_PROOF_VALUE_42' > /workspace/pre-hook-marker.txt && echo 'preRun: wrote marker file'"]
     postRun:
       - name: create-proof-cm
-        image: bitnami/kubectl:latest
+        image: soldevelo/kubectl:1.36
         command:
           - sh
           - -c
