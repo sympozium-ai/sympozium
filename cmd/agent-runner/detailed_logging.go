@@ -26,7 +26,11 @@ type DetailedLogger struct {
 }
 
 // NewDetailedLogger opens (or creates) agent.jsonl and llm.jsonl under path.
+// When runID is non-empty, logs are written to a per-run subdirectory.
 func NewDetailedLogger(path, runID string, maxSize int64) (*DetailedLogger, error) {
+	if runID != "" {
+		path = filepath.Join(path, runID)
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return nil, fmt.Errorf("creating log dir: %w", err)
 	}
