@@ -10,7 +10,56 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// TestQueryMemoryContext_PropagatesTraceparent is the ISI-1406 regression guard:
+// the startup memory auto-injection must carry the W3C traceparent so the
+// pre-flight /search nests under the BMAD chain instead of orphaning. It failed
+// before queryMemoryContext accepted a parent ctx (it used context.Background()).
+func TestQueryMemoryContext_PropagatesTraceparent(t *testing.T) {
+	// The otelhttp client transport injects via the global propagator; set it
+	// so the test mirrors a deployment with trace context enabled.
+	old := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer otel.SetTextMapPropagator(old)
+
+	var gotTraceparent string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTraceparent = r.Header.Get("traceparent")
+		resp := map[string]any{"success": true, "content": []map[string]any{
+			{"id": 1, "content": "x", "created_at": "2026-03-23T00:00:00Z"},
+		}}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	oldURL := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = oldURL }()
+
+	// Build a parent context carrying a valid (sampled) span context, as the
+	// run span would after TRACEPARENT extraction.
+	tid, _ := trace.TraceIDFromHex("0123456789abcdef0123456789abcdef")
+	sid, _ := trace.SpanIDFromHex("0123456789abcdef")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: tid, SpanID: sid, TraceFlags: trace.FlagsSampled, Remote: true,
+	})
+	parent := trace.ContextWithSpanContext(context.Background(), sc)
+
+	queryMemoryContext(parent, "check pods", 3)
+
+	if gotTraceparent == "" {
+		t.Fatal("expected traceparent header on auto-inject /search, got none (orphaned trace)")
+	}
+	if !strings.Contains(gotTraceparent, tid.String()) {
+		t.Errorf("traceparent %q does not carry parent trace id %s", gotTraceparent, tid)
+	}
+}
 
 func TestMemoryToolDefs(t *testing.T) {
 	tools := memoryToolDefs()
@@ -343,7 +392,7 @@ func TestQueryMemoryContext_NoServer(t *testing.T) {
 	memoryServerURL = ""
 	defer func() { memoryServerURL = old }()
 
-	result := queryMemoryContext("check pods", 3)
+	result := queryMemoryContext(context.Background(), "check pods", 3)
 	if result != "" {
 		t.Errorf("expected empty string when no server, got %q", result)
 	}
@@ -374,7 +423,7 @@ func TestQueryMemoryContext_Success(t *testing.T) {
 	memoryServerURL = srv.URL
 	defer func() { memoryServerURL = old }()
 
-	result := queryMemoryContext("check kafka consumers", 3)
+	result := queryMemoryContext(context.Background(), "check kafka consumers", 3)
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
@@ -398,7 +447,7 @@ func TestQueryMemoryContext_EmptyResults(t *testing.T) {
 	memoryServerURL = srv.URL
 	defer func() { memoryServerURL = old }()
 
-	result := queryMemoryContext("something unrelated", 3)
+	result := queryMemoryContext(context.Background(), "something unrelated", 3)
 	if result != "" {
 		t.Errorf("expected empty string for no results, got %q", result)
 	}
@@ -409,7 +458,7 @@ func TestQueryMemoryContext_ServerDown(t *testing.T) {
 	memoryServerURL = "http://127.0.0.1:1" // connection refused
 	defer func() { memoryServerURL = old }()
 
-	result := queryMemoryContext("check pods", 3)
+	result := queryMemoryContext(context.Background(), "check pods", 3)
 	if result != "" {
 		t.Errorf("expected empty string when server is down, got %q", result)
 	}
@@ -438,7 +487,7 @@ func TestQueryMemoryContext_Truncation(t *testing.T) {
 	memoryServerURL = srv.URL
 	defer func() { memoryServerURL = old }()
 
-	result := queryMemoryContext("test", 20)
+	result := queryMemoryContext(context.Background(), "test", 20)
 	if len(result) > memoryContextMaxChars {
 		t.Errorf("result length %d exceeds max %d", len(result), memoryContextMaxChars)
 	}
@@ -464,7 +513,7 @@ func TestQueryMemoryContext_LongTaskTruncated(t *testing.T) {
 	defer func() { memoryServerURL = old }()
 
 	longTask := strings.Repeat("a", 500)
-	queryMemoryContext(longTask, 3)
+	queryMemoryContext(context.Background(), longTask, 3)
 	if len(gotQuery) > 200 {
 		t.Errorf("expected query truncated to 200 chars, got %d", len(gotQuery))
 	}

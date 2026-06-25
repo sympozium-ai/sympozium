@@ -281,7 +281,10 @@ const memoryContextMaxChars = 2000
 // queryMemoryContext queries the memory server for entries related to the
 // current task and returns pre-formatted context for injection into the
 // system prompt. Returns empty string on any error or if no results match.
-func queryMemoryContext(task string, maxResults int) string {
+// The parent context carries the run span and the W3C trace context extracted
+// from the controller, so this pre-flight /search nests under the BMAD chain
+// instead of surfacing as an orphaned single-span trace (ISI-1406).
+func queryMemoryContext(parent context.Context, task string, maxResults int) string {
 	if memoryServerURL == "" {
 		return ""
 	}
@@ -293,7 +296,7 @@ func queryMemoryContext(task string, maxResults int) string {
 		query = query[:200]
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
 
 	body, _ := json.Marshal(map[string]any{
@@ -707,7 +710,9 @@ const workflowMemoryContextMaxChars = 800
 
 // queryWorkflowMemoryContext queries the shared workflow memory server for
 // entries relevant to the current task. Returns pre-formatted context or empty string.
-func queryWorkflowMemoryContext(task string, maxResults int) string {
+// The parent context carries the run span and the extracted controller trace,
+// so this pre-flight /search joins the BMAD chain instead of orphaning (ISI-1406).
+func queryWorkflowMemoryContext(parent context.Context, task string, maxResults int) string {
 	if workflowMemoryServerURL == "" {
 		return ""
 	}
@@ -717,7 +722,7 @@ func queryWorkflowMemoryContext(task string, maxResults int) string {
 		query = query[:200]
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
 
 	searchBody := map[string]any{

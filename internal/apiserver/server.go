@@ -40,6 +40,18 @@ import (
 
 const systemNamespace = "sympozium-system"
 
+// memoryProxyClient is used when the apiserver proxies UI/API requests to a
+// per-Ensemble shared memory server (/list, /provenance). The otelhttp
+// transport injects the W3C traceparent from the inbound request context (the
+// apiserver mux is wrapped with otelhttp), so these proxied reads nest under
+// the originating trace instead of opening a new root span on the memory
+// server (ISI-1406: board observed orphaned single-span /list traces). When
+// OTel is disabled the global propagator is a no-op, so no header is added.
+var memoryProxyClient = &http.Client{
+	Timeout:   5 * time.Second,
+	Transport: otelhttp.NewTransport(http.DefaultTransport),
+}
+
 // Server is the Sympozium API server.
 type Server struct {
 	client       client.Client
@@ -2027,7 +2039,7 @@ func (s *Server) listEnsembleSharedMemory(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := memoryProxyClient.Do(req)
 	if err != nil {
 		http.Error(w, "shared memory server unreachable", http.StatusBadGateway)
 		return
@@ -2073,7 +2085,7 @@ func (s *Server) getEnsembleSharedMemoryProvenance(w http.ResponseWriter, r *htt
 		return
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := memoryProxyClient.Do(req)
 	if err != nil {
 		http.Error(w, "shared memory server unreachable", http.StatusBadGateway)
 		return
