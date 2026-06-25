@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.37](https://github.com/sympozium-ai/sympozium/compare/v0.10.36...v0.10.37) (2026-06-25)
+
+
+### Features
+
+* **agent-runner:** log LLM round progress during agent runs ([#225](https://github.com/sympozium-ai/sympozium/issues/225)) ([c222b8e](https://github.com/sympozium-ai/sympozium/commit/c222b8e664f42a69cad765b46e7e24a30f7df2a6))
+* native sidecar tools declared on SkillPack CRD ([#241](https://github.com/sympozium-ai/sympozium/issues/241)) ([32a5acc](https://github.com/sympozium-ai/sympozium/commit/32a5accb1dddc7ce4850b6a3c19952bb1c3ee392))
+* Persist AgentRun.spec.Timeout and expose runTimeout via Ensemble config ([#230](https://github.com/sympozium-ai/sympozium/issues/230)) ([897c5f0](https://github.com/sympozium-ai/sympozium/commit/897c5f0a481e116374630e4feb040e97eb8e0379))
+
+
+### Bug Fixes
+
+* enforce sequential ordering in pipeline ensembles ([a86bcc6](https://github.com/sympozium-ai/sympozium/commit/a86bcc60b78ae9cedab266b4ed370834786610cd))
+* preserve namespace for subagent spawning ([#234](https://github.com/sympozium-ai/sympozium/issues/234)) ([5c7bd03](https://github.com/sympozium-ai/sympozium/commit/5c7bd03bad449bd79f5ca3c412a040f7d333f89d))
+* remove finish_reason gate for tool call extraction ([#227](https://github.com/sympozium-ai/sympozium/issues/227)) ([14cea32](https://github.com/sympozium-ai/sympozium/commit/14cea3235950088450d506d547b741e6f1b9d865))
+
 ## [0.10.36](https://github.com/sympozium-ai/sympozium/compare/v0.10.35...v0.10.36) (2026-06-15)
 
 
