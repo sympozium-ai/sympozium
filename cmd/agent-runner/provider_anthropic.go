@@ -77,15 +77,18 @@ func (p *anthropicProvider) Chat(ctx context.Context) (ChatResult, error) {
 		params.Tools = p.tools
 	}
 
+	detailedLog.LogLLM("request", map[string]any{"provider": "anthropic", "model": p.model, "system_len": len(p.system), "messages_count": len(p.messages), "tools_count": len(p.tools)})
 	msg, err := p.client.Messages.New(ctx, params)
 	if err != nil {
 		var apiErr *anthropic.Error
 		if errors.As(err, &apiErr) {
+			detailedLog.LogLLM("error", map[string]any{"provider": "anthropic", "status_code": apiErr.StatusCode, "error": apiErr.Error()})
 			return ChatResult{}, fmt.Errorf("Anthropic API error (HTTP %d): %s",
 				apiErr.StatusCode, truncate(apiErr.Error(), 500))
 		}
 		return ChatResult{}, fmt.Errorf("Anthropic API error: %w", err)
 	}
+	detailedLog.LogLLM("response", map[string]any{"provider": "anthropic", "model": p.model, "content": msg.Content, "stop_reason": string(msg.StopReason), "usage": map[string]any{"input_tokens": msg.Usage.InputTokens, "output_tokens": msg.Usage.OutputTokens}})
 
 	var textContent strings.Builder
 	var toolUseBlocks []anthropic.ToolUseBlock

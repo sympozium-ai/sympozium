@@ -203,7 +203,7 @@ func executeMCPTool(ctx context.Context, tool mcpToolEntry, argsJSON string) str
 			_ = os.Remove(reqPath)
 			_ = os.Remove(resPath)
 
-			return formatMCPResult(result)
+			return formatMCPResult(result, tool.Name)
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
@@ -212,7 +212,7 @@ func executeMCPTool(ctx context.Context, tool mcpToolEntry, argsJSON string) str
 }
 
 // formatMCPResult converts an MCP result to a string for the LLM.
-func formatMCPResult(r mcpResult) string {
+func formatMCPResult(r mcpResult, toolName string) string {
 	if !r.Success || r.IsError {
 		if r.Error != "" {
 			return fmt.Sprintf("MCP Error: %s", r.Error)
@@ -250,6 +250,7 @@ func formatMCPResult(r mcpResult) string {
 	if output == "" {
 		output = "(no output)"
 	}
+	detailedLog.LogAgent("mcp_tool_result", map[string]any{"tool": toolName, "result_len": len(output), "result": output})
 	if len(output) > 8_000 {
 		// Truncate at a valid UTF-8 boundary
 		truncated := output[:8_000]

@@ -127,6 +127,17 @@ func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.Println("agent-runner starting")
 
+	if p := os.Getenv("DETAILED_LOG_PATH"); p != "" {
+		maxSize := parseSize(os.Getenv("DETAILED_LOG_MAX_SIZE"), 50*1024*1024)
+		dl, err := NewDetailedLogger(p, os.Getenv("AGENT_RUN_ID"), maxSize)
+		if err != nil {
+			log.Printf("WARNING: detailed logging disabled: %v", err)
+		} else {
+			detailedLog = dl
+			defer dl.Close()
+		}
+	}
+
 	task := getEnv("TASK", "")
 	if task == "" {
 		if b, err := os.ReadFile("/ipc/input/task.json"); err == nil {
@@ -151,6 +162,7 @@ func main() {
 		// minutes before writing results, but dry run exits in microseconds.
 		time.Sleep(3 * time.Second)
 		persona := getEnv("INSTANCE_NAME", "unknown")
+		detailedLog.LogAgent("dry_run", map[string]any{"task": task, "persona": persona})
 		res := agentResult{
 			Status:   "success",
 			Response: fmt.Sprintf("DRY RUN: [%s] would execute task: %s", persona, truncate(task, 300)),
@@ -352,6 +364,7 @@ func main() {
 
 	log.Printf("provider=%s model=%s baseURL=%s tools=%v task=%q",
 		provider, modelName, baseURL, toolsEnabled, truncate(task, 80))
+	detailedLog.LogAgent("config", map[string]any{"provider": provider, "model": modelName, "base_url": baseURL, "tools_enabled": toolsEnabled, "task": task})
 	reqTimeout := effectiveRequestTimeout(provider)
 	retries := effectiveMaxRetries(provider)
 	if reqTimeout > 0 {
@@ -397,6 +410,7 @@ func main() {
 		attribute.String("task.summary", truncate(task, 200)),
 	)
 	writeTraceContextMetadata(ctx)
+	detailedLog.LogAgent("span_start", map[string]any{"task": task})
 	logWithTrace(ctx, "info", "agent run started", map[string]any{
 		"instance":  getEnv("INSTANCE_NAME", ""),
 		"namespace": getEnv("AGENT_NAMESPACE", ""),
