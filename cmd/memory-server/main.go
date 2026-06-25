@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	_ "modernc.org/sqlite"
 )
 
@@ -93,11 +94,16 @@ func (o *memObservability) recordRead(ctx context.Context, op, status, caller st
 		return
 	}
 	o.reads.Add(ctx, 1, metric.WithAttributes(
-		attribute.String("operation", op),
+		attribute.String("op", op),
 		attribute.String("status", status),
 		attribute.String("agent", agentName),
-		attribute.String("caller_agent", caller),
 	))
+	// caller_agent is caller-controlled (read from the request body/query on a
+	// plain HTTP endpoint), so it stays off the bounded counter and goes on the
+	// span instead, where high cardinality is acceptable.
+	if caller != "" {
+		oteltrace.SpanFromContext(ctx).SetAttributes(attribute.String("caller_agent", caller))
+	}
 }
 
 // recordWrite increments the write counter. status is "ok" or "error", source
@@ -109,8 +115,11 @@ func (o *memObservability) recordWrite(ctx context.Context, status, source strin
 	o.writes.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("status", status),
 		attribute.String("agent", agentName),
-		attribute.String("source_agent", source),
 	))
+	// source_agent is caller-controlled; keep it on the span, not the counter.
+	if source != "" {
+		oteltrace.SpanFromContext(ctx).SetAttributes(attribute.String("source_agent", source))
+	}
 }
 
 func firstNonEmptyEnv(keys ...string) string {
