@@ -21,9 +21,9 @@ type sidecarToolEntry struct {
 	Description    string         `json:"description"`
 	Target         string         `json:"target"`
 	Subcommand     string         `json:"subcommand"`
-	Exec           string         `json:"exec,omitempty"`  // executable command prefix (default: "node /app/dist/cli.js")
-	InputMode      string         `json:"inputMode"`       // "stdin" or "args"
-	PositionalArgs []string       `json:"positionalArgs"`  // parameter names to pass as positional CLI args (in order)
+	Exec           string         `json:"exec,omitempty"`    // executable command prefix (default: "node /app/dist/cli.js")
+	InputMode      string         `json:"inputMode"`         // "stdin" or "args"
+	PositionalArgs []string       `json:"positionalArgs"`    // parameter names to pass as positional CLI args (in order)
 	Timeout        int            `json:"timeout,omitempty"` // per-tool timeout in seconds (0 = use default, max 120s)
 	Parameters     map[string]any `json:"parameters"`
 }

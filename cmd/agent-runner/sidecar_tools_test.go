@@ -15,12 +15,12 @@ func TestLoadSidecarTools(t *testing.T) {
 	manifest := sidecarToolManifest{
 		Tools: []sidecarToolEntry{
 			{
-				Name:        "sd_select_services",
-				Description: "Select services for enrichment",
-				Target:      "SD-Select-Services",
-				Subcommand:  "select",
-				InputMode:   "args",
-				Timeout:     90,
+				Name:           "sd_select_services",
+				Description:    "Select services for enrichment",
+				Target:         "SD-Select-Services",
+				Subcommand:     "select",
+				InputMode:      "args",
+				Timeout:        90,
 				PositionalArgs: []string{"batchSize"},
 				Parameters: map[string]any{
 					"type": "object",
