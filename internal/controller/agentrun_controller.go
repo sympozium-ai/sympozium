@@ -2037,6 +2037,9 @@ func (r *AgentRunReconciler) buildContainers(
 		})
 	}
 
+	// Inject computed env vars (RUN_TIMEOUT, TRACEPARENT, OTEL).
+	containers[0].Env = append(containers[0].Env, agentEnv...)
+
 	// Inject custom environment variables from AgentRun spec.
 	// Sort keys for deterministic pod specs.
 	envKeys := make([]string, 0, len(agentRun.Spec.Env))
