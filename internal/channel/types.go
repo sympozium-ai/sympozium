@@ -38,6 +38,12 @@ type OutboundMessage struct {
 	Reaction        string            `json:"reaction,omitempty"`        // emoji identifier (channel-specific format)
 	TargetMessageID string            `json:"targetMessageId,omitempty"` // inbound message id this reaction targets
 	Metadata        map[string]string `json:"metadata,omitempty"`        // channel-specific routing hints (e.g. Slack replyToTS)
+	// Username, IconURL, and IconEmoji let a single Slack bot post as distinct
+	// per-agent identities (requires the chat:write.customize bot scope). They
+	// are optional; channels that don't support them ignore them.
+	Username  string `json:"username,omitempty"`
+	IconURL   string `json:"iconUrl,omitempty"`
+	IconEmoji string `json:"iconEmoji,omitempty"`
 }
 
 // Attachment represents a file or media attachment.

@@ -596,6 +596,16 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	if threadTS != "" {
 		payload["thread_ts"] = threadTS
 	}
+	// Per-message sender attribution: a single Slack bot can post as distinct
+	// per-agent identities via username + icon (requires chat:write.customize).
+	if msg.Username != "" {
+		payload["username"] = msg.Username
+	}
+	if msg.IconURL != "" {
+		payload["icon_url"] = msg.IconURL
+	} else if msg.IconEmoji != "" {
+		payload["icon_emoji"] = msg.IconEmoji
+	}
 	return sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
 }
 
