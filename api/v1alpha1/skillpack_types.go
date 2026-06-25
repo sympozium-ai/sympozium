@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -166,6 +167,69 @@ type SkillSidecar struct {
 	// already present on the pod).
 	// +optional
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
+
+	// Tools declares native function-calling tools that this sidecar exposes to
+	// the agent's LLM. Unlike execute_command (where the model constructs a raw
+	// shell string), these are presented to the model as typed tools with a JSON
+	// Schema. The controller serializes them into a read-only manifest mounted
+	// into the agent container, so the definitions live in operator-controlled
+	// config and cannot be forged or altered by the running agent. Each tool
+	// dispatches through the same gated exec IPC as execute_command, targeting
+	// this sidecar, so a native tool grants no more authority than the shell
+	// path already does.
+	// +optional
+	Tools []SidecarTool `json:"tools,omitempty"`
+}
+
+// SidecarTool declares a single native function-calling tool exposed by a skill
+// sidecar. The executable (Exec) is declared here in the SkillPack spec rather
+// than supplied by the running agent, so it is admission-controlled and
+// auditable.
+type SidecarTool struct {
+	// Name is the tool name exposed to the LLM. Must be snake_case and unique
+	// across all tools the agent sees (built-in, MCP, and sidecar tools).
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9_]*$`
+	// +kubebuilder:validation:MaxLength=64
+	Name string `json:"name"`
+
+	// Description tells the model what the tool does and when to use it.
+	// +kubebuilder:validation:MaxLength=2048
+	Description string `json:"description"`
+
+	// Exec is the argv prefix the sidecar runs for this tool, e.g.
+	// ["node", "/app/dist/cli.js"]. The subcommand and any positional arguments
+	// are appended to this prefix. It is operator-declared on the SkillPack (not
+	// supplied by the model), so it is the authoritative executable for the tool.
+	// Admission only requires it to be non-empty today; a binary allowlist
+	// (e.g. via SympoziumPolicy) may be layered on in a future phase.
+	// +kubebuilder:validation:MinItems=1
+	Exec []string `json:"exec"`
+
+	// Subcommand is an optional fixed sub-command appended after Exec, e.g.
+	// "evaluate-changes".
+	// +optional
+	Subcommand string `json:"subcommand,omitempty"`
+
+	// InputMode controls how the model's arguments reach the sidecar process.
+	// "args" (the default) passes them as positional CLI arguments. "stdin"
+	// pipes the remaining (non-positional) arguments as a JSON object on stdin.
+	// +kubebuilder:validation:Enum=args;stdin
+	// +kubebuilder:default=args
+	// +optional
+	InputMode string `json:"inputMode,omitempty"`
+
+	// PositionalArgs names the parameters (in order) that are passed as
+	// positional CLI arguments rather than on stdin. Each name must appear in
+	// Parameters.
+	// +optional
+	PositionalArgs []string `json:"positionalArgs,omitempty"`
+
+	// Parameters is the JSON Schema object describing the tool's arguments,
+	// handed to the LLM verbatim. Must be a JSON Schema of type "object".
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	// +optional
+	Parameters *apiextensionsv1.JSON `json:"parameters,omitempty"`
 }
 
 // SidecarPort defines a port exposed by a skill sidecar.

@@ -46,11 +46,17 @@ The agent writes a request file to `/ipc/tools/exec-request-{id}.json`:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | yes | Unique request ID (nanosecond timestamp) |
-| `command` | string | yes | Shell command to execute |
-| `args` | string[] | no | Additional arguments appended to command |
+| `command` | string | yes\* | Shell command to execute (shell mode) |
+| `args` | string[] | no | Additional arguments appended to command (shell mode) |
+| `argv` | string[] | no | Argument vector executed **without a shell** (argv mode — see below) |
+| `stdin` | string | no | Payload piped to the process stdin in argv mode |
 | `workDir` | string | no | Working directory (default: `/workspace`) |
 | `timeout` | int | no | Timeout in seconds, 1–120 (default: 30) |
 | `target` | string | no | SkillPack name for routing (see [Target-Based Routing](#target-based-routing)) |
+
+\* `command` is required in **shell mode**. When `argv` is a non-empty array the request is in **argv mode** and `command`/`args` are ignored.
+
+**Shell mode vs argv mode.** `execute_command` uses shell mode: `command` (plus `args`) is run under `bash -c`, so pipes, globs, and redirects work. [Native sidecar tools](#native-sidecar-tools) use argv mode: `argv` is executed directly as an argument vector with no shell, so argument *values* can never inject shell syntax. Optional `stdin` is piped to the process. The `tool-executor.sh` in this guide supports both — it switches to argv mode whenever `argv` is present.
 
 ### Response
 
@@ -285,6 +291,7 @@ spec:
 | `rbac` | RBACRule[] | — | Namespace-scoped RBAC rules |
 | `clusterRBAC` | RBACRule[] | — | Cluster-wide RBAC rules |
 | `hostAccess` | object | — | Host namespace/path access (advanced) |
+| `tools` | SidecarTool[] | — | [Native function-calling tools](#native-sidecar-tools) exposed to the LLM |
 
 ### Environment variables
 
@@ -329,6 +336,61 @@ sidecar:
     - name: my-data
       mountPath: /data
 ```
+
+---
+
+## Native Sidecar Tools
+
+By default the agent reaches a sidecar through `execute_command`, where the LLM has to construct a shell command string (`execute_command(target="my-skill", command="node /app/dist/cli.js evaluate ...")`). Smaller and non-Anthropic models often get that quoting wrong. **Native sidecar tools** instead expose your sidecar's operations to the model as typed, function-calling tools with a JSON Schema — the model just fills in structured arguments.
+
+Declare them under `sidecar.tools` on the SkillPack:
+
+```yaml
+sidecar:
+  image: ghcr.io/acme/service-discovery:latest
+  tools:
+    - name: sd_evaluate_changes          # snake_case, unique across all tools
+      description: "Evaluate proposed changes for a service against the catalog."
+      exec: ["node", "/app/dist/cli.js"] # the executable argv prefix
+      subcommand: evaluate-changes        # appended after exec
+      inputMode: stdin                    # "args" (default) or "stdin"
+      positionalArgs: ["serviceIdentifier"]
+      parameters:                         # JSON Schema handed to the model
+        type: object
+        properties:
+          serviceIdentifier: { type: string }
+          catalog: { type: object }
+        required: [serviceIdentifier]
+```
+
+With this, the model calls `sd_evaluate_changes({serviceIdentifier: "web", catalog: {...}})` and the runtime runs `node /app/dist/cli.js evaluate-changes web` with `{"catalog": {...}}` on stdin.
+
+### Tool fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | — | Tool name shown to the LLM. Must match `^[a-z][a-z0-9_]*$` and be unique across built-in, MCP, and all sidecar tools |
+| `description` | string | — | What the tool does / when to use it |
+| `exec` | string[] | — | Argument vector prefix to run (e.g. `["node", "/app/dist/cli.js"]`). Required, at least one element |
+| `subcommand` | string | — | Fixed sub-command appended after `exec` |
+| `inputMode` | string | `args` | `args` passes parameters as positional CLI args; `stdin` pipes the non-positional parameters as a JSON object on stdin |
+| `positionalArgs` | string[] | — | Parameter names (in order) passed as positional CLI arguments. Each must be declared in `parameters` |
+| `parameters` | object | `{}` | JSON Schema (type `object`) describing the arguments, handed to the model verbatim |
+
+### How it stays secure
+
+This is deliberately not "the sidecar drops a tool manifest the agent reads." The definitions live on the SkillPack CRD, which means:
+
+- **Operator-controlled, not agent-controlled.** The controller serializes the declared tools into a ConfigMap and mounts it **read-only** (and immutable) into the agent container (at `/config/sidecar-tools`). The running agent consumes the manifest but cannot forge or alter it.
+- **The executable is declared here**, not supplied by the model. `exec` is operator-authored on the SkillPack and is what actually runs — the agent never chooses the binary. (Admission currently only requires `exec` to be non-empty; a binary allowlist via `SympoziumPolicy` may be added in a future phase.)
+- **Admission-validated.** The validating webhook rejects malformed names, collisions with built-in/memory tools, duplicate names across SkillPacks, `positionalArgs` that don't reference a *required* declared parameter, and `inputMode: args` tools that declare non-positional parameters (which would be silently dropped).
+- **No more authority than `execute_command`.** Dispatch flows through the same gated exec IPC, targeting this sidecar. Arguments are delivered in [argv mode](#the-ipc-protocol) (no shell), so a value like `"; rm -rf /"` or one containing newlines is passed as exactly one literal argument and never interpreted.
+
+!!! warning "Two things to know when authoring a tool"
+    - **Flag injection.** A model-supplied positional value beginning with `-` is still passed to your binary, which may interpret it as a flag (e.g. `--kubeconfig=...`). This is no broader than `execute_command`'s existing authority, but design your CLI to treat positionals as operands — honor a `--` end-of-options marker, or validate/whitelist values — rather than trusting them as plain operands.
+    - **Minimum executor version.** Native tools dispatch in argv mode, which requires the argv-aware `tool-executor.sh` shown in this guide. An older sidecar image without the argv branch will receive the request but do nothing useful — rebuild your sidecar against the current executor before declaring tools.
+
+Your sidecar needs no extra code beyond the `tool-executor.sh` shown above — it already handles argv-mode requests.
 
 ---
 

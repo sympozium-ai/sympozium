@@ -89,13 +89,6 @@ process_request() {
     if [[ "$timeout_sec" -lt 1 ]]; then timeout_sec=60; fi
     if [[ "$timeout_sec" -gt 300 ]]; then timeout_sec=300; fi
 
-    local full_cmd="$command"
-    if [[ -n "$args" ]]; then
-        full_cmd="$command $args"
-    fi
-
-    echo "[tool-executor] exec [$id]: $full_cmd (timeout=${timeout_sec}s, workdir=${workdir})"
-
     local stdout="" stderr="" exit_code=0 timed_out="false"
     local tmp_stdout tmp_stderr
     tmp_stdout=$(mktemp)
@@ -103,12 +96,51 @@ process_request() {
 
     cd "$workdir" 2>/dev/null || cd /
 
-    if timeout "$timeout_sec" bash -c "$full_cmd" >"$tmp_stdout" 2>"$tmp_stderr"; then
-        exit_code=0
+    # Native sidecar tools (argv mode): when .argv is a non-empty array, execute
+    # it directly as an argument vector with NO shell, so argument values cannot
+    # inject shell syntax. Optional .stdin is piped to the process. Otherwise
+    # fall back to the legacy shell command path used by execute_command.
+    local argv_len
+    argv_len=$(jq -r '(.argv // []) | length' "$req_file" 2>/dev/null || echo 0)
+
+    if [[ "$argv_len" -gt 0 ]]; then
+        local cmd_argv=()
+        # Decode argv elements via base64 so a value containing newlines (or any
+        # bytes) stays a single argv element. Plain `jq -r '.argv[]'` is newline-
+        # joined and would split a multi-line value into several arguments.
+        while IFS= read -r _b64; do cmd_argv+=("$(printf '%s' "$_b64" | base64 -d)"); done < <(jq -r '.argv[] | @base64' "$req_file")
+        local has_stdin
+        has_stdin=$(jq -r 'if (.stdin // "") == "" then "0" else "1" end' "$req_file" 2>/dev/null || echo 0)
+        echo "[tool-executor] exec-argv [$id]: ${cmd_argv[*]} (timeout=${timeout_sec}s, workdir=${workdir})"
+        if [[ "$has_stdin" == "1" ]]; then
+            if jq -r '.stdin' "$req_file" | timeout "$timeout_sec" "${cmd_argv[@]}" >"$tmp_stdout" 2>"$tmp_stderr"; then
+                exit_code=0
+            else
+                exit_code=$?
+            fi
+        else
+            if timeout "$timeout_sec" "${cmd_argv[@]}" </dev/null >"$tmp_stdout" 2>"$tmp_stderr"; then
+                exit_code=0
+            else
+                exit_code=$?
+            fi
+        fi
+        if [[ $exit_code -eq 124 ]]; then timed_out="true"; fi
     else
-        exit_code=$?
-        if [[ $exit_code -eq 124 ]]; then
-            timed_out="true"
+        local full_cmd="$command"
+        if [[ -n "$args" ]]; then
+            full_cmd="$command $args"
+        fi
+
+        echo "[tool-executor] exec [$id]: $full_cmd (timeout=${timeout_sec}s, workdir=${workdir})"
+
+        if timeout "$timeout_sec" bash -c "$full_cmd" >"$tmp_stdout" 2>"$tmp_stderr"; then
+            exit_code=0
+        else
+            exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                timed_out="true"
+            fi
         fi
     fi
 

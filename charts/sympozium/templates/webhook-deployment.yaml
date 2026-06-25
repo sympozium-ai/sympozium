@@ -97,4 +97,18 @@ webhooks:
         resources: ["agentruns"]
     failurePolicy: Fail
     sideEffects: None
+  - name: vskillpack.sympozium.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: sympozium-webhook-service
+        namespace: {{ include "sympozium.namespace" . }}
+        path: /validate-skillpacks
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: ["sympozium.ai"]
+        apiVersions: ["v1alpha1"]
+        resources: ["skillpacks"]
+    failurePolicy: Fail
+    sideEffects: None
 {{- end }}

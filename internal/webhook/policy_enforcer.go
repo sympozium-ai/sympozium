@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -26,12 +27,43 @@ const systemNamespace = "sympozium-system"
 
 // reservedVolumeNames mirrors the controller-side reservedVolumeNames helper.
 var reservedVolumeNames = map[string]struct{}{
-	"workspace":  {},
-	"ipc":        {},
-	"skills":     {},
-	"tmp":        {},
-	"memory":     {},
-	"mcp-config": {},
+	"workspace":     {},
+	"ipc":           {},
+	"skills":        {},
+	"tmp":           {},
+	"memory":        {},
+	"mcp-config":    {},
+	"sidecar-tools": {},
+}
+
+// builtinToolNames are the tool names Sympozium may register for the agent
+// before sidecar tools. A native sidecar tool that collides with one of these is
+// silently shadowed at runtime (executeToolCall dispatches sidecar tools last),
+// so admission rejects the collision. This MUST stay in sync with the agent
+// runner's tool registration: the Tool* constants in cmd/agent-runner/tools.go,
+// the memory tools in cmd/agent-runner/memory_tools.go (memoryToolNames), and the
+// workflow-memory tools (workflowMemoryToolNames). MCP tool names are dynamic
+// (discovered at runtime) and cannot be checked here — operators are responsible
+// for keeping sidecar tool names distinct from their MCP tool prefixes; the agent
+// runner additionally skips a sidecar tool whose name is already registered.
+var builtinToolNames = map[string]struct{}{
+	// Always-on built-ins (cmd/agent-runner/tools.go).
+	"execute_command":      {},
+	"read_file":            {},
+	"write_file":           {},
+	"list_directory":       {},
+	"send_channel_message": {},
+	"fetch_url":            {},
+	"schedule_task":        {},
+	"delegate_to_persona":  {},
+	"spawn_subagents":      {},
+	// Memory tools (cmd/agent-runner/memory_tools.go).
+	"memory_search":          {},
+	"memory_store":           {},
+	"memory_list":            {},
+	"workflow_memory_search": {},
+	"workflow_memory_store":  {},
+	"workflow_memory_list":   {},
 }
 
 // PolicyEnforcer is a validating webhook that enforces SympoziumPolicy on AgentRuns.
@@ -71,6 +103,15 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	// This catches reserved-name collisions and same-name-different-source
 	// collisions before they become silent mismounts at runtime.
 	if err := pe.validateVolumes(ctx, run); err != nil {
+		return admission.Denied(err.Error())
+	}
+
+	// Validate native sidecar tools declared on resolved SkillPacks: unique
+	// snake_case names, no collision with built-in tools, and positional args
+	// that reference declared parameters. The definitions become a read-only,
+	// controller-written manifest the agent cannot forge, so admission is where
+	// they are vetted.
+	if err := pe.validateSidecarTools(ctx, run); err != nil {
 		return admission.Denied(err.Error())
 	}
 
@@ -218,6 +259,130 @@ func (pe *PolicyEnforcer) validateVolumes(ctx context.Context, run *sympoziumv1a
 	}
 
 	return nil
+}
+
+var sidecarToolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// validateSidecarTools rejects malformed or conflicting native tool declarations
+// across the AgentRun's resolved SkillPack sidecars. Like validateVolumes, the
+// SkillPack lookup is best-effort so the controller's lenient resolver stays the
+// source of truth for missing packs.
+func (pe *PolicyEnforcer) validateSidecarTools(ctx context.Context, run *sympoziumv1alpha1.AgentRun) error {
+	seen := make(map[string]string) // tool name -> declaring SkillPack
+
+	for _, ref := range run.Spec.Skills {
+		if ref.SkillPackRef == "" {
+			continue
+		}
+		spName := strings.TrimPrefix(ref.SkillPackRef, "skillpack-")
+
+		sp := &sympoziumv1alpha1.SkillPack{}
+		if err := pe.Client.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: spName}, sp); err != nil {
+			if err2 := pe.Client.Get(ctx, types.NamespacedName{Namespace: systemNamespace, Name: spName}, sp); err2 != nil {
+				continue
+			}
+		}
+		if sp.Spec.Sidecar == nil {
+			continue
+		}
+
+		for _, tool := range sp.Spec.Sidecar.Tools {
+			if err := validateSidecarToolStructural(spName, tool); err != nil {
+				return err
+			}
+			// Cross-pack uniqueness is inherently per-run (it depends on which
+			// SkillPacks are attached together), so it stays here rather than in
+			// the structural validator shared with SkillPack admission.
+			if other, dup := seen[tool.Name]; dup {
+				return fmt.Errorf("sidecar tool %q is declared by both SkillPack %q and SkillPack %q; tool names must be unique across attached SkillPacks", tool.Name, other, spName)
+			}
+			seen[tool.Name] = spName
+		}
+	}
+
+	return nil
+}
+
+// validateSidecarToolStructural runs the single-tool checks that do not depend
+// on which other SkillPacks are attached. It is shared by the AgentRun policy
+// webhook and the SkillPack validating webhook so authors get the same errors at
+// SkillPack apply time.
+func validateSidecarToolStructural(spName string, tool sympoziumv1alpha1.SidecarTool) error {
+	if !sidecarToolNamePattern.MatchString(tool.Name) {
+		return fmt.Errorf("SkillPack %q sidecar tool %q: name must be snake_case matching ^[a-z][a-z0-9_]*$", spName, tool.Name)
+	}
+	if _, isBuiltin := builtinToolNames[tool.Name]; isBuiltin {
+		return fmt.Errorf("SkillPack %q sidecar tool %q: name collides with a built-in Sympozium tool", spName, tool.Name)
+	}
+	if len(tool.Exec) == 0 {
+		return fmt.Errorf("SkillPack %q sidecar tool %q: exec must declare at least the executable", spName, tool.Name)
+	}
+
+	var props map[string]json.RawMessage
+	var required map[string]struct{}
+	if tool.Parameters != nil && len(tool.Parameters.Raw) > 0 {
+		p, req, err := toolParameterSchema(tool.Parameters.Raw)
+		if err != nil {
+			return fmt.Errorf("SkillPack %q sidecar tool %q: parameters is not a valid JSON Schema object: %v", spName, tool.Name, err)
+		}
+		props, required = p, req
+	}
+
+	// Positional args must reference a declared, required parameter. Requiring
+	// "required" prevents an omitted earlier positional from silently shifting
+	// every later positional into the wrong slot.
+	if len(tool.PositionalArgs) > 0 {
+		if props == nil {
+			return fmt.Errorf("SkillPack %q sidecar tool %q: positionalArgs is set but no parameters are declared", spName, tool.Name)
+		}
+		for _, pa := range tool.PositionalArgs {
+			if _, ok := props[pa]; !ok {
+				return fmt.Errorf("SkillPack %q sidecar tool %q: positionalArgs references %q which is not a declared parameter", spName, tool.Name, pa)
+			}
+			if _, ok := required[pa]; !ok {
+				return fmt.Errorf("SkillPack %q sidecar tool %q: positional arg %q must be listed in parameters.required (optional positionals would shift later arguments)", spName, tool.Name, pa)
+			}
+		}
+	}
+
+	// In args mode (the default) only positional parameters reach the process;
+	// any other declared parameter the model fills would be silently dropped.
+	// Reject that ambiguity at author time.
+	inputMode := tool.InputMode
+	if inputMode == "" {
+		inputMode = "args"
+	}
+	if inputMode == "args" && props != nil {
+		positional := make(map[string]struct{}, len(tool.PositionalArgs))
+		for _, pa := range tool.PositionalArgs {
+			positional[pa] = struct{}{}
+		}
+		for name := range props {
+			if _, ok := positional[name]; !ok {
+				return fmt.Errorf("SkillPack %q sidecar tool %q: inputMode=args declares parameter %q that is not in positionalArgs; in args mode non-positional parameters are dropped — add it to positionalArgs or use inputMode=stdin", spName, tool.Name, name)
+			}
+		}
+	}
+
+	return nil
+}
+
+// toolParameterSchema extracts the top-level "properties" map and the set of
+// "required" property names from a JSON Schema object. Either may be nil/empty
+// when absent.
+func toolParameterSchema(raw []byte) (map[string]json.RawMessage, map[string]struct{}, error) {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return nil, nil, err
+	}
+	required := make(map[string]struct{}, len(schema.Required))
+	for _, r := range schema.Required {
+		required[r] = struct{}{}
+	}
+	return schema.Properties, required, nil
 }
 
 func (pe *PolicyEnforcer) validateSubagentDepth(run *sympoziumv1alpha1.AgentRun, policy *sympoziumv1alpha1.SympoziumPolicy) error {

@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 	"golang.org/x/net/html"
 )
 
@@ -328,6 +329,10 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 		// Check if this is an MCP tool from the manifest
 		if mcpTool, ok := lookupMCPTool(name); ok {
 			return executeMCPTool(ctx, mcpTool, argsJSON)
+		}
+		// Check if this is a native sidecar tool from the controller-written manifest
+		if sidecarTool, ok := lookupSidecarTool(name); ok {
+			return executeSidecarTool(ctx, sidecarTool, argsJSON)
 		}
 		return fmt.Sprintf("Unknown tool: %s", name)
 	}
@@ -937,21 +942,29 @@ func writeFileTool(args map[string]any) string {
 // When empty, any attached sidecar may claim it (legacy behavior — racy in
 // multi-sidecar pods).
 type execRequest struct {
-	ID      string            `json:"id"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args,omitempty"`
-	WorkDir string            `json:"workDir,omitempty"`
-	Timeout int               `json:"timeout,omitempty"`
-	Target  string            `json:"target,omitempty"`
-	Meta    map[string]string `json:"_meta,omitempty"`
+	ID      string   `json:"id"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	WorkDir string   `json:"workDir,omitempty"`
+	Timeout int      `json:"timeout,omitempty"`
+	Target  string   `json:"target,omitempty"`
+	// Argv, when non-empty, is executed directly as an argument vector by the
+	// sidecar tool-executor WITHOUT a shell. This is the safe path used by
+	// native sidecar tools: the executable and its arguments are passed as
+	// discrete elements, so argument values cannot inject shell syntax. When
+	// Argv is set, Command/Args are ignored.
+	Argv []string `json:"argv,omitempty"`
+	// Stdin is piped to the process when Argv is set. Used by stdin-mode native
+	// tools to deliver a JSON payload without interpolating it into a command.
+	Stdin string            `json:"stdin,omitempty"`
+	Meta  map[string]string `json:"_meta,omitempty"`
 }
 
 // normalizeSidecarTarget returns the canonical form of a SkillPack target name
-// used in execRequest.Target. Both producer (agent-runner) and consumer
-// (tool-executor.sh in skill sidecars) must use equivalent normalisation so
-// that case or whitespace differences do not cause silent routing misses.
+// used in execRequest.Target. It delegates to the shared helper so the
+// agent-runner and the controller cannot drift on the normalization contract.
 func normalizeSidecarTarget(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
+	return sidecartools.NormalizeTarget(s)
 }
 
 // execResult matches the IPC ExecResult protocol.
@@ -999,9 +1012,23 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 	}
 	req.Meta = traceMetadata(ctx)
 
+	return dispatchExecRequest(req, truncateStr(command, 120))
+}
+
+// dispatchExecRequest writes an exec request to the IPC tools directory, waits
+// for the sidecar's result, and returns the formatted output. It is shared by
+// execute_command (shell mode) and native sidecar tools (argv mode); the only
+// difference is how the execRequest is constructed. label is a short
+// human-readable summary for logging.
+func dispatchExecRequest(req execRequest, label string) string {
+	timeoutSec := req.Timeout
+	if timeoutSec <= 0 {
+		timeoutSec = 30
+	}
+
 	toolsDir := "/ipc/tools"
-	reqPath := filepath.Join(toolsDir, fmt.Sprintf("exec-request-%s.json", id))
-	resPath := filepath.Join(toolsDir, fmt.Sprintf("exec-result-%s.json", id))
+	reqPath := filepath.Join(toolsDir, fmt.Sprintf("exec-request-%s.json", req.ID))
+	resPath := filepath.Join(toolsDir, fmt.Sprintf("exec-result-%s.json", req.ID))
 
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -1013,7 +1040,7 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 		return fmt.Sprintf("Error writing exec request: %v", err)
 	}
 
-	log.Printf("Wrote exec request %s: %s", id, truncateStr(command, 120))
+	log.Printf("Wrote exec request %s: %s", req.ID, label)
 
 	// Poll for result with a deadline.
 	deadline := time.Now().Add(time.Duration(timeoutSec+10) * time.Second)

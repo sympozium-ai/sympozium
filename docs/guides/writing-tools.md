@@ -260,6 +260,9 @@ func myNativeTool(args map[string]any) string {
 
 ### Pattern B: IPC Sidecar Tool (exec in sidecar)
 
+!!! tip "Prefer declarative native sidecar tools"
+    If you just want to expose a sidecar CLI as a typed, function-calling tool, you usually don't need to write Go at all — declare it under `sidecar.tools` on the SkillPack and the controller wires it up (read-only manifest, argv dispatch, admission validation). See [Native Sidecar Tools](writing-sidecars.md#native-sidecar-tools). Reach for the Go pattern below only when the tool needs custom in-agent logic.
+
 For tools that need to run commands in the skill sidecar container:
 
 ```go

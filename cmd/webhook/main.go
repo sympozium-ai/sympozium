@@ -75,6 +75,13 @@ func main() {
 		},
 	})
 
+	hookServer.Register("/validate-skillpacks", &ctrlwebhook.Admission{
+		Handler: &webhook.SkillPackValidator{
+			Log:     log.WithName("skillpack-validator"),
+			Decoder: decoder,
+		},
+	})
+
 	// Register fitness pre-flight validation webhook (optional).
 	if os.Getenv("LLMFIT_PREFLIGHT_VALIDATION") == "true" {
 		natsURL := os.Getenv("NATS_URL")

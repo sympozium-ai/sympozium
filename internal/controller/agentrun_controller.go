@@ -42,6 +42,7 @@ import (
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
+	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 	"gopkg.in/yaml.v3"
 )
 
@@ -425,6 +426,18 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// inherit all instance skills and must remain task-scoped.
 	if agentRun.Spec.Mode == "server" {
 		return r.reconcilePendingServer(ctx, log, agentRun, sidecars)
+	}
+
+	// Write the native sidecar-tools manifest as a read-only ConfigMap when any
+	// attached sidecar declares tools. The definitions come from the SkillPack
+	// CRD (admission-validated), so they live outside the agent's reach and the
+	// running agent can consume but never forge them. Only the task (Job) path
+	// mounts this manifest, so it is created after the server-mode branch to
+	// avoid an orphan ConfigMap on server-mode runs.
+	if sidecarsHaveTools(sidecars) {
+		if err := r.ensureSidecarToolsConfigMap(ctx, agentRun, sidecars); err != nil {
+			return ctrl.Result{}, fmt.Errorf("creating sidecar tools ConfigMap: %w", err)
+		}
 	}
 
 	// Filter out server-only sidecars (RequiresServer) — they are not
@@ -2218,6 +2231,21 @@ func (r *AgentRunReconciler) buildContainers(
 		)
 	}
 
+	// Mount the controller-written native sidecar tools manifest (read-only) and
+	// point the agent runner at it. The manifest is derived from the SkillPack
+	// CRD, so the agent consumes tool definitions it cannot modify. Dispatch
+	// still flows through the gated exec IPC targeting the owning sidecar.
+	if sidecarsHaveTools(sidecars) {
+		containers[0].VolumeMounts = append(containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "sidecar-tools",
+			MountPath: "/config/sidecar-tools",
+			ReadOnly:  true,
+		})
+		containers[0].Env = append(containers[0].Env,
+			corev1.EnvVar{Name: "SIDECAR_TOOLS_MANIFEST_PATH", Value: "/config/sidecar-tools/sidecar-tools.json"},
+		)
+	}
+
 	// Pass channel context so the agent knows how to reply when the run
 	// was triggered by a channel message (WhatsApp, Telegram, etc.).
 	if ch := agentRun.Annotations["sympozium.ai/reply-channel"]; ch != "" {
@@ -3071,6 +3099,23 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, 
 		})
 	}
 
+	// Add the read-only sidecar-tools manifest volume when any sidecar declares
+	// native tools. Sourced from the controller-written ConfigMap.
+	if sidecarsHaveTools(sidecars) {
+		cmName := fmt.Sprintf("%s-sidecar-tools", agentRun.Name)
+		volumes = append(volumes, corev1.Volume{
+			Name: "sidecar-tools",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: cmName,
+					},
+					Optional: boolPtr(true),
+				},
+			},
+		})
+	}
+
 	// Add Secret volumes for skill sidecars that require credentials.
 	for _, sc := range sidecars {
 		if sc.sidecar.SecretRef == "" {
@@ -3181,12 +3226,13 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, 
 // on every agent pod. User-supplied volumes/mounts with these names are
 // silently skipped to prevent accidental clobbering of core functionality.
 var reservedVolumeNames = map[string]struct{}{
-	"workspace":  {},
-	"ipc":        {},
-	"skills":     {},
-	"tmp":        {},
-	"memory":     {},
-	"mcp-config": {},
+	"workspace":     {},
+	"ipc":           {},
+	"skills":        {},
+	"tmp":           {},
+	"memory":        {},
+	"mcp-config":    {},
+	"sidecar-tools": {},
 }
 
 func isReservedVolumeName(name string) bool {
@@ -4030,6 +4076,130 @@ func buildMCPServersYAML(mcpServers []sympoziumv1alpha1.MCPServerRef) (string, e
 		return "", fmt.Errorf("marshalling MCP servers config: %w", err)
 	}
 	return string(data), nil
+}
+
+// sidecarToolJSON is the wire representation of a native sidecar tool written
+// into the read-only manifest the agent runner consumes. It mirrors the
+// agent-runner-side struct in cmd/agent-runner/sidecar_tools.go.
+type sidecarToolJSON struct {
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	Target         string          `json:"target"`
+	Exec           []string        `json:"exec"`
+	Subcommand     string          `json:"subcommand,omitempty"`
+	InputMode      string          `json:"inputMode,omitempty"`
+	PositionalArgs []string        `json:"positionalArgs,omitempty"`
+	Parameters     json.RawMessage `json:"parameters,omitempty"`
+}
+
+type sidecarToolManifestJSON struct {
+	Tools []sidecarToolJSON `json:"tools"`
+}
+
+// sidecarsHaveTools reports whether any resolved sidecar declares native tools.
+func sidecarsHaveTools(sidecars []resolvedSidecar) bool {
+	for _, sc := range sidecars {
+		if len(sc.sidecar.Tools) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// buildSidecarToolsManifest serializes the native tool definitions from every
+// resolved sidecar into the JSON manifest the agent runner reads. The IPC
+// routing Target is derived by the controller from the SkillPack name (not
+// taken from the manifest), so the agent cannot retarget a tool. Parameters are
+// passed through verbatim as the JSON Schema handed to the LLM.
+func buildSidecarToolsManifest(sidecars []resolvedSidecar) (string, error) {
+	manifest := sidecarToolManifestJSON{Tools: []sidecarToolJSON{}}
+
+	for _, sc := range sidecars {
+		target := sidecartools.NormalizeTarget(sc.skillPackName)
+		for _, tool := range sc.sidecar.Tools {
+			inputMode := tool.InputMode
+			if inputMode == "" {
+				inputMode = "args"
+			}
+
+			var params json.RawMessage
+			if tool.Parameters != nil && len(tool.Parameters.Raw) > 0 {
+				params = append(json.RawMessage(nil), tool.Parameters.Raw...)
+			} else {
+				params = json.RawMessage(`{"type":"object","properties":{}}`)
+			}
+
+			manifest.Tools = append(manifest.Tools, sidecarToolJSON{
+				Name:           tool.Name,
+				Description:    tool.Description,
+				Target:         target,
+				Exec:           tool.Exec,
+				Subcommand:     tool.Subcommand,
+				InputMode:      inputMode,
+				PositionalArgs: tool.PositionalArgs,
+				Parameters:     params,
+			})
+		}
+	}
+
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return "", fmt.Errorf("marshalling sidecar tools manifest: %w", err)
+	}
+	return string(data), nil
+}
+
+// ensureSidecarToolsConfigMap creates the read-only ConfigMap holding the
+// native sidecar tools manifest for an AgentRun. Mirrors ensureMCPConfigMap:
+// scoped to the run and garbage-collected via the owner reference.
+func (r *AgentRunReconciler) ensureSidecarToolsConfigMap(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, sidecars []resolvedSidecar) error {
+	cmName := fmt.Sprintf("%s-sidecar-tools", agentRun.Name)
+
+	manifest, err := buildSidecarToolsManifest(sidecars)
+	if err != nil {
+		return fmt.Errorf("building sidecar tools manifest: %w", err)
+	}
+
+	// ConfigMap data is capped at ~1MB by the API server. Fail loudly with an
+	// actionable error rather than letting an oversize manifest produce an
+	// opaque Create error (or, worse, silently missing tools at runtime).
+	const maxManifestBytes = 900 * 1024
+	if len(manifest) > maxManifestBytes {
+		return fmt.Errorf("sidecar tools manifest for %s is %d bytes, exceeding the %d-byte budget — reduce the number of tools or the size of their parameter schemas/descriptions",
+			agentRun.Name, len(manifest), maxManifestBytes)
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: agentRun.Namespace,
+			Labels: map[string]string{
+				"sympozium.ai/agent-run": agentRun.Name,
+				"sympozium.ai/instance":  agentRun.Spec.AgentRef,
+				"sympozium.ai/component": "sidecar-tools",
+			},
+		},
+		// Immutable: this manifest is the operator-controlled definition of the
+		// agent's native-tool authority for the life of the run. It is created
+		// once and never updated, so marking it immutable hardens the trust
+		// anchor against in-place tampering.
+		Immutable: boolPtr(true),
+		Data: map[string]string{
+			"sidecar-tools.json": manifest,
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(agentRun, cm, r.Scheme); err != nil {
+		return err
+	}
+
+	if err := r.Create(ctx, cm); err != nil {
+		if errors.IsAlreadyExists(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // resolveMCPServerURLs looks up MCPServer CRs for any server ref that has no URL set.

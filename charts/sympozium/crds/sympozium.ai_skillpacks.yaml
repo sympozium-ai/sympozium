@@ -288,6 +288,83 @@ spec:
                       The Secret must exist in sympozium-system and will be mirrored into the
                       AgentRun namespace automatically.
                     type: string
+                  tools:
+                    description: |-
+                      Tools declares native function-calling tools that this sidecar exposes to
+                      the agent's LLM. Unlike execute_command (where the model constructs a raw
+                      shell string), these are presented to the model as typed tools with a JSON
+                      Schema. The controller serializes them into a read-only manifest mounted
+                      into the agent container, so the definitions live in operator-controlled
+                      config and cannot be forged or altered by the running agent. Each tool
+                      dispatches through the same gated exec IPC as execute_command, targeting
+                      this sidecar, so a native tool grants no more authority than the shell
+                      path already does.
+                    items:
+                      description: |-
+                        SidecarTool declares a single native function-calling tool exposed by a skill
+                        sidecar. The executable (Exec) is declared here in the SkillPack spec rather
+                        than supplied by the running agent, so it is admission-controlled and
+                        auditable.
+                      properties:
+                        description:
+                          description: Description tells the model what the tool does
+                            and when to use it.
+                          maxLength: 2048
+                          type: string
+                        exec:
+                          description: |-
+                            Exec is the argv prefix the sidecar runs for this tool, e.g.
+                            ["node", "/app/dist/cli.js"]. The subcommand and any positional arguments
+                            are appended to this prefix. It is operator-declared on the SkillPack (not
+                            supplied by the model), so it is the authoritative executable for the tool.
+                            Admission only requires it to be non-empty today; a binary allowlist
+                            (e.g. via SympoziumPolicy) may be layered on in a future phase.
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                        inputMode:
+                          default: args
+                          description: |-
+                            InputMode controls how the model's arguments reach the sidecar process.
+                            "args" (the default) passes them as positional CLI arguments. "stdin"
+                            pipes the remaining (non-positional) arguments as a JSON object on stdin.
+                          enum:
+                          - args
+                          - stdin
+                          type: string
+                        name:
+                          description: |-
+                            Name is the tool name exposed to the LLM. Must be snake_case and unique
+                            across all tools the agent sees (built-in, MCP, and sidecar tools).
+                          maxLength: 64
+                          pattern: ^[a-z][a-z0-9_]*$
+                          type: string
+                        parameters:
+                          description: |-
+                            Parameters is the JSON Schema object describing the tool's arguments,
+                            handed to the LLM verbatim. Must be a JSON Schema of type "object".
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        positionalArgs:
+                          description: |-
+                            PositionalArgs names the parameters (in order) that are passed as
+                            positional CLI arguments rather than on stdin. Each name must appear in
+                            Parameters.
+                          items:
+                            type: string
+                          type: array
+                        subcommand:
+                          description: |-
+                            Subcommand is an optional fixed sub-command appended after Exec, e.g.
+                            "evaluate-changes".
+                          type: string
+                      required:
+                      - description
+                      - exec
+                      - name
+                      type: object
+                    type: array
                   volumeMounts:
                     description: |-
                       VolumeMounts are additional volume mounts attached to this sidecar
