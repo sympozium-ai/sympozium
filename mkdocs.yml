@@ -101,6 +101,7 @@ nav:
     - Writing Sidecars: guides/writing-sidecars.md
     - Writing Integration Tests: guides/writing-integration-tests.md
     - Writing UX Tests (Cypress): guides/writing-ux-tests.md
+    - Detailed File Logging: guides/detailed-logging.md
   - Skills Reference:
     - LLMFit: skills/llmfit.md
     - Web Endpoint: skills/web-endpoint.md

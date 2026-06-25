@@ -172,7 +172,7 @@ func TestFormatMCPResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatMCPResult(tt.result)
+			got := formatMCPResult(tt.result, "test-tool")
 			if got != tt.want {
 				t.Errorf("formatMCPResult() = %q, want %q", got, tt.want)
 			}

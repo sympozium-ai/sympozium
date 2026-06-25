@@ -291,6 +291,7 @@ func defaultTools() []ToolDef {
 // executeToolCall dispatches a tool call and returns the result string.
 func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 	log.Printf("tool call: %s args=%s", name, truncateStr(argsJSON, 200))
+	detailedLog.LogAgent("tool_call", map[string]any{"tool": name, "args": argsJSON})
 
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -360,6 +361,7 @@ func readFileTool(args map[string]any) string {
 	}
 
 	content := string(data)
+	detailedLog.LogAgent("tool_result", map[string]any{"tool": "read_file", "result_len": len(content), "result": content})
 	if len(content) > 8_000 {
 		content = content[:8_000] + fmt.Sprintf("\n... (truncated, file is %d bytes)", len(data))
 	}
@@ -501,6 +503,7 @@ func delegateToPersonaTool(args map[string]any) string {
 
 	log.Printf("Delegated to persona %q in pack %q (requestID=%s): task=%s",
 		targetPersona, packName, requestID, truncateStr(task, 100))
+	detailedLog.LogAgent("delegate", map[string]any{"persona": targetPersona, "pack": packName, "request_id": requestID, "task": task})
 
 	// Block until the delegate result arrives or timeout.
 	deadline := time.Now().Add(10 * time.Minute)
@@ -732,6 +735,7 @@ func fetchURLTool(args map[string]any) string {
 		content = htmlToText(content)
 	}
 
+	detailedLog.LogAgent("tool_result", map[string]any{"tool": "fetch_url", "url": rawURL, "result_len": len(content), "result": content})
 	if len(content) > maxChars {
 		content = content[:maxChars] + fmt.Sprintf("\n\n... (truncated at %d chars, total ~%d)", maxChars, len(string(body)))
 	}
@@ -1014,6 +1018,7 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 	}
 
 	log.Printf("Wrote exec request %s: %s", id, truncateStr(command, 120))
+	detailedLog.LogAgent("exec_request", map[string]any{"request_id": id, "command": command})
 
 	// Poll for result with a deadline.
 	deadline := time.Now().Add(time.Duration(timeoutSec+10) * time.Second)
@@ -1070,6 +1075,7 @@ func formatExecResult(r execResult) string {
 	if output == "" {
 		output = "(no output)"
 	}
+	detailedLog.LogAgent("exec_output", map[string]any{"request_id": r.ID, "output_len": len(output), "output": output})
 	if len(output) > 8_000 {
 		output = output[:8_000] + "\n... (output truncated)"
 	}
