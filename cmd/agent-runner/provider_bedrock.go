@@ -108,10 +108,12 @@ func (p *bedrockProvider) Chat(ctx context.Context) (ChatResult, error) {
 		defer cancel()
 	}
 
+	detailedLog.LogLLM("request", map[string]any{"provider": "bedrock", "model": p.model, "system_len": len(p.system), "messages_count": len(p.messages), "tools_count": len(p.tools)})
 	output, err := p.client.Converse(converseCtx, input)
 	if err != nil {
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) {
+			detailedLog.LogLLM("error", map[string]any{"provider": "bedrock", "error_code": apiErr.ErrorCode(), "error": apiErr.ErrorMessage()})
 			return ChatResult{}, fmt.Errorf("Bedrock API error (%s): %s",
 				apiErr.ErrorCode(), apiErr.ErrorMessage())
 		}
@@ -147,6 +149,7 @@ func (p *bedrockProvider) Chat(ctx context.Context) (ChatResult, error) {
 		}
 	}
 	result.Text = textContent
+	detailedLog.LogLLM("response", map[string]any{"provider": "bedrock", "model": p.model, "text": textContent, "stop_reason": string(output.StopReason), "usage": map[string]any{"input_tokens": result.InputTokens, "output_tokens": result.OutputTokens}})
 
 	if output.StopReason == types.StopReasonToolUse && len(toolUseBlocks) > 0 {
 		for _, tu := range toolUseBlocks {

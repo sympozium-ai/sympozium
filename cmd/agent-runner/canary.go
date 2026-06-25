@@ -73,6 +73,7 @@ func checkAPIServer(ctx context.Context) canaryCheck {
 	if strings.TrimSpace(body) == "ok" {
 		return canaryCheck{Name: "API Server", Status: "pass", Details: "ok"}
 	}
+	detailedLog.LogAgent("canary_api_fail", map[string]any{"body": body})
 	return canaryCheck{Name: "API Server", Status: "fail", Details: "unexpected response: " + truncate(body, 100)}
 }
 
@@ -258,6 +259,7 @@ func httpGet(ctx context.Context, url string, timeout time.Duration) (string, er
 		return "", err
 	}
 	if resp.StatusCode != http.StatusOK {
+		detailedLog.LogAgent("canary_http_error", map[string]any{"status_code": resp.StatusCode, "body": string(b)})
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(b), 200))
 	}
 	return string(b), nil
