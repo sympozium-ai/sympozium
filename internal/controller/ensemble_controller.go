@@ -446,6 +446,13 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
+		// Propagate subagent limits from persona definition so changes to
+		// maxDepth, maxConcurrent, or maxChildrenPerAgent reach existing Agents.
+		if !reflect.DeepEqual(existingInst.Spec.Agents.Default.Subagents, persona.Subagents) {
+			existingInst.Spec.Agents.Default.Subagents = persona.Subagents
+			needsUpdate = true
+		}
+
 		if needsUpdate {
 			log.Info("Updating pack-level settings on existing instance", "instance", instanceName)
 			if err := r.Update(ctx, existingInst); err != nil {

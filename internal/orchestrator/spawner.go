@@ -3,7 +3,10 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
@@ -77,6 +80,9 @@ type SpawnRequest struct {
 	// ChildIndex disambiguates multiple children spawned at the same depth
 	// (e.g. from a spawn_subagents batch). Zero means single spawn (legacy naming).
 	ChildIndex int `json:"childIndex,omitempty"`
+
+	// BatchID disambiguates separate spawn_subagents batches from the same parent.
+	BatchID string `json:"batchId,omitempty"`
 }
 
 // SpawnResult is the result of a spawn operation.
@@ -122,10 +128,7 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 		"depth", req.CurrentDepth+1,
 	)
 
-	runName := fmt.Sprintf("sub-%s-%d", req.ParentRunName, req.CurrentDepth+1)
-	if req.ChildIndex > 0 {
-		runName = fmt.Sprintf("sub-%s-%d-%d", req.ParentRunName, req.CurrentDepth+1, req.ChildIndex)
-	}
+	runName := buildSubagentRunName(req.ParentRunName, req.CurrentDepth+1, req.ChildIndex, req.BatchID)
 	sessionKey := fmt.Sprintf("%s:sub:%s", req.ParentSessionKey, runName)
 
 	span.SetAttributes(attribute.String("run.name", runName))
@@ -179,6 +182,51 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 	}
 
 	return &SpawnResult{RunName: runName}, nil
+}
+
+func buildSubagentRunName(parentRunName string, depth, childIndex int, batchID string) string {
+	var runName string
+	if childIndex > 0 && batchID != "" {
+		runName = fmt.Sprintf("sub-%s-%s-%d-%d", parentRunName, batchNameToken(batchID), depth, childIndex)
+	} else if childIndex > 0 {
+		runName = fmt.Sprintf("sub-%s-%d-%d", parentRunName, depth, childIndex)
+	} else {
+		runName = fmt.Sprintf("sub-%s-%d", parentRunName, depth)
+	}
+	return shortenDNSSubdomain(runName, 253)
+}
+
+func batchNameToken(batchID string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(batchID) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	token := strings.Trim(b.String(), "-")
+	if token == "" {
+		token = "batch"
+	}
+	if len(token) <= 20 {
+		return token
+	}
+	hash := sha256.Sum256([]byte(batchID))
+	return hex.EncodeToString(hash[:])[:20]
+}
+
+func shortenDNSSubdomain(name string, maxLen int) string {
+	name = strings.Trim(name, "-")
+	if len(name) <= maxLen {
+		return name
+	}
+	hash := sha256.Sum256([]byte(name))
+	suffix := "-" + hex.EncodeToString(hash[:])[:10]
+	if maxLen <= len(suffix) {
+		return strings.Trim(suffix[1:maxLen+1], "-")
+	}
+	return strings.Trim(name[:maxLen-len(suffix)], "-") + suffix
 }
 
 // resolvePersonaTarget looks up a Ensemble to find the Agent

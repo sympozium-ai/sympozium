@@ -1,11 +1,16 @@
 package controller
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/go-logr/logr"
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestBuildInstance_ChannelAccessControlPrecedence(t *testing.T) {
@@ -181,6 +186,61 @@ func TestBuildInstance_SubagentsNilWhenUnset(t *testing.T) {
 	if inst.Spec.Agents.Default.Subagents != nil {
 		t.Errorf("expected Subagents to be nil for persona without subagents config, got %+v",
 			inst.Spec.Agents.Default.Subagents)
+	}
+}
+
+func TestReconcileAgentConfig_UpdatesSubagentsOnExistingAgent(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-coordinator",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/agent-config": "coordinator",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{},
+			},
+		},
+	}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name: "coordinator",
+		Subagents: &sympoziumv1alpha1.SubagentsSpec{
+			MaxDepth:            1,
+			MaxConcurrent:       8,
+			MaxChildrenPerAgent: 8,
+		},
+	}
+
+	_, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, "")
+	if err != nil {
+		t.Fatalf("reconcileAgentConfig returned error: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get updated agent: %v", err)
+	}
+	sub := updated.Spec.Agents.Default.Subagents
+	if sub == nil {
+		t.Fatal("expected existing Agent to receive subagents config")
+	}
+	if sub.MaxDepth != 1 || sub.MaxConcurrent != 8 || sub.MaxChildrenPerAgent != 8 {
+		t.Fatalf("subagents = %+v, want maxDepth=1 maxConcurrent=8 maxChildrenPerAgent=8", sub)
 	}
 }
 

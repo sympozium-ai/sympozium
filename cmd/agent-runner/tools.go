@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -233,13 +234,17 @@ func defaultTools() []ToolDef {
 
 	// Conditionally add spawn_subagents tool when subagents are enabled.
 	if os.Getenv("SUBAGENTS_ENABLED") == "true" {
+		maxChildren := 3
+		if v, err := strconv.Atoi(os.Getenv("SUBAGENTS_MAX_CHILDREN")); err == nil && v > 0 {
+			maxChildren = v
+		}
 		tools = append(tools, ToolDef{
 			Name: ToolSpawnSubagents,
 			Description: "Spawn sub-agents to execute tasks in parallel or sequentially. " +
 				"Each sub-agent runs independently as its own AgentRun and returns a result. " +
 				"Use this to break complex work into independent subtasks (parallel) or " +
 				"dependent pipeline steps (sequential). Sub-agents inherit your model, skills, " +
-				"and configuration. Results are returned as an ordered array matching your task order.",
+				fmt.Sprintf("and configuration. Results are returned as an ordered array matching your task order. Maximum tasks per batch: %d.", maxChildren),
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -268,7 +273,8 @@ func defaultTools() []ToolDef {
 							"required": []string{"id", "task"},
 						},
 						"minItems":    1,
-						"description": "Array of tasks to execute as sub-agents",
+						"maxItems":    maxChildren,
+						"description": fmt.Sprintf("Array of tasks to execute as sub-agents. Maximum tasks: %d.", maxChildren),
 					},
 					"strategy": map[string]any{
 						"type":        "string",

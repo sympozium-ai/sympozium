@@ -431,6 +431,7 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 			Volumes:          parentRun.Spec.Volumes,
 			VolumeMounts:     parentRun.Spec.VolumeMounts,
 			ChildIndex:       i + 1,
+			BatchID:          req.BatchID,
 		}
 
 		result, err := sr.spawner.Spawn(ctx, spawnReq)
@@ -639,6 +640,7 @@ func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingB
 		Volumes:          parentRun.Spec.Volumes,
 		VolumeMounts:     parentRun.Spec.VolumeMounts,
 		ChildIndex:       idx + 1,
+		BatchID:          batch.batchID,
 	}
 
 	result, err := sr.spawner.Spawn(ctx, spawnReq)

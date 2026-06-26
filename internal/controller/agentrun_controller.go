@@ -2725,10 +2725,10 @@ func (r *AgentRunReconciler) injectRelationshipContext(ctx context.Context, agen
 	}
 }
 
-// injectSubagentsConfig adds SUBAGENTS_ENABLED, SUBAGENTS_MAX_CHILDREN, and
-// SUBAGENTS_MAX_DEPTH env vars to the agent container when the "subagents"
-// SkillPack is attached. Limits are taken from SubagentsSpec if set, otherwise
-// sensible defaults are used.
+// injectSubagentsConfig adds SUBAGENTS_ENABLED, SUBAGENTS_MAX_CHILDREN,
+// SUBAGENTS_MAX_CONCURRENT, and SUBAGENTS_MAX_DEPTH env vars to the agent
+// container when the "subagents" SkillPack is attached. Limits are taken from
+// SubagentsSpec if set, otherwise sensible defaults are used.
 func (r *AgentRunReconciler) injectSubagentsConfig(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, job *batchv1.Job) {
 	if agentRun.Spec.AgentRef == "" {
 		return
@@ -2750,11 +2750,14 @@ func (r *AgentRunReconciler) injectSubagentsConfig(ctx context.Context, agentRun
 
 	// Look up the Agent for optional limit overrides.
 	var inst sympoziumv1alpha1.Agent
-	maxChildren, maxDepth := 3, 2
+	maxChildren, maxConcurrent, maxDepth := 3, 5, 2
 	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &inst); err == nil {
 		if sub := inst.Spec.Agents.Default.Subagents; sub != nil {
 			if sub.MaxChildrenPerAgent > 0 {
 				maxChildren = sub.MaxChildrenPerAgent
+			}
+			if sub.MaxConcurrent > 0 {
+				maxConcurrent = sub.MaxConcurrent
 			}
 			if sub.MaxDepth > 0 {
 				maxDepth = sub.MaxDepth
@@ -2767,6 +2770,7 @@ func (r *AgentRunReconciler) injectSubagentsConfig(ctx context.Context, agentRun
 		podSpec.Containers[0].Env = append(podSpec.Containers[0].Env,
 			corev1.EnvVar{Name: "SUBAGENTS_ENABLED", Value: "true"},
 			corev1.EnvVar{Name: "SUBAGENTS_MAX_CHILDREN", Value: fmt.Sprintf("%d", maxChildren)},
+			corev1.EnvVar{Name: "SUBAGENTS_MAX_CONCURRENT", Value: fmt.Sprintf("%d", maxConcurrent)},
 			corev1.EnvVar{Name: "SUBAGENTS_MAX_DEPTH", Value: fmt.Sprintf("%d", maxDepth)},
 		)
 	}
