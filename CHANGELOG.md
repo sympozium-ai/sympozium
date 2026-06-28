@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.38](https://github.com/sympozium-ai/sympozium/compare/v0.10.37...v0.10.38) (2026-06-28)
+
+
+### Bug Fixes
+
+* **controller:** honor SYMPOZIUM_IMAGE_TAG for run pods + memory sidecar (ISI-1406/ISI-1417) ([#244](https://github.com/sympozium-ai/sympozium/issues/244)) ([604dd57](https://github.com/sympozium-ai/sympozium/commit/604dd57dc46c43dd4ec1449dcd670b84d37feaed))
+* **controller:** replace LastRunName check with List to prevent TOCTOU race ([#239](https://github.com/sympozium-ai/sympozium/issues/239)) ([a419afe](https://github.com/sympozium-ai/sympozium/commit/a419afe7fa898468ba4f11e2033bf7fb32d97a78))
+* make subagent fanout limits and names reliable ([#247](https://github.com/sympozium-ai/sympozium/issues/247)) ([f156807](https://github.com/sympozium-ai/sympozium/commit/f15680767c6c403d4f51a924db7bf2e78f4bcc51))
+
 ## [0.10.37](https://github.com/sympozium-ai/sympozium/compare/v0.10.36...v0.10.37) (2026-06-25)
 
 
