@@ -1870,18 +1870,9 @@ func (r *AgentRunReconciler) buildContainers(
 				},
 			},
 			Env: []corev1.EnvVar{
-				{Name: "AGENT_RUN_ID", Value: agentRun.Name},
-				{Name: "AGENT_ID", Value: agentRun.Spec.AgentID},
-				{Name: "SESSION_KEY", Value: agentRun.Spec.SessionKey},
 				{Name: "INSTANCE_NAME", Value: agentRun.Spec.AgentRef},
 				{Name: "ENSEMBLE_NAME", Value: agentRun.Labels["sympozium.ai/ensemble"]},
 				{Name: "AGENT_NAMESPACE", Value: agentRun.Namespace},
-				{Name: "TASK", Value: agentRun.Spec.Task},
-				{Name: "SYSTEM_PROMPT", Value: agentRun.Spec.SystemPrompt},
-				{Name: "MODEL_PROVIDER", Value: agentRun.Spec.Model.Provider},
-				{Name: "MODEL_NAME", Value: agentRun.Spec.Model.Model},
-				{Name: "MODEL_BASE_URL", Value: agentRun.Spec.Model.BaseURL},
-				{Name: "THINKING_MODE", Value: agentRun.Spec.Model.Thinking},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "workspace", MountPath: "/workspace"},
