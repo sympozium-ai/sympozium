@@ -433,6 +433,17 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
+		if existingInst.Spec.Agents.Default.RunTimeout != persona.RunTimeout {
+			existingInst.Spec.Agents.Default.RunTimeout = persona.RunTimeout
+			needsUpdate = true
+		}
+
+		// Propagate env changes from persona definition.
+		if !reflect.DeepEqual(existingInst.Spec.Agents.Default.Env, persona.Env) {
+			existingInst.Spec.Agents.Default.Env = persona.Env
+			needsUpdate = true
+		}
+
 		// Propagate skills changes from persona definition.
 		wantSkills := buildDesiredSkills(pack, persona)
 		if !skillRefsEqual(existingInst.Spec.Skills, wantSkills) {
