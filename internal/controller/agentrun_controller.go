@@ -3691,9 +3691,26 @@ func (r *AgentRunReconciler) resolveSkillSidecars(ctx context.Context, log logr.
 		}
 
 		if sp.Spec.Sidecar != nil && sp.Spec.Sidecar.Image != "" {
+			sidecar := *sp.Spec.Sidecar
+
+			// When the SkillPack was found in the run namespace (e.g. via
+			// Kustomize namespace override) the copy may lack sidecar.tools[]
+			// that the source in sympozium-system declares. Merge tools from
+			// the source so native sidecar tools are not silently dropped.
+			if len(sidecar.Tools) == 0 && sp.Namespace != systemNamespace {
+				source := &sympoziumv1alpha1.SkillPack{}
+				if err := r.Get(ctx, client.ObjectKey{
+					Namespace: systemNamespace,
+					Name:      spName,
+				}, source); err == nil && source.Spec.Sidecar != nil && len(source.Spec.Sidecar.Tools) > 0 {
+					sidecar.Tools = source.Spec.Sidecar.Tools
+					log.V(1).Info("Propagated sidecar tools from source SkillPack", "name", spName, "tools", len(sidecar.Tools))
+				}
+			}
+
 			sidecars = append(sidecars, resolvedSidecar{
 				skillPackName: spName,
-				sidecar:       *sp.Spec.Sidecar,
+				sidecar:       sidecar,
 				params:        ref.Params,
 			})
 		}
