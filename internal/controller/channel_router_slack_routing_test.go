@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -48,6 +49,43 @@ func TestExtractNameMention(t *testing.T) {
 			wantName:      "finance",
 			wantRemainder: "help",
 			wantMention:   true,
+		},
+		// ISI-1497 C7 — @mention honoured anywhere, not only leading token
+		{
+			name:          "@persona mid-message (numbered list)",
+			text:          "1. @architect please review",
+			wantName:      "architect",
+			wantRemainder: "1. please review",
+			wantMention:   true,
+		},
+		{
+			name:          "@persona mid-message (trailing token)",
+			text:          "please review this @architect",
+			wantName:      "architect",
+			wantRemainder: "please review this",
+			wantMention:   true,
+		},
+		{
+			name:          "multiple @mentions — first wins",
+			text:          "@architect @winston review",
+			wantName:      "architect",
+			wantRemainder: "@winston review",
+			wantMention:   true,
+		},
+		// Email/URL negative controls — '@' not on a word boundary, no match
+		{
+			name:          "email address — @ not a mention",
+			text:          "email me at henrik@perfbytes.com please",
+			wantName:      "",
+			wantRemainder: "email me at henrik@perfbytes.com please",
+			wantMention:   false,
+		},
+		{
+			name:          "URL with userinfo @ — not a mention",
+			text:          "see https://user@host/path for details",
+			wantName:      "",
+			wantRemainder: "see https://user@host/path for details",
+			wantMention:   false,
 		},
 		// Slack keywords — must return no match (fall through, not deny)
 		{
@@ -313,6 +351,9 @@ func TestNoListenerFallback(t *testing.T) {
 func handleInboundScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add corev1: %v", err)
+	}
 	if err := sympoziumv1alpha1.AddToScheme(s); err != nil {
 		t.Fatalf("add sympoziumv1alpha1: %v", err)
 	}
@@ -522,4 +563,97 @@ func TestHandleInbound_NameRouting(t *testing.T) {
 			t.Errorf("run label instance = %q, want %q (swapped listener inst)", got, receiverName)
 		}
 	})
+}
+
+// TestHandleInbound_UnknownMentionMutedChannel verifies ISI-1524: an unknown
+// @persona mention on a muted channel must NOT emit a denial response.
+// The deferred denial only fires after access/mute checks pass.
+func TestHandleInbound_UnknownMentionMutedChannel(t *testing.T) {
+	const (
+		ns           = "default"
+		ensembleName = "myteam"
+		receiverName = "myteam-triage"
+	)
+
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: ensembleName, Namespace: ns},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{
+				{Name: "triage", SlackListener: true},
+				{Name: "billing"},
+			},
+		},
+	}
+
+	// Receiver agent with a stop keyword trigger configured.
+	receiver := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      receiverName,
+			Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "triage",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Channels: []sympoziumv1alpha1.ChannelSpec{
+				{
+					Type: "slack",
+					Triggers: &sympoziumv1alpha1.ChannelTriggerSpec{
+						StopKeywords:  []string{"stop"},
+						StartKeywords: []string{"start"},
+					},
+				},
+			},
+		},
+	}
+
+	// Pre-create the channel-state ConfigMap with the chat muted.
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      receiverName + "-channel-state",
+			Namespace: ns,
+		},
+		Data: map[string]string{
+			channelMuteKey("slack", "C1"): channelMuteValue,
+		},
+	}
+
+	bus := &recordingEventBus{}
+	c := fake.NewClientBuilder().
+		WithScheme(handleInboundScheme(t)).
+		WithObjects(ensemble, receiver, cm).
+		Build()
+
+	cr := &ChannelRouter{
+		Client:   c,
+		EventBus: bus,
+		Log:      logr.Discard(),
+		seen:     make(map[string]time.Time),
+	}
+
+	msg := channelpkg.InboundMessage{
+		InstanceName: receiverName,
+		Channel:      "slack",
+		ChatID:       "C1",
+		Text:         "@finance help me",
+	}
+	ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+	cr.handleInbound(context.Background(), ev)
+
+	// No denial should be emitted because the channel is muted.
+	for _, text := range outboundTexts(t, bus) {
+		if len(text) > 0 {
+			t.Errorf("expected no outbound denial on muted channel, got %q", text)
+		}
+	}
+
+	// No AgentRun should be created either (chat is muted).
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cr.Client.List(context.Background(), &runs); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs.Items) != 0 {
+		t.Errorf("expected no AgentRun on muted channel, got %d", len(runs.Items))
+	}
 }

@@ -266,21 +266,21 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		return
 	}
 
-	// @name / name: routing (ISI-1497 C3).
+	// @name / name: routing (ISI-1497 C3, ISI-1524).
 	// When the inbound text begins with @name or name:, attempt to match
 	// against sibling personas in the same Ensemble.  A match redirects the
 	// AgentRun to the named delegate while keeping the receiver as the
 	// Slack-facing front door (Option 2).
 	//
-	// Ordering: name routing runs before checkChannelAccess and mute checks.
-	// After a successful redirect, access/mute are evaluated against the
-	// delegate (the post-swap inst), not the original receiver — the delegate
-	// is the effective front door once routing is resolved.  For unambiguous
-	// unknown @persona mentions the denial fires before access/mute, but
-	// only after extractNameMention confirms the @word form (isMention=true);
-	// word: prefixes such as "Note:", "TODO:", "https://…" fall through to
-	// normal processing without a denial.
+	// Ordering (ISI-1524): name extraction happens early so the delegate
+	// becomes the effective front door, but the unknown-@persona denial is
+	// gated on access/mute checks below.  After a successful redirect,
+	// access/mute are evaluated against the delegate (the post-swap inst),
+	// not the original receiver.  word: prefixes such as "Note:",
+	// "TODO:", "https://…" fall through to normal processing without a
+	// denial.
 	var nameRoutingApplied bool
+	var unknownMention string // set when isMention=true but no persona matched
 	if ensembleName := inst.Labels["sympozium.ai/ensemble"]; ensembleName != "" {
 		if mention, remainder, isMention := extractNameMention(msg.Text); mention != "" {
 			var ensemble sympoziumv1alpha1.Ensemble
@@ -289,25 +289,10 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				delegate := resolveNamedDelegate(ensemble.Spec.AgentConfigs, mention)
 				if delegate == nil {
 					if isMention {
-						// Unambiguous @persona mention with no matching persona —
-						// respond with a helpful note and drop.  word: prefixes
-						// (e.g. "Note:", "TODO:", "https://…") are not persona-
-						// directed and fall through to normal receiver handling.
-						names := make([]string, 0, len(ensemble.Spec.AgentConfigs))
-						for _, p := range ensemble.Spec.AgentConfigs {
-							if p.DisplayName != "" {
-								names = append(names, p.DisplayName)
-							} else {
-								names = append(names, p.Name)
-							}
-						}
-						cr.sendDenialResponse(ctx, msg, fmt.Sprintf(
-							"Sorry, I don't know who %q is. Available personas: %s.",
-							mention, strings.Join(names, ", "),
-						))
-						span.SetAttributes(attribute.String("sympozium.slack.routing.unknown_mention", mention))
-						cr.Log.Info("Unknown @name mention — dropped", "mention", mention, "instance", msg.InstanceName)
-						return
+						// Unambiguous @persona mention with no matching persona.
+						// Defer the denial until after access/mute checks so
+						// muted/restricted channels emit no bot output (ISI-1524).
+						unknownMention = mention
 					}
 					// word: prefix matched no persona — fall through to normal processing.
 				} else {
@@ -386,6 +371,29 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	// Returns false when the message must not be turned into an AgentRun.
 	if !cr.applyTriggers(ctx, span, inst, msg) {
 		return
+	}
+
+	// Deferred unknown-@persona denial (ISI-1524): only emit after
+	// access/mute checks confirm the channel is allowed and unmuted.
+	if unknownMention != "" {
+		var ensemble sympoziumv1alpha1.Ensemble
+		if ensErr := cr.Client.Get(ctx, client.ObjectKey{Name: inst.Labels["sympozium.ai/ensemble"], Namespace: inst.Namespace}, &ensemble); ensErr == nil {
+			names := make([]string, 0, len(ensemble.Spec.AgentConfigs))
+			for _, p := range ensemble.Spec.AgentConfigs {
+				if p.DisplayName != "" {
+					names = append(names, p.DisplayName)
+				} else {
+					names = append(names, p.Name)
+				}
+			}
+			cr.sendDenialResponse(ctx, msg, fmt.Sprintf(
+				"Sorry, I don't know who %q is. Available personas: %s.",
+				unknownMention, strings.Join(names, ", "),
+			))
+			span.SetAttributes(attribute.String("sympozium.slack.routing.unknown_mention", unknownMention))
+			cr.Log.Info("Unknown @name mention — dropped", "mention", unknownMention, "instance", msg.InstanceName)
+			return
+		}
 	}
 
 	// Resolve model configuration from the Agent (same logic as TUI).
@@ -642,16 +650,30 @@ var slackKeywords = map[string]bool{
 	"everyone": true,
 }
 
-// extractNameMention parses an @name or name: prefix from text (case-insensitive).
-// Returns the bare name token (no leading @, no trailing colon), the remainder
-// of the message, and whether the match used the @name form (isMention=true).
-// Returns ("", text, false) when no routing-relevant prefix is found.
-// Slack channel keywords (@here, @channel, @everyone) are ignored.
+// extractNameMention parses an @name mention (anywhere in the message) or a
+// leading name: prefix from text (case-insensitive). Returns the bare name
+// token (no leading @, no trailing colon), the remainder of the message with
+// the matched @token removed, and whether the match used the @name form
+// (isMention=true). Returns ("", text, false) when no routing-relevant token
+// is found. Slack channel keywords (@here, @channel, @everyone) are ignored.
+//
+// ISI-1497 C7: the @mention is honoured anywhere in the message, not only as
+// the leading token, so text like "1. @architect please review" routes to the
+// architect. A whitespace/start boundary is required before '@' so that email
+// addresses ("henrik@perfbytes.com") and URLs — where '@' follows a non-space
+// character — do not misfire as persona mentions.
 func extractNameMention(text string) (name, remainder string, isMention bool) {
-	t := strings.TrimSpace(text)
-	if strings.HasPrefix(t, "@") {
-		// "@name rest of message" — name ends at first whitespace
-		rest := t[1:]
+	// @name form — scan for the first boundary-anchored @token anywhere.
+	for i := 0; i < len(text); i++ {
+		if text[i] != '@' {
+			continue
+		}
+		if i > 0 {
+			if prev := text[i-1]; prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' {
+				continue // '@' not on a word boundary (email/URL) — not a mention
+			}
+		}
+		rest := text[i+1:]
 		idx := strings.IndexAny(rest, " \t\n\r")
 		var token string
 		if idx < 0 {
@@ -659,18 +681,34 @@ func extractNameMention(text string) (name, remainder string, isMention bool) {
 		} else {
 			token = rest[:idx]
 		}
+		if token == "" {
+			continue
+		}
 		// Slack channel/workspace keywords are not persona mentions.
 		if slackKeywords[strings.ToLower(token)] {
-			return "", text, false
+			continue
 		}
-		if idx < 0 {
-			return token, "", true
+		// First matching @mention wins (e.g. "@architect @winston" → architect).
+		// Remainder is the message with the matched token removed.
+		before := strings.TrimSpace(text[:i])
+		var after string
+		if idx >= 0 {
+			after = strings.TrimSpace(rest[idx+1:])
 		}
-		return token, strings.TrimSpace(rest[idx+1:]), true
+		switch {
+		case before == "":
+			remainder = after
+		case after == "":
+			remainder = before
+		default:
+			remainder = before + " " + after
+		}
+		return token, remainder, true
 	}
 	// "name: rest of message" — isMention=false so callers fall through
 	// rather than deny when the token doesn't match a known persona
 	// (avoids false-positive drops on "Note:", "TODO:", "https://…", etc.).
+	t := strings.TrimSpace(text)
 	idx := strings.Index(t, ":")
 	if idx > 0 {
 		candidate := t[:idx]
