@@ -67,6 +67,32 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 	}
 }
 
+// agentDisplayName returns a human-readable display name for the agent instance.
+// It prefers the DisplayName from the matching AgentConfigSpec in the parent Ensemble
+// (resolved by the sympozium.ai/agent-config label), falling back to the config name,
+// then the instance name.
+func agentDisplayName(ctx context.Context, c client.Client, inst *sympoziumv1alpha1.Agent) string {
+	configName := inst.Labels["sympozium.ai/agent-config"]
+	ensembleName := inst.Labels["sympozium.ai/ensemble"]
+	if configName == "" {
+		return inst.Name
+	}
+	if ensembleName != "" {
+		var ensemble sympoziumv1alpha1.Ensemble
+		if err := c.Get(ctx, client.ObjectKey{Name: ensembleName, Namespace: inst.Namespace}, &ensemble); err == nil {
+			for _, cfg := range ensemble.Spec.AgentConfigs {
+				if cfg.Name == configName {
+					if cfg.DisplayName != "" {
+						return cfg.DisplayName
+					}
+					return cfg.Name
+				}
+			}
+		}
+	}
+	return configName
+}
+
 // memorySystemPrompt returns the Memory.SystemPrompt for the instance,
 // safely handling a nil MemorySpec pointer.
 func memorySystemPrompt(inst *sympoziumv1alpha1.Agent) string {
@@ -370,12 +396,13 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 			Namespace:    inst.Namespace,
 			Labels:       runLabels,
 			Annotations: map[string]string{
-				"sympozium.ai/reply-channel":    msg.Channel,
-				"sympozium.ai/reply-chat-id":    msg.ChatID,
-				"sympozium.ai/reply-thread-id":  msg.ThreadID,
-				"sympozium.ai/reply-message-ts": msg.Metadata["ts"],
-				"sympozium.ai/sender-name":      msg.SenderName,
-				"sympozium.ai/sender-id":        msg.SenderID,
+				"sympozium.ai/reply-channel":      msg.Channel,
+				"sympozium.ai/reply-chat-id":      msg.ChatID,
+				"sympozium.ai/reply-thread-id":    msg.ThreadID,
+				"sympozium.ai/reply-message-ts":   msg.Metadata["ts"],
+				"sympozium.ai/sender-name":        msg.SenderName,
+				"sympozium.ai/sender-id":          msg.SenderID,
+				"sympozium.ai/agent-display-name": agentDisplayName(ctx, cr.Client, inst),
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
@@ -490,6 +517,7 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 	replyChatID := run.Annotations["sympozium.ai/reply-chat-id"]
 	replyThreadID := run.Annotations["sympozium.ai/reply-thread-id"]
 	replyMessageTS := run.Annotations["sympozium.ai/reply-message-ts"]
+	agentDisplayNameVal := run.Annotations["sympozium.ai/agent-display-name"]
 
 	if replyChannel == "" {
 		return
@@ -519,19 +547,24 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 
 	// Publish outbound message to the channel.
 	outMsg := channelpkg.OutboundMessage{
-		Channel:  replyChannel,
-		ChatID:   replyChatID,
-		ThreadID: replyThreadID,
-		Text:     responseText,
+		Channel:     replyChannel,
+		ChatID:      replyChatID,
+		ThreadID:    replyThreadID,
+		Text:        responseText,
+		DisplayName: agentDisplayNameVal,
 	}
 	if replyMessageTS != "" {
 		outMsg.Metadata = map[string]string{"replyToTS": replyMessageTS}
 	}
 
-	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{
+	eventMeta := map[string]string{
 		"instanceName": instanceName,
 		"channel":      replyChannel,
-	}, outMsg)
+	}
+	if agentDisplayNameVal != "" {
+		eventMeta["agentDisplayName"] = agentDisplayNameVal
+	}
+	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, eventMeta, outMsg)
 	if err != nil {
 		cr.Log.Error(err, "failed to create outbound event")
 		return

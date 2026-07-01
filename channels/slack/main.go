@@ -596,7 +596,22 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	if threadTS != "" {
 		payload["thread_ts"] = threadTS
 	}
-	return sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+	if msg.DisplayName != "" {
+		payload["username"] = msg.DisplayName
+	}
+	if msg.IconEmoji != "" {
+		payload["icon_emoji"] = msg.IconEmoji
+	}
+	err := sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+	if err != nil && strings.Contains(err.Error(), "not_allowed_token_type") {
+		// chat:write.customize scope missing — retry without customization fields.
+		sc.log.Info("bot token lacks chat:write.customize; sending without username/icon override",
+			"displayName", msg.DisplayName)
+		delete(payload, "username")
+		delete(payload, "icon_emoji")
+		err = sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+	}
+	return err
 }
 
 // addReaction adds an emoji reaction to a message via the Slack
