@@ -478,4 +478,48 @@ func TestHandleInbound_NameRouting(t *testing.T) {
 			t.Errorf("AgentRun.Spec.AgentRef = %q, want %q (receiver)", got, receiverName)
 		}
 	})
+
+	// ISI-1499 M1: the load-bearing SlackListener swap branch — an unaddressed
+	// inbound message arrives at a NON-listener instance (myteam-billing) and
+	// must be redirected to the slackListener=true persona (myteam-triage),
+	// carrying the listener's persona name in AgentRef and run labels.
+	t.Run("unaddressed inbound at non-listener — swaps to SlackListener persona", func(t *testing.T) {
+		cr, bus := newRouter(t)
+		msg := channelpkg.InboundMessage{
+			InstanceName: delegateName, // arrives at the non-listener billing inst
+			Channel:      "slack",
+			ChatID:       "C1",
+			Text:         "hello, I have a general question",
+		}
+		ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+		cr.handleInbound(context.Background(), ev)
+
+		// No denial should be published on a plain, unaddressed message.
+		for _, text := range outboundTexts(t, bus) {
+			if len(text) > 0 {
+				t.Errorf("expected no denial for unaddressed message, got %q", text)
+			}
+		}
+
+		var runs sympoziumv1alpha1.AgentRunList
+		if err := cr.Client.List(context.Background(), &runs); err != nil {
+			t.Fatalf("list runs: %v", err)
+		}
+		if len(runs.Items) == 0 {
+			t.Fatal("expected AgentRun to be created for the SlackListener persona, got none")
+		}
+		run := runs.Items[0]
+		if got := run.Spec.AgentRef; got != receiverName {
+			t.Errorf("AgentRun.Spec.AgentRef = %q, want %q (SlackListener persona)", got, receiverName)
+		}
+		if got := run.Labels["sympozium.ai/agent-config"]; got != "triage" {
+			t.Errorf("run label agent-config = %q, want %q (listener persona)", got, "triage")
+		}
+		if got := run.Labels["sympozium.ai/ensemble"]; got != ensembleName {
+			t.Errorf("run label ensemble = %q, want %q", got, ensembleName)
+		}
+		if got := run.Labels["sympozium.ai/instance"]; got != receiverName {
+			t.Errorf("run label instance = %q, want %q (swapped listener inst)", got, receiverName)
+		}
+	})
 }
