@@ -288,6 +288,16 @@ type AgentConfigSpec struct {
 	// When empty, the provider-appropriate default applies.
 	// +optional
 	RunTimeout string `json:"runTimeout,omitempty"`
+
+	// SlackListener marks this persona as the designated receiver for inbound
+	// Slack messages. At most one persona per Ensemble should set this to true;
+	// if none do, the channel router falls back to the first Slack-bound persona
+	// (today's behaviour). The ensemble-controller propagates this flag as the
+	// annotation "sympozium.io/slack-listener: true" on the generated Agent CR
+	// so the channel router can resolve the receiver without reading the Ensemble.
+	// +optional
+	// +kubebuilder:validation:Optional
+	SlackListener bool `json:"slackListener,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.

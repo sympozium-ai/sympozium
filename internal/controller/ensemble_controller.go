@@ -321,6 +321,26 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
+		// Propagate slackListener label and annotation.
+		if existingInst.Labels == nil {
+			existingInst.Labels = map[string]string{}
+		}
+		if existingInst.Annotations == nil {
+			existingInst.Annotations = map[string]string{}
+		}
+		const slackListenerKey = "sympozium.io/slack-listener"
+		haveSlackListener := existingInst.Labels[slackListenerKey] == "true"
+		if persona.SlackListener != haveSlackListener {
+			if persona.SlackListener {
+				existingInst.Labels[slackListenerKey] = "true"
+				existingInst.Annotations[slackListenerKey] = "true"
+			} else {
+				delete(existingInst.Labels, slackListenerKey)
+				delete(existingInst.Annotations, slackListenerKey)
+			}
+			needsUpdate = true
+		}
+
 		// Propagate authRefs changes.
 		if !authRefsEqual(existingInst.Spec.AuthRefs, pack.Spec.AuthRefs) {
 			existingInst.Spec.AuthRefs = pack.Spec.AuthRefs
@@ -606,12 +626,21 @@ func (r *EnsembleReconciler) buildAgent(
 	if persona.Provider != "" {
 		labels["sympozium.ai/provider"] = persona.Provider
 	}
+	if persona.SlackListener {
+		labels["sympozium.io/slack-listener"] = "true"
+	}
+
+	annotations := map[string]string{}
+	if persona.SlackListener {
+		annotations["sympozium.io/slack-listener"] = "true"
+	}
 
 	inst := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instanceName,
-			Namespace: pack.Namespace,
-			Labels:    labels,
+			Name:        instanceName,
+			Namespace:   pack.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: sympoziumv1alpha1.AgentSpec{
 			Agents: sympoziumv1alpha1.AgentsSpec{
