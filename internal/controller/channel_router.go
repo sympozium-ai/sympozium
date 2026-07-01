@@ -270,50 +270,65 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	// When the inbound text begins with @name or name:, attempt to match
 	// against sibling personas in the same Ensemble.  A match redirects the
 	// AgentRun to the named delegate while keeping the receiver as the
-	// Slack-facing front door (Option 2).  Unknown names produce a friendly
-	// note and drop the message.
+	// Slack-facing front door (Option 2).
+	//
+	// Ordering: name routing runs before checkChannelAccess and mute checks.
+	// After a successful redirect, access/mute are evaluated against the
+	// delegate (the post-swap inst), not the original receiver — the delegate
+	// is the effective front door once routing is resolved.  For unambiguous
+	// unknown @persona mentions the denial fires before access/mute, but
+	// only after extractNameMention confirms the @word form (isMention=true);
+	// word: prefixes such as "Note:", "TODO:", "https://…" fall through to
+	// normal processing without a denial.
 	var nameRoutingApplied bool
 	if ensembleName := inst.Labels["sympozium.ai/ensemble"]; ensembleName != "" {
-		if mention, remainder := extractNameMention(msg.Text); mention != "" {
+		if mention, remainder, isMention := extractNameMention(msg.Text); mention != "" {
 			var ensemble sympoziumv1alpha1.Ensemble
 			ensErr := cr.Client.Get(ctx, client.ObjectKey{Name: ensembleName, Namespace: inst.Namespace}, &ensemble)
 			if ensErr == nil {
 				delegate := resolveNamedDelegate(ensemble.Spec.AgentConfigs, mention)
 				if delegate == nil {
-					// Unknown persona — respond with a helpful note and drop.
-					names := make([]string, 0, len(ensemble.Spec.AgentConfigs))
-					for _, p := range ensemble.Spec.AgentConfigs {
-						if p.DisplayName != "" {
-							names = append(names, p.DisplayName)
-						} else {
-							names = append(names, p.Name)
+					if isMention {
+						// Unambiguous @persona mention with no matching persona —
+						// respond with a helpful note and drop.  word: prefixes
+						// (e.g. "Note:", "TODO:", "https://…") are not persona-
+						// directed and fall through to normal receiver handling.
+						names := make([]string, 0, len(ensemble.Spec.AgentConfigs))
+						for _, p := range ensemble.Spec.AgentConfigs {
+							if p.DisplayName != "" {
+								names = append(names, p.DisplayName)
+							} else {
+								names = append(names, p.Name)
+							}
 						}
+						cr.sendDenialResponse(ctx, msg, fmt.Sprintf(
+							"Sorry, I don't know who %q is. Available personas: %s.",
+							mention, strings.Join(names, ", "),
+						))
+						span.SetAttributes(attribute.String("sympozium.slack.routing.unknown_mention", mention))
+						cr.Log.Info("Unknown @name mention — dropped", "mention", mention, "instance", msg.InstanceName)
+						return
 					}
-					cr.sendDenialResponse(ctx, msg, fmt.Sprintf(
-						"Sorry, I don't know who %q is. Available personas: %s.",
-						mention, strings.Join(names, ", "),
-					))
-					span.SetAttributes(attribute.String("sympozium.slack.routing.unknown_mention", mention))
-					cr.Log.Info("Unknown @name mention — dropped", "mention", mention, "instance", msg.InstanceName)
-					return
-				}
-				// Redirect to the delegate's Agent instance.
-				delegateInstanceName := ensembleName + "-" + delegate.Name
-				var delegateInst sympoziumv1alpha1.Agent
-				if getErr := cr.Client.Get(ctx, client.ObjectKey{Name: delegateInstanceName, Namespace: inst.Namespace}, &delegateInst); getErr == nil {
-					inst = &delegateInst
-					msg.InstanceName = delegateInstanceName
-					msg.Text = remainder
-					nameRoutingApplied = true
-					span.SetAttributes(
-						attribute.String("sympozium.slack.routing.delegate", delegate.Name),
-						attribute.String("sympozium.slack.routing.mention", mention),
-					)
-					cr.Log.Info("Routing @name mention to delegate",
-						"mention", mention, "delegate", delegateInstanceName)
+					// word: prefix matched no persona — fall through to normal processing.
 				} else {
-					cr.Log.Error(getErr, "Delegate Agent not found, falling through to receiver",
-						"delegate", delegateInstanceName)
+					// Redirect to the delegate's Agent instance.
+					delegateInstanceName := ensembleName + "-" + delegate.Name
+					var delegateInst sympoziumv1alpha1.Agent
+					if getErr := cr.Client.Get(ctx, client.ObjectKey{Name: delegateInstanceName, Namespace: inst.Namespace}, &delegateInst); getErr == nil {
+						inst = &delegateInst
+						msg.InstanceName = delegateInstanceName
+						msg.Text = remainder
+						nameRoutingApplied = true
+						span.SetAttributes(
+							attribute.String("sympozium.slack.routing.delegate", delegate.Name),
+							attribute.String("sympozium.slack.routing.mention", mention),
+						)
+						cr.Log.Info("Routing @name mention to delegate",
+							"mention", mention, "delegate", delegateInstanceName)
+					} else {
+						cr.Log.Error(getErr, "Delegate Agent not found, falling through to receiver",
+							"delegate", delegateInstanceName)
+					}
 				}
 			}
 		}
@@ -618,29 +633,52 @@ func resolveNamedDelegate(configs []sympoziumv1alpha1.AgentConfigSpec, mention s
 	return nil
 }
 
+// slackKeywords are Slack @-mentions that address the whole channel or workspace
+// rather than a specific persona. They must not trigger persona routing or
+// produce an unknown-persona denial.
+var slackKeywords = map[string]bool{
+	"here":     true,
+	"channel":  true,
+	"everyone": true,
+}
+
 // extractNameMention parses an @name or name: prefix from text (case-insensitive).
-// Returns the bare name token (no leading @, no trailing colon) and the remainder
-// of the message after the prefix, or ("", text) when no such pattern is found.
-func extractNameMention(text string) (name, remainder string) {
+// Returns the bare name token (no leading @, no trailing colon), the remainder
+// of the message, and whether the match used the @name form (isMention=true).
+// Returns ("", text, false) when no routing-relevant prefix is found.
+// Slack channel keywords (@here, @channel, @everyone) are ignored.
+func extractNameMention(text string) (name, remainder string, isMention bool) {
 	t := strings.TrimSpace(text)
 	if strings.HasPrefix(t, "@") {
 		// "@name rest of message" — name ends at first whitespace
 		rest := t[1:]
 		idx := strings.IndexAny(rest, " \t\n\r")
+		var token string
 		if idx < 0 {
-			return rest, ""
+			token = rest
+		} else {
+			token = rest[:idx]
 		}
-		return rest[:idx], strings.TrimSpace(rest[idx+1:])
+		// Slack channel/workspace keywords are not persona mentions.
+		if slackKeywords[strings.ToLower(token)] {
+			return "", text, false
+		}
+		if idx < 0 {
+			return token, "", true
+		}
+		return token, strings.TrimSpace(rest[idx+1:]), true
 	}
-	// "name: rest of message"
+	// "name: rest of message" — isMention=false so callers fall through
+	// rather than deny when the token doesn't match a known persona
+	// (avoids false-positive drops on "Note:", "TODO:", "https://…", etc.).
 	idx := strings.Index(t, ":")
 	if idx > 0 {
 		candidate := t[:idx]
 		if !strings.ContainsAny(candidate, " \t\n\r") {
-			return candidate, strings.TrimSpace(t[idx+1:])
+			return candidate, strings.TrimSpace(t[idx+1:]), false
 		}
 	}
-	return "", text
+	return "", text, false
 }
 
 // checkChannelAccess evaluates access control rules for the channel that
