@@ -65,7 +65,12 @@ spec:
               and optionally seeds memory for each persona.
             properties:
               agentConfigs:
-                description: Personas is the list of agent personas in this ensemble.
+                description: |-
+                  Personas is the list of agent personas in this ensemble.
+                  At most one persona may set slackListener=true — the designated Slack
+                  receiver (ISI-1497). Setting it on more than one persona is rejected at
+                  admission so the misconfiguration surfaces instead of silently resolving
+                  to the first declared listener.
                 items:
                   description: AgentConfigSpec defines a single agent configuration
                     within an Ensemble.
@@ -535,15 +540,6 @@ spec:
                         RUN_TIMEOUT env), so scheduled/sweep runs can exceed the 10m default.
                         When empty, the provider-appropriate default applies.
                       type: string
-                    slackListener:
-                      description: |-
-                        SlackListener marks this persona as the designated receiver for inbound
-                        Slack messages. At most one persona per Ensemble should set this to true;
-                        if none do, the channel router falls back to the first Slack-bound persona
-                        (today's behaviour). The ensemble-controller propagates this flag as the
-                        annotation "sympozium.io/slack-listener: true" on the generated Agent CR
-                        so the channel router can resolve the receiver without reading the Ensemble.
-                      type: boolean
                     schedule:
                       description: Schedule defines a recurring task for this agent
                         configuration.
@@ -580,6 +576,18 @@ spec:
                       items:
                         type: string
                       type: array
+                    slackListener:
+                      description: |-
+                        SlackListener marks this persona as the designated receiver for inbound
+                        Slack messages. At most one persona per Ensemble may set this to true
+                        (enforced by CEL validation on agentConfigs); if none do, the channel
+                        router falls back to the first Slack-bound persona (today's behaviour).
+                        The channel router resolves the receiver by reading the Ensemble CR
+                        (see resolveSlackReceiver). The ensemble-controller additionally stamps
+                        the label/annotation "sympozium.ai/slack-listener: true" on the generated
+                        Agent CR for observability and kubectl selectability
+                        (`kubectl get agents -l sympozium.ai/slack-listener=true`).
+                      type: boolean
                     slackOptions:
                       description: |-
                         SlackOptions overrides ensemble-level Slack-specific channel
@@ -693,6 +701,11 @@ spec:
                   - systemPrompt
                   type: object
                 type: array
+                x-kubernetes-validations:
+                - message: at most one persona may set slackListener=true (the designated
+                    Slack receiver)
+                  rule: self.filter(c, has(c.slackListener) && c.slackListener).size()
+                    <= 1
               agentSandbox:
                 description: |-
                   AgentSandbox configures the Kubernetes Agent Sandbox (CRD) execution backend
