@@ -240,6 +240,91 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		return
 	}
 
+	// @name / name: routing (ISI-1497 C3).
+	// When the inbound text begins with @name or name:, attempt to match
+	// against sibling personas in the same Ensemble.  A match redirects the
+	// AgentRun to the named delegate while keeping the receiver as the
+	// Slack-facing front door (Option 2).  Unknown names produce a friendly
+	// note and drop the message.
+	var nameRoutingApplied bool
+	if ensembleName := inst.Labels["sympozium.ai/ensemble"]; ensembleName != "" {
+		if mention, remainder := extractNameMention(msg.Text); mention != "" {
+			var ensemble sympoziumv1alpha1.Ensemble
+			ensErr := cr.Client.Get(ctx, client.ObjectKey{Name: ensembleName, Namespace: inst.Namespace}, &ensemble)
+			if ensErr == nil {
+				delegate := resolveNamedDelegate(ensemble.Spec.AgentConfigs, mention)
+				if delegate == nil {
+					// Unknown persona — respond with a helpful note and drop.
+					names := make([]string, 0, len(ensemble.Spec.AgentConfigs))
+					for _, p := range ensemble.Spec.AgentConfigs {
+						if p.DisplayName != "" {
+							names = append(names, p.DisplayName)
+						} else {
+							names = append(names, p.Name)
+						}
+					}
+					cr.sendDenialResponse(ctx, msg, fmt.Sprintf(
+						"Sorry, I don't know who %q is. Available personas: %s.",
+						mention, strings.Join(names, ", "),
+					))
+					span.SetAttributes(attribute.String("sympozium.slack.routing.unknown_mention", mention))
+					cr.Log.Info("Unknown @name mention — dropped", "mention", mention, "instance", msg.InstanceName)
+					return
+				}
+				// Redirect to the delegate's Agent instance.
+				delegateInstanceName := ensembleName + "-" + delegate.Name
+				var delegateInst sympoziumv1alpha1.Agent
+				if getErr := cr.Client.Get(ctx, client.ObjectKey{Name: delegateInstanceName, Namespace: inst.Namespace}, &delegateInst); getErr == nil {
+					inst = &delegateInst
+					msg.InstanceName = delegateInstanceName
+					msg.Text = remainder
+					nameRoutingApplied = true
+					span.SetAttributes(
+						attribute.String("sympozium.slack.routing.delegate", delegate.Name),
+						attribute.String("sympozium.slack.routing.mention", mention),
+					)
+					cr.Log.Info("Routing @name mention to delegate",
+						"mention", mention, "delegate", delegateInstanceName)
+				} else {
+					cr.Log.Error(getErr, "Delegate Agent not found, falling through to receiver",
+						"delegate", delegateInstanceName)
+				}
+			}
+		}
+	}
+
+	// SlackListener routing (ISI-1499 C2): for unaddressed inbound messages
+	// that were not already redirected by @name routing, direct to the
+	// designated Slack-receiver persona when the Ensemble has one set.
+	// Falls back to the receiving inst when none is configured.
+	if !nameRoutingApplied {
+		if ensembleName := inst.Labels["sympozium.ai/ensemble"]; ensembleName != "" {
+			var ensemble sympoziumv1alpha1.Ensemble
+			if err := cr.Client.Get(ctx, client.ObjectKey{Name: ensembleName, Namespace: inst.Namespace}, &ensemble); err == nil {
+				if receiver := resolveSlackReceiver(ensemble.Spec.AgentConfigs); receiver != nil {
+					listenerName := ensembleName + "-" + receiver.Name
+					var listenerInst sympoziumv1alpha1.Agent
+					if err := cr.Client.Get(ctx, client.ObjectKey{Name: listenerName, Namespace: inst.Namespace}, &listenerInst); err == nil && listenerInst.Name != inst.Name {
+						inst = &listenerInst
+						msg.InstanceName = listenerName
+						span.SetAttributes(attribute.String("sympozium.slack.routing.slack_listener", receiver.Name))
+						cr.Log.Info("Routing to SlackListener persona", "listener", listenerName)
+					} else if err != nil {
+						cr.Log.Error(err, "SlackListener Agent not found, using receiving agent", "listener", listenerName)
+					}
+				}
+			}
+		}
+	}
+
+	// Resolve AgentID (ISI-1499 C2): use the resolved inst's agent-config
+	// label so runs carry the persona name rather than the literal "primary".
+	// Standalone Agents (no Ensemble, no agent-config label) keep "primary".
+	agentID := inst.Labels["sympozium.ai/agent-config"]
+	if agentID == "" {
+		agentID = "primary"
+	}
+
 	// Enforce channel access control before creating an AgentRun.
 	if allowed, denyMsg := checkChannelAccess(inst, &msg); !allowed {
 		span.SetAttributes(attribute.Bool("sympozium.access.denied", true))
@@ -265,16 +350,24 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 	provider := resolveProvider(inst)
 	authSecret := resolveAuthSecret(inst)
 
+	// Build run labels; include Ensemble/agent-config attrs when present so
+	// the Ensemble controller's per-instance run queries target the right persona.
+	runLabels := map[string]string{
+		"sympozium.ai/instance":       msg.InstanceName,
+		"sympozium.ai/source":         "channel",
+		"sympozium.ai/source-channel": msg.Channel,
+	}
+	if ens := inst.Labels["sympozium.ai/ensemble"]; ens != "" {
+		runLabels["sympozium.ai/ensemble"] = ens
+		runLabels["sympozium.ai/agent-config"] = agentID
+	}
+
 	// Create an AgentRun for the inbound message.
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: msg.InstanceName + "-ch-",
 			Namespace:    inst.Namespace,
-			Labels: map[string]string{
-				"sympozium.ai/instance":       msg.InstanceName,
-				"sympozium.ai/source":         "channel",
-				"sympozium.ai/source-channel": msg.Channel,
-			},
+			Labels:       runLabels,
 			Annotations: map[string]string{
 				"sympozium.ai/reply-channel":    msg.Channel,
 				"sympozium.ai/reply-chat-id":    msg.ChatID,
@@ -286,7 +379,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef:   msg.InstanceName,
-			AgentID:    "primary",
+			AgentID:    agentID,
 			SessionKey: fmt.Sprintf("channel-%s-%s-%d", msg.Channel, msg.ChatID, time.Now().UnixNano()),
 			Task:       msg.Text,
 			Model: sympoziumv1alpha1.ModelSpec{
