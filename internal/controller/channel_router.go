@@ -325,6 +325,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		agentID = "primary"
 	}
 
+
 	// Enforce channel access control before creating an AgentRun.
 	if allowed, denyMsg := checkChannelAccess(inst, &msg); !allowed {
 		span.SetAttributes(attribute.Bool("sympozium.access.denied", true))
@@ -554,6 +555,59 @@ func truncateForLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// resolveSlackReceiver returns the first AgentConfigSpec marked slackListener=true.
+// Returns nil when none is set; callers fall back to the first Slack-bound agent
+// (backwards-compatible behaviour for ensembles that predate ISI-1497).
+func resolveSlackReceiver(configs []sympoziumv1alpha1.AgentConfigSpec) *sympoziumv1alpha1.AgentConfigSpec {
+	for i := range configs {
+		if configs[i].SlackListener {
+			return &configs[i]
+		}
+	}
+	return nil
+}
+
+// resolveNamedDelegate matches a bare name token (stripped of any leading @)
+// against AgentConfigSpec.Name and AgentConfigSpec.DisplayName, case-insensitively.
+// Returns nil when there is no match; callers stay on the designated receiver.
+func resolveNamedDelegate(configs []sympoziumv1alpha1.AgentConfigSpec, mention string) *sympoziumv1alpha1.AgentConfigSpec {
+	if mention == "" {
+		return nil
+	}
+	lower := strings.ToLower(mention)
+	for i := range configs {
+		if strings.ToLower(configs[i].Name) == lower || strings.ToLower(configs[i].DisplayName) == lower {
+			return &configs[i]
+		}
+	}
+	return nil
+}
+
+// extractNameMention parses an @name or name: prefix from text (case-insensitive).
+// Returns the bare name token (no leading @, no trailing colon) and the remainder
+// of the message after the prefix, or ("", text) when no such pattern is found.
+func extractNameMention(text string) (name, remainder string) {
+	t := strings.TrimSpace(text)
+	if strings.HasPrefix(t, "@") {
+		// "@name rest of message" — name ends at first whitespace
+		rest := t[1:]
+		idx := strings.IndexAny(rest, " \t\n\r")
+		if idx < 0 {
+			return rest, ""
+		}
+		return rest[:idx], strings.TrimSpace(rest[idx+1:])
+	}
+	// "name: rest of message"
+	idx := strings.Index(t, ":")
+	if idx > 0 {
+		candidate := t[:idx]
+		if !strings.ContainsAny(candidate, " \t\n\r") {
+			return candidate, strings.TrimSpace(t[idx+1:])
+		}
+	}
+	return "", text
 }
 
 // checkChannelAccess evaluates access control rules for the channel that

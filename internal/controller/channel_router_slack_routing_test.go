@@ -1,9 +1,5 @@
-//go:build isi1497
-
 // Tests for ISI-1497 Slack agent routing: designated receiver selection and
-// @name → delegation resolution.  Build tag keeps these out of standard CI
-// until the SlackListener CRD field (C1) and router functions (C2/C3) land.
-// Remove the build tag in the same PR that ships C1+C2+C3.
+// @name → delegation resolution.
 
 package controller
 
