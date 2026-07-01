@@ -1,12 +1,12 @@
 ---
-# Ensemble with designated Slack receiver and @name delegation (ISI-1497)
+# Ensemble with a designated Slack receiver and @name addressing
 #
 # One persona is marked slackListener: true — it is the single front door for
-# all inbound Slack messages.  When the message begins with @<name>, the
-# listener delegates to that named persona through the built-in delegation
-# executor (ISI-1463/1465 guardrails apply: in-flight cap, depth cap).
+# all inbound Slack messages.  When a message begins with @<name> (or name:),
+# the router redirects it directly to that named persona; the message is
+# handled as if it had been sent to that persona.  Personas are matched by
+# name / displayName — no relationships edge is required for @name addressing.
 #
-# Requires: slackListener feature shipped in ISI-1497 C1-C4.
 # Apply:    kubectl apply -f ensemble-slack-routing.yaml
 # Activate: sympozium (Personas tab → Enter on "support-team")
 apiVersion: sympozium.ai/v1alpha1
@@ -26,26 +26,27 @@ spec:
   agentConfigs:
     # ── Designated Slack receiver ─────────────────────────────────────────────
     # This persona is the single entry-point for all inbound Slack messages.
-    # It dispatches @name mentions to the right specialist via the delegation
-    # executor.  Only one persona per Ensemble should set slackListener: true.
+    # When a user addresses a specialist with @name, the router redirects the
+    # message straight to that persona.  Only one persona per Ensemble should
+    # set slackListener: true.
     - name: triage
       displayName: "Support Triage"
-      slackListener: true          # <── ISI-1497 C1: designated Slack receiver
+      slackListener: true          # <── designated Slack receiver
       channels:
         - slack
       systemPrompt: |
         You are the triage agent for the support team.  Your job is to:
         1. Greet the user and understand their request.
         2. If the request is addressed to a specific expert (@billing, @engineering,
-           @docs), hand off to that persona — the system will delegate automatically.
+           @docs), the router hands the message directly to that persona.
         3. Otherwise, handle general questions yourself or ask clarifying questions.
       memory:
         enabled: true
 
     # ── Named specialists ─────────────────────────────────────────────────────
     # Users can address these personas with @billing, @engineering, or @docs in
-    # their Slack message.  The triage agent's delegation executor routes the
-    # task to the matching Agent CR resolved by Name (and DisplayName as alias).
+    # their Slack message.  The router redirects to the matching Agent CR,
+    # resolved by Name (and DisplayName as alias) — case-insensitive, exact.
     - name: billing
       displayName: "Billing Support"
       systemPrompt: |
@@ -73,8 +74,9 @@ spec:
       memory:
         enabled: true
 
-  # Delegation relationships wire the receiver to each specialist.
-  # The @name router picks the matching edge automatically.
+  # NOTE: @name Slack addressing does NOT use these relationships — personas are
+  # matched by name / displayName directly.  The edges below are optional here
+  # and only matter for other workflow types (e.g. delegation workflows).
   relationships:
     - name: triage-to-billing
       from: triage
