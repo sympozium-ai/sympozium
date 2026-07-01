@@ -4,9 +4,19 @@
 package controller
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
+	"time"
+
+	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	channelpkg "github.com/sympozium-ai/sympozium/internal/channel"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
 
 func TestExtractNameMention(t *testing.T) {
@@ -296,4 +306,176 @@ func TestNoListenerFallback(t *testing.T) {
 		t.Errorf("expected nil for no-listener ensemble, got %q", got.Name)
 	}
 	// Caller interprets nil as "use first agent" — no extra assertion needed here.
+}
+
+// handleInboundScheme builds the runtime.Scheme required by the fake client
+// used in handleInbound integration tests.
+func handleInboundScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+	s := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add sympoziumv1alpha1: %v", err)
+	}
+	return s
+}
+
+// outboundTexts extracts the Text fields from all outbound channel.message.send
+// events captured by a recordingEventBus.
+func outboundTexts(t *testing.T, bus *recordingEventBus) []string {
+	t.Helper()
+	var texts []string
+	for _, rec := range bus.published {
+		if rec.Topic != eventbus.TopicChannelMessageSend {
+			continue
+		}
+		var out channelpkg.OutboundMessage
+		if err := json.Unmarshal(rec.Event.Data, &out); err != nil {
+			t.Fatalf("decode outbound: %v", err)
+		}
+		texts = append(texts, out.Text)
+	}
+	return texts
+}
+
+// TestHandleInbound_NameRouting exercises the three key paths in handleInbound's
+// @name / name: routing block:
+//
+//   - known @persona  → no denial, redirect routes to the delegate Agent
+//   - unknown @persona → denial published on the event bus
+//   - word: prefix    → no denial (falls through; word: is not persona-directed)
+func TestHandleInbound_NameRouting(t *testing.T) {
+	const (
+		ns           = "default"
+		ensembleName = "myteam"
+		receiverName = "myteam-triage"
+		delegateName = "myteam-billing"
+	)
+
+	// Ensemble with two personas: "triage" (receiver) and "billing" (delegate).
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: ensembleName, Namespace: ns},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{
+				{Name: "triage", SlackListener: true},
+				{Name: "billing"},
+			},
+		},
+	}
+
+	agentLabels := map[string]string{
+		"sympozium.ai/ensemble":     ensembleName,
+		"sympozium.ai/agent-config": "triage",
+	}
+	receiver := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: receiverName, Namespace: ns, Labels: agentLabels},
+	}
+	delegate := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      delegateName,
+			Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "billing",
+			},
+		},
+	}
+
+	newRouter := func(t *testing.T) (*ChannelRouter, *recordingEventBus) {
+		t.Helper()
+		bus := &recordingEventBus{}
+		c := fake.NewClientBuilder().
+			WithScheme(handleInboundScheme(t)).
+			WithObjects(ensemble, receiver, delegate).
+			Build()
+		return &ChannelRouter{
+			Client:   c,
+			EventBus: bus,
+			Log:      logr.Discard(),
+			seen:     make(map[string]time.Time),
+		}, bus
+	}
+
+	inboundEvent := func(text string) *eventbus.Event {
+		msg := channelpkg.InboundMessage{
+			InstanceName: receiverName,
+			Channel:      "slack",
+			ChatID:       "C1",
+			Text:         text,
+		}
+		ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+		return ev
+	}
+
+	t.Run("known @persona — no denial, AgentRun created for delegate", func(t *testing.T) {
+		cr, bus := newRouter(t)
+		cr.handleInbound(context.Background(), inboundEvent("@billing please invoice me"))
+		texts := outboundTexts(t, bus)
+		for _, text := range texts {
+			if len(text) > 0 {
+				t.Errorf("expected no outbound denial, got %q", text)
+			}
+		}
+		// Verify an AgentRun was created targeting the delegate.
+		var runs sympoziumv1alpha1.AgentRunList
+		if err := cr.Client.List(context.Background(), &runs); err != nil {
+			t.Fatalf("list runs: %v", err)
+		}
+		if len(runs.Items) == 0 {
+			t.Fatal("expected AgentRun to be created, got none")
+		}
+		got := runs.Items[0].Spec.AgentRef
+		if got != delegateName {
+			t.Errorf("AgentRun.Spec.AgentRef = %q, want %q", got, delegateName)
+		}
+	})
+
+	t.Run("unknown @persona — denial sent, no AgentRun", func(t *testing.T) {
+		cr, bus := newRouter(t)
+		cr.handleInbound(context.Background(), inboundEvent("@finance help me"))
+		texts := outboundTexts(t, bus)
+		if len(texts) == 0 {
+			t.Fatal("expected denial to be published, got none")
+		}
+		// denial must mention the unknown persona
+		found := false
+		for _, text := range texts {
+			if len(text) > 0 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("denial text was empty; got %v", texts)
+		}
+		var runs sympoziumv1alpha1.AgentRunList
+		if err := cr.Client.List(context.Background(), &runs); err != nil {
+			t.Fatalf("list runs: %v", err)
+		}
+		if len(runs.Items) != 0 {
+			t.Errorf("expected no AgentRun after denial, got %d", len(runs.Items))
+		}
+	})
+
+	t.Run("Note: prefix — no denial, falls through to receiver AgentRun", func(t *testing.T) {
+		cr, bus := newRouter(t)
+		cr.handleInbound(context.Background(), inboundEvent("Note: this is not a persona"))
+		// No denial should be published.
+		for _, text := range outboundTexts(t, bus) {
+			if len(text) > 0 {
+				t.Errorf("expected no denial for word: prefix, got %q", text)
+			}
+		}
+		// A run should be created for the original receiver (not routed away).
+		var runs sympoziumv1alpha1.AgentRunList
+		if err := cr.Client.List(context.Background(), &runs); err != nil {
+			t.Fatalf("list runs: %v", err)
+		}
+		if len(runs.Items) == 0 {
+			t.Fatal("expected AgentRun to be created for receiver, got none")
+		}
+		got := runs.Items[0].Spec.AgentRef
+		if got != receiverName {
+			t.Errorf("AgentRun.Spec.AgentRef = %q, want %q (receiver)", got, receiverName)
+		}
+	})
 }
