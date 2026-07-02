@@ -57,6 +57,13 @@ spec:
             - name: SYMPOZIUM_IMAGE_TAG
               value: {{ $imgTag | quote }}
             {{- end }}
+            {{- if .Values.delegation.controllerExecutor }}
+            # Opt-in fallback: spawn delegation-edge targets controller-side for
+            # models that never emit the delegate_to_persona tool. Default off;
+            # the tool-driven delegation path is unchanged when unset.
+            - name: SYMPOZIUM_DELEGATION_CONTROLLER_EXECUTOR
+              value: "true"
+            {{- end }}
             {{- if .Values.observability.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.endpoint | quote }}

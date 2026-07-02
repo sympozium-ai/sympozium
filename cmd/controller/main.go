@@ -45,6 +45,7 @@ func main() {
 	var enableLeaderElection bool
 	var natsURL string
 	var maxRunHistory int
+	var delegationControllerExecutor bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -54,6 +55,11 @@ func main() {
 	flag.StringVar(&natsURL, "nats-url", "", "NATS URL for channel message routing. If empty, reads NATS_URL env var.")
 	flag.IntVar(&maxRunHistory, "max-run-history", controller.DefaultRunHistoryLimit,
 		"Maximum number of completed AgentRuns to keep per instance before pruning oldest.")
+	flag.BoolVar(&delegationControllerExecutor, "delegation-controller-executor", false,
+		"Opt-in: spawn delegation-edge targets controller-side as a fallback for "+
+			"models that never emit the delegate_to_persona tool. Default off; the "+
+			"tool-driven delegation path is unchanged. Also enabled via "+
+			"SYMPOZIUM_DELEGATION_CONTROLLER_EXECUTOR=true.")
 	flag.Parse()
 
 	// Resolve the image tag used for runtime-spawned pods (agent-runner,
@@ -70,6 +76,14 @@ func main() {
 	if v := os.Getenv("SYMPOZIUM_IMAGE_TAG"); v != "" {
 		imageTag = v
 		setupLog.Info("Image tag resolved from SYMPOZIUM_IMAGE_TAG env", "tag", imageTag)
+	}
+
+	// Env override mirrors the SYMPOZIUM_IMAGE_TAG pattern so the Helm chart can
+	// toggle the controller-side delegation executor via a chart value without
+	// passing CLI flags. Default false — flag default already off; env only
+	// flips it on.
+	if os.Getenv("SYMPOZIUM_DELEGATION_CONTROLLER_EXECUTOR") == "true" {
+		delegationControllerExecutor = true
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -136,15 +150,16 @@ func main() {
 	}
 
 	agentRunReconciler := &controller.AgentRunReconciler{
-		Client:          mgr.GetClient(),
-		APIReader:       mgr.GetAPIReader(),
-		Scheme:          mgr.GetScheme(),
-		Log:             ctrl.Log.WithName("controllers").WithName("AgentRun"),
-		PodBuilder:      podBuilder,
-		Clientset:       clientset,
-		ImageTag:        imageTag,
-		RunHistoryLimit: maxRunHistory,
-		DynamicClient:   dynamicClient,
+		Client:                       mgr.GetClient(),
+		APIReader:                    mgr.GetAPIReader(),
+		Scheme:                       mgr.GetScheme(),
+		Log:                          ctrl.Log.WithName("controllers").WithName("AgentRun"),
+		PodBuilder:                   podBuilder,
+		Clientset:                    clientset,
+		ImageTag:                     imageTag,
+		RunHistoryLimit:              maxRunHistory,
+		DelegationControllerExecutor: delegationControllerExecutor,
+		DynamicClient:                dynamicClient,
 	}
 	if err := agentRunReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentRun")

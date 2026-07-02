@@ -136,6 +136,15 @@ type AgentRunReconciler struct {
 	ImageTag        string // release tag for Sympozium images (e.g. "v0.0.25")
 	RunHistoryLimit int    // max completed runs to keep per instance (0 = use default)
 
+	// DelegationControllerExecutor opts into controller-side delegation:
+	// when a run succeeds, the controller follows "delegation" relationship
+	// edges from the completed persona and spawns the target persona's run
+	// directly. This is a fallback for models that never emit the
+	// delegate_to_persona tool call. Default false — the tool-driven path
+	// (the agent emitting delegate_to_persona at runtime) remains the
+	// authoritative mechanism and is unchanged when this is off.
+	DelegationControllerExecutor bool
+
 	// DynamicClient is used for Agent Sandbox CRD operations.
 	// Nil when agent-sandbox support is disabled or CRDs are not installed.
 	DynamicClient dynamic.Interface
@@ -863,6 +872,14 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 			log.Error(err, "Failed to trigger sequential successors")
 			// Non-fatal: don't block cleanup.
 		}
+
+		// Trigger delegation successors: opt-in fallback (default off) that
+		// follows "delegation" edges for models that never emit the
+		// delegate_to_persona tool. No-op unless DelegationControllerExecutor.
+		if err := r.triggerDelegationSuccessors(ctx, log, agentRun); err != nil {
+			log.Error(err, "Failed to trigger delegation successors")
+			// Non-fatal: don't block cleanup.
+		}
 	}
 
 	// Prune old runs beyond the history limit for this instance.
@@ -1108,6 +1125,202 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 	}
 
 	return nil
+}
+
+// triggerDelegationSuccessors is the controller-side delegation executor — an
+// opt-in fallback (gated by DelegationControllerExecutor, default off) for
+// models that never emit the delegate_to_persona tool call. It mirrors
+// triggerSequentialSuccessors but follows "delegation" relationship edges
+// instead of "sequential" ones: for each delegation edge whose source is the
+// completed persona and whose condition is met, it spawns the target persona's
+// run, carrying the completed run's result forward as a structured handoff card.
+//
+// When the flag is off this is a no-op, so models that DO emit
+// delegate_to_persona keep driving delegation exactly as before — the executor
+// never competes with the tool-driven path. As an extra guard, edges whose
+// target the model already delegated to at runtime (recorded in
+// Status.Delegates) are skipped, so enabling the flag on a model that emits
+// some-but-not-all delegations still avoids double-spawning.
+func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) error {
+	// Default-off guarantee: no behavior change unless explicitly enabled.
+	if !r.DelegationControllerExecutor {
+		return nil
+	}
+
+	// Look up the source instance to get the persona name and ensemble.
+	if agentRun.Spec.AgentRef == "" {
+		return nil
+	}
+	var sourceInst sympoziumv1alpha1.Agent
+	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &sourceInst); err != nil {
+		return nil // Instance gone — skip.
+	}
+	sourcePersona := sourceInst.Labels["sympozium.ai/agent-config"]
+	ensembleName := sourceInst.Labels["sympozium.ai/ensemble"]
+	if sourcePersona == "" || ensembleName == "" {
+		return nil // Not part of an ensemble.
+	}
+
+	// Look up the ensemble.
+	var ensemble sympoziumv1alpha1.Ensemble
+	if err := r.Get(ctx, types.NamespacedName{Name: ensembleName, Namespace: agentRun.Namespace}, &ensemble); err != nil {
+		return nil // Ensemble gone — skip.
+	}
+
+	// Idempotency: skip if we already triggered delegation successors for this
+	// run (prevent duplicates from re-reconciliation). Mirrors the
+	// sequential-triggered marker label.
+	if agentRun.Labels["sympozium.ai/delegation-triggered"] == "true" {
+		return nil
+	}
+
+	// Build a set of personas the model already delegated to at runtime so the
+	// executor stays a pure fallback and never double-spawns those targets.
+	alreadyDelegated := make(map[string]bool)
+	for _, d := range agentRun.Status.Delegates {
+		if d.TargetPersona != "" {
+			alreadyDelegated[d.TargetPersona] = true
+		}
+	}
+
+	// Find delegation edges where this persona is the source.
+	triggered := false
+	for _, rel := range ensemble.Spec.Relationships {
+		if rel.Type != "delegation" || rel.Source != sourcePersona {
+			continue
+		}
+
+		// Evaluate the per-edge condition. Condition is free-text describing
+		// when the edge activates; we activate on the completed run's success
+		// unless the condition explicitly scopes the edge to failure.
+		if !delegationEdgeActive(rel.Condition) {
+			log.Info("Skipping delegation edge — condition not met for success",
+				"source", sourcePersona, "target", rel.Target, "condition", rel.Condition)
+			continue
+		}
+
+		targetPersona := rel.Target
+		if alreadyDelegated[targetPersona] {
+			log.Info("Skipping delegation edge — model already delegated to target at runtime",
+				"source", sourcePersona, "target", targetPersona)
+			continue
+		}
+
+		targetAgentName := ensembleName + "-" + targetPersona
+		log.Info("Triggering delegation successor (controller executor)",
+			"source", sourcePersona, "target", targetPersona,
+			"targetAgent", targetAgentName)
+
+		// Look up the target instance.
+		var targetInst sympoziumv1alpha1.Agent
+		if err := r.Get(ctx, types.NamespacedName{Name: targetAgentName, Namespace: agentRun.Namespace}, &targetInst); err != nil {
+			log.Error(err, "Delegation target instance not found", "instance", targetAgentName)
+			continue
+		}
+
+		// Build a structured handoff card carrying the source's result forward.
+		targetTask := ""
+		for _, p := range ensemble.Spec.AgentConfigs {
+			if p.Name == targetPersona && p.Schedule != nil && p.Schedule.Task != "" {
+				targetTask = p.Schedule.Task
+				break
+			}
+		}
+		task := buildHandoffTask(sourcePersona, agentRun.Spec.Task, agentRun.Status.Result, targetTask)
+
+		// Create the delegation child AgentRun.
+		runName := fmt.Sprintf("%s-deleg-%d", targetAgentName, time.Now().UnixMilli()%100000)
+		childRun := &sympoziumv1alpha1.AgentRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      runName,
+				Namespace: agentRun.Namespace,
+				Labels: map[string]string{
+					"sympozium.ai/instance":        targetAgentName,
+					"sympozium.ai/ensemble":        ensembleName,
+					"sympozium.ai/delegation-from": agentRun.Name,
+				},
+			},
+			Spec: sympoziumv1alpha1.AgentRunSpec{
+				AgentRef: targetAgentName,
+				Task:     task,
+				AgentID:  fmt.Sprintf("delegation-from-%s", sourcePersona),
+				Model: sympoziumv1alpha1.ModelSpec{
+					Provider:                 resolveProvider(&targetInst),
+					Model:                    targetInst.Spec.Agents.Default.Model,
+					BaseURL:                  targetInst.Spec.Agents.Default.BaseURL,
+					AuthSecretRef:            resolveAuthSecret(&targetInst),
+					ProviderHeaders:          targetInst.Spec.Agents.Default.ProviderHeaders,
+					ProviderHeadersSecretRef: targetInst.Spec.Agents.Default.ProviderHeadersSecretRef,
+				},
+				ImagePullSecrets: targetInst.Spec.ImagePullSecrets,
+				Lifecycle:        targetInst.Spec.Agents.Default.Lifecycle,
+				SystemPrompt:     memorySystemPrompt(&targetInst),
+				Volumes:          targetInst.Spec.Volumes,
+				VolumeMounts:     targetInst.Spec.VolumeMounts,
+				Env:              targetInst.Spec.Agents.Default.Env,
+				Timeout:          targetInst.Spec.Agents.Default.ParseRunTimeout(),
+			},
+		}
+
+		// Propagate dry run flag through the delegation.
+		if agentRun.Spec.DryRun {
+			childRun.Spec.DryRun = true
+			childRun.Labels["sympozium.ai/dry-run"] = "true"
+		}
+
+		// Copy skills from the target instance.
+		for _, skill := range targetInst.Spec.Skills {
+			if skill.SkillPackRef == "web-endpoint" {
+				continue
+			}
+			childRun.Spec.Skills = append(childRun.Spec.Skills, skill)
+		}
+
+		if err := r.Create(ctx, childRun); err != nil {
+			if errors.IsAlreadyExists(err) {
+				log.Info("Delegation successor already exists", "run", runName)
+				continue
+			}
+			log.Error(err, "Failed to create delegation successor", "run", runName)
+			continue
+		}
+		log.Info("Created delegation successor run", "run", runName, "target", targetPersona)
+		triggered = true
+	}
+
+	// Mark this run as having triggered its delegations to prevent duplicates.
+	if triggered {
+		patch := client.MergeFrom(agentRun.DeepCopy())
+		if agentRun.Labels == nil {
+			agentRun.Labels = make(map[string]string)
+		}
+		agentRun.Labels["sympozium.ai/delegation-triggered"] = "true"
+		if err := r.Patch(ctx, agentRun, patch); err != nil {
+			log.Error(err, "Failed to mark run as delegation-triggered")
+		}
+	}
+
+	return nil
+}
+
+// delegationEdgeActive evaluates a delegation edge's free-text condition in the
+// post-success reconcile path. The controller executor only runs after the
+// source run succeeds, so an empty condition (or one describing success/explicit
+// request) activates the edge. Conditions that explicitly scope the edge to the
+// source *failing* are not met on success and are skipped.
+func delegationEdgeActive(condition string) bool {
+	c := strings.ToLower(strings.TrimSpace(condition))
+	if c == "" {
+		return true
+	}
+	// Skip edges meant to fire only when the source fails/errors — we are in
+	// the success path here.
+	for _, failKeyword := range []string{"fail", "error", "unsuccessful", "reject"} {
+		if strings.Contains(c, failKeyword) {
+			return false
+		}
+	}
+	return true
 }
 
 // buildHandoffTask produces a structured handoff card for sequential pipeline
