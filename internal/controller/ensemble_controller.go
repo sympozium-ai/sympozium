@@ -27,6 +27,40 @@ import (
 
 const ensembleFinalizer = "sympozium.ai/ensemble-finalizer"
 
+// slackListenerKey labels/annotates the generated Agent CR of the persona
+// designated as the Slack receiver (ISI-1497). It is stamped for observability
+// and kubectl selectability; the channel router resolves the receiver by
+// reading the Ensemble CR, not this label (see resolveSlackReceiver).
+const slackListenerKey = "sympozium.ai/slack-listener"
+
+// setSlackListenerMetadata drives the slackListenerKey on both the label and
+// annotation maps to match the desired state, returning true when either map
+// changed. Keeping label and annotation in lockstep lets the reconcile loop
+// self-heal independent drift instead of only correcting the label (ISI-1498 L2).
+func setSlackListenerMetadata(labels, annotations map[string]string, on bool) bool {
+	changed := false
+	if on {
+		if labels[slackListenerKey] != "true" {
+			labels[slackListenerKey] = "true"
+			changed = true
+		}
+		if annotations[slackListenerKey] != "true" {
+			annotations[slackListenerKey] = "true"
+			changed = true
+		}
+	} else {
+		if _, ok := labels[slackListenerKey]; ok {
+			delete(labels, slackListenerKey)
+			changed = true
+		}
+		if _, ok := annotations[slackListenerKey]; ok {
+			delete(annotations, slackListenerKey)
+			changed = true
+		}
+	}
+	return changed
+}
+
 // EnsembleReconciler reconciles Ensemble objects.
 // It stamps out Agents, SympoziumSchedules, and memory
 // ConfigMaps for each persona defined in the pack.
@@ -225,6 +259,21 @@ func (r *EnsembleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	// Warn if more than one persona is designated the Slack receiver (ISI-1497).
+	// CEL validation on agentConfigs rejects this at admission, but older CRDs
+	// may predate that rule, so surface it here too. resolveSlackReceiver
+	// deterministically picks the first such persona in declaration order.
+	var slackListeners []string
+	for _, persona := range pack.Spec.AgentConfigs {
+		if persona.SlackListener {
+			slackListeners = append(slackListeners, persona.Name)
+		}
+	}
+	if len(slackListeners) > 1 {
+		log.Info("More than one persona sets slackListener=true; the first in declaration order is used as the Slack receiver",
+			"listeners", slackListeners, "receiver", slackListeners[0])
+	}
+
 	// Reconcile each persona → instance + schedule + memory
 	var installed []sympoziumv1alpha1.InstalledAgentConfig
 	var installErr error
@@ -318,6 +367,17 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			} else {
 				delete(existingInst.Labels, "sympozium.ai/provider")
 			}
+			needsUpdate = true
+		}
+
+		// Propagate slackListener label and annotation.
+		if existingInst.Labels == nil {
+			existingInst.Labels = map[string]string{}
+		}
+		if existingInst.Annotations == nil {
+			existingInst.Annotations = map[string]string{}
+		}
+		if setSlackListenerMetadata(existingInst.Labels, existingInst.Annotations, persona.SlackListener) {
 			needsUpdate = true
 		}
 
@@ -606,12 +666,15 @@ func (r *EnsembleReconciler) buildAgent(
 	if persona.Provider != "" {
 		labels["sympozium.ai/provider"] = persona.Provider
 	}
+	annotations := map[string]string{}
+	setSlackListenerMetadata(labels, annotations, persona.SlackListener)
 
 	inst := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instanceName,
-			Namespace: pack.Namespace,
-			Labels:    labels,
+			Name:        instanceName,
+			Namespace:   pack.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: sympoziumv1alpha1.AgentSpec{
 			Agents: sympoziumv1alpha1.AgentsSpec{

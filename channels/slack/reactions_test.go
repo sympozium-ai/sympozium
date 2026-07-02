@@ -192,3 +192,102 @@ func TestSendMessage_PostsExpectedPayload(t *testing.T) {
 		t.Errorf("payload = %+v", payload)
 	}
 }
+
+func TestSendMessage_DisplayName_SetsUsernameAndIcon(t *testing.T) {
+	var capturedBody []byte
+	sc := newTestSlackChannel(func(req *http.Request) (*http.Response, error) {
+		capturedBody, _ = io.ReadAll(req.Body)
+		return jsonResponse(`{"ok":true}`), nil
+	})
+	err := sc.sendMessage(context.Background(), channel.OutboundMessage{
+		Channel:     "slack",
+		ChatID:      "C123",
+		Text:        "hi from Alfred",
+		DisplayName: "Alfred",
+		IconEmoji:   ":robot_face:",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if payload["username"] != "Alfred" {
+		t.Errorf("username = %v, want Alfred", payload["username"])
+	}
+	if payload["icon_emoji"] != ":robot_face:" {
+		t.Errorf("icon_emoji = %v, want :robot_face:", payload["icon_emoji"])
+	}
+}
+
+func TestSendMessage_DisplayName_NoCustomization_WhenEmpty(t *testing.T) {
+	var capturedBody []byte
+	sc := newTestSlackChannel(func(req *http.Request) (*http.Response, error) {
+		capturedBody, _ = io.ReadAll(req.Body)
+		return jsonResponse(`{"ok":true}`), nil
+	})
+	err := sc.sendMessage(context.Background(), channel.OutboundMessage{
+		Channel: "slack",
+		ChatID:  "C123",
+		Text:    "plain message",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if _, ok := payload["username"]; ok {
+		t.Errorf("username should not be set when DisplayName is empty, got: %v", payload["username"])
+	}
+	if _, ok := payload["icon_emoji"]; ok {
+		t.Errorf("icon_emoji should not be set when IconEmoji is empty, got: %v", payload["icon_emoji"])
+	}
+}
+
+func TestSendMessage_DisplayName_FallsBackOnNotAllowedTokenType(t *testing.T) {
+	callCount := 0
+	var bodies [][]byte
+	sc := newTestSlackChannel(func(req *http.Request) (*http.Response, error) {
+		callCount++
+		body, _ := io.ReadAll(req.Body)
+		bodies = append(bodies, body)
+		if callCount == 1 {
+			return jsonResponse(`{"ok":false,"error":"not_allowed_token_type"}`), nil
+		}
+		return jsonResponse(`{"ok":true}`), nil
+	})
+	err := sc.sendMessage(context.Background(), channel.OutboundMessage{
+		Channel:     "slack",
+		ChatID:      "C123",
+		Text:        "hi from Alfred",
+		DisplayName: "Alfred",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage with fallback: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 calls (with customization, then without), got %d", callCount)
+	}
+	// First call should have username set.
+	var first map[string]interface{}
+	if err := json.Unmarshal(bodies[0], &first); err != nil {
+		t.Fatalf("decode first body: %v", err)
+	}
+	if first["username"] != "Alfred" {
+		t.Errorf("first call username = %v, want Alfred", first["username"])
+	}
+	// Retry should not have username or icon_emoji.
+	var second map[string]interface{}
+	if err := json.Unmarshal(bodies[1], &second); err != nil {
+		t.Fatalf("decode second body: %v", err)
+	}
+	if _, ok := second["username"]; ok {
+		t.Errorf("retry should not include username, got: %v", second["username"])
+	}
+	if second["text"] != "hi from Alfred" {
+		t.Errorf("retry text = %v, want 'hi from Alfred'", second["text"])
+	}
+}

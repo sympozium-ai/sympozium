@@ -28,6 +28,11 @@ type EnsembleSpec struct {
 	Version string `json:"version,omitempty"`
 
 	// Personas is the list of agent personas in this ensemble.
+	// At most one persona may set slackListener=true — the designated Slack
+	// receiver (ISI-1497). Setting it on more than one persona is rejected at
+	// admission so the misconfiguration surfaces instead of silently resolving
+	// to the first declared listener.
+	// +kubebuilder:validation:XValidation:rule="self.filter(c, has(c.slackListener) && c.slackListener).size() <= 1",message="at most one persona may set slackListener=true (the designated Slack receiver)"
 	AgentConfigs []AgentConfigSpec `json:"agentConfigs"`
 
 	// AuthRefs references secrets containing AI provider credentials.
@@ -288,6 +293,19 @@ type AgentConfigSpec struct {
 	// When empty, the provider-appropriate default applies.
 	// +optional
 	RunTimeout string `json:"runTimeout,omitempty"`
+
+	// SlackListener marks this persona as the designated receiver for inbound
+	// Slack messages. At most one persona per Ensemble may set this to true
+	// (enforced by CEL validation on agentConfigs); if none do, the channel
+	// router falls back to the first Slack-bound persona (today's behaviour).
+	// The channel router resolves the receiver by reading the Ensemble CR
+	// (see resolveSlackReceiver). The ensemble-controller additionally stamps
+	// the label/annotation "sympozium.ai/slack-listener: true" on the generated
+	// Agent CR for observability and kubectl selectability
+	// (`kubectl get agents -l sympozium.ai/slack-listener=true`).
+	// +optional
+	// +kubebuilder:validation:Optional
+	SlackListener bool `json:"slackListener,omitempty"`
 }
 
 // AgentConfigWebEndpoint configures the web endpoint for an agent configuration.
