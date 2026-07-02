@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.39](https://github.com/sympozium-ai/sympozium/compare/v0.10.38...v0.10.39) (2026-07-02)
+
+
+### Features
+
+* Add skipped as AgentRun status - reachable via IPC similar to dry runs ([#228](https://github.com/sympozium-ai/sympozium/issues/228)) ([056421c](https://github.com/sympozium-ai/sympozium/commit/056421c6f1c7a0ad445ea3c2628da332103c12fa))
+
+
+### Bug Fixes
+
+* **agent-runner:** serialize Bedrock tool schemas as JSON objects ([#259](https://github.com/sympozium-ai/sympozium/issues/259)) ([f0f22c7](https://github.com/sympozium-ai/sympozium/commit/f0f22c78a0c64e8dacc38714354632a15e8cf907)), closes [#255](https://github.com/sympozium-ai/sympozium/issues/255)
+* **controller:** propagate runTimeout and wire agentEnv into pod spec ([#240](https://github.com/sympozium-ai/sympozium/issues/240)) ([d9f584e](https://github.com/sympozium-ai/sympozium/commit/d9f584e61f611084fd527389434eb875ab41c70c))
+* **controller:** propagate sidecar tools from source SkillPack ([#250](https://github.com/sympozium-ai/sympozium/issues/250)) ([46b2cdc](https://github.com/sympozium-ai/sympozium/commit/46b2cdcade676d9751eae4391d36603b7018ee69))
+* **eventbus:** recover NATS subscriptions after restart/recreate ([#253](https://github.com/sympozium-ai/sympozium/issues/253)) ([#254](https://github.com/sympozium-ai/sympozium/issues/254)) ([f341b37](https://github.com/sympozium-ai/sympozium/commit/f341b372f5a3c1ef69b30a4a7555b048f643e52e))
+
 ## [0.10.38](https://github.com/sympozium-ai/sympozium/compare/v0.10.37...v0.10.38) (2026-06-28)
 
 
