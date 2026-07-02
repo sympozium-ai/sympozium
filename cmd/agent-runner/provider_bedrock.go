@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -51,16 +50,19 @@ func newBedrockProvider(ctx context.Context, model, systemPrompt, task string, t
 func newBedrockProviderWithClient(client bedrockClientAPI, model, systemPrompt, task string, tools []ToolDef) (*bedrockProvider, error) {
 	var bedrockTools []types.Tool
 	for _, t := range tools {
-		schemaBytes, err := json.Marshal(t.Parameters)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling tool schema for %s: %w", t.Name, err)
+		// Pass the schema map directly: smithy documents encode []byte /
+		// json.RawMessage as a byte array, not a JSON object, which Bedrock
+		// rejects with a ValidationException on toolConfig inputSchema.
+		params := t.Parameters
+		if params == nil {
+			params = map[string]any{"type": "object"}
 		}
 		bedrockTools = append(bedrockTools, &types.ToolMemberToolSpec{
 			Value: types.ToolSpecification{
 				Name:        aws.String(t.Name),
 				Description: aws.String(t.Description),
 				InputSchema: &types.ToolInputSchemaMemberJson{
-					Value: document.NewLazyDocument(json.RawMessage(schemaBytes)),
+					Value: document.NewLazyDocument(params),
 				},
 			},
 		})
