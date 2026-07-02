@@ -351,7 +351,6 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		agentID = "primary"
 	}
 
-
 	// Enforce channel access control before creating an AgentRun.
 	if allowed, denyMsg := checkChannelAccess(inst, &msg); !allowed {
 		span.SetAttributes(attribute.Bool("sympozium.access.denied", true))

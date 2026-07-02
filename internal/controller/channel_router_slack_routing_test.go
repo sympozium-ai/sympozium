@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -432,7 +431,6 @@ func TestHandleInbound_NameRouting(t *testing.T) {
 			Client:   c,
 			EventBus: bus,
 			Log:      logr.Discard(),
-			seen:     make(map[string]time.Time),
 		}, bus
 	}
 
@@ -629,7 +627,6 @@ func TestHandleInbound_UnknownMentionMutedChannel(t *testing.T) {
 		Client:   c,
 		EventBus: bus,
 		Log:      logr.Discard(),
-		seen:     make(map[string]time.Time),
 	}
 
 	msg := channelpkg.InboundMessage{
