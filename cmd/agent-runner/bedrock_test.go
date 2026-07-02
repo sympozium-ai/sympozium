@@ -80,7 +80,27 @@ func TestCallBedrock_ToolUseFlow(t *testing.T) {
 		handler: func(ctx context.Context, input *bedrockruntime.ConverseInput) (*bedrockruntime.ConverseOutput, error) {
 			// First call: return a tool_use block.
 			if len(input.Messages) == 1 {
-				inputDoc := document.NewLazyDocument(json.RawMessage(`{"command":"echo hi"}`))
+				// The tool schema must serialize as a JSON object; smithy
+				// documents encode []byte/json.RawMessage as a byte array,
+				// which Bedrock rejects (issue #255).
+				toolSpec, ok := input.ToolConfig.Tools[0].(*types.ToolMemberToolSpec)
+				if !ok {
+					t.Fatalf("unexpected tool type %T", input.ToolConfig.Tools[0])
+				}
+				schemaDoc := toolSpec.Value.InputSchema.(*types.ToolInputSchemaMemberJson).Value
+				schemaJSON, err := schemaDoc.MarshalSmithyDocument()
+				if err != nil {
+					t.Fatalf("marshaling tool schema: %v", err)
+				}
+				var schema map[string]any
+				if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+					t.Fatalf("tool schema is not a JSON object: %v (got %s)", err, schemaJSON)
+				}
+				if schema["type"] != "object" {
+					t.Errorf("got schema type %v, want object", schema["type"])
+				}
+
+				inputDoc := document.NewLazyDocument(map[string]any{"command": "echo hi"})
 				return &bedrockruntime.ConverseOutput{
 					Output: &types.ConverseOutputMemberMessage{
 						Value: types.Message{
