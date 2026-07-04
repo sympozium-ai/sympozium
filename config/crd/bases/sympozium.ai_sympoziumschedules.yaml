@@ -15,8 +15,8 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.instanceRef
-      name: Instance
+    - jsonPath: .spec.agentRef
+      name: Agent
       type: string
     - jsonPath: .spec.schedule
       name: Schedule
