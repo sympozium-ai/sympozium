@@ -91,4 +91,4 @@ Every concept that traditional agent frameworks manage in application code, Symp
 
 - [GitHub Repository](https://github.com/sympozium-ai/sympozium)
 - [Releases](https://github.com/sympozium-ai/sympozium/releases)
-- [License](https://github.com/sympozium-ai/sympozium/blob/main/LICENSE) — Apache 2.0
+- [License](https://github.com/sympozium-ai/sympozium/blob/main/LICENSE) — MIT

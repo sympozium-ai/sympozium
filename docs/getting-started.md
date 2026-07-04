@@ -25,7 +25,7 @@ brew install sympozium-ai/sympozium/sympozium
 ### Shell installer
 
 ```bash
-curl -fsSL https://sympozium.com/install.sh | sh
+curl -fsSL https://deploy.sympozium.ai/install.sh | sh
 ```
 
 ### From source
@@ -567,7 +567,7 @@ spec:
   description: "Custom agents for my team"
   category: custom
   version: "1.0.0"
-  personas:
+  agentConfigs:
     - name: log-analyzer
       displayName: "Log Analyzer"
       systemPrompt: |

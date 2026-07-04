@@ -9,7 +9,7 @@ Before applying any examples, you need to set up prerequisites.
 brew install sympozium-ai/sympozium/sympozium
 
 # OR via shell installer
-curl -fsSL https://sympozium.com/install.sh | sh
+curl -fsSL https://deploy.sympozium.ai/install.sh | sh
 
 # Verify install
 sympozium version
