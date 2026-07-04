@@ -6202,6 +6202,24 @@ func (m tuiModel) View() string {
 		}
 	}
 
+	// Derive the vertical scroll offset from the current selection so the
+	// highlighted row is always within the visible window. Every table renderer
+	// draws tableH-1 rows starting at m.tableScroll; without this, tableScroll
+	// stayed pinned at 0 and any selection past the first screenful became
+	// invisible and unreachable.
+	visibleRows := tableH - 1
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+	if m.selectedRow < m.tableScroll {
+		m.tableScroll = m.selectedRow
+	} else if m.selectedRow >= m.tableScroll+visibleRows {
+		m.tableScroll = m.selectedRow - visibleRows + 1
+	}
+	if m.tableScroll < 0 {
+		m.tableScroll = 0
+	}
+
 	var view strings.Builder
 
 	// 1. Header bar

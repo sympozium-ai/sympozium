@@ -125,9 +125,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	interval, err := time.ParseDuration(cfg.ProbeInterval)
-	if err != nil {
-		interval = 30 * time.Second
+	interval, reason := resolveProbeInterval(cfg.ProbeInterval)
+	if reason != "" {
+		log.Info(reason, "value", cfg.ProbeInterval)
 	}
 
 	restCfg, err := rest.InClusterConfig()
@@ -165,6 +165,22 @@ func main() {
 
 	// Run the first probe immediately.
 	runProbeLoop(ctx, clientset, nodeName, cfg.Targets, interval, registry)
+}
+
+// resolveProbeInterval parses the configured probe interval, falling back to
+// 30s when it is unparseable or non-positive. A non-positive duration would
+// otherwise panic time.NewTicker and crash-loop the DaemonSet. The returned
+// reason is empty when the configured value was used as-is.
+func resolveProbeInterval(raw string) (time.Duration, string) {
+	const fallback = 30 * time.Second
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return fallback, "invalid probeInterval, using default"
+	}
+	if d <= 0 {
+		return fallback, "non-positive probeInterval, using default"
+	}
+	return d, ""
 }
 
 func loadConfig(path string) (*ProbeConfig, error) {

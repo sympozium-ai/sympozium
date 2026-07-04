@@ -85,6 +85,16 @@ func main() {
 	}
 }
 
+// redactToken replaces the bot token wherever it appears in a string (e.g. a
+// url.Error that embeds the full request URL) so it never reaches logs or the
+// health event bus.
+func (tc *TelegramChannel) redactToken(s string) string {
+	if tc.BotToken == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, tc.BotToken, "***REDACTED***")
+}
+
 // pollUpdates uses Telegram's long-polling getUpdates API.
 func (tc *TelegramChannel) pollUpdates(ctx context.Context) error {
 	offset := 0
@@ -107,7 +117,10 @@ func (tc *TelegramChannel) pollUpdates(ctx context.Context) error {
 		resp, err := tc.client.Do(req)
 		if err != nil {
 			tc.healthy = false
-			_ = tc.PublishHealth(ctx, channel.HealthStatus{Connected: false, Message: err.Error()})
+			// Redact the bot token: a *url.Error stringifies to the full request
+			// URL, which embeds the token, and this message is published to the
+			// health topic (24h retention) and logs.
+			_ = tc.PublishHealth(ctx, channel.HealthStatus{Connected: false, Message: tc.redactToken(err.Error())})
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -132,11 +145,23 @@ func (tc *TelegramChannel) pollUpdates(ctx context.Context) error {
 			} `json:"result"`
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+		statusCode := resp.StatusCode
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+
+		// Back off on transport/API errors instead of hammering Telegram in a
+		// tight loop. A revoked token (401) or a conflicting poller/webhook (409)
+		// otherwise spins here forever while still reporting healthy.
+		if decodeErr != nil || statusCode != http.StatusOK || !result.OK {
+			tc.healthy = false
+			msg := fmt.Sprintf("telegram getUpdates failed: status=%d ok=%t", statusCode, result.OK)
+			if decodeErr != nil {
+				msg = tc.redactToken(fmt.Sprintf("telegram getUpdates decode error: %v", decodeErr))
+			}
+			_ = tc.PublishHealth(ctx, channel.HealthStatus{Connected: false, Message: msg})
+			time.Sleep(5 * time.Second)
 			continue
 		}
-		resp.Body.Close()
 
 		tc.healthy = true
 

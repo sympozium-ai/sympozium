@@ -88,6 +88,11 @@ var (
 const agentRunFinalizer = "sympozium.ai/agentrun-finalizer"
 const systemNamespace = "sympozium-system"
 
+// tokenBudgetCountedAnnotation marks an AgentRun whose token usage has already
+// been aggregated into its ensemble's budget, so repeated reconciles of the
+// completed run cannot double-count it.
+const tokenBudgetCountedAnnotation = "sympozium.ai/token-budget-counted"
+
 // allowedAuthSecretKeys lists the only Secret keys that will be injected from
 // an auth secret into the agent container. This prevents wholesale secret
 // leakage when a secret contains extra keys.
@@ -3007,6 +3012,14 @@ func (r *AgentRunReconciler) updateTokenBudget(ctx context.Context, log logr.Log
 		return nil
 	}
 
+	// Idempotency guard: reconcileCompleted runs multiple times per completed
+	// run (finalizer removal and successor-label patches each re-trigger it), so
+	// without this marker the same run's tokens would be added to the ensemble
+	// budget 2-3 times, tripping a `halt` budget far too early.
+	if agentRun.Annotations[tokenBudgetCountedAnnotation] == "true" {
+		return nil
+	}
+
 	var pack sympoziumv1alpha1.Ensemble
 	if err := r.Get(ctx, types.NamespacedName{Name: packName, Namespace: agentRun.Namespace}, &pack); err != nil {
 		return nil
@@ -3014,6 +3027,18 @@ func (r *AgentRunReconciler) updateTokenBudget(ctx context.Context, log logr.Log
 	if pack.Spec.SharedMemory == nil || pack.Spec.SharedMemory.Membrane == nil ||
 		pack.Spec.SharedMemory.Membrane.TokenBudget == nil {
 		return nil
+	}
+
+	// Persist the guard annotation before mutating the shared budget. If the
+	// budget patch below fails we prefer a one-time under-count on retry over
+	// the systematic over-count that dropping the guard would cause.
+	runPatch := client.MergeFrom(agentRun.DeepCopy())
+	if agentRun.Annotations == nil {
+		agentRun.Annotations = map[string]string{}
+	}
+	agentRun.Annotations[tokenBudgetCountedAnnotation] = "true"
+	if err := r.Patch(ctx, agentRun, runPatch); err != nil {
+		return fmt.Errorf("marking run token-budget-counted: %w", err)
 	}
 
 	patch := client.MergeFrom(pack.DeepCopy())
@@ -3729,6 +3754,9 @@ func (r *AgentRunReconciler) extractAndPersistMemory(ctx context.Context, log lo
 		return
 	}
 
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
 	cm.Data["MEMORY.md"] = memoryContent
 	if err := r.Update(ctx, &cm); err != nil {
 		log.V(1).Info("failed to update memory ConfigMap", "err", err)

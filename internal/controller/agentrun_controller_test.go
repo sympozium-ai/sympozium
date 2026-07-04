@@ -2296,7 +2296,9 @@ func TestUpdateTokenBudget(t *testing.T) {
 		TotalTokens: 1500,
 	}
 
-	r := newMembraneTestReconciler(t, pack)
+	// Register the run too: updateTokenBudget now stamps an idempotency guard
+	// annotation on it, which requires the run to exist in the client.
+	r := newMembraneTestReconciler(t, pack, run)
 	err := r.updateTokenBudget(context.Background(), logr.Discard(), run)
 	if err != nil {
 		t.Fatalf("updateTokenBudget: %v", err)
@@ -2309,6 +2311,22 @@ func TestUpdateTokenBudget(t *testing.T) {
 	}
 	if updated.Status.TokenBudgetUsed != 1500 {
 		t.Errorf("tokenBudgetUsed = %d, want 1500", updated.Status.TokenBudgetUsed)
+	}
+
+	// Idempotency: re-running on the same (now guard-annotated) run must not
+	// double-count the tokens into the ensemble budget.
+	var afterFirst sympoziumv1alpha1.AgentRun
+	if err := r.Get(context.Background(), types.NamespacedName{Name: run.Name, Namespace: run.Namespace}, &afterFirst); err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if err := r.updateTokenBudget(context.Background(), logr.Discard(), &afterFirst); err != nil {
+		t.Fatalf("updateTokenBudget (second call): %v", err)
+	}
+	if err := r.Get(context.Background(), types.NamespacedName{Name: "my-pack", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get ensemble: %v", err)
+	}
+	if updated.Status.TokenBudgetUsed != 1500 {
+		t.Errorf("after second call tokenBudgetUsed = %d, want 1500 (no double-count)", updated.Status.TokenBudgetUsed)
 	}
 }
 

@@ -500,6 +500,14 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 		return
 	}
 
+	// Sequential batch whose first task failed to spawn: no child exists to
+	// drive completion, so advance to the next task (or finalize). Without this,
+	// a first-task spawn failure with >1 task left the batch wedged forever.
+	if req.Strategy == "sequential" && len(delegates) == 0 {
+		sr.advanceSequential(ctx, batch)
+		return
+	}
+
 	// Patch parent status to AwaitingDelegate.
 	if len(delegates) > 0 {
 		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -600,6 +608,41 @@ func (sr *SpawnRouter) handleBatchChildDone(ctx context.Context, childRunID, res
 	}
 }
 
+// advanceSequential drives a sequential batch forward after a child slot is
+// resolved by a *spawn failure* (rather than a normal completion event, which
+// is handled in handleBatchChildDone). Without this, a failed spawn incremented
+// the completed counter but never spawned the next task or finalized the batch,
+// so the parent's blocking spawn_subagents tool hung until the run timed out.
+func (sr *SpawnRouter) advanceSequential(ctx context.Context, batch *pendingBatch) {
+	batch.mu.Lock()
+	if batch.aborted {
+		batch.mu.Unlock()
+		return
+	}
+	// Fail-fast: abort the remaining tasks and finalize immediately.
+	if batch.failurePolicy == "fail-fast" && batch.failed > 0 {
+		batch.aborted = true
+		batch.mu.Unlock()
+		sr.finalizeBatch(ctx, batch)
+		return
+	}
+	// More tasks remain: spawn the next one (which, if it also fails, re-enters
+	// this method, bounded by the number of tasks).
+	if batch.nextIndex < len(batch.tasks) {
+		nextIdx := batch.nextIndex
+		batch.nextIndex++
+		batch.mu.Unlock()
+		sr.spawnSequentialChild(ctx, batch, nextIdx)
+		return
+	}
+	// No tasks left to spawn; finalize if everything has resolved.
+	done := batch.completed >= len(batch.tasks)
+	batch.mu.Unlock()
+	if done {
+		sr.finalizeBatch(ctx, batch)
+	}
+}
+
 // spawnSequentialChild spawns the next child in a sequential batch.
 func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingBatch, idx int) {
 	task := batch.tasks[idx]
@@ -617,6 +660,7 @@ func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingB
 		batch.completed++
 		batch.failed++
 		batch.mu.Unlock()
+		sr.advanceSequential(ctx, batch)
 		return
 	}
 
@@ -658,6 +702,7 @@ func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingB
 		batch.completed++
 		batch.failed++
 		batch.mu.Unlock()
+		sr.advanceSequential(ctx, batch)
 		return
 	}
 
@@ -709,7 +754,12 @@ func (sr *SpawnRouter) spawnSequentialChild(ctx context.Context, batch *pendingB
 
 // finalizeBatch publishes the aggregated batch result to the parent's IPC bridge.
 func (sr *SpawnRouter) finalizeBatch(ctx context.Context, batch *pendingBatch) {
-	sr.batches.Delete(batch.batchID)
+	// Idempotency guard: finalize exactly once per batch. LoadAndDelete returns
+	// loaded=false if another path already finalized (and removed) this batch,
+	// preventing a duplicate batch-result publish.
+	if _, loaded := sr.batches.LoadAndDelete(batch.batchID); !loaded {
+		return
+	}
 
 	// Determine overall status.
 	status := "success"
