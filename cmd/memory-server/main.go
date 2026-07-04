@@ -216,7 +216,18 @@ func main() {
 	// are named by route (e.g. "memory POST /store"); /health is left
 	// uninstrumented to avoid probe noise. No-op when OTel is disabled — the
 	// global TracerProvider is then a noop and spans are dropped cheaply.
-	handler := otelhttp.NewHandler(mux, "memory-server",
+	// Cap request bodies so a single caller cannot exhaust the backing
+	// PersistentVolume (or the process's memory) with an oversized /store
+	// payload. 4 MiB comfortably exceeds any legitimate memory entry.
+	const maxBodyBytes = 4 << 20
+	bodyLimited := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
+		mux.ServeHTTP(w, r)
+	})
+
+	handler := otelhttp.NewHandler(bodyLimited, "memory-server",
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			return "memory " + r.Method + " " + r.URL.Path
 		}),

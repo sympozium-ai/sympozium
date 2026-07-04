@@ -1,6 +1,7 @@
 package webproxy
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -70,19 +71,21 @@ func (p *Proxy) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Rate-limit before authenticating so failed-auth attempts are also
+		// throttled; otherwise brute-forcing the static key runs at wire speed.
+		if !p.limiter.Allow() {
+			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
 			writeError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
 			return
 		}
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if token != p.config.APIKey {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(p.config.APIKey)) != 1 {
 			writeError(w, http.StatusUnauthorized, "invalid API key")
-			return
-		}
-
-		if !p.limiter.Allow() {
-			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 			return
 		}
 

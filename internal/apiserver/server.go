@@ -4,6 +4,7 @@ package apiserver
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -283,7 +284,7 @@ func authMiddleware(expectedToken string, next http.Handler) http.Handler {
 		if token == "" {
 			token = r.URL.Query().Get("token")
 		}
-		if token != expectedToken {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -3739,8 +3740,13 @@ func (s *Server) proxyProviderModels(w http.ResponseWriter, r *http.Request) {
 		if ip == nil {
 			continue
 		}
-		// Block link-local (metadata endpoints).
-		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		// Block SSRF targets: link-local (cloud metadata), loopback, private,
+		// and unspecified ranges — otherwise this handler can be steered at the
+		// kube-apiserver or any in-cluster service. This is a best-effort check;
+		// a DNS-rebinding name can still change between resolution here and the
+		// client's own re-resolution below.
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+			ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
 			http.Error(w, "baseURL resolves to a disallowed address", http.StatusForbidden)
 			return
 		}

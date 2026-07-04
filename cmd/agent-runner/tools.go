@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,41 @@ import (
 	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 	"golang.org/x/net/html"
 )
+
+// ssrfGuardedDialContext returns a DialContext that rejects connections to
+// loopback, link-local, private, and unspecified addresses. It is checked
+// against the resolved IP at dial time, so it also defeats DNS-rebinding that
+// would slip past a resolve-then-connect check. Agents are treated as
+// adversarial (prompt injection), so fetch_url must not become an SSRF pivot
+// into the node metadata service, NATS, or the Kubernetes API. Operators who
+// genuinely need agents to reach cluster-internal hosts can opt out by setting
+// SYMPOZIUM_FETCH_URL_ALLOW_PRIVATE=true.
+func ssrfGuardedDialContext() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if strings.EqualFold(os.Getenv("SYMPOZIUM_FETCH_URL_ALLOW_PRIVATE"), "true") {
+		return (&net.Dialer{Timeout: 30 * time.Second}).DialContext
+	}
+	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, ipAddr := range ips {
+			ip := ipAddr.IP
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+				ip.IsPrivate() || ip.IsUnspecified() {
+				return nil, fmt.Errorf("refusing to connect to disallowed address %s", ip)
+			}
+		}
+		// Dial the vetted IP directly so a rebind between resolve and connect
+		// cannot substitute a blocked address.
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+	}
+}
 
 // Tool name constants.
 const (
@@ -693,6 +729,9 @@ func fetchURLTool(args map[string]any) string {
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			DialContext: ssrfGuardedDialContext(),
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("too many redirects")
