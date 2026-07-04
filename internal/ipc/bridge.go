@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ type Bridge struct {
 	BasePath           string // Root IPC path (e.g., /ipc)
 	AgentRunID         string
 	InstanceName       string
+	AgentDisplayName   string
 	AgentNamespace     string
 	EventBus           eventbus.EventBus
 	Log                logr.Logger
@@ -54,6 +56,7 @@ func NewBridge(basePath, agentRunID, instanceName string, bus eventbus.EventBus,
 		BasePath:           basePath,
 		AgentRunID:         agentRunID,
 		InstanceName:       instanceName,
+		AgentDisplayName:   os.Getenv("AGENT_DISPLAY_NAME"),
 		AgentNamespace:     namespace,
 		EventBus:           bus,
 		Log:                log,
@@ -339,11 +342,67 @@ func (b *Bridge) handleOutboundMessage(ctx context.Context, fe FileEvent) {
 	}
 
 	metadata := b.metadata()
+	sanitized, dropped, err := b.sanitizeOutboundMessage(data)
+	if err != nil {
+		b.Log.Error(err, "dropping invalid outbound message", "path", fe.Path)
+		b.processedFiles.Delete(fe.Path)
+		return
+	}
+	if len(dropped) > 0 {
+		b.Log.Info("Dropped outbound message attribution not matching agent identity",
+			"path", fe.Path,
+			"allowedUsername", b.allowedOutboundUsername(),
+			"fields", strings.Join(dropped, ","))
+	}
 
-	event, _ := eventbus.NewEvent(eventbus.TopicChannelMessageSend, metadata, json.RawMessage(data))
+	event, _ := eventbus.NewEvent(eventbus.TopicChannelMessageSend, metadata, sanitized)
 	if err := b.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, event); err != nil {
 		b.Log.Error(err, "failed to publish outbound message")
 	}
+}
+
+func (b *Bridge) sanitizeOutboundMessage(data []byte) (json.RawMessage, []string, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, nil, err
+	}
+
+	dropped := make([]string, 0, 3)
+	if raw, ok := payload["username"]; ok && !b.allowedOutboundUsernameValue(raw) {
+		delete(payload, "username")
+		dropped = append(dropped, "username")
+	}
+	for _, field := range []string{"iconUrl", "iconEmoji"} {
+		if _, ok := payload[field]; ok {
+			delete(payload, field)
+			dropped = append(dropped, field)
+		}
+	}
+
+	sanitized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return json.RawMessage(sanitized), dropped, nil
+}
+
+func (b *Bridge) allowedOutboundUsernameValue(raw json.RawMessage) bool {
+	allowed := b.allowedOutboundUsername()
+	if allowed == "" {
+		return false
+	}
+	var username string
+	if err := json.Unmarshal(raw, &username); err != nil {
+		return false
+	}
+	return username == allowed
+}
+
+func (b *Bridge) allowedOutboundUsername() string {
+	if name := strings.TrimSpace(b.AgentDisplayName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(b.InstanceName)
 }
 
 // watchSchedules watches /ipc/schedules/ for schedule task requests.

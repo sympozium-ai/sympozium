@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -536,6 +537,20 @@ type slackAPIResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+type slackAPIError struct {
+	Endpoint string
+	Code     string
+}
+
+func (e *slackAPIError) Error() string {
+	return fmt.Sprintf("slack %s rejected request: %s", e.Endpoint, e.Code)
+}
+
+func isSlackError(err error, code string) bool {
+	var slackErr *slackAPIError
+	return errors.As(err, &slackErr) && slackErr.Code == code
+}
+
 // callSlackAPI performs a JSON POST to the given Slack Web API endpoint
 // and returns an error when either the transport fails, the HTTP status
 // is non-2xx, or Slack reports ok:false. Errors classified as benign
@@ -575,11 +590,12 @@ func (sc *SlackChannel) callSlackAPI(ctx context.Context, endpoint string, paylo
 			return nil
 		}
 	}
-	return fmt.Errorf("slack %s rejected request: %s", endpoint, parsed.Error)
+	return &slackAPIError{Endpoint: endpoint, Code: parsed.Error}
 }
 
 // sendMessage sends a message via the Slack chat.postMessage API.
 func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMessage) error {
+	const endpoint = "https://slack.com/api/chat.postMessage"
 	payload := map[string]interface{}{
 		"channel": msg.ChatID,
 		"text":    msg.Text,
@@ -606,7 +622,23 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	} else if msg.IconEmoji != "" {
 		payload["icon_emoji"] = msg.IconEmoji
 	}
-	return sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+	err := sc.callSlackAPI(ctx, endpoint, payload)
+	if err == nil {
+		return nil
+	}
+	if isSlackError(err, "missing_scope") && hasSlackAttribution(msg) {
+		delete(payload, "username")
+		delete(payload, "icon_url")
+		delete(payload, "icon_emoji")
+		sc.log.Info("Slack sender attribution dropped; workspace is missing chat:write.customize",
+			"chatId", msg.ChatID, "threadId", msg.ThreadID)
+		return sc.callSlackAPI(ctx, endpoint, payload)
+	}
+	return err
+}
+
+func hasSlackAttribution(msg channel.OutboundMessage) bool {
+	return msg.Username != "" || msg.IconURL != "" || msg.IconEmoji != ""
 }
 
 // addReaction adds an emoji reaction to a message via the Slack
