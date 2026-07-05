@@ -71,6 +71,36 @@ func TestExtractNameMention(t *testing.T) {
 			wantRemainder: "@winston review",
 			wantMention:   true,
 		},
+		// ISI-1561 #3 — trailing punctuation stripped from the @token so
+		// exact-name matching still succeeds.
+		{
+			name:          "@persona with trailing comma",
+			text:          "@billing, refund please",
+			wantName:      "billing",
+			wantRemainder: "refund please",
+			wantMention:   true,
+		},
+		{
+			name:          "@persona with trailing question mark",
+			text:          "@architect? can you review",
+			wantName:      "architect",
+			wantRemainder: "can you review",
+			wantMention:   true,
+		},
+		{
+			name:          "@persona with trailing period at end",
+			text:          "please ask @billing.",
+			wantName:      "billing",
+			wantRemainder: "please ask",
+			wantMention:   true,
+		},
+		{
+			name:          "@persona with trailing colon",
+			text:          "@billing: help",
+			wantName:      "billing",
+			wantRemainder: "help",
+			wantMention:   true,
+		},
 		// Email/URL negative controls — '@' not on a word boundary, no match
 		{
 			name:          "email address — @ not a mention",
@@ -652,5 +682,228 @@ func TestHandleInbound_UnknownMentionMutedChannel(t *testing.T) {
 	}
 	if len(runs.Items) != 0 {
 		t.Errorf("expected no AgentRun on muted channel, got %d", len(runs.Items))
+	}
+}
+
+// TestHandleInbound_FrontDoorAccessControl verifies ISI-1561 #1: a blocked
+// sender must NOT bypass access control by @mentioning a delegate persona.
+// Access is evaluated against the front door (the SlackListener that owns the
+// channel + rules), never against the delegate, which typically has no channel
+// spec and would otherwise allow-all.
+func TestHandleInbound_FrontDoorAccessControl(t *testing.T) {
+	const (
+		ns           = "default"
+		ensembleName = "myteam"
+		receiverName = "myteam-triage"
+		delegateName = "myteam-billing"
+	)
+
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: ensembleName, Namespace: ns},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{
+				{Name: "triage", SlackListener: true},
+				{Name: "billing"},
+			},
+		},
+	}
+
+	// Front-door persona denies "blocked-user" on Slack.
+	receiver := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: receiverName, Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "triage",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Channels: []sympoziumv1alpha1.ChannelSpec{
+				{
+					Type: "slack",
+					AccessControl: &sympoziumv1alpha1.ChannelAccessControl{
+						DeniedSenders: []string{"blocked-user"},
+						DenyMessage:   "You are not permitted to use this bot.",
+					},
+				},
+			},
+		},
+	}
+	// Delegate persona has NO channel spec → checkChannelAccess would allow-all.
+	delegate := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: delegateName, Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "billing",
+			},
+		},
+	}
+
+	bus := &recordingEventBus{}
+	c := fake.NewClientBuilder().
+		WithScheme(handleInboundScheme(t)).
+		WithObjects(ensemble, receiver, delegate).
+		Build()
+	cr := &ChannelRouter{Client: c, EventBus: bus, Log: logr.Discard()}
+
+	msg := channelpkg.InboundMessage{
+		InstanceName: receiverName,
+		Channel:      "slack",
+		ChatID:       "C1",
+		SenderID:     "blocked-user",
+		Text:         "@billing please refund me",
+	}
+	ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+	cr.handleInbound(context.Background(), ev)
+
+	// The message must be denied (front-door rule), and no AgentRun created —
+	// the @billing delegate must not launder the blocked sender past access.
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cr.Client.List(context.Background(), &runs); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs.Items) != 0 {
+		t.Fatalf("blocked sender bypassed access control via @delegate: %d AgentRun(s) created", len(runs.Items))
+	}
+	// A denial should have been published back to the channel.
+	sawDenial := false
+	for _, text := range outboundTexts(t, bus) {
+		if len(text) > 0 {
+			sawDenial = true
+		}
+	}
+	if !sawDenial {
+		t.Errorf("expected a denial response for the blocked sender, got none")
+	}
+}
+
+// TestHandleInbound_NonSlackSkipsRouting verifies ISI-1561 #2: @name and
+// SlackListener routing are Slack-only. A Telegram message containing "@john"
+// must not be denied or rerouted; it flows to the receiving Agent unchanged.
+func TestHandleInbound_NonSlackSkipsRouting(t *testing.T) {
+	const (
+		ns           = "default"
+		ensembleName = "myteam"
+		receiverName = "myteam-triage"
+	)
+
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: ensembleName, Namespace: ns},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{
+				{Name: "triage", SlackListener: true},
+				{Name: "billing"},
+			},
+		},
+	}
+	receiver := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: receiverName, Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "triage",
+			},
+		},
+	}
+
+	bus := &recordingEventBus{}
+	c := fake.NewClientBuilder().
+		WithScheme(handleInboundScheme(t)).
+		WithObjects(ensemble, receiver).
+		Build()
+	cr := &ChannelRouter{Client: c, EventBus: bus, Log: logr.Discard()}
+
+	msg := channelpkg.InboundMessage{
+		InstanceName: receiverName,
+		Channel:      "telegram", // NOT slack — routing must be skipped
+		ChatID:       "T1",
+		Text:         "@john are you there",
+	}
+	ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+	cr.handleInbound(context.Background(), ev)
+
+	// No denial on a non-Slack channel even though "@john" matches no persona.
+	for _, text := range outboundTexts(t, bus) {
+		if len(text) > 0 {
+			t.Errorf("expected no denial on non-Slack channel, got %q", text)
+		}
+	}
+	// The run should target the receiving Agent with the original, unstripped text.
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cr.Client.List(context.Background(), &runs); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs.Items) != 1 {
+		t.Fatalf("expected exactly 1 AgentRun for the receiver, got %d", len(runs.Items))
+	}
+	if got := runs.Items[0].Spec.AgentRef; got != receiverName {
+		t.Errorf("AgentRun.Spec.AgentRef = %q, want %q (receiver)", got, receiverName)
+	}
+	if got := runs.Items[0].Spec.Task; got != "@john are you there" {
+		t.Errorf("AgentRun.Spec.Task = %q, want the original unstripped text", got)
+	}
+}
+
+// TestHandleInbound_EmptyTaskAfterMention verifies ISI-1561 #6: a bare
+// "@persona" with no body must not create an AgentRun with an empty Task.
+func TestHandleInbound_EmptyTaskAfterMention(t *testing.T) {
+	const (
+		ns           = "default"
+		ensembleName = "myteam"
+		receiverName = "myteam-triage"
+		delegateName = "myteam-billing"
+	)
+
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: ensembleName, Namespace: ns},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{
+				{Name: "triage", SlackListener: true},
+				{Name: "billing"},
+			},
+		},
+	}
+	receiver := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: receiverName, Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "triage",
+			},
+		},
+	}
+	delegate := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: delegateName, Namespace: ns,
+			Labels: map[string]string{
+				"sympozium.ai/ensemble":     ensembleName,
+				"sympozium.ai/agent-config": "billing",
+			},
+		},
+	}
+
+	bus := &recordingEventBus{}
+	c := fake.NewClientBuilder().
+		WithScheme(handleInboundScheme(t)).
+		WithObjects(ensemble, receiver, delegate).
+		Build()
+	cr := &ChannelRouter{Client: c, EventBus: bus, Log: logr.Discard()}
+
+	msg := channelpkg.InboundMessage{
+		InstanceName: receiverName,
+		Channel:      "slack",
+		ChatID:       "C1",
+		Text:         "@billing", // bare mention, empty remainder
+	}
+	ev, _ := eventbus.NewEvent(eventbus.TopicChannelMessageRecv, nil, msg)
+	cr.handleInbound(context.Background(), ev)
+
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cr.Client.List(context.Background(), &runs); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs.Items) != 0 {
+		t.Errorf("expected no AgentRun for a bare @persona with empty task, got %d", len(runs.Items))
 	}
 }
