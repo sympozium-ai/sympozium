@@ -57,3 +57,6 @@ _bmad-output/
 *.mp4
 web/demo.gif
 mcp-bridge
+
+# Local machine-specific Claude notes (not shared)
+CLAUDE.local.md
