@@ -276,12 +276,13 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 				"sympozium.ai/source-channel": msg.Channel,
 			},
 			Annotations: map[string]string{
-				"sympozium.ai/reply-channel":    msg.Channel,
-				"sympozium.ai/reply-chat-id":    msg.ChatID,
-				"sympozium.ai/reply-thread-id":  msg.ThreadID,
-				"sympozium.ai/reply-message-ts": msg.Metadata["ts"],
-				"sympozium.ai/sender-name":      msg.SenderName,
-				"sympozium.ai/sender-id":        msg.SenderID,
+				"sympozium.ai/reply-channel":      msg.Channel,
+				"sympozium.ai/reply-chat-id":      msg.ChatID,
+				"sympozium.ai/reply-thread-id":    msg.ThreadID,
+				"sympozium.ai/reply-message-ts":   msg.Metadata["ts"],
+				"sympozium.ai/sender-name":        msg.SenderName,
+				"sympozium.ai/sender-id":          msg.SenderID,
+				"sympozium.ai/agent-display-name": resolveAgentDisplayName(inst),
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
@@ -423,12 +424,16 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		responseText = "(no response)"
 	}
 
-	// Publish outbound message to the channel.
+	// Publish outbound message to the channel. Attribute the reply to the
+	// agent's display name so a shared channel bot (e.g. one Slack app across a
+	// multi-agent Ensemble) posts under distinct per-agent identities. Channels
+	// that don't support attribution ignore Username.
 	outMsg := channelpkg.OutboundMessage{
 		Channel:  replyChannel,
 		ChatID:   replyChatID,
 		ThreadID: replyThreadID,
 		Text:     responseText,
+		Username: displayNameForReply(run),
 	}
 	if replyMessageTS != "" {
 		outMsg.Metadata = map[string]string{"replyToTS": replyMessageTS}
@@ -461,6 +466,25 @@ func truncateForLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// resolveAgentDisplayName returns the human-readable name for an agent,
+// falling back to its resource name when no displayName is set.
+func resolveAgentDisplayName(inst *sympoziumv1alpha1.Agent) string {
+	if name := strings.TrimSpace(inst.Spec.DisplayName); name != "" {
+		return name
+	}
+	return inst.Name
+}
+
+// displayNameForReply returns the attribution name to post a channel reply
+// under, read from the annotation stamped at run creation, falling back to the
+// agent reference.
+func displayNameForReply(run *sympoziumv1alpha1.AgentRun) string {
+	if name := strings.TrimSpace(run.Annotations["sympozium.ai/agent-display-name"]); name != "" {
+		return name
+	}
+	return run.Spec.AgentRef
 }
 
 // checkChannelAccess evaluates access control rules for the channel that

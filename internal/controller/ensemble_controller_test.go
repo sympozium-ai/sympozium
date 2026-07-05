@@ -142,6 +142,7 @@ func TestBuildInstance_SubagentsPropagated(t *testing.T) {
 	}
 	persona := &sympoziumv1alpha1.AgentConfigSpec{
 		Name:         "lead-analyst",
+		DisplayName:  "Lead Analyst",
 		SystemPrompt: "You are the lead analyst.",
 		Subagents: &sympoziumv1alpha1.SubagentsSpec{
 			MaxDepth:            3,
@@ -151,6 +152,10 @@ func TestBuildInstance_SubagentsPropagated(t *testing.T) {
 	}
 
 	inst := r.buildAgent(pack, persona, "test-pack-lead-analyst", "")
+
+	if inst.Spec.DisplayName != "Lead Analyst" {
+		t.Errorf("Agent DisplayName = %q, want %q (should carry the agentConfig displayName)", inst.Spec.DisplayName, "Lead Analyst")
+	}
 
 	sub := inst.Spec.Agents.Default.Subagents
 	if sub == nil {

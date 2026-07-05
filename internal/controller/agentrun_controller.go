@@ -1998,6 +1998,13 @@ func (r *AgentRunReconciler) buildContainers(
 					{Name: "AGENT_NAMESPACE", Value: agentRun.Namespace},
 					{Name: "EVENT_BUS_URL", Value: "nats://nats.sympozium-system.svc:4222"},
 				}
+				// The bridge validates agent-written channel-message attribution
+				// against this identity (see sanitizeOutboundMessage). Stamped at
+				// run creation for channel-sourced runs; empty otherwise, in
+				// which case the bridge falls back to INSTANCE_NAME.
+				if dn := agentRun.Annotations["sympozium.ai/agent-display-name"]; dn != "" {
+					env = append(env, corev1.EnvVar{Name: "AGENT_DISPLAY_NAME", Value: dn})
+				}
 				if hasResponseGateHook(agentRun) {
 					env = append(env, corev1.EnvVar{Name: "GATE_SUPPRESS_COMPLETION", Value: "true"})
 				}

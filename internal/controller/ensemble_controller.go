@@ -614,6 +614,7 @@ func (r *EnsembleReconciler) buildAgent(
 			Labels:    labels,
 		},
 		Spec: sympoziumv1alpha1.AgentSpec{
+			DisplayName: persona.DisplayName,
 			Agents: sympoziumv1alpha1.AgentsSpec{
 				Default: sympoziumv1alpha1.AgentConfig{
 					Model:                    model,

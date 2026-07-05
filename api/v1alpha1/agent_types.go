@@ -11,6 +11,13 @@ import (
 // Each user or tenant gets a Agent that declares their desired channels,
 // agents, and policy bindings.
 type AgentSpec struct {
+	// DisplayName is the human-readable name for this agent. When set, it is
+	// used for per-message sender attribution in channels (e.g. the Slack
+	// username a shared bot posts under) so a multi-agent Ensemble shows which
+	// agent is replying. Falls back to the Agent's metadata.name when empty.
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+
 	// Channels this instance connects to.
 	// +optional
 	Channels []ChannelSpec `json:"channels,omitempty"`

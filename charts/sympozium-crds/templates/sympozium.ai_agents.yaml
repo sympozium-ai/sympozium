@@ -2652,6 +2652,13 @@ spec:
                   - type
                   type: object
                 type: array
+              displayName:
+                description: |-
+                  DisplayName is the human-readable name for this agent. When set, it is
+                  used for per-message sender attribution in channels (e.g. the Slack
+                  username a shared bot posts under) so a multi-agent Ensemble shows which
+                  agent is replying. Falls back to the Agent's metadata.name when empty.
+                type: string
               imagePullSecrets:
                 description: ImagePullSecrets are secrets to use when pulling container
                   images.
