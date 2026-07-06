@@ -537,6 +537,9 @@ type slackAPIResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+// slackAPIError carries the machine-readable Slack error code from an
+// ok:false response so callers can branch on the exact code rather than
+// substring-matching the formatted message (ISI-1561 #4).
 type slackAPIError struct {
 	Endpoint string
 	Code     string
@@ -626,15 +629,41 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	if err == nil {
 		return nil
 	}
-	if isSlackError(err, "missing_scope") && hasSlackAttribution(msg) {
+	// Retry without the chat:write.customize fields when the bot token cannot
+	// customize the sender. Classic tokens report not_allowed_token_type;
+	// granular bot tokens missing the scope report missing_scope (ISI-1561 #4).
+	if isMissingCustomizeScope(err) && hasSlackAttribution(msg) {
 		delete(payload, "username")
 		delete(payload, "icon_url")
 		delete(payload, "icon_emoji")
 		sc.log.Info("Slack sender attribution dropped; workspace is missing chat:write.customize",
-			"chatId", msg.ChatID, "threadId", msg.ThreadID)
+			"username", msg.Username, "code", slackErrorCode(err))
 		return sc.callSlackAPI(ctx, endpoint, payload)
 	}
 	return err
+}
+
+// slackErrorCode returns the machine-readable Slack error code carried by a
+// *slackAPIError, or "" when err is nil or not a Slack API error.
+func slackErrorCode(err error) string {
+	var apiErr *slackAPIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Code
+	}
+	return ""
+}
+
+// isMissingCustomizeScope reports whether err indicates the bot token cannot
+// set username/icon overrides (the chat:write.customize scope is absent).
+// Classic tokens report not_allowed_token_type; granular bot tokens missing
+// the scope report missing_scope (ISI-1561 #4).
+func isMissingCustomizeScope(err error) bool {
+	switch slackErrorCode(err) {
+	case "not_allowed_token_type", "missing_scope":
+		return true
+	default:
+		return false
+	}
 }
 
 func hasSlackAttribution(msg channel.OutboundMessage) bool {

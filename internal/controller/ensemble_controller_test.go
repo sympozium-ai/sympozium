@@ -244,6 +244,80 @@ func TestReconcileAgentConfig_UpdatesSubagentsOnExistingAgent(t *testing.T) {
 	}
 }
 
+// ── SlackListener label/annotation stamping (ISI-1497 C1 / ISI-1498 L1,L2) ──
+
+func TestBuildAgent_SlackListenerStamp(t *testing.T) {
+	r := &EnsembleReconciler{}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+	}
+
+	cases := []struct {
+		name        string
+		listener    bool
+		wantStamped bool
+	}{
+		{"listener stamps label and annotation", true, true},
+		{"non-listener leaves no stamp", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persona := &sympoziumv1alpha1.AgentConfigSpec{
+				Name:          "receiver",
+				SystemPrompt:  "You are the receiver.",
+				SlackListener: tc.listener,
+			}
+			inst := r.buildAgent(pack, persona, "test-pack-receiver", "")
+
+			_, labelOK := inst.Labels["sympozium.ai/slack-listener"]
+			_, annOK := inst.Annotations["sympozium.ai/slack-listener"]
+			if labelOK != tc.wantStamped || annOK != tc.wantStamped {
+				t.Errorf("slack-listener label=%v annotation=%v, want stamped=%v",
+					labelOK, annOK, tc.wantStamped)
+			}
+			// Guard against a regression of the H1 wrong-domain typo.
+			if _, wrong := inst.Labels["sympozium.io/slack-listener"]; wrong {
+				t.Error("found legacy sympozium.io/slack-listener label (H1 regression)")
+			}
+		})
+	}
+}
+
+func TestSetSlackListenerMetadata(t *testing.T) {
+	cases := []struct {
+		name        string
+		labels      map[string]string
+		annotations map[string]string
+		on          bool
+		wantChanged bool
+		wantLabel   bool
+		wantAnn     bool
+	}{
+		{"stamp both from empty", map[string]string{}, map[string]string{}, true, true, true, true},
+		{"already stamped is no-op", map[string]string{slackListenerKey: "true"}, map[string]string{slackListenerKey: "true"}, true, false, true, true},
+		{"unstamp both", map[string]string{slackListenerKey: "true"}, map[string]string{slackListenerKey: "true"}, false, true, false, false},
+		{"already clear is no-op", map[string]string{}, map[string]string{}, false, false, false, false},
+		// L2: annotation drifted away while label is correct → helper self-heals it.
+		{"self-heal missing annotation", map[string]string{slackListenerKey: "true"}, map[string]string{}, true, true, true, true},
+		// L2 inverse: stale annotation lingers after flag turned off → cleared.
+		{"self-heal stale annotation", map[string]string{}, map[string]string{slackListenerKey: "true"}, false, true, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := setSlackListenerMetadata(tc.labels, tc.annotations, tc.on)
+			if changed != tc.wantChanged {
+				t.Errorf("changed = %v, want %v", changed, tc.wantChanged)
+			}
+			if _, ok := tc.labels[slackListenerKey]; ok != tc.wantLabel {
+				t.Errorf("label present = %v, want %v", ok, tc.wantLabel)
+			}
+			if _, ok := tc.annotations[slackListenerKey]; ok != tc.wantAnn {
+				t.Errorf("annotation present = %v, want %v", ok, tc.wantAnn)
+			}
+		})
+	}
+}
+
 // ── Relationship graph validation tests ────────────────────────────────────
 
 func testPersonas(names ...string) []sympoziumv1alpha1.AgentConfigSpec {
