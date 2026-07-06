@@ -185,14 +185,42 @@ func (pe *PolicyEnforcer) validateResources(run *sympoziumv1alpha1.AgentRun, pol
 		return nil
 	}
 
-	if policy.Spec.SandboxPolicy.MaxCPU != "" {
-		maxCPU := resource.MustParse(policy.Spec.SandboxPolicy.MaxCPU)
-		_ = maxCPU // Would compare against run's resource requests
+	if run.Spec.Sandbox.Resources == nil {
+		return nil
 	}
 
-	if policy.Spec.SandboxPolicy.MaxMemory != "" {
-		maxMem := resource.MustParse(policy.Spec.SandboxPolicy.MaxMemory)
-		_ = maxMem
+	// Compare both requests and limits against the policy caps, so a run cannot
+	// request more sandbox CPU/memory than its bound SympoziumPolicy permits.
+	check := func(dimension, capStr string, quantities []string) error {
+		if capStr == "" {
+			return nil
+		}
+		maxQ, err := resource.ParseQuantity(capStr)
+		if err != nil {
+			// A malformed policy cap should not silently disable enforcement.
+			return fmt.Errorf("policy sandboxPolicy.max%s %q is not a valid quantity: %w", dimension, capStr, err)
+		}
+		for _, q := range quantities {
+			if q == "" {
+				continue
+			}
+			reqQ, err := resource.ParseQuantity(q)
+			if err != nil {
+				return fmt.Errorf("sandbox %s request %q is not a valid quantity: %w", dimension, q, err)
+			}
+			if reqQ.Cmp(maxQ) > 0 {
+				return fmt.Errorf("sandbox %s %s exceeds policy limit %s", dimension, q, capStr)
+			}
+		}
+		return nil
+	}
+
+	res := run.Spec.Sandbox.Resources
+	if err := check("CPU", policy.Spec.SandboxPolicy.MaxCPU, []string{res.Requests["cpu"], res.Limits["cpu"]}); err != nil {
+		return err
+	}
+	if err := check("Memory", policy.Spec.SandboxPolicy.MaxMemory, []string{res.Requests["memory"], res.Limits["memory"]}); err != nil {
+		return err
 	}
 
 	return nil

@@ -549,6 +549,11 @@ func (e *slackAPIError) Error() string {
 	return fmt.Sprintf("slack %s rejected request: %s", e.Endpoint, e.Code)
 }
 
+func isSlackError(err error, code string) bool {
+	var slackErr *slackAPIError
+	return errors.As(err, &slackErr) && slackErr.Code == code
+}
+
 // callSlackAPI performs a JSON POST to the given Slack Web API endpoint
 // and returns an error when either the transport fails, the HTTP status
 // is non-2xx, or Slack reports ok:false. Errors classified as benign
@@ -593,6 +598,7 @@ func (sc *SlackChannel) callSlackAPI(ctx context.Context, endpoint string, paylo
 
 // sendMessage sends a message via the Slack chat.postMessage API.
 func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMessage) error {
+	const endpoint = "https://slack.com/api/chat.postMessage"
 	payload := map[string]interface{}{
 		"channel": msg.ChatID,
 		"text":    msg.Text,
@@ -609,24 +615,30 @@ func (sc *SlackChannel) sendMessage(ctx context.Context, msg channel.OutboundMes
 	if threadTS != "" {
 		payload["thread_ts"] = threadTS
 	}
-	if msg.DisplayName != "" {
-		payload["username"] = msg.DisplayName
+	// Per-message sender attribution: a single Slack bot can post as distinct
+	// per-agent identities via username + icon (requires chat:write.customize).
+	if msg.Username != "" {
+		payload["username"] = msg.Username
 	}
-	if msg.IconEmoji != "" {
+	if msg.IconURL != "" {
+		payload["icon_url"] = msg.IconURL
+	} else if msg.IconEmoji != "" {
 		payload["icon_emoji"] = msg.IconEmoji
 	}
-	err := sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+	err := sc.callSlackAPI(ctx, endpoint, payload)
+	if err == nil {
+		return nil
+	}
 	// Retry without the chat:write.customize fields when the bot token cannot
 	// customize the sender. Classic tokens report not_allowed_token_type;
-	// granular bot tokens missing the scope report missing_scope. Match the
-	// machine-readable code from the typed error rather than substring-scanning
-	// the formatted message (ISI-1561 #4).
-	if isMissingCustomizeScope(err) {
-		sc.log.Info("bot token lacks chat:write.customize; sending without username/icon override",
-			"displayName", msg.DisplayName, "code", slackErrorCode(err))
+	// granular bot tokens missing the scope report missing_scope (ISI-1561 #4).
+	if isMissingCustomizeScope(err) && hasSlackAttribution(msg) {
 		delete(payload, "username")
+		delete(payload, "icon_url")
 		delete(payload, "icon_emoji")
-		err = sc.callSlackAPI(ctx, "https://slack.com/api/chat.postMessage", payload)
+		sc.log.Info("Slack sender attribution dropped; workspace is missing chat:write.customize",
+			"username", msg.Username, "code", slackErrorCode(err))
+		return sc.callSlackAPI(ctx, endpoint, payload)
 	}
 	return err
 }
@@ -643,6 +655,8 @@ func slackErrorCode(err error) string {
 
 // isMissingCustomizeScope reports whether err indicates the bot token cannot
 // set username/icon overrides (the chat:write.customize scope is absent).
+// Classic tokens report not_allowed_token_type; granular bot tokens missing
+// the scope report missing_scope (ISI-1561 #4).
 func isMissingCustomizeScope(err error) bool {
 	switch slackErrorCode(err) {
 	case "not_allowed_token_type", "missing_scope":
@@ -650,6 +664,10 @@ func isMissingCustomizeScope(err error) bool {
 	default:
 		return false
 	}
+}
+
+func hasSlackAttribution(msg channel.OutboundMessage) bool {
+	return msg.Username != "" || msg.IconURL != "" || msg.IconEmoji != ""
 }
 
 // addReaction adds an emoji reaction to a message via the Slack

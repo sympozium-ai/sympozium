@@ -165,4 +165,4 @@ make run         # run controller locally (needs kubeconfig)
 
 ## License
 
-Apache License 2.0
+MIT License

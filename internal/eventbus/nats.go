@@ -137,7 +137,11 @@ func (n *NATSEventBus) Subscribe(ctx context.Context, topic string) (<-chan *Eve
 				for msg := range msgs.Messages() {
 					var event Event
 					if uerr := json.Unmarshal(msg.Data(), &event); uerr != nil {
-						msg.Nak()
+						// Terminate (not Nak) an unparseable message. The consumer
+						// has no MaxDeliver/AckWait backoff, so Nak would redeliver
+						// the same poison message immediately and live-lock this
+						// subscription forever. Term drops it and advances.
+						msg.Term()
 						continue
 					}
 

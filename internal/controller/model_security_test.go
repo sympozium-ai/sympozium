@@ -187,15 +187,31 @@ func TestModelDownloadJob_SHA256Verification(t *testing.T) {
 		t.Fatalf("get job: %v", err)
 	}
 
-	script := job.Spec.Template.Spec.Containers[0].Command[2]
+	container := job.Spec.Template.Spec.Containers[0]
+	script := container.Command[2]
 	if !strings.Contains(script, "sha256sum") {
 		t.Error("download script should contain sha256sum verification when SHA256 is set")
 	}
-	if !strings.Contains(script, model.Spec.Source.SHA256) {
-		t.Error("download script should contain the expected checksum")
-	}
 	if !strings.Contains(script, "Checksum mismatch") {
 		t.Error("download script should fail on checksum mismatch")
+	}
+
+	// Security property: the checksum (and URL) must NOT be interpolated into
+	// the script text — they are passed via env vars so untrusted Model CR
+	// fields can never break out of the shell command. Assert the script has no
+	// literal value and references the env var instead.
+	if strings.Contains(script, model.Spec.Source.SHA256) {
+		t.Error("checksum must not be interpolated into the script text (command-injection risk); expected it via env var")
+	}
+	if !strings.Contains(script, "$MODEL_SHA256") {
+		t.Error("download script should reference the $MODEL_SHA256 env var")
+	}
+	envByName := map[string]string{}
+	for _, e := range container.Env {
+		envByName[e.Name] = e.Value
+	}
+	if envByName["MODEL_SHA256"] != model.Spec.Source.SHA256 {
+		t.Errorf("MODEL_SHA256 env = %q, want %q", envByName["MODEL_SHA256"], model.Spec.Source.SHA256)
 	}
 }
 

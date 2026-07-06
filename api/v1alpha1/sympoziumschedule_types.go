@@ -64,7 +64,7 @@ type SympoziumScheduleStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Agent",type="string",JSONPath=".spec.agentRef"
 // +kubebuilder:printcolumn:name="Schedule",type="string",JSONPath=".spec.schedule"
 // +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"

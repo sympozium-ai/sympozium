@@ -483,7 +483,7 @@ type LifecycleHooks struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".spec.instanceRef"
+// +kubebuilder:printcolumn:name="Agent",type="string",JSONPath=".spec.agentRef"
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Pod",type="string",JSONPath=".status.podName"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

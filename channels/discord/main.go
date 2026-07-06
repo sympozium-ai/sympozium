@@ -122,8 +122,10 @@ func main() {
 
 // messageCreate is the discordgo handler for MESSAGE_CREATE events.
 func (dc *DiscordChannel) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore messages from the bot itself
-	if m.Author.ID == s.State.User.ID {
+	// Ignore messages from the bot itself, and from any other bot or webhook.
+	// Without the bot/webhook filter, two bots sharing a channel ping-pong
+	// replies forever, burning LLM spend.
+	if m.Author == nil || m.Author.ID == s.State.User.ID || m.Author.Bot || m.WebhookID != "" {
 		return
 	}
 

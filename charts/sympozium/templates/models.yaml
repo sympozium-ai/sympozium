@@ -24,7 +24,9 @@ spec:
     storageClass: {{ .storageClass | quote }}
     {{- end }}
   resources:
-    gpu: {{ .gpu | default 1 }}
+    {{- /* Use hasKey so an explicit gpu: 0 (CPU-only) is honoured; Sprig's
+           `default` treats 0 as empty and would silently coerce it to 1. */}}
+    gpu: {{ if hasKey . "gpu" }}{{ .gpu }}{{ else }}1{{ end }}
     memory: {{ .memory | default "16Gi" | quote }}
     cpu: {{ .cpu | default "4" | quote }}
   inference:

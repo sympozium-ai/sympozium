@@ -26,7 +26,7 @@ spec:
             verbs: ["get", "patch"]
         postRun:
           - name: reject-gate
-            image: bitnami/kubectl:latest
+            image: soldevelo/kubectl:1.36
             gate: true
             command: ["sh", "-c"]
             args:

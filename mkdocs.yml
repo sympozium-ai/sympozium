@@ -70,7 +70,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/sympozium-ai/sympozium
 
-copyright: Copyright &copy; 2024-2026 Alex Jones — Apache License 2.0
+copyright: Copyright &copy; 2024-2026 Alex Jones — MIT License
 
 nav:
   - Home: index.md

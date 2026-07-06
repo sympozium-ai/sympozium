@@ -107,7 +107,7 @@ Create a Dockerfile at `images/skill-<name>/Dockerfile`:
 # images/skill-my-tool/Dockerfile
 
 # Multi-stage: grab the binary you need
-FROM bitnami/kubectl:1.31 AS kubectl
+FROM soldevelo/kubectl:1.36 AS kubectl
 
 # Minimal base image
 FROM alpine:3.20

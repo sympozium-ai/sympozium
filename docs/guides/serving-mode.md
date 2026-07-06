@@ -144,7 +144,7 @@ This port-forwards the in-cluster API server to your local machine and opens the
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--port` | `8080` | Local port to forward to |
+| `--port` | `9090` | Local port to forward to |
 | `--open` | `false` | Automatically open a browser |
 | `--service-namespace` | `sympozium-system` | Namespace of the apiserver service |
 

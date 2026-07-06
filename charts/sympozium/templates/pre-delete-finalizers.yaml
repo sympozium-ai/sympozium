@@ -90,7 +90,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: strip-finalizers
-          image: bitnami/kubectl:latest
+          image: soldevelo/kubectl:1.36
           command:
             - /bin/sh
             - -c

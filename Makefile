@@ -291,12 +291,12 @@ serve-api-ui: web-build build-apiserver ## Run the API server with embedded UI (
 
 run-controller: build-controller ## Run the controller manager locally against the current kubeconfig cluster
 	@echo "==> Scaling down in-cluster controller so local one takes over..."
-	@kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
+	@kubectl scale deploy/sympozium-controller-manager -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
 	@echo "==> Starting local controller manager (metrics :9090, health :9091)"
 	@cleanup() { \
 		echo ""; \
 		echo "==> Restoring in-cluster controller..."; \
-		kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
+		kubectl scale deploy/sympozium-controller-manager -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
 		echo "==> Done."; \
 	}; \
 	trap cleanup EXIT INT TERM; \
@@ -326,12 +326,12 @@ dev-all: ## Start everything locally: controller, API server, Vite, and NATS por
 	@kubectl scale deploy/nats -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true
 	@kubectl rollout status deploy/nats -n $(SYMPOZIUM_NAMESPACE) --timeout=60s 2>/dev/null || true
 	@echo "==> Scaling down in-cluster controller and apiserver..."
-	@kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
+	@kubectl scale deploy/sympozium-controller-manager -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
 	@kubectl scale deploy/sympozium-apiserver -n $(SYMPOZIUM_NAMESPACE) --replicas=0 2>/dev/null || true
 	@cleanup() { \
 		echo ""; \
 		echo "==> Restoring in-cluster deployments..."; \
-		kubectl scale deploy/sympozium-controller -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
+		kubectl scale deploy/sympozium-controller-manager -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
 		kubectl scale deploy/sympozium-apiserver -n $(SYMPOZIUM_NAMESPACE) --replicas=1 2>/dev/null || true; \
 		echo "==> Done."; \
 	}; \
@@ -385,6 +385,7 @@ install: manifests ## Install Sympozium via Helm chart (CRDs, control plane, bui
 	kubectl apply --server-side --force-conflicts -f $(GATEWAY_API_CRDS_URL)
 	helm upgrade --install sympozium charts/sympozium/ \
 		--namespace sympozium-system --create-namespace \
+		--set createNamespace=false \
 		--set image.tag=$(TAG) \
 		--set certManager.enabled=false \
 		--set webhook.enabled=false \

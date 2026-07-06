@@ -200,11 +200,11 @@ func TestSendMessage_DisplayName_SetsUsernameAndIcon(t *testing.T) {
 		return jsonResponse(`{"ok":true}`), nil
 	})
 	err := sc.sendMessage(context.Background(), channel.OutboundMessage{
-		Channel:     "slack",
-		ChatID:      "C123",
-		Text:        "hi from Alfred",
-		DisplayName: "Alfred",
-		IconEmoji:   ":robot_face:",
+		Channel:   "slack",
+		ChatID:    "C123",
+		Text:      "hi from Alfred",
+		Username:  "Alfred",
+		IconEmoji: ":robot_face:",
 	})
 	if err != nil {
 		t.Fatalf("sendMessage: %v", err)
@@ -240,7 +240,7 @@ func TestSendMessage_DisplayName_NoCustomization_WhenEmpty(t *testing.T) {
 		t.Fatalf("decode body: %v", err)
 	}
 	if _, ok := payload["username"]; ok {
-		t.Errorf("username should not be set when DisplayName is empty, got: %v", payload["username"])
+		t.Errorf("username should not be set when Username is empty, got: %v", payload["username"])
 	}
 	if _, ok := payload["icon_emoji"]; ok {
 		t.Errorf("icon_emoji should not be set when IconEmoji is empty, got: %v", payload["icon_emoji"])
@@ -260,10 +260,10 @@ func TestSendMessage_DisplayName_FallsBackOnNotAllowedTokenType(t *testing.T) {
 		return jsonResponse(`{"ok":true}`), nil
 	})
 	err := sc.sendMessage(context.Background(), channel.OutboundMessage{
-		Channel:     "slack",
-		ChatID:      "C123",
-		Text:        "hi from Alfred",
-		DisplayName: "Alfred",
+		Channel:  "slack",
+		ChatID:   "C123",
+		Text:     "hi from Alfred",
+		Username: "Alfred",
 	})
 	if err != nil {
 		t.Fatalf("sendMessage with fallback: %v", err)

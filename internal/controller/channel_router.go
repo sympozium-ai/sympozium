@@ -577,11 +577,11 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 
 	// Publish outbound message to the channel.
 	outMsg := channelpkg.OutboundMessage{
-		Channel:     replyChannel,
-		ChatID:      replyChatID,
-		ThreadID:    replyThreadID,
-		Text:        responseText,
-		DisplayName: agentDisplayNameVal,
+		Channel:  replyChannel,
+		ChatID:   replyChatID,
+		ThreadID: replyThreadID,
+		Text:     responseText,
+		Username: agentDisplayNameVal,
 	}
 	if replyMessageTS != "" {
 		outMsg.Metadata = map[string]string{"replyToTS": replyMessageTS}

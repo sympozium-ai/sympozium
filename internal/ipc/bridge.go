@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,22 @@ import (
 
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
+
+// isSafeIPCID reports whether an agent-supplied correlation ID (requestId /
+// batchId) is safe to interpolate into an IPC result filename. The ID
+// originates in the agent's own spawn-request JSON and is echoed back by the
+// control plane, so an adversarial agent could otherwise smuggle path
+// separators (e.g. "../../tmp/evil") to write result files outside /ipc.
+func isSafeIPCID(id string) bool {
+	if id == "" || len(id) > 253 {
+		return false
+	}
+	if strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
+		return false
+	}
+	// A safe ID is a single path element equal to its own base name.
+	return filepath.Base(id) == id
+}
 
 // IPCDir layout constants matching the design doc protocol.
 const (
@@ -35,6 +52,7 @@ type Bridge struct {
 	BasePath           string // Root IPC path (e.g., /ipc)
 	AgentRunID         string
 	InstanceName       string
+	AgentDisplayName   string
 	AgentNamespace     string
 	EventBus           eventbus.EventBus
 	Log                logr.Logger
@@ -54,6 +72,7 @@ func NewBridge(basePath, agentRunID, instanceName string, bus eventbus.EventBus,
 		BasePath:           basePath,
 		AgentRunID:         agentRunID,
 		InstanceName:       instanceName,
+		AgentDisplayName:   os.Getenv("AGENT_DISPLAY_NAME"),
 		AgentNamespace:     namespace,
 		EventBus:           bus,
 		Log:                log,
@@ -242,23 +261,30 @@ func (b *Bridge) handleSpawnRequest(ctx context.Context, fe FileEvent) {
 
 	metadata := b.metadata()
 
-	// Route subagent batch requests to a separate topic.
+	// Route by a positive filename allowlist. The bridge also writes its own
+	// result-*.json and subagent-result-*.json files into this same directory,
+	// so a catch-all "anything not a subagent request is a spawn" branch would
+	// re-publish every delegation result as a bogus spawn request. Only files
+	// the agent explicitly writes as spawn requests are forwarded.
 	base := filepath.Base(fe.Path)
-	if len(base) > 17 && base[:17] == "subagent-request-" {
+	switch {
+	case strings.HasPrefix(base, "subagent-request-"):
 		event, _ := eventbus.NewEvent(eventbus.TopicAgentSubagentRequest, metadata, json.RawMessage(data))
 		if err := b.EventBus.Publish(ctx, eventbus.TopicAgentSubagentRequest, event); err != nil {
 			b.Log.Error(err, "failed to publish subagent spawn request")
 		}
 		b.Log.Info("Forwarded subagent spawn request to control plane")
-		return
+	case strings.HasPrefix(base, "request-"):
+		event, _ := eventbus.NewEvent(eventbus.TopicAgentSpawnRequest, metadata, json.RawMessage(data))
+		if err := b.EventBus.Publish(ctx, eventbus.TopicAgentSpawnRequest, event); err != nil {
+			b.Log.Error(err, "failed to publish spawn request")
+		}
+		b.Log.Info("Forwarded spawn request to control plane")
+	default:
+		// result-*.json / subagent-result-*.json and any other file are not
+		// spawn requests — ignore them.
+		b.Log.V(1).Info("ignoring non-spawn file in spawn dir", "file", base)
 	}
-
-	event, _ := eventbus.NewEvent(eventbus.TopicAgentSpawnRequest, metadata, json.RawMessage(data))
-	if err := b.EventBus.Publish(ctx, eventbus.TopicAgentSpawnRequest, event); err != nil {
-		b.Log.Error(err, "failed to publish spawn request")
-	}
-
-	b.Log.Info("Forwarded spawn request to control plane")
 }
 
 // watchToolRequests watches /ipc/tools/ for exec requests.
@@ -339,11 +365,67 @@ func (b *Bridge) handleOutboundMessage(ctx context.Context, fe FileEvent) {
 	}
 
 	metadata := b.metadata()
+	sanitized, dropped, err := b.sanitizeOutboundMessage(data)
+	if err != nil {
+		b.Log.Error(err, "dropping invalid outbound message", "path", fe.Path)
+		b.processedFiles.Delete(fe.Path)
+		return
+	}
+	if len(dropped) > 0 {
+		b.Log.Info("Dropped outbound message attribution not matching agent identity",
+			"path", fe.Path,
+			"allowedUsername", b.allowedOutboundUsername(),
+			"fields", strings.Join(dropped, ","))
+	}
 
-	event, _ := eventbus.NewEvent(eventbus.TopicChannelMessageSend, metadata, json.RawMessage(data))
+	event, _ := eventbus.NewEvent(eventbus.TopicChannelMessageSend, metadata, sanitized)
 	if err := b.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, event); err != nil {
 		b.Log.Error(err, "failed to publish outbound message")
 	}
+}
+
+func (b *Bridge) sanitizeOutboundMessage(data []byte) (json.RawMessage, []string, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, nil, err
+	}
+
+	dropped := make([]string, 0, 3)
+	if raw, ok := payload["username"]; ok && !b.allowedOutboundUsernameValue(raw) {
+		delete(payload, "username")
+		dropped = append(dropped, "username")
+	}
+	for _, field := range []string{"iconUrl", "iconEmoji"} {
+		if _, ok := payload[field]; ok {
+			delete(payload, field)
+			dropped = append(dropped, field)
+		}
+	}
+
+	sanitized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return json.RawMessage(sanitized), dropped, nil
+}
+
+func (b *Bridge) allowedOutboundUsernameValue(raw json.RawMessage) bool {
+	allowed := b.allowedOutboundUsername()
+	if allowed == "" {
+		return false
+	}
+	var username string
+	if err := json.Unmarshal(raw, &username); err != nil {
+		return false
+	}
+	return username == allowed
+}
+
+func (b *Bridge) allowedOutboundUsername() string {
+	if name := strings.TrimSpace(b.AgentDisplayName); name != "" {
+		return name
+	}
+	return strings.TrimSpace(b.InstanceName)
 }
 
 // watchSchedules watches /ipc/schedules/ for schedule task requests.
@@ -446,6 +528,10 @@ func (b *Bridge) subscribeToInbound(ctx context.Context) {
 				RequestID string `json:"requestId"`
 			}
 			if json.Unmarshal(event.Data, &parsed) == nil && parsed.RequestID != "" {
+				if !isSafeIPCID(parsed.RequestID) {
+					b.Log.Error(fmt.Errorf("unsafe requestId"), "rejecting delegate result with path-unsafe requestId", "requestId", parsed.RequestID)
+					continue
+				}
 				filename := fmt.Sprintf("result-%s.json", parsed.RequestID)
 				path := filepath.Join(b.BasePath, DirSpawn, filename)
 				if err := os.WriteFile(path, event.Data, 0640); err != nil {
@@ -462,6 +548,10 @@ func (b *Bridge) subscribeToInbound(ctx context.Context) {
 				BatchID string `json:"batchId"`
 			}
 			if json.Unmarshal(event.Data, &parsed) == nil && parsed.BatchID != "" {
+				if !isSafeIPCID(parsed.BatchID) {
+					b.Log.Error(fmt.Errorf("unsafe batchId"), "rejecting subagent result with path-unsafe batchId", "batchId", parsed.BatchID)
+					continue
+				}
 				filename := fmt.Sprintf("subagent-result-%s.json", parsed.BatchID)
 				path := filepath.Join(b.BasePath, DirSpawn, filename)
 				if err := os.WriteFile(path, event.Data, 0640); err != nil {

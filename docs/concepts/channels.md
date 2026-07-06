@@ -40,6 +40,7 @@ For reliable Slack connectivity, configure your Slack app with both tokens and r
     - `message.im`
     - `message.channels`
     - `app_mention`
+- For per-message sender attribution in multi-agent Ensembles (one bot posting as distinct agent identities), add the `chat:write.customize` bot scope
 - Reinstall the app after changing scopes or event subscriptions
 
 !!! warning
