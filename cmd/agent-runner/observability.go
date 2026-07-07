@@ -153,18 +153,19 @@ func (o *agentObservability) startRunSpan(ctx context.Context, instance, namespa
 	return o.tracer.Start(ctx, "sympozium.agent.run", trace.WithAttributes(attrs...))
 }
 
-// startChatSpan starts a gen_ai.chat span with full semantic convention
-// attributes for the LLM call.
-func (o *agentObservability) startChatSpan(ctx context.Context, provider, model, systemPrompt string) (context.Context, trace.Span) {
+// startChatSpan starts a gen_ai.chat span with GenAI semantic convention
+// attributes for the LLM call. gen_ai.system is emitted alongside
+// gen_ai.provider.name for one release cycle (back-compat). System instructions
+// are NOT attached here — they are set once on the run span (see startRunSpan
+// callers) rather than duplicated on every per-round chat span.
+func (o *agentObservability) startChatSpan(ctx context.Context, provider, model string) (context.Context, trace.Span) {
 	if o == nil {
 		return ctx, trace.SpanFromContext(ctx)
 	}
 	attrs := []attribute.KeyValue{
 		genaiattrs.Provider(provider),
+		genaiattrs.System(provider),
 		genaiattrs.Model(model),
-	}
-	if systemPrompt != "" {
-		attrs = append(attrs, genaiattrs.SystemInstructions(systemPrompt))
 	}
 	return o.tracer.Start(ctx, "gen_ai.chat", trace.WithAttributes(attrs...))
 }

@@ -41,6 +41,10 @@ type ChatResult struct {
 	InputTokens  int
 	OutputTokens int
 	FinishReason string
+	// ResponseModel is the model id the backend reports having served the
+	// request (gen_ai.response.model). May differ from the requested model
+	// (aliases, routed models). Empty if the backend does not report one.
+	ResponseModel string
 }
 
 // LLMProvider is a stateful adapter for one chat conversation with a
@@ -76,7 +80,7 @@ type LLMProvider interface {
 // intermediate reasoning in the UX instead of a blank response.
 //
 // Returns (responseText, inputTokens, outputTokens, toolCalls, error).
-func runAgentLoop(ctx context.Context, p LLMProvider, systemPrompt string) (string, int, int, int, error) {
+func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, error) {
 	totalInputTokens := 0
 	totalOutputTokens := 0
 	totalToolCalls := 0
@@ -101,7 +105,7 @@ func runAgentLoop(ctx context.Context, p LLMProvider, systemPrompt string) (stri
 			log.Printf("llm_round [%d/%d]", round, maxToolIterations)
 		}
 
-		chatCtx, chatSpan := obs.startChatSpan(ctx, p.Name(), p.Model(), systemPrompt)
+		chatCtx, chatSpan := obs.startChatSpan(ctx, p.Name(), p.Model())
 		res, err := p.Chat(chatCtx)
 		if err != nil {
 			markSpanError(chatSpan, err)
@@ -115,6 +119,14 @@ func runAgentLoop(ctx context.Context, p LLMProvider, systemPrompt string) (stri
 			genaiattrs.InputTokens(res.InputTokens),
 			genaiattrs.OutputTokens(res.OutputTokens),
 		)
+		// gen_ai.response.model: what the backend reports serving. Fall back to
+		// the requested model when the backend does not echo one (e.g. Bedrock
+		// Converse), so the attribute is always present for AI Observability.
+		respModel := res.ResponseModel
+		if respModel == "" {
+			respModel = p.Model()
+		}
+		chatSpan.SetAttributes(genaiattrs.ResponseModel(respModel))
 		if res.FinishReason != "" {
 			chatSpan.SetAttributes(attribute.String("gen_ai.response.finish_reasons", res.FinishReason))
 		}

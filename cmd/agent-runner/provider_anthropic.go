@@ -99,10 +99,11 @@ func (p *anthropicProvider) Chat(ctx context.Context) (ChatResult, error) {
 	}
 
 	result := ChatResult{
-		Text:         textContent.String(),
-		InputTokens:  int(msg.Usage.InputTokens),
-		OutputTokens: int(msg.Usage.OutputTokens),
-		FinishReason: string(msg.StopReason),
+		Text:          textContent.String(),
+		InputTokens:   int(msg.Usage.InputTokens),
+		OutputTokens:  int(msg.Usage.OutputTokens),
+		FinishReason:  string(msg.StopReason),
+		ResponseModel: string(msg.Model),
 	}
 
 	// Continue the loop only when the model explicitly stopped to call

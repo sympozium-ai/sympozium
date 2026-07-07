@@ -17,6 +17,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/sympozium-ai/sympozium/internal/ipc"
+	"github.com/sympozium-ai/sympozium/pkg/genaiattrs"
 )
 
 // maxToolIterations is the maximum number of LLM reasoning rounds before
@@ -354,7 +355,7 @@ func main() {
 		log.Println("TRACEPARENT env var not set")
 	}
 
-	ctx, runSpan := obs.startRunSpan(ctx, getEnv("INSTANCE_NAME",""), getEnv("AGENT_NAMESPACE",""), modelName, truncate(task,200))
+	ctx, runSpan := obs.startRunSpan(ctx, getEnv("INSTANCE_NAME", ""), getEnv("AGENT_NAMESPACE", ""), modelName, truncate(task, 200))
 	writeTraceContextMetadata(ctx)
 	logWithTrace(ctx, "info", "agent run started", map[string]any{
 		"instance":  getEnv("INSTANCE_NAME", ""),
@@ -461,6 +462,11 @@ func main() {
 	}
 
 	_ = os.MkdirAll("/ipc/output", 0o755)
+
+	// Attach the fully-assembled system prompt once on the run span rather than
+	// on every per-round gen_ai.chat span (persona prompts are large; repeating
+	// them per round bloats span payload).
+	runSpan.SetAttributes(genaiattrs.SystemInstructions(systemPrompt))
 
 	start := time.Now()
 
@@ -576,7 +582,7 @@ func main() {
 // backward-compatible test coverage.
 func callAnthropic(ctx context.Context, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) (string, int, int, int, error) {
 	p := newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task, tools, headers)
-	return runAgentLoop(ctx, p, systemPrompt)
+	return runAgentLoop(ctx, p)
 }
 
 // callOpenAI dispatches an agent run to the OpenAI-compatible provider path
@@ -586,7 +592,7 @@ func callOpenAI(ctx context.Context, provider, apiKey, baseURL, model, systemPro
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p, systemPrompt)
+	return runAgentLoop(ctx, p)
 }
 
 // callBedrock dispatches an agent run to the AWS Bedrock provider.
@@ -595,7 +601,7 @@ func callBedrock(ctx context.Context, model, systemPrompt, task string, tools []
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p, systemPrompt)
+	return runAgentLoop(ctx, p)
 }
 
 // callBedrockWithClient accepts a pre-built client; used by tests to inject
@@ -605,7 +611,7 @@ func callBedrockWithClient(ctx context.Context, client bedrockClientAPI, model, 
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p, systemPrompt)
+	return runAgentLoop(ctx, p)
 }
 
 func writeJSON(path string, v any) {
