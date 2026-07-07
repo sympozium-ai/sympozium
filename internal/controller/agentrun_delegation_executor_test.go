@@ -77,7 +77,7 @@ func TestTriggerDelegationSuccessors_DefaultOff(t *testing.T) {
 	r := newAgentRunTestReconciler(t, objs...)
 	// DelegationControllerExecutor left at its zero value (false).
 
-	if err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
+	if _, err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
 		t.Fatalf("triggerDelegationSuccessors: %v", err)
 	}
 	if got := listChildRuns(t, r); len(got) != 0 {
@@ -96,7 +96,7 @@ func TestTriggerDelegationSuccessors_EnabledSpawnsChild(t *testing.T) {
 	r := newAgentRunTestReconciler(t, objs...)
 	r.DelegationControllerExecutor = true
 
-	if err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
+	if _, err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
 		t.Fatalf("triggerDelegationSuccessors: %v", err)
 	}
 	children := listChildRuns(t, r)
@@ -123,7 +123,7 @@ func TestTriggerDelegationSuccessors_Idempotent(t *testing.T) {
 	r.DelegationControllerExecutor = true
 
 	for i := 0; i < 2; i++ {
-		if err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
+		if _, err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
 	}
@@ -143,11 +143,48 @@ func TestTriggerDelegationSuccessors_SkipsAlreadyDelegated(t *testing.T) {
 	r := newAgentRunTestReconciler(t, objs...)
 	r.DelegationControllerExecutor = true
 
-	if err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
+	if _, err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run); err != nil {
 		t.Fatalf("triggerDelegationSuccessors: %v", err)
 	}
 	if got := listChildRuns(t, r); len(got) != 0 {
 		t.Fatalf("expected no controller-spawned child when model already delegated, got %d", len(got))
+	}
+}
+
+// TestTriggerDelegationSuccessors_InflightCapRequeues covers the maintainer
+// finding on PR #256: when the ensemble is at its in-flight cap the executor
+// must NOT silently drop the successor. It returns a non-zero requeueAfter (so
+// reconcileCompleted requeues with backoff) and does not spawn a child or set
+// the idempotency marker, so a later retry can still fire once capacity frees.
+func TestTriggerDelegationSuccessors_InflightCapRequeues(t *testing.T) {
+	run, objs := delegationFixtures()
+	// Saturate the ensemble: three running runs at the default cap of 3.
+	for i := 0; i < 3; i++ {
+		objs = append(objs, &sympoziumv1alpha1.AgentRun{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "busy-" + string(rune('a'+i)),
+				Namespace: "default",
+				Labels:    map[string]string{"sympozium.ai/ensemble": "team"},
+			},
+			Status: sympoziumv1alpha1.AgentRunStatus{Phase: sympoziumv1alpha1.AgentRunPhaseRunning},
+		})
+	}
+	r := newAgentRunTestReconciler(t, objs...)
+	r.DelegationControllerExecutor = true
+
+	requeueAfter, err := r.triggerDelegationSuccessors(context.Background(), logr.Discard(), run)
+	if err != nil {
+		t.Fatalf("triggerDelegationSuccessors: %v", err)
+	}
+	if requeueAfter <= 0 {
+		t.Fatalf("expected a positive requeueAfter when at in-flight cap, got %v", requeueAfter)
+	}
+	if got := listChildRuns(t, r); len(got) != 0 {
+		t.Fatalf("expected no child spawned at in-flight cap, got %d", len(got))
+	}
+	// Marker must stay unset so the requeued reconcile can re-evaluate and fire.
+	if run.Labels["sympozium.ai/delegation-triggered"] == "true" {
+		t.Fatal("marker set at in-flight cap — would prevent the retry from ever firing")
 	}
 }
 

@@ -868,6 +868,7 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 
 	// Trigger sequential successors: if this run succeeded and belongs to an
 	// ensemble with sequential relationships, create runs for target personas.
+	var delegationRequeueAfter time.Duration
 	if agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseSucceeded {
 		if err := r.triggerSequentialSuccessors(ctx, log, agentRun); err != nil {
 			log.Error(err, "Failed to trigger sequential successors")
@@ -877,10 +878,14 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 		// Trigger delegation successors: opt-in fallback (default off) that
 		// follows "delegation" edges for models that never emit the
 		// delegate_to_persona tool. No-op unless DelegationControllerExecutor.
-		if err := r.triggerDelegationSuccessors(ctx, log, agentRun); err != nil {
+		// A non-zero requeueAfter means the ensemble was at its in-flight cap;
+		// requeue so the successor is retried with backoff instead of dropped.
+		requeueAfter, err := r.triggerDelegationSuccessors(ctx, log, agentRun)
+		if err != nil {
 			log.Error(err, "Failed to trigger delegation successors")
 			// Non-fatal: don't block cleanup.
 		}
+		delegationRequeueAfter = requeueAfter
 	}
 
 	// Prune old runs beyond the history limit for this instance.
@@ -889,7 +894,7 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 		// Non-fatal: don't block reconciliation.
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: delegationRequeueAfter}, nil
 }
 
 // reconcileAwaitingDelegate handles AgentRuns that are waiting for a delegated
@@ -1128,6 +1133,14 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 	return nil
 }
 
+// delegationInflightRequeueAfter is the backoff used to retry a delegation
+// successor that could not spawn because the ensemble was momentarily at its
+// in-flight cap. Without an explicit requeue the successor would be silently
+// dropped: triggerDelegationSuccessors runs from reconcileCompleted purely for
+// its side effects, and the succeeded parent that drives it is unlikely to
+// reconcile again on its own.
+const delegationInflightRequeueAfter = 15 * time.Second
+
 // triggerDelegationSuccessors is the controller-side delegation executor — an
 // opt-in fallback (gated by DelegationControllerExecutor, default off) for
 // models that never emit the delegate_to_persona tool call. It mirrors
@@ -1142,44 +1155,50 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 // target the model already delegated to at runtime (recorded in
 // Status.Delegates) are skipped, so enabling the flag on a model that emits
 // some-but-not-all delegations still avoids double-spawning.
-func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) error {
+//
+// It returns a non-zero requeueAfter only when it could not spawn because the
+// ensemble was at its in-flight cap; the caller propagates that into the
+// reconcile Result so a saturated delegation is retried with backoff rather
+// than dropped. All other paths return 0 — they are either terminal (depth cap,
+// circuit breaker, no matching edge) or have already fired and set the marker.
+func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (time.Duration, error) {
 	// Default-off guarantee: no behavior change unless explicitly enabled.
 	if !r.DelegationControllerExecutor {
-		return nil
+		return 0, nil
 	}
 
 	// Idempotency: skip if we already triggered delegation successors for this
 	// run (prevent duplicates from re-reconciliation). Hoisted to the top so
 	// re-reconciles are a true no-op without any client reads.
 	if agentRun.Labels["sympozium.ai/delegation-triggered"] == "true" {
-		return nil
+		return 0, nil
 	}
 
 	// Look up the source instance to get the persona name and ensemble.
 	if agentRun.Spec.AgentRef == "" {
-		return nil
+		return 0, nil
 	}
 	var sourceInst sympoziumv1alpha1.Agent
 	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &sourceInst); err != nil {
-		return nil // Instance gone — skip.
+		return 0, nil // Instance gone — skip.
 	}
 	sourcePersona := sourceInst.Labels["sympozium.ai/agent-config"]
 	ensembleName := sourceInst.Labels["sympozium.ai/ensemble"]
 	if sourcePersona == "" || ensembleName == "" {
-		return nil // Not part of an ensemble.
+		return 0, nil // Not part of an ensemble.
 	}
 
 	// Look up the ensemble.
 	var ensemble sympoziumv1alpha1.Ensemble
 	if err := r.Get(ctx, types.NamespacedName{Name: ensembleName, Namespace: agentRun.Namespace}, &ensemble); err != nil {
-		return nil // Ensemble gone — skip.
+		return 0, nil // Ensemble gone — skip.
 	}
 
 	// Check circuit breaker before any spawn.
 	if err := r.checkCircuitBreaker(ctx, ensembleName, agentRun.Name, agentRun.Namespace); err != nil {
 		log.Info("Circuit breaker is open, skipping delegation successors",
 			"ensemble", ensembleName, "parentRun", agentRun.Name, "error", err.Error())
-		return nil
+		return 0, nil
 	}
 
 	// Build a set of personas the model already delegated to at runtime so the
@@ -1213,7 +1232,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 	if currentDepth >= maxDepth {
 		log.Info("Delegation depth cap reached, skipping successors",
 			"depth", currentDepth, "maxDepth", maxDepth)
-		return nil
+		return 0, nil
 	}
 
 	// Count in-flight runs for this ensemble to enforce concurrency cap.
@@ -1231,9 +1250,15 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 		}
 	}
 	if inflight >= maxInflight {
-		log.Info("Delegation in-flight cap reached, requeuing successors",
-			"inflight", inflight, "maxInflight", maxInflight)
-		return nil
+		// Return a backoff so reconcileCompleted requeues: the succeeded parent
+		// won't reconcile again on its own, so without this the successor would
+		// be silently dropped rather than retried once capacity frees up. The
+		// delegation-triggered marker is deliberately NOT set here, so the retry
+		// re-evaluates and fires when inflight drops below the cap.
+		log.Info("Delegation in-flight cap reached, requeuing successors with backoff",
+			"inflight", inflight, "maxInflight", maxInflight,
+			"requeueAfter", delegationInflightRequeueAfter.String())
+		return delegationInflightRequeueAfter, nil
 	}
 
 	// Score edges and select top-K (default K=1).
@@ -1256,7 +1281,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 		scored = append(scored, scoredEdge{rel: rel, score: score})
 	}
 	if len(scored) == 0 {
-		return nil
+		return 0, nil
 	}
 	// Sort descending by score.
 	sort.Slice(scored, func(i, j int) bool {
@@ -1384,7 +1409,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 		log.Error(err, "Failed to mark run as delegation-triggered")
 	}
 
-	return nil
+	return 0, nil
 }
 
 // scoreDelegationEdge scores a delegation edge against the completed run.
