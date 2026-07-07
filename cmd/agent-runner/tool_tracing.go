@@ -12,18 +12,15 @@ import (
 
 func executeToolCallWithTelemetry(ctx context.Context, name, argsJSON, callID string) string {
 	start := time.Now()
-	toolCtx, toolSpan := obs.startToolSpan(ctx,
-		attribute.String("gen_ai.tool.name", name),
-		attribute.String("gen_ai.tool.call.id", callID),
-	)
+	toolCtx, toolSpan := obs.startToolSpan(ctx, name, callID)
 
 	var result string
 	if name == ToolExecuteCommand {
 		skillStart := time.Now()
 		skillCtx, skillSpan := obs.startSkillSpan(toolCtx,
-			attribute.String("skill.name", "command-executor"),
-			attribute.String("sidecar.container", "tool-executor"),
-			attribute.String("rbac.scope", "namespace"),
+			"command-executor",
+			"tool-executor",
+			"namespace",
 		)
 		result = executeToolCall(skillCtx, name, argsJSON)
 		if strings.HasPrefix(result, "Error:") {

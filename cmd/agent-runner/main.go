@@ -354,12 +354,7 @@ func main() {
 		log.Println("TRACEPARENT env var not set")
 	}
 
-	ctx, runSpan := obs.startRunSpan(ctx,
-		attribute.String("instance", getEnv("INSTANCE_NAME", "")),
-		attribute.String("tenant.namespace", getEnv("AGENT_NAMESPACE", "")),
-		attribute.String("model", modelName),
-		attribute.String("task.summary", truncate(task, 200)),
-	)
+	ctx, runSpan := obs.startRunSpan(ctx, getEnv("INSTANCE_NAME",""), getEnv("AGENT_NAMESPACE",""), modelName, truncate(task,200))
 	writeTraceContextMetadata(ctx)
 	logWithTrace(ctx, "info", "agent run started", map[string]any{
 		"instance":  getEnv("INSTANCE_NAME", ""),
@@ -581,7 +576,7 @@ func main() {
 // backward-compatible test coverage.
 func callAnthropic(ctx context.Context, apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) (string, int, int, int, error) {
 	p := newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task, tools, headers)
-	return runAgentLoop(ctx, p)
+	return runAgentLoop(ctx, p, systemPrompt)
 }
 
 // callOpenAI dispatches an agent run to the OpenAI-compatible provider path
@@ -591,7 +586,7 @@ func callOpenAI(ctx context.Context, provider, apiKey, baseURL, model, systemPro
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p)
+	return runAgentLoop(ctx, p, systemPrompt)
 }
 
 // callBedrock dispatches an agent run to the AWS Bedrock provider.
@@ -600,7 +595,7 @@ func callBedrock(ctx context.Context, model, systemPrompt, task string, tools []
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p)
+	return runAgentLoop(ctx, p, systemPrompt)
 }
 
 // callBedrockWithClient accepts a pre-built client; used by tests to inject
@@ -610,7 +605,7 @@ func callBedrockWithClient(ctx context.Context, client bedrockClientAPI, model, 
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	return runAgentLoop(ctx, p)
+	return runAgentLoop(ctx, p, systemPrompt)
 }
 
 func writeJSON(path string, v any) {

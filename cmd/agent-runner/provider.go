@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sympozium-ai/sympozium/pkg/genaiattrs"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -75,7 +76,7 @@ type LLMProvider interface {
 // intermediate reasoning in the UX instead of a blank response.
 //
 // Returns (responseText, inputTokens, outputTokens, toolCalls, error).
-func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, error) {
+func runAgentLoop(ctx context.Context, p LLMProvider, systemPrompt string) (string, int, int, int, error) {
 	totalInputTokens := 0
 	totalOutputTokens := 0
 	totalToolCalls := 0
@@ -100,10 +101,7 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 			log.Printf("llm_round [%d/%d]", round, maxToolIterations)
 		}
 
-		chatCtx, chatSpan := obs.startChatSpan(ctx,
-			attribute.String("gen_ai.system", p.Name()),
-			attribute.String("gen_ai.request.model", p.Model()),
-		)
+		chatCtx, chatSpan := obs.startChatSpan(ctx, p.Name(), p.Model(), systemPrompt)
 		res, err := p.Chat(chatCtx)
 		if err != nil {
 			markSpanError(chatSpan, err)
@@ -114,8 +112,8 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 		totalInputTokens += res.InputTokens
 		totalOutputTokens += res.OutputTokens
 		chatSpan.SetAttributes(
-			attribute.Int("gen_ai.usage.input_tokens", res.InputTokens),
-			attribute.Int("gen_ai.usage.output_tokens", res.OutputTokens),
+			genaiattrs.InputTokens(res.InputTokens),
+			genaiattrs.OutputTokens(res.OutputTokens),
 		)
 		if res.FinishReason != "" {
 			chatSpan.SetAttributes(attribute.String("gen_ai.response.finish_reasons", res.FinishReason))
