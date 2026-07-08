@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.40](https://github.com/sympozium-ai/sympozium/compare/v0.10.39...v0.10.40) (2026-07-08)
+
+
+### Bug Fixes
+
+* **install:** make uninstall aware of the bundled llmfit-dra subchart ([92cbef8](https://github.com/sympozium-ai/sympozium/commit/92cbef80be3d581db2ac9f20e3f14fec7f72da0d))
+* **install:** make uninstall aware of the bundled llmfit-dra subchart ([576b7b6](https://github.com/sympozium-ai/sympozium/commit/576b7b6a17839672c51a2044759c4328c9c8ec89))
+
 ## [0.10.39](https://github.com/sympozium-ai/sympozium/compare/v0.10.38...v0.10.39) (2026-07-08)
 
 
