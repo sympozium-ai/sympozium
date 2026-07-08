@@ -158,16 +158,36 @@ type PlacementMode string
 const (
 	PlacementManual PlacementMode = "manual"
 	PlacementAuto   PlacementMode = "auto"
+	// PlacementDRA delegates placement entirely: the controller creates an
+	// llmfit.ai ModelClaim and the stock kube-scheduler places the serving
+	// pod on a device that satisfies the model's physics. Sympozium never
+	// picks a node (docs/positioning.md).
+	PlacementDRA PlacementMode = "dra"
 )
 
 // ModelPlacement configures node selection for the inference server.
 type ModelPlacement struct {
-	// Mode is "auto" or "manual". In auto mode the controller uses llmfit
-	// probes to select the best-fit node. Defaults to "manual".
+	// Mode is "manual", "auto", or "dra". In auto mode the controller
+	// prefers claim-based placement (as in "dra") when Kubernetes DRA and
+	// the llmfit.ai ModelClaim CRD are available, and falls back to llmfit
+	// probe-based node selection otherwise. Defaults to "manual".
 	// +kubebuilder:default="manual"
-	// +kubebuilder:validation:Enum=auto;manual
+	// +kubebuilder:validation:Enum=auto;manual;dra
 	// +optional
 	Mode PlacementMode `json:"mode,omitempty"`
+
+	// MinTps is the decode-throughput floor (tokens/second) passed to the
+	// ModelClaim in claim-based placement. Unset keeps the claim's default.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MinTps *int32 `json:"minTps,omitempty"`
+
+	// MinComputeTFLOPS is the opt-in compute floor (effective dense FP16
+	// TFLOPS) for prefill/TTFT-bound models, passed to the ModelClaim in
+	// claim-based placement.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MinComputeTFLOPS *int64 `json:"minComputeTFLOPS,omitempty"`
 }
 
 // ModelPhase represents the lifecycle phase of a Model.

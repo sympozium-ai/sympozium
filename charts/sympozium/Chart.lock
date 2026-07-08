@@ -1,0 +1,6 @@
+dependencies:
+- name: llmfit-dra
+  repository: oci://ghcr.io/sympozium-ai/charts
+  version: 0.3.0
+digest: sha256:d35f4d15b6e5b49a0ce0ec10e96a4d183d76e38b980c785aed751a1a9d4655b7
+generated: "2026-07-08T16:05:24.341253626+01:00"

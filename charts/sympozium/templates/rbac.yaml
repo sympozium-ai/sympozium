@@ -61,6 +61,13 @@ rules:
       - mcpservers/finalizers
       - models/finalizers
     verbs: ["update"]
+  # Claim-based model placement: the controller expresses model requirements
+  # as llmfit.ai ModelClaims (docs/positioning.md — models are claimed, not
+  # placed). Status is read from the same resource.
+  - apiGroups: ["llmfit.ai"]
+    resources:
+      - modelclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Core resources — controller + skill RBAC delegation
   - apiGroups: [""]
     resources:

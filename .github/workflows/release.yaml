@@ -171,6 +171,9 @@ jobs:
 
       - name: Package charts
         run: |
+          # Bundled llmfit-dra dependency (Chart.lock) — resolve before packaging.
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+          helm dependency build charts/sympozium
           helm package charts/sympozium-crds --destination .helm-packages
           helm package charts/sympozium      --destination .helm-packages
 

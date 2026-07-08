@@ -393,3 +393,8 @@ serviceMonitor:
   enabled: false
   interval: 30s
   labels: {}
+
+# Bundled llmfit-dra (claim-based model placement — non-optional by default).
+# Disable ONLY on clusters below Kubernetes 1.34, where DRA is unavailable.
+llmfit-dra:
+  enabled: true

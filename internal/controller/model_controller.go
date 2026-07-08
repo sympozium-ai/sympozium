@@ -25,6 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	llmfitv1alpha1 "github.com/sympozium-ai/llmfit-dra/api/v1alpha1"
+
+	"github.com/sympozium-ai/sympozium/internal/dra"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -67,6 +71,7 @@ type ModelReconciler struct {
 	Log          logr.Logger
 	Clientset    kubernetes.Interface
 	DensityCache *DensityCache // optional: set when llmfit DaemonSet is enabled
+	DRA          *dra.Detector // optional: claim-based placement when the cluster supports it
 }
 
 // +kubebuilder:rbac:groups=sympozium.ai,resources=models,verbs=get;list;watch;create;update;patch;delete
@@ -91,7 +96,10 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	// Initialize phase
 	if model.Status.Phase == "" {
-		if model.Spec.Placement.Mode == sympoziumv1alpha1.PlacementAuto && len(model.Spec.NodeSelector) == 0 {
+		if model.Spec.Placement.Mode == sympoziumv1alpha1.PlacementDRA {
+			model.Status.Phase = sympoziumv1alpha1.ModelPhasePlacing
+			model.Status.Message = "Claiming a device via llmfit.ai ModelClaim"
+		} else if model.Spec.Placement.Mode == sympoziumv1alpha1.PlacementAuto && len(model.Spec.NodeSelector) == 0 {
 			model.Status.Phase = sympoziumv1alpha1.ModelPhasePlacing
 			model.Status.Message = "Auto-selecting best node via llmfit"
 		} else {
@@ -127,6 +135,12 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 // uses cached fitness data for instant results. Falls back to spawning
 // probe pods when the cache is empty or stale.
 func (r *ModelReconciler) reconcilePlacing(ctx context.Context, model *sympoziumv1alpha1.Model, log logr.Logger) (ctrl.Result, error) {
+	// Claim-based placement: express the requirement, let the scheduler
+	// place (model_placement_dra.go). No node selection happens in sympozium.
+	if r.usesDRAPlacement(model) {
+		return r.reconcilePlacingDRA(ctx, model, log)
+	}
+
 	// Fast path: use DensityCache if available and populated.
 	if r.DensityCache != nil && r.DensityCache.NodeCount() > 0 {
 		modelQuery := r.backendFor(model).ModelQuery(model)
@@ -675,6 +689,26 @@ func (r *ModelReconciler) reconcileReady(ctx context.Context, model *sympoziumv1
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
+	// Claim-based placement: the scheduler picked the node at pod-bind time;
+	// backfill PlacedNode from the running pod so operators see the outcome.
+	if model.Status.PlacedNode == "" && r.usesDRAPlacement(model) {
+		var pods corev1.PodList
+		if err := r.List(ctx, &pods, client.InNamespace(model.Namespace), client.MatchingLabels{
+			"app.kubernetes.io/name":     "model",
+			"app.kubernetes.io/instance": model.Name,
+		}); err == nil {
+			for i := range pods.Items {
+				if pods.Items[i].Spec.NodeName != "" {
+					model.Status.PlacedNode = pods.Items[i].Spec.NodeName
+					if err := r.Status().Update(ctx, model); err != nil {
+						return ctrl.Result{}, err
+					}
+					break
+				}
+			}
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -935,12 +969,19 @@ func (r *ModelReconciler) ensureDeployment(ctx context.Context, model *sympozium
 			resources.Requests[corev1.ResourceCPU] = cpu
 			resources.Limits[corev1.ResourceCPU] = cpu
 		}
-		if model.Spec.Resources.GPU > 0 {
+		// In claim-based placement the device arrives through the pod's
+		// resource claim (CDI-prepared by llmfit-dra) — a vendor device-plugin
+		// limit here would double-book the same silicon.
+		useDRA := r.usesDRAPlacement(model)
+		if model.Spec.Resources.GPU > 0 && !useDRA {
 			gpuQty := resource.MustParse(fmt.Sprintf("%d", model.Spec.Resources.GPU))
 			if resources.Limits == nil {
 				resources.Limits = corev1.ResourceList{}
 			}
 			resources.Limits["nvidia.com/gpu"] = gpuQty
+		}
+		if useDRA {
+			resources.Claims = []corev1.ResourceClaim{{Name: "model"}}
 		}
 
 		container := corev1.Container{
@@ -988,6 +1029,14 @@ func (r *ModelReconciler) ensureDeployment(ctx context.Context, model *sympozium
 			Volumes:         volumes,
 			NodeSelector:    model.Spec.NodeSelector,
 			Tolerations:     model.Spec.Tolerations,
+		}
+		if useDRA {
+			// Same-name contract: the ModelClaim reconciles a template named
+			// after the Model; the stock scheduler does the placement.
+			deploy.Spec.Template.Spec.ResourceClaims = []corev1.PodResourceClaim{{
+				Name:                      "model",
+				ResourceClaimTemplateName: &model.Name,
+			}}
 		}
 
 		return nil
@@ -1066,12 +1115,18 @@ func modelContainerSecurityContext() *corev1.SecurityContext {
 }
 
 func (r *ModelReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&sympoziumv1alpha1.Model{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&batchv1.Job{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.Pod{}).
-		Complete(r)
+		Owns(&corev1.Pod{})
+	// Watch owned ModelClaims only when the CRD is served at boot; a watch on
+	// an absent CRD fails the manager. Installed-later clusters still work via
+	// reconcilePlacingDRA's requeue polling until the next controller restart.
+	if r.DRA != nil && r.DRA.Available() {
+		b = b.Owns(&llmfitv1alpha1.ModelClaim{})
+	}
+	return b.Complete(r)
 }

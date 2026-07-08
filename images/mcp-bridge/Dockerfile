@@ -1,5 +1,5 @@
 # MCP Bridge Sidecar
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git ca-certificates
 WORKDIR /workspace
 COPY go.mod go.sum ./

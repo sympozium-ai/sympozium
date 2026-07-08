@@ -1,6 +1,6 @@
 module github.com/sympozium-ai/sympozium
 
-go 1.25.0
+go 1.26.4
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0
@@ -24,6 +24,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
+	github.com/sympozium-ai/llmfit-dra/api v0.0.0-20260708145247-787d849d84af
 	go.mau.fi/whatsmeow v0.0.0-20260219150138-7ae702b1eed4
 	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0

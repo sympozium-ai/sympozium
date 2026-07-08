@@ -20,8 +20,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	llmfitv1alpha1 "github.com/sympozium-ai/llmfit-dra/api/v1alpha1"
+
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/controller"
+	"github.com/sympozium-ai/sympozium/internal/dra"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"github.com/sympozium-ai/sympozium/pkg/telemetry"
@@ -36,6 +39,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(sympoziumv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(llmfitv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
@@ -212,6 +216,9 @@ func main() {
 		Scheme:    mgr.GetScheme(),
 		Log:       ctrl.Log.WithName("controllers").WithName("Model"),
 		Clientset: clientset,
+		// Claim-based placement is runtime-detected: llmfit-dra ships with the
+		// sympozium chart, but pre-1.34 clusters (no DRA) degrade gracefully.
+		DRA: dra.NewDetector(clientset.Discovery()),
 	}
 	if err := modelReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Model")

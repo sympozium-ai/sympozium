@@ -21,3 +21,12 @@ keywords:
   - llm
   - sympozium
 icon: https://raw.githubusercontent.com/sympozium-ai/sympozium/main/icon.png
+dependencies:
+  # llmfit-dra ships WITH sympozium: claim-based model placement is part of
+  # the product (docs/positioning.md — models are claimed, not placed).
+  # Escape hatch for pre-1.34 clusters (no DRA): --set llmfit-dra.enabled=false;
+  # placement then falls back to the legacy llmfit probe path.
+  - name: llmfit-dra
+    version: 0.3.0
+    repository: oci://ghcr.io/sympozium-ai/charts
+    condition: llmfit-dra.enabled
