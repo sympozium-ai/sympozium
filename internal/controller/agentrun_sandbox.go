@@ -6,6 +6,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -80,12 +81,18 @@ func (r *AgentRunReconciler) reconcilePendingAgentSandbox(
 	memoryEnabled := false
 	var observability *sympoziumv1alpha1.ObservabilitySpec
 	var mcpServers []sympoziumv1alpha1.MCPServerRef
+	var allowedOutboundChannels []string
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
 		Name:      agentRun.Spec.AgentRef,
 	}, instance); err == nil {
 		if instance.Spec.Memory != nil && instance.Spec.Memory.Enabled {
 			memoryEnabled = true
+		}
+		for _, ch := range instance.Spec.Channels {
+			if t := strings.TrimSpace(ch.Type); t != "" {
+				allowedOutboundChannels = append(allowedOutboundChannels, t)
+			}
 		}
 		if instance.Spec.Observability != nil && instance.Spec.Observability.Enabled {
 			obsCopy := *instance.Spec.Observability
@@ -197,7 +204,7 @@ func (r *AgentRunReconciler) reconcilePendingAgentSandbox(
 	}
 
 	// Build containers/volumes using the existing shared logic.
-	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, taskSidecars, mcpServers)
+	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, taskSidecars, mcpServers, allowedOutboundChannels)
 	volumes := r.buildVolumes(agentRun, memoryEnabled, taskSidecars, mcpServers)
 
 	// Build the Sandbox CR or SandboxClaim.

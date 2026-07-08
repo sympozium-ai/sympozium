@@ -14,6 +14,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -22,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -44,15 +48,16 @@ var slackTracer = otel.Tracer("sympozium.ai/channel-slack")
 // SlackChannel implements the Slack channel using Socket Mode or the Events API.
 type SlackChannel struct {
 	channel.BaseChannel
-	BotToken string
-	AppToken string // xapp-... token for Socket Mode (optional)
-	BotID    string // resolved at startup via auth.test, used for @-mention detection
-	log      logr.Logger
-	client   *http.Client
-	healthy  bool
-	mu       sync.RWMutex
-	cfg      *slackConfig
-	threads  *threadEngagement
+	BotToken      string
+	AppToken      string // xapp-... token for Socket Mode (optional)
+	SigningSecret string // Slack signing secret; required to verify Events API requests
+	BotID         string // resolved at startup via auth.test, used for @-mention detection
+	log           logr.Logger
+	client        *http.Client
+	healthy       bool
+	mu            sync.RWMutex
+	cfg           *slackConfig
+	threads       *threadEngagement
 }
 
 func main() {
@@ -60,17 +65,28 @@ func main() {
 	var eventBusURL string
 	var botToken string
 	var appToken string
+	var signingSecret string
 	var listenAddr string
 
 	flag.StringVar(&instanceName, "instance", os.Getenv("INSTANCE_NAME"), "Agent name")
 	flag.StringVar(&eventBusURL, "event-bus-url", os.Getenv("EVENT_BUS_URL"), "Event bus URL")
 	flag.StringVar(&botToken, "bot-token", os.Getenv("SLACK_BOT_TOKEN"), "Slack bot token (xoxb-...)")
 	flag.StringVar(&appToken, "app-token", os.Getenv("SLACK_APP_TOKEN"), "Slack app token (xapp-...) for Socket Mode")
+	flag.StringVar(&signingSecret, "signing-secret", os.Getenv("SLACK_SIGNING_SECRET"), "Slack signing secret (verifies Events API requests)")
 	flag.StringVar(&listenAddr, "addr", ":3000", "Listen address for Events API fallback")
 	flag.Parse()
 
 	if botToken == "" {
 		fmt.Fprintln(os.Stderr, "SLACK_BOT_TOKEN is required")
+		os.Exit(1)
+	}
+
+	// Events API mode accepts unauthenticated HTTP; without a signing secret to
+	// verify request provenance anyone who can reach the pod could forge events
+	// and trigger AgentRuns. Refuse to start rather than run wide open. Socket
+	// Mode uses an authenticated WebSocket and needs no signing secret.
+	if appToken == "" && signingSecret == "" {
+		fmt.Fprintln(os.Stderr, "SLACK_SIGNING_SECRET is required in Events API mode (no SLACK_APP_TOKEN); refusing to start without request-signature verification")
 		os.Exit(1)
 	}
 
@@ -89,12 +105,13 @@ func main() {
 			InstanceName: instanceName,
 			EventBus:     bus,
 		},
-		BotToken: botToken,
-		AppToken: appToken,
-		log:      log,
-		client:   &http.Client{Timeout: 30 * time.Second},
-		cfg:      loadSlackConfig(log),
-		threads:  newThreadEngagement(24 * time.Hour),
+		BotToken:      botToken,
+		AppToken:      appToken,
+		SigningSecret: signingSecret,
+		log:           log,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		cfg:           loadSlackConfig(log),
+		threads:       newThreadEngagement(24 * time.Hour),
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -425,6 +442,27 @@ func (sc *SlackChannel) runEventsAPI(ctx context.Context, addr string) {
 	}
 }
 
+// verifySlackSignature validates the X-Slack-Signature HMAC over the raw request
+// body per Slack's signing scheme (https://api.slack.com/authentication/verifying-requests-from-slack).
+// It also rejects timestamps outside a 5-minute window to blunt replay attacks.
+func verifySlackSignature(signingSecret, timestamp, signature string, body []byte) bool {
+	if signingSecret == "" || timestamp == "" || signature == "" {
+		return false
+	}
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	if diff := time.Now().Unix() - ts; diff > 300 || diff < -300 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(signingSecret))
+	mac.Write([]byte("v0:" + timestamp + ":"))
+	mac.Write(body)
+	expected := "v0=" + hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
 // handleSlackEvents processes incoming Slack Events API payloads (webhook mode).
 func (sc *SlackChannel) handleSlackEvents(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -433,6 +471,16 @@ func (sc *SlackChannel) handleSlackEvents(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer r.Body.Close()
+
+	// Verify the request came from Slack before trusting anything in it,
+	// including the url_verification challenge, which Slack also signs.
+	if !verifySlackSignature(sc.SigningSecret,
+		r.Header.Get("X-Slack-Request-Timestamp"),
+		r.Header.Get("X-Slack-Signature"), body) {
+		sc.log.Info("Rejecting Slack event with invalid or missing signature")
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
 
 	var envelope struct {
 		Type      string `json:"type"`

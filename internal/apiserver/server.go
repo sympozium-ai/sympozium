@@ -255,11 +255,13 @@ func (s *Server) buildMux(frontendFS fs.FS, token string) http.Handler {
 		return authMiddleware(token, handler)
 	}
 
+	s.log.Info("WARNING: API server auth token is empty — /api and /ws endpoints are unauthenticated; any caller can create runs in any namespace")
 	return handler
 }
 
-// authMiddleware returns an http.Handler that checks for a valid Bearer token
-// or ?token= query parameter. Health and metrics endpoints are exempted.
+// authMiddleware returns an http.Handler that checks for a valid Bearer token.
+// The ?token= query parameter is accepted only for WebSocket (/ws/) upgrades.
+// Health and metrics endpoints are exempted.
 func authMiddleware(expectedToken string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -276,12 +278,15 @@ func authMiddleware(expectedToken string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Check Authorization header or query param.
+		// Prefer the Authorization header. Fall back to the ?token= query
+		// parameter only for WebSocket upgrades (/ws/), where browsers cannot
+		// set custom headers — REST callers must use the header so tokens do
+		// not leak into access logs, proxies, or browser history.
 		token := ""
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			token = strings.TrimPrefix(auth, "Bearer ")
 		}
-		if token == "" {
+		if token == "" && strings.HasPrefix(path, "/ws/") {
 			token = r.URL.Query().Get("token")
 		}
 		if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {

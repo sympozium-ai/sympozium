@@ -1576,7 +1576,10 @@ func validateRelationshipGraph(personas []sympoziumv1alpha1.AgentConfigSpec, rel
 		if !names[rel.Target] {
 			return fmt.Errorf("relationship references unknown persona %q (target)", rel.Target)
 		}
-		if rel.Type == "sequential" {
+		// Sequential and delegation edges both drive one persona to invoke
+		// another; a cycle in either is a config-time error (a delegation cycle
+		// is a fork-bomb topology bounded only at runtime by maxDelegationDepth).
+		if rel.Type == "sequential" || rel.Type == "delegation" {
 			adj[rel.Source] = append(adj[rel.Source], rel.Target)
 		}
 	}
@@ -1600,7 +1603,7 @@ func validateRelationshipGraph(personas []sympoziumv1alpha1.AgentConfigSpec, rel
 					}
 				}
 				cycle := append(path[cycleStart:], next)
-				return fmt.Errorf("cycle detected in sequential pipeline: %s", strings.Join(cycle, " -> "))
+				return fmt.Errorf("cycle detected in relationship graph: %s", strings.Join(cycle, " -> "))
 			}
 			if color[next] == 0 {
 				if err := dfs(next); err != nil {

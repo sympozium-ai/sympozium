@@ -106,7 +106,7 @@ func TestSympoziumScheduleReconcile_CopiesProviderAndAuthSecretToRun(t *testing.
 		t.Fatalf("authSecretRef = %q, want inst-a-anthropic-key", run.Spec.Model.AuthSecretRef)
 	}
 
-	agentContainers, _ := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil, nil)
+	agentContainers, _ := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil, nil, nil)
 	// Auth secrets are now injected as individual secretKeyRef entries (Fix 9).
 	found := false
 	for _, env := range agentContainers[0].Env {

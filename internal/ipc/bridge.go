@@ -60,6 +60,13 @@ type Bridge struct {
 	agentDone          chan struct{} // signalled when result.json is received
 	processedFiles     sync.Map      // dedup fsnotify Create+Write for the same file
 	SuppressCompletion bool          // when true, do not publish TopicAgentRunCompleted (gate mode)
+
+	// enforceOutboundChannels is true when the ALLOWED_OUTBOUND_CHANNELS env is
+	// present (set by the controller). When true, outbound tool messages whose
+	// channel is not in allowedOutboundChannels are dropped. An empty allowlist
+	// means the agent has no configured channels and may not send at all.
+	enforceOutboundChannels bool
+	allowedOutboundChannels map[string]bool
 }
 
 // NewBridge creates a new IPC bridge.
@@ -68,17 +75,38 @@ func NewBridge(basePath, agentRunID, instanceName string, bus eventbus.EventBus,
 	if len(agentNamespace) > 0 {
 		namespace = agentNamespace[0]
 	}
+	allowedChannels, enforceChannels := parseAllowedOutboundChannels()
 	return &Bridge{
-		BasePath:           basePath,
-		AgentRunID:         agentRunID,
-		InstanceName:       instanceName,
-		AgentDisplayName:   os.Getenv("AGENT_DISPLAY_NAME"),
-		AgentNamespace:     namespace,
-		EventBus:           bus,
-		Log:                log,
-		agentDone:          make(chan struct{}),
-		SuppressCompletion: os.Getenv("GATE_SUPPRESS_COMPLETION") == "true",
+		BasePath:                basePath,
+		AgentRunID:              agentRunID,
+		InstanceName:            instanceName,
+		AgentDisplayName:        os.Getenv("AGENT_DISPLAY_NAME"),
+		AgentNamespace:          namespace,
+		EventBus:                bus,
+		Log:                     log,
+		agentDone:               make(chan struct{}),
+		SuppressCompletion:      os.Getenv("GATE_SUPPRESS_COMPLETION") == "true",
+		enforceOutboundChannels: enforceChannels,
+		allowedOutboundChannels: allowedChannels,
 	}
+}
+
+// parseAllowedOutboundChannels reads the ALLOWED_OUTBOUND_CHANNELS env. The
+// second return is true when the variable is present at all (even if empty),
+// which switches on enforcement; absence keeps the legacy allow-all behaviour
+// for pods created by an older controller.
+func parseAllowedOutboundChannels() (map[string]bool, bool) {
+	raw, ok := os.LookupEnv("ALLOWED_OUTBOUND_CHANNELS")
+	if !ok {
+		return nil, false
+	}
+	set := make(map[string]bool)
+	for _, c := range strings.Split(raw, ",") {
+		if c = strings.ToLower(strings.TrimSpace(c)); c != "" {
+			set[c] = true
+		}
+	}
+	return set, true
 }
 
 // metadata returns the standard event metadata for messages emitted by this bridge.
@@ -365,6 +393,18 @@ func (b *Bridge) handleOutboundMessage(ctx context.Context, fe FileEvent) {
 	}
 
 	metadata := b.metadata()
+
+	// Enforce the outbound-channel allowlist before doing anything else: agents
+	// are adversarial, and the send_channel_message tool otherwise lets them
+	// deliver arbitrary text to any channel type. Replies to inbound messages
+	// travel via result.json/TopicAgentRunCompleted, not this path, so they are
+	// unaffected.
+	if !b.outboundChannelAllowed(data) {
+		b.Log.Info("Dropping outbound message to channel not configured on this agent",
+			"path", fe.Path, "channel", outboundChannelName(data))
+		return
+	}
+
 	sanitized, dropped, err := b.sanitizeOutboundMessage(data)
 	if err != nil {
 		b.Log.Error(err, "dropping invalid outbound message", "path", fe.Path)
@@ -382,6 +422,27 @@ func (b *Bridge) handleOutboundMessage(ctx context.Context, fe FileEvent) {
 	if err := b.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, event); err != nil {
 		b.Log.Error(err, "failed to publish outbound message")
 	}
+}
+
+// outboundChannelAllowed reports whether an outbound tool message may be
+// delivered given the agent's configured channel allowlist. When enforcement is
+// off (pods from an older controller) every channel is allowed.
+func (b *Bridge) outboundChannelAllowed(data []byte) bool {
+	if !b.enforceOutboundChannels {
+		return true
+	}
+	ch := strings.ToLower(strings.TrimSpace(outboundChannelName(data)))
+	return ch != "" && b.allowedOutboundChannels[ch]
+}
+
+// outboundChannelName extracts the "channel" field from a raw outbound message
+// without disturbing the rest of the payload.
+func outboundChannelName(data []byte) string {
+	var p struct {
+		Channel string `json:"channel"`
+	}
+	_ = json.Unmarshal(data, &p)
+	return p.Channel
 }
 
 func (b *Bridge) sanitizeOutboundMessage(data []byte) (json.RawMessage, []string, error) {

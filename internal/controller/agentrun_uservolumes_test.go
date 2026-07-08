@@ -68,7 +68,7 @@ func TestBuildContainers_UserVolumeMountsAppended(t *testing.T) {
 		{Name: "workspace", MountPath: "/should-not-apply"},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, nil, nil)
+	containers, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 	agent := containers[0]
 
 	var hasVault bool
@@ -162,7 +162,7 @@ func TestBuildContainers_SidecarVolumeMountsApplied(t *testing.T) {
 		},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, sidecars, nil)
+	containers, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
 
 	var skillContainer *corev1.Container
 	for i := range containers {

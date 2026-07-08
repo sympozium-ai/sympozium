@@ -16,7 +16,7 @@ func TestBuildContainers_MemoryServerURLInjected(t *testing.T) {
 		{SkillPackRef: "memory"},
 	}
 
-	cs, _ := r.buildContainers(run, false, nil, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 
 	// The agent container is always the first one.
 	agentContainer := cs[0]
@@ -44,7 +44,7 @@ func TestBuildContainers_NoMemoryServerURLWithoutSkill(t *testing.T) {
 		{SkillPackRef: "k8s-ops"},
 	}
 
-	cs, _ := r.buildContainers(run, false, nil, nil, nil)
+	cs, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 
 	agentContainer := cs[0]
 	for _, env := range agentContainer.Env {
@@ -100,7 +100,7 @@ func TestBuildContainers_WaitForMemoryInitContainer(t *testing.T) {
 		{SkillPackRef: "memory"},
 	}
 
-	_, initCs := r.buildContainers(run, false, nil, nil, nil)
+	_, initCs := r.buildContainers(run, false, nil, nil, nil, nil)
 
 	var found bool
 	for _, ic := range initCs {
@@ -133,7 +133,7 @@ func TestBuildContainers_NoWaitForMemoryWithoutSkill(t *testing.T) {
 		{SkillPackRef: "k8s-ops"},
 	}
 
-	_, initCs := r.buildContainers(run, false, nil, nil, nil)
+	_, initCs := r.buildContainers(run, false, nil, nil, nil, nil)
 
 	for _, ic := range initCs {
 		if ic.Name == "wait-for-memory" {

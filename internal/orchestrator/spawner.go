@@ -250,30 +250,35 @@ func (s *Spawner) resolvePersonaTarget(ctx context.Context, req SpawnRequest) (S
 		return req, fmt.Errorf("persona %q not found or not installed in Ensemble %q", req.TargetPersona, req.PackName)
 	}
 
-	// Validate that a relationship edge exists between the personas.
-	if len(pack.Spec.Relationships) > 0 {
-		// Determine the source persona from the parent's instance name.
-		var sourcePersona string
-		for _, ip := range pack.Status.InstalledAgentConfigs {
-			if ip.InstanceName == req.InstanceName {
-				sourcePersona = ip.Name
-				break
-			}
+	// Authorize the delegation. Both PackName and TargetPersona are
+	// agent-supplied (adversarial), so the parent must prove membership in the
+	// named Ensemble and a delegation/sequential edge must connect it to the
+	// target. A parent whose instance is not installed in this pack — including
+	// one naming a foreign in-namespace Ensemble — has no source persona and is
+	// denied. An Ensemble with no relationships permits no delegation rather
+	// than allowing any-to-any.
+	var sourcePersona string
+	for _, ip := range pack.Status.InstalledAgentConfigs {
+		if ip.InstanceName == req.InstanceName {
+			sourcePersona = ip.Name
+			break
 		}
-		if sourcePersona != "" {
-			edgeExists := false
-			for _, rel := range pack.Spec.Relationships {
-				if rel.Source == sourcePersona && rel.Target == req.TargetPersona &&
-					(rel.Type == "delegation" || rel.Type == "sequential") {
-					edgeExists = true
-					break
-				}
-			}
-			if !edgeExists {
-				return req, fmt.Errorf("no delegation or sequential relationship from %q to %q in Ensemble %q",
-					sourcePersona, req.TargetPersona, req.PackName)
-			}
+	}
+	if sourcePersona == "" {
+		return req, fmt.Errorf("delegation denied: run instance %q is not a member of Ensemble %q",
+			req.InstanceName, req.PackName)
+	}
+	edgeExists := false
+	for _, rel := range pack.Spec.Relationships {
+		if rel.Source == sourcePersona && rel.Target == req.TargetPersona &&
+			(rel.Type == "delegation" || rel.Type == "sequential") {
+			edgeExists = true
+			break
 		}
+	}
+	if !edgeExists {
+		return req, fmt.Errorf("delegation denied: no delegation or sequential relationship from %q to %q in Ensemble %q",
+			sourcePersona, req.TargetPersona, req.PackName)
 	}
 
 	req.InstanceName = targetAgentName

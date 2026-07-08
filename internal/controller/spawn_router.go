@@ -22,6 +22,12 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 )
 
+// maxDelegationDepth bounds how deeply delegate_to_persona calls may nest. It
+// is a hard backstop against runaway recursion (e.g. a delegation cycle A→B→A),
+// which the failure-counting circuit breaker does not catch because successful
+// recursion never trips it. Legitimate delegation chains are far shallower.
+const maxDelegationDepth = 8
+
 // SpawnRouter subscribes to agent.spawn.request and agent.subagent.request
 // events from the IPC bridge, creates child AgentRun CRs for delegated tasks
 // and ad-hoc subagent batches, and delivers results back to the parent.
@@ -158,6 +164,17 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 	sessionKey := parentRun.Spec.SessionKey
 	if parentRun.Spec.Parent != nil {
 		depth = parentRun.Spec.Parent.SpawnDepth
+	}
+
+	if depth+1 > maxDelegationDepth {
+		sr.Log.Info("Rejecting delegation spawn: max delegation depth exceeded",
+			"parentRun", parentRunID,
+			"depth", depth+1,
+			"maxDepth", maxDelegationDepth,
+		)
+		sr.publishDelegateResult(ctx, parentRunID, req.RequestID, "",
+			fmt.Sprintf("delegation depth %d would exceed limit of %d", depth+1, maxDelegationDepth))
+		return
 	}
 
 	spawnReq := orchestrator.SpawnRequest{

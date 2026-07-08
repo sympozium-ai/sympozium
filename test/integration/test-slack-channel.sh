@@ -179,9 +179,9 @@ fi
 # Check labels
 if $deploy_found; then
     channel_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.sympozium\.io/channel}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.ai/channel}' 2>/dev/null || echo "")
     instance_label=$(kubectl get deployment "$deploy_name" -n "$NAMESPACE" \
-        -o jsonpath='{.metadata.labels.sympozium\.io/instance}' 2>/dev/null || echo "")
+        -o jsonpath='{.metadata.labels.sympozium\.ai/instance}' 2>/dev/null || echo "")
     if [[ "$channel_label" == "slack" && "$instance_label" == "$INSTANCE_NAME" ]]; then
         pass "Deployment labels correct (channel=slack, instance=$INSTANCE_NAME)"
     else

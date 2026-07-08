@@ -311,14 +311,54 @@ func TestValidateRelationshipGraph_DanglingRef(t *testing.T) {
 	}
 }
 
-func TestValidateRelationshipGraph_IgnoresNonSequential(t *testing.T) {
+func TestValidateRelationshipGraph_IgnoresSupervision(t *testing.T) {
+	// Supervision edges are observability-only and do not drive invocation, so
+	// they never participate in cycle detection. Here a→b delegation plus b→a
+	// supervision is not a cycle (only the delegation edge is a graph edge).
 	personas := testPersonas("a", "b")
 	rels := []sympoziumv1alpha1.AgentConfigRelationship{
 		{Source: "a", Target: "b", Type: "delegation"},
 		{Source: "b", Target: "a", Type: "supervision"},
 	}
 	if err := validateRelationshipGraph(personas, rels, nil, ""); err != nil {
-		t.Errorf("non-sequential edges should not trigger cycle detection, got: %v", err)
+		t.Errorf("supervision edges should not trigger cycle detection, got: %v", err)
+	}
+}
+
+func TestValidateRelationshipGraph_DelegationDAGAllowed(t *testing.T) {
+	// A coordinator delegating to two workers is a DAG — legal.
+	personas := testPersonas("coord", "w1", "w2")
+	rels := []sympoziumv1alpha1.AgentConfigRelationship{
+		{Source: "coord", Target: "w1", Type: "delegation"},
+		{Source: "coord", Target: "w2", Type: "delegation"},
+	}
+	if err := validateRelationshipGraph(personas, rels, nil, ""); err != nil {
+		t.Errorf("delegation DAG should be allowed, got: %v", err)
+	}
+}
+
+func TestValidateRelationshipGraph_DelegationCycleRejected(t *testing.T) {
+	// Regression: a delegation cycle a→b→a is a fork-bomb topology and must be
+	// rejected at config time (previously only sequential edges were checked).
+	personas := testPersonas("a", "b")
+	rels := []sympoziumv1alpha1.AgentConfigRelationship{
+		{Source: "a", Target: "b", Type: "delegation"},
+		{Source: "b", Target: "a", Type: "delegation"},
+	}
+	if err := validateRelationshipGraph(personas, rels, nil, ""); err == nil {
+		t.Fatal("expected a delegation cycle to be rejected")
+	}
+}
+
+func TestValidateRelationshipGraph_MixedSequentialDelegationCycleRejected(t *testing.T) {
+	// A cycle formed across a sequential and a delegation edge is still a cycle.
+	personas := testPersonas("a", "b")
+	rels := []sympoziumv1alpha1.AgentConfigRelationship{
+		{Source: "a", Target: "b", Type: "sequential"},
+		{Source: "b", Target: "a", Type: "delegation"},
+	}
+	if err := validateRelationshipGraph(personas, rels, nil, ""); err == nil {
+		t.Fatal("expected a mixed sequential/delegation cycle to be rejected")
 	}
 }
 

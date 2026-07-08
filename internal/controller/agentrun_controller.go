@@ -380,12 +380,22 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	memoryEnabled := false
 	var observability *sympoziumv1alpha1.ObservabilitySpec
 	var mcpServers []sympoziumv1alpha1.MCPServerRef
+	// allowedOutboundChannels bounds where the agent's send_channel_message
+	// tool may deliver: only channel types actually configured on the Agent.
+	// Threaded into the ipc-bridge, which drops tool sends to any other channel
+	// (agents are adversarial — this limits the data-exfil surface).
+	var allowedOutboundChannels []string
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: agentRun.Namespace,
 		Name:      agentRun.Spec.AgentRef,
 	}, instance); err == nil {
 		if instance.Spec.Memory != nil && instance.Spec.Memory.Enabled {
 			memoryEnabled = true
+		}
+		for _, ch := range instance.Spec.Channels {
+			if t := strings.TrimSpace(ch.Type); t != "" {
+				allowedOutboundChannels = append(allowedOutboundChannels, t)
+			}
 		}
 		if instance.Spec.Observability != nil && instance.Spec.Observability.Enabled {
 			obsCopy := *instance.Spec.Observability
@@ -573,7 +583,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	// Build and create the Job
-	job := r.buildJob(agentRun, memoryEnabled, observability, sidecars, mcpServers)
+	job := r.buildJob(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
 
 	// Inject shared workflow memory env vars and init container if the pack has shared memory.
 	r.injectSharedMemory(ctx, agentRun, job)
@@ -1824,6 +1834,7 @@ func (r *AgentRunReconciler) buildJob(
 	observability *sympoziumv1alpha1.ObservabilitySpec,
 	sidecars []resolvedSidecar,
 	mcpServers []sympoziumv1alpha1.MCPServerRef,
+	allowedOutboundChannels []string,
 ) *batchv1.Job {
 	labels := map[string]string{
 		"sympozium.ai/agent-run":       agentRun.Name,
@@ -1842,7 +1853,7 @@ func (r *AgentRunReconciler) buildJob(
 	backoffLimit := int32(0)
 
 	// Build containers
-	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, sidecars, mcpServers)
+	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
 	volumes := r.buildVolumes(agentRun, memoryEnabled, sidecars, mcpServers)
 	hostNetwork, hostPID := derivePodHostAccess(sidecars)
 	dnsPolicy := corev1.DNSClusterFirst
@@ -1898,6 +1909,7 @@ func (r *AgentRunReconciler) buildContainers(
 	observability *sympoziumv1alpha1.ObservabilitySpec,
 	sidecars []resolvedSidecar,
 	mcpServers []sympoziumv1alpha1.MCPServerRef,
+	allowedOutboundChannels []string,
 ) ([]corev1.Container, []corev1.Container) {
 	readOnly := true
 	noPrivEsc := false
@@ -2008,6 +2020,14 @@ func (r *AgentRunReconciler) buildContainers(
 				if hasResponseGateHook(agentRun) {
 					env = append(env, corev1.EnvVar{Name: "GATE_SUPPRESS_COMPLETION", Value: "true"})
 				}
+				// Always set (even empty) so the bridge enforces the allowlist:
+				// an empty value means the agent has no configured channels and
+				// so may not send channel messages at all. Its presence is what
+				// switches the bridge from allow-all (legacy) to enforcing.
+				env = append(env, corev1.EnvVar{
+					Name:  "ALLOWED_OUTBOUND_CHANNELS",
+					Value: strings.Join(allowedOutboundChannels, ","),
+				})
 				return env
 			}(),
 			VolumeMounts: []corev1.VolumeMount{

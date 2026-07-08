@@ -43,7 +43,7 @@ func TestBuildContainers_SidecarReceivesSkillPackEnv(t *testing.T) {
 		},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, sidecars, nil)
+	containers, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
 
 	want := map[string]string{
 		"skill-github-gitops": "github-gitops",
@@ -95,7 +95,7 @@ func TestBuildContainers_AgentReceivesSkillTargetsEnv(t *testing.T) {
 		},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, sidecars, nil)
+	containers, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
 
 	if len(containers) == 0 || containers[0].Name != "agent" {
 		t.Fatalf("expected first container to be 'agent', got: %+v", containers)
@@ -117,7 +117,7 @@ func TestBuildContainers_NoSkillTargetsEnvWithoutSidecars(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRun()
 
-	containers, _ := r.buildContainers(run, false, nil, nil, nil)
+	containers, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 
 	if len(containers) == 0 || containers[0].Name != "agent" {
 		t.Fatalf("expected first container to be 'agent', got: %+v", containers)
