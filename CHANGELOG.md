@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.39](https://github.com/sympozium-ai/sympozium/compare/v0.10.38...v0.10.39) (2026-07-08)
+
+
+### Features
+
+* Add skipped as AgentRun status - reachable via IPC similar to dry runs ([#228](https://github.com/sympozium-ai/sympozium/issues/228)) ([056421c](https://github.com/sympozium-ai/sympozium/commit/056421c6f1c7a0ad445ea3c2628da332103c12fa))
+* **channels:** wire per-agent display name for Slack sender attribution ([#263](https://github.com/sympozium-ai/sympozium/issues/263)) ([1f52056](https://github.com/sympozium-ai/sympozium/commit/1f5205692e7e79eca88ace59d2e4300f66e0b971))
+* **placement:** claim-based model placement via bundled llmfit-dra ([07e2524](https://github.com/sympozium-ai/sympozium/commit/07e252486a543f5670dfbc80c6be2a5de4105378))
+* **placement:** claim-based model placement via bundled llmfit-dra ([21532a2](https://github.com/sympozium-ai/sympozium/commit/21532a24b1bc2690a46343a6fd89027e542522c1))
+* **placement:** claim-based model placement via bundled llmfit-dra ([4d70a1f](https://github.com/sympozium-ai/sympozium/commit/4d70a1faf38a8933c03250a3e991a6275c0d66b2))
+* **placement:** surface pending-pod scheduler verdicts; ensure claims on the deployment path ([d4e7132](https://github.com/sympozium-ai/sympozium/commit/d4e7132f2957db27efddfd445221c794d274de8f))
+* **slack:** per-message sender attribution for multi-agent Ensembles ([#245](https://github.com/sympozium-ai/sympozium/issues/245)) ([5239b4d](https://github.com/sympozium-ai/sympozium/commit/5239b4d9945ee788ad16e01fe0c49866a73e74d8))
+* **web:** waiting reasons on topology model nodes; consolidate Models nav ([8813105](https://github.com/sympozium-ai/sympozium/commit/881310578d8b68f2a86d1f3303b35d08e83bc0a6))
+* **web:** waiting reasons on topology model nodes; consolidate Models nav ([ad5e566](https://github.com/sympozium-ai/sympozium/commit/ad5e5664b65657cc981be1f34f5bfa383230d4c9))
+
+
+### Bug Fixes
+
+* **agent-runner:** serialize Bedrock tool schemas as JSON objects ([#259](https://github.com/sympozium-ai/sympozium/issues/259)) ([f0f22c7](https://github.com/sympozium-ai/sympozium/commit/f0f22c78a0c64e8dacc38714354632a15e8cf907)), closes [#255](https://github.com/sympozium-ai/sympozium/issues/255)
+* align Ensemble update path with create path for all Agent fields ([#264](https://github.com/sympozium-ai/sympozium/issues/264)) ([e33be9f](https://github.com/sympozium-ai/sympozium/commit/e33be9f1a51e6f92410d06ecbbdf99e900b0f2bd))
+* **controller:** propagate runTimeout and wire agentEnv into pod spec ([#240](https://github.com/sympozium-ai/sympozium/issues/240)) ([d9f584e](https://github.com/sympozium-ai/sympozium/commit/d9f584e61f611084fd527389434eb875ab41c70c))
+* **controller:** propagate sidecar tools from source SkillPack ([#250](https://github.com/sympozium-ai/sympozium/issues/250)) ([46b2cdc](https://github.com/sympozium-ai/sympozium/commit/46b2cdcade676d9751eae4391d36603b7018ee69))
+* **eventbus:** recover NATS subscriptions after restart/recreate ([#253](https://github.com/sympozium-ai/sympozium/issues/253)) ([#254](https://github.com/sympozium-ai/sympozium/issues/254)) ([f341b37](https://github.com/sympozium-ai/sympozium/commit/f341b372f5a3c1ef69b30a4a7555b048f643e52e))
+* **install:** vendor the bundled llmfit-dra chart for the embedded installer ([def0522](https://github.com/sympozium-ai/sympozium/commit/def0522e3910b7115b319afd328f5a40a67414a1))
+* **security:** tier-1 hardening for delegation, channels, and API auth ([#265](https://github.com/sympozium-ai/sympozium/issues/265)) ([6fd740d](https://github.com/sympozium-ai/sympozium/commit/6fd740db84db9a37baffb3dd607fb48b2035e713))
+
 ## [0.10.38](https://github.com/sympozium-ai/sympozium/compare/v0.10.37...v0.10.38) (2026-06-28)
 
 

@@ -2,8 +2,8 @@ apiVersion: v2
 name: sympozium
 description: Sympozium — run a fleet of AI agents on Kubernetes
 type: application
-version: 0.10.38
-appVersion: 0.10.38
+version: 0.10.39
+appVersion: 0.10.39
 home: https://github.com/sympozium-ai/sympozium
 sources:
   - https://github.com/sympozium-ai/sympozium
@@ -22,10 +22,6 @@ keywords:
   - sympozium
 icon: https://raw.githubusercontent.com/sympozium-ai/sympozium/main/icon.png
 dependencies:
-  # llmfit-dra ships WITH sympozium: claim-based model placement is part of
-  # the product (docs/positioning.md — models are claimed, not placed).
-  # Escape hatch for pre-1.34 clusters (no DRA): --set llmfit-dra.enabled=false;
-  # placement then falls back to the legacy llmfit probe path.
   - name: llmfit-dra
     version: 0.3.0
     repository: oci://ghcr.io/sympozium-ai/charts
