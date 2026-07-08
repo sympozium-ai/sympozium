@@ -273,11 +273,19 @@ func TestResolveAuthRefs_FiltersOnProvider(t *testing.T) {
 		}
 	})
 
-	t.Run("returns nil for local model endpoint", func(t *testing.T) {
-		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "openai"}
+	t.Run("returns nil for local model endpoint with no provider", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{}
 		got := resolveAuthRefs(pack, persona, "http://local:8080")
 		if got != nil {
 			t.Fatalf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("mixed ensemble: provider-pinned persona keeps its key under a local endpoint", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "openai"}
+		got := resolveAuthRefs(pack, persona, "http://local:8080")
+		if len(got) != 1 || got[0].Secret != "openai-key" {
+			t.Fatalf("got %+v, want [openai-key] (mixed ensemble)", got)
 		}
 	})
 
@@ -323,6 +331,47 @@ func TestResolveModel_Precedence(t *testing.T) {
 		persona := &sympoziumv1alpha1.AgentConfigSpec{}
 		if got := resolveModel(emptyRefPack, persona, "http://local:8080"); got != "gpt-4o" {
 			t.Fatalf("got %q, want gpt-4o (should not overwrite with empty modelRef)", got)
+		}
+	})
+
+	t.Run("mixed ensemble: provider-pinned persona keeps its model under a local endpoint", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "openai", Model: "gpt-5-mini"}
+		if got := resolveModel(pack, persona, "http://local:8080"); got != "gpt-5-mini" {
+			t.Fatalf("got %q, want gpt-5-mini (mixed ensemble keeps persona model)", got)
+		}
+	})
+}
+
+func TestResolveBaseURL_Precedence(t *testing.T) {
+	pack := &sympoziumv1alpha1.Ensemble{
+		Spec: sympoziumv1alpha1.EnsembleSpec{BaseURL: "https://pack.example/v1"},
+	}
+
+	t.Run("ensemble base url by default", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{}
+		if got := resolveBaseURL(pack, persona, ""); got != "https://pack.example/v1" {
+			t.Fatalf("got %q, want ensemble base url", got)
+		}
+	})
+
+	t.Run("local endpoint applies when no provider pinned", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{}
+		if got := resolveBaseURL(pack, persona, "http://local:8080"); got != "http://local:8080" {
+			t.Fatalf("got %q, want local endpoint", got)
+		}
+	})
+
+	t.Run("persona base url always wins", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{BaseURL: "https://persona.example/v1"}
+		if got := resolveBaseURL(pack, persona, "http://local:8080"); got != "https://persona.example/v1" {
+			t.Fatalf("got %q, want persona base url", got)
+		}
+	})
+
+	t.Run("mixed ensemble: provider-pinned persona ignores the local endpoint", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "openai"}
+		if got := resolveBaseURL(pack, persona, "http://local:8080"); got != "https://pack.example/v1" {
+			t.Fatalf("got %q, want ensemble base url (not the local endpoint)", got)
 		}
 	})
 }
@@ -547,6 +596,68 @@ func TestReconcileAgentConfig_UpdatePropagatesModelForLocalEndpoint(t *testing.T
 	}
 	if len(updated.Spec.AuthRefs) != 0 {
 		t.Fatalf("expected nil authRefs for local model, got %+v", updated.Spec.AuthRefs)
+	}
+}
+
+// TestReconcileAgentConfig_MixedEnsemble verifies that when an ensemble defaults
+// to a cluster-local model, a persona that pins its own cloud provider fully
+// opts out: it keeps its own model, its matching cloud auth key, and a non-local
+// base URL — end to end through the update path.
+func TestReconcileAgentConfig_MixedEnsemble(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-cloud",
+			Namespace: "default",
+			Labels:    map[string]string{"sympozium.ai/agent-config": "cloud"},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{Default: sympoziumv1alpha1.AgentConfig{}},
+		},
+	}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			ModelRef: "local-llama",
+			BaseURL:  "https://pack.example/v1",
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "openai", Secret: "openai-key"},
+				{Provider: "anthropic", Secret: "anthropic-key"},
+			},
+		},
+	}
+	// This persona runs on Anthropic even though the ensemble default is local.
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name:     "cloud",
+		Provider: "anthropic",
+		Model:    "claude-sonnet-5",
+	}
+
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, "http://local:8080"); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Spec.Agents.Default.Model != "claude-sonnet-5" {
+		t.Fatalf("model = %q, want claude-sonnet-5 (persona model, not modelRef)", updated.Spec.Agents.Default.Model)
+	}
+	if len(updated.Spec.AuthRefs) != 1 || updated.Spec.AuthRefs[0].Secret != "anthropic-key" {
+		t.Fatalf("authRefs = %+v, want [anthropic-key]", updated.Spec.AuthRefs)
+	}
+	if updated.Spec.Agents.Default.BaseURL != "https://pack.example/v1" {
+		t.Fatalf("baseURL = %q, want the ensemble base url (not the local endpoint)", updated.Spec.Agents.Default.BaseURL)
 	}
 }
 
