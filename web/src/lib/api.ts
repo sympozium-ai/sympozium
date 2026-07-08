@@ -953,6 +953,24 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// consumeUrlToken reads a login token from the URL fragment (#token=...),
+// stores it, and scrubs it from the address bar. The fragment — never a
+// query parameter — keeps the token out of server logs and Referer headers.
+export function consumeUrlToken(): string | null {
+  const match = window.location.hash.match(/^#token=(.+)$/);
+  if (!match) return null;
+  // Strip non-ASCII characters that would break HTTP headers (Firefox ByteString error)
+  const token = decodeURIComponent(match[1]).replace(/[^\x20-\x7E]/g, "");
+  history.replaceState(
+    null,
+    "",
+    window.location.pathname + window.location.search,
+  );
+  if (!token) return null;
+  setToken(token);
+  return token;
+}
+
 export function getNamespace(): string {
   return localStorage.getItem(NS_KEY) || "default";
 }

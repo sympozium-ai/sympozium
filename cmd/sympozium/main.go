@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -11534,8 +11535,16 @@ the login URL.`,
 
 			listenAddr := fmt.Sprintf("localhost:%s", localPort)
 
+			// Carry the token in the URL fragment so the web UI logs in
+			// automatically: the fragment never leaves the browser, keeping
+			// the token out of server logs and Referer headers.
+			webURL := fmt.Sprintf("http://%s", listenAddr)
+			if token != "" {
+				webURL = fmt.Sprintf("http://%s/#token=%s", listenAddr, url.QueryEscape(token))
+			}
+
 			fmt.Printf("\n  Starting port-forward to svc/sympozium-apiserver in namespace %s...\n", ns)
-			fmt.Printf("  ➜  Web UI:  http://%s\n", listenAddr)
+			fmt.Printf("  ➜  Web UI (auto-login):  %s\n", webURL)
 			if token != "" {
 				fmt.Printf("  ➜  Token:   %s\n", token)
 			} else {
@@ -11547,11 +11556,10 @@ the login URL.`,
 				// Give port-forward a moment to bind, then open browser.
 				go func() {
 					time.Sleep(2 * time.Second)
-					url := fmt.Sprintf("http://%s", listenAddr)
 					// Try common openers.
 					for _, opener := range []string{"xdg-open", "open", "sensible-browser"} {
 						if p, err := exec.LookPath(opener); err == nil {
-							_ = exec.Command(p, url).Start()
+							_ = exec.Command(p, webURL).Start()
 							return
 						}
 					}

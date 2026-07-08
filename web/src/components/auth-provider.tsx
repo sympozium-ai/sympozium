@@ -10,6 +10,7 @@ import {
   getToken,
   setToken,
   clearToken,
+  consumeUrlToken,
   AUTH_UNAUTHORIZED_EVENT,
 } from "@/lib/api";
 
@@ -28,7 +29,9 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(getToken());
+  const [token, setTokenState] = useState<string | null>(
+    () => consumeUrlToken() ?? getToken(),
+  );
 
   const logout = useCallback(() => {
     clearToken();
