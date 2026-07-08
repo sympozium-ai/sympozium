@@ -321,15 +321,17 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
-		// Propagate authRefs changes.
-		if !authRefsEqual(existingInst.Spec.AuthRefs, pack.Spec.AuthRefs) {
-			existingInst.Spec.AuthRefs = pack.Spec.AuthRefs
+		// Propagate authRefs changes (filtered by persona provider).
+		wantAuthRefs := resolveAuthRefs(pack, persona, modelEndpoint)
+		if !authRefsEqual(existingInst.Spec.AuthRefs, wantAuthRefs) {
+			existingInst.Spec.AuthRefs = wantAuthRefs
 			needsUpdate = true
 		}
 
-		// Propagate model changes from persona definition.
-		if persona.Model != "" && existingInst.Spec.Agents.Default.Model != persona.Model {
-			existingInst.Spec.Agents.Default.Model = persona.Model
+		// Propagate model changes (with same defaults as buildAgent).
+		wantModel := resolveModel(pack, persona, modelEndpoint)
+		if existingInst.Spec.Agents.Default.Model != wantModel {
+			existingInst.Spec.Agents.Default.Model = wantModel
 			needsUpdate = true
 		}
 
@@ -344,12 +346,6 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 		}
 		if existingInst.Spec.Agents.Default.BaseURL != wantBaseURL {
 			existingInst.Spec.Agents.Default.BaseURL = wantBaseURL
-			needsUpdate = true
-		}
-
-		// When using a local model (and no per-persona provider override), clear auth refs.
-		if modelEndpoint != "" && persona.Provider == "" && len(existingInst.Spec.AuthRefs) > 0 {
-			existingInst.Spec.AuthRefs = nil
 			needsUpdate = true
 		}
 
@@ -464,6 +460,36 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 			needsUpdate = true
 		}
 
+		// Propagate volumes from ensemble.
+		if !reflect.DeepEqual(existingInst.Spec.Volumes, pack.Spec.Volumes) {
+			existingInst.Spec.Volumes = pack.Spec.Volumes
+			needsUpdate = true
+		}
+
+		// Propagate volume mounts from ensemble.
+		if !reflect.DeepEqual(existingInst.Spec.VolumeMounts, pack.Spec.VolumeMounts) {
+			existingInst.Spec.VolumeMounts = pack.Spec.VolumeMounts
+			needsUpdate = true
+		}
+
+		// Propagate sandbox config from ensemble.
+		if !reflect.DeepEqual(existingInst.Spec.Agents.Default.AgentSandbox, pack.Spec.AgentSandbox) {
+			existingInst.Spec.Agents.Default.AgentSandbox = pack.Spec.AgentSandbox
+			needsUpdate = true
+		}
+
+		// Propagate lifecycle from persona.
+		if !reflect.DeepEqual(existingInst.Spec.Agents.Default.Lifecycle, persona.Lifecycle) {
+			existingInst.Spec.Agents.Default.Lifecycle = persona.Lifecycle
+			needsUpdate = true
+		}
+
+		// Propagate policy ref from ensemble.
+		if existingInst.Spec.PolicyRef != pack.Spec.PolicyRef {
+			existingInst.Spec.PolicyRef = pack.Spec.PolicyRef
+			needsUpdate = true
+		}
+
 		if needsUpdate {
 			log.Info("Updating pack-level settings on existing instance", "instance", instanceName)
 			if err := r.Update(ctx, existingInst); err != nil {
@@ -553,34 +579,14 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 	return ip, nil
 }
 
-// buildAgent creates a Agent spec from a persona definition.
-func (r *EnsembleReconciler) buildAgent(
-	pack *sympoziumv1alpha1.Ensemble,
-	persona *sympoziumv1alpha1.AgentConfigSpec,
-	instanceName string,
-	modelEndpoint string,
-) *sympoziumv1alpha1.Agent {
-	model := persona.Model
-	if model == "" {
-		model = "gpt-4o" // sensible default; overridden by onboarding
-	}
-
-	baseURL := pack.Spec.BaseURL
-	authRefs := pack.Spec.AuthRefs
-
-	// If a cluster-local Model is referenced, override provider settings.
+// resolveAuthRefs filters the ensemble's auth refs to those matching the
+// persona's provider. When a local model endpoint is active, no auth is needed.
+func resolveAuthRefs(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alpha1.AgentConfigSpec, modelEndpoint string) []sympoziumv1alpha1.SecretRef {
 	if modelEndpoint != "" {
-		baseURL = modelEndpoint
-		model = pack.Spec.ModelRef
-		authRefs = nil // no auth needed for cluster-internal inference
+		return nil
 	}
-
-	// Per-persona provider/baseURL overrides take precedence.
-	if persona.BaseURL != "" {
-		baseURL = persona.BaseURL
-	}
+	authRefs := pack.Spec.AuthRefs
 	if persona.Provider != "" {
-		// Find the matching auth secret for this provider from the ensemble's refs.
 		var matched []sympoziumv1alpha1.SecretRef
 		for _, ref := range pack.Spec.AuthRefs {
 			if ref.Provider == persona.Provider {
@@ -590,6 +596,39 @@ func (r *EnsembleReconciler) buildAgent(
 		if len(matched) > 0 {
 			authRefs = matched
 		}
+	}
+	return authRefs
+}
+
+// resolveModel computes the desired model name from persona, ensemble defaults,
+// and local model endpoint override.
+func resolveModel(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alpha1.AgentConfigSpec, modelEndpoint string) string {
+	model := persona.Model
+	if model == "" {
+		model = "gpt-4o"
+	}
+	if modelEndpoint != "" {
+		model = pack.Spec.ModelRef
+	}
+	return model
+}
+
+// buildAgent creates a Agent spec from a persona definition.
+func (r *EnsembleReconciler) buildAgent(
+	pack *sympoziumv1alpha1.Ensemble,
+	persona *sympoziumv1alpha1.AgentConfigSpec,
+	instanceName string,
+	modelEndpoint string,
+) *sympoziumv1alpha1.Agent {
+	model := resolveModel(pack, persona, modelEndpoint)
+	authRefs := resolveAuthRefs(pack, persona, modelEndpoint)
+
+	baseURL := pack.Spec.BaseURL
+	if modelEndpoint != "" {
+		baseURL = modelEndpoint
+	}
+	if persona.BaseURL != "" {
+		baseURL = persona.BaseURL
 	}
 
 	// Merge provider headers: ensemble-level base, persona-level overrides.

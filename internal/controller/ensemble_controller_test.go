@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -241,6 +242,295 @@ func TestReconcileAgentConfig_UpdatesSubagentsOnExistingAgent(t *testing.T) {
 	}
 	if sub.MaxDepth != 1 || sub.MaxConcurrent != 8 || sub.MaxChildrenPerAgent != 8 {
 		t.Fatalf("subagents = %+v, want maxDepth=1 maxConcurrent=8 maxChildrenPerAgent=8", sub)
+	}
+}
+
+// ── resolveAuthRefs / resolveModel unit tests ────────────────────────────────
+
+func TestResolveAuthRefs_FiltersOnProvider(t *testing.T) {
+	pack := &sympoziumv1alpha1.Ensemble{
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "openai", Secret: "openai-key"},
+				{Provider: "anthropic", Secret: "anthropic-key"},
+			},
+		},
+	}
+
+	t.Run("filters to matching provider", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "anthropic"}
+		got := resolveAuthRefs(pack, persona, "")
+		if len(got) != 1 || got[0].Secret != "anthropic-key" {
+			t.Fatalf("got %+v, want [anthropic-key]", got)
+		}
+	})
+
+	t.Run("returns all when no provider set", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{}
+		got := resolveAuthRefs(pack, persona, "")
+		if len(got) != 2 {
+			t.Fatalf("got %d refs, want 2", len(got))
+		}
+	})
+
+	t.Run("returns nil for local model endpoint", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Provider: "openai"}
+		got := resolveAuthRefs(pack, persona, "http://local:8080")
+		if got != nil {
+			t.Fatalf("got %+v, want nil", got)
+		}
+	})
+}
+
+func TestResolveModel_Precedence(t *testing.T) {
+	pack := &sympoziumv1alpha1.Ensemble{
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			ModelRef: "local-llm",
+		},
+	}
+
+	t.Run("persona model wins", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Model: "gpt-5-mini"}
+		if got := resolveModel(pack, persona, ""); got != "gpt-5-mini" {
+			t.Fatalf("got %q, want gpt-5-mini", got)
+		}
+	})
+
+	t.Run("defaults to gpt-4o when empty", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{}
+		if got := resolveModel(pack, persona, ""); got != "gpt-4o" {
+			t.Fatalf("got %q, want gpt-4o", got)
+		}
+	})
+
+	t.Run("local endpoint overrides to modelRef", func(t *testing.T) {
+		persona := &sympoziumv1alpha1.AgentConfigSpec{Model: "gpt-5-mini"}
+		if got := resolveModel(pack, persona, "http://local:8080"); got != "local-llm" {
+			t.Fatalf("got %q, want local-llm", got)
+		}
+	})
+}
+
+// ── Update path propagation tests ────────────────────────────────────────────
+
+func TestReconcileAgentConfig_UpdatePropagatesAuthRefsFiltered(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-enrichment",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/agent-config": "enrichment",
+				"sympozium.ai/provider":     "openai",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "openai", Secret: "openai-key"},
+				{Provider: "anthropic", Secret: "anthropic-key"},
+			},
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{Model: "gpt-5-mini"},
+			},
+		},
+	}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "openai", Secret: "openai-key"},
+				{Provider: "anthropic", Secret: "anthropic-key"},
+			},
+		},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name:     "enrichment",
+		Provider: "openai",
+		Model:    "gpt-5-mini",
+	}
+
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, ""); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get updated agent: %v", err)
+	}
+	if len(updated.Spec.AuthRefs) != 1 {
+		t.Fatalf("expected 1 authRef (filtered to openai), got %d: %+v", len(updated.Spec.AuthRefs), updated.Spec.AuthRefs)
+	}
+	if updated.Spec.AuthRefs[0].Secret != "openai-key" {
+		t.Fatalf("expected openai-key, got %s", updated.Spec.AuthRefs[0].Secret)
+	}
+}
+
+func TestReconcileAgentConfig_UpdatePropagatesVolumesAndMounts(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-worker",
+			Namespace: "default",
+			Labels:    map[string]string{"sympozium.ai/agent-config": "worker"},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{Default: sympoziumv1alpha1.AgentConfig{}},
+		},
+	}
+
+	wantVolumes := []corev1.Volume{{Name: "logs", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	wantMounts := []corev1.VolumeMount{{Name: "logs", MountPath: "/var/log"}}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			Volumes:      wantVolumes,
+			VolumeMounts: wantMounts,
+		},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{Name: "worker"}
+
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, ""); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(updated.Spec.Volumes) != 1 || updated.Spec.Volumes[0].Name != "logs" {
+		t.Fatalf("volumes not propagated: %+v", updated.Spec.Volumes)
+	}
+	if len(updated.Spec.VolumeMounts) != 1 || updated.Spec.VolumeMounts[0].MountPath != "/var/log" {
+		t.Fatalf("volumeMounts not propagated: %+v", updated.Spec.VolumeMounts)
+	}
+}
+
+func TestReconcileAgentConfig_UpdatePropagatesSandboxLifecyclePolicy(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-worker",
+			Namespace: "default",
+			Labels:    map[string]string{"sympozium.ai/agent-config": "worker"},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{Default: sympoziumv1alpha1.AgentConfig{}},
+		},
+	}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentSandbox: &sympoziumv1alpha1.AgentSandboxDefaults{
+				Enabled:      true,
+				RuntimeClass: "gvisor",
+			},
+			PolicyRef: "compliance-policy",
+		},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{
+		Name: "worker",
+		Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
+			PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
+				{Name: "setup"},
+			},
+		},
+	}
+
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, ""); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Spec.Agents.Default.AgentSandbox == nil || !updated.Spec.Agents.Default.AgentSandbox.Enabled {
+		t.Fatal("agentSandbox not propagated")
+	}
+	if updated.Spec.Agents.Default.AgentSandbox.RuntimeClass != "gvisor" {
+		t.Fatalf("runtimeClass = %q, want gvisor", updated.Spec.Agents.Default.AgentSandbox.RuntimeClass)
+	}
+	if updated.Spec.Agents.Default.Lifecycle == nil || len(updated.Spec.Agents.Default.Lifecycle.PreRun) != 1 {
+		t.Fatal("lifecycle not propagated")
+	}
+	if updated.Spec.PolicyRef != "compliance-policy" {
+		t.Fatalf("policyRef = %q, want compliance-policy", updated.Spec.PolicyRef)
+	}
+}
+
+func TestReconcileAgentConfig_UpdatePropagatesModelForLocalEndpoint(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+
+	existing := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pack-worker",
+			Namespace: "default",
+			Labels:    map[string]string{"sympozium.ai/agent-config": "worker"},
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "openai-key"}},
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{Model: "gpt-4o"},
+			},
+		},
+	}
+
+	r := &EnsembleReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build(),
+		Scheme: scheme,
+	}
+	pack := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pack", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			ModelRef: "local-llama",
+			AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "openai-key"}},
+		},
+	}
+	persona := &sympoziumv1alpha1.AgentConfigSpec{Name: "worker"}
+
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, "http://local:8080"); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+
+	var updated sympoziumv1alpha1.Agent
+	if err := r.Get(context.Background(), client.ObjectKey{Name: existing.Name, Namespace: existing.Namespace}, &updated); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Spec.Agents.Default.Model != "local-llama" {
+		t.Fatalf("model = %q, want local-llama", updated.Spec.Agents.Default.Model)
+	}
+	if len(updated.Spec.AuthRefs) != 0 {
+		t.Fatalf("expected nil authRefs for local model, got %+v", updated.Spec.AuthRefs)
 	}
 }
 
