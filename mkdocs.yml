@@ -34,10 +34,13 @@ theme:
     - search.highlight
     - content.code.copy
     - content.action.edit
+  font:
+    text: Inter
+    code: JetBrains Mono
   icon:
     repo: fontawesome/brands/github
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/logo-mark.svg
+  favicon: assets/favicon.svg
 
 plugins:
   - search
