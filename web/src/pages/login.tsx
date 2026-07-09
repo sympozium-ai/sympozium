@@ -61,11 +61,17 @@ export function LoginPage() {
 
       <Card className="relative z-10 w-full max-w-md border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl shadow-black/20">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-2xl shadow-lg shadow-primary/25">
-            S
-          </div>
+          <img
+            src="/icon-industrial.svg"
+            alt="Sympozium"
+            className="mx-auto mb-4 h-14 w-14"
+          />
           <CardTitle className="text-2xl font-bold text-white">
-            Sympo<span className="text-orange-500">zium</span>
+            <img
+              src="/wordmark-industrial.svg"
+              alt="Sympozium.AI"
+              className="mx-auto h-6"
+            />
           </CardTitle>
           <CardDescription>
             Enter your API token to access the dashboard

@@ -1,4 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <text x="16" y="23" text-anchor="middle" font-family="'Arial Black', 'Helvetica Neue', sans-serif" font-size="18" font-weight="900" fill="#f0ece4" letter-spacing="-1">SY</text>
-  <rect x="6" y="25" width="20" height="2" fill="#e8562a"/>
+  <g transform="translate(4 4) scale(0.2)">
+  <rect x="6" y="6.0" width="108" height="21.6" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="27.6" width="108" height="5.399999999999999" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="81" y="27.6" width="33" height="5.399999999999999" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="38.4" width="37" height="5.399999999999999" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="43.8" width="108" height="10.800000000000004" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="60.0" width="108" height="10.799999999999997" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="81" y="70.8" width="33" height="16.200000000000003" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="87.0" width="37" height="5.400000000000006" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  <rect x="6" y="92.4" width="108" height="21.599999999999994" fill="#ede6da" stroke="#ede6da" stroke-width="0.8"/>
+  </g>
 </svg>

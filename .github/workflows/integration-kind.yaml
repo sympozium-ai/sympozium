@@ -32,14 +32,16 @@ jobs:
           cache: true
 
       - name: Create Kind cluster
-        # node_image pinned ≥ v1.34: the chart bundles llmfit-dra (enabled by
-        # default), whose DeviceClasses need the GA resource.k8s.io/v1 DRA API.
+        # kind v0.30.0's tested node image is v1.34.0 — the first release
+        # where resource.k8s.io/v1 (DRA) is GA, which the bundled llmfit-dra
+        # DeviceClasses require. Pinned by digest for reproducibility; do not
+        # float the tag past what this kind version ships.
         uses: helm/kind-action@v1.12.0
         with:
           cluster_name: sympozium-ci
           version: v0.30.0
-          node_image: kindest/node:v1.35.0
-          wait: 120s
+          node_image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+          wait: 180s
 
       - name: Build all Sympozium images
         run: make docker-build TAG=${TAG}
