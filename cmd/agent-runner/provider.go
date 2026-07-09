@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sympozium-ai/sympozium/pkg/genaiattrs"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -40,6 +41,10 @@ type ChatResult struct {
 	InputTokens  int
 	OutputTokens int
 	FinishReason string
+	// ResponseModel is the model id the backend reports having served the
+	// request (gen_ai.response.model). May differ from the requested model
+	// (aliases, routed models). Empty if the backend does not report one.
+	ResponseModel string
 }
 
 // LLMProvider is a stateful adapter for one chat conversation with a
@@ -100,10 +105,7 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 			log.Printf("llm_round [%d/%d]", round, maxToolIterations)
 		}
 
-		chatCtx, chatSpan := obs.startChatSpan(ctx,
-			attribute.String("gen_ai.system", p.Name()),
-			attribute.String("gen_ai.request.model", p.Model()),
-		)
+		chatCtx, chatSpan := obs.startChatSpan(ctx, p.Name(), p.Model())
 		res, err := p.Chat(chatCtx)
 		if err != nil {
 			markSpanError(chatSpan, err)
@@ -114,9 +116,17 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 		totalInputTokens += res.InputTokens
 		totalOutputTokens += res.OutputTokens
 		chatSpan.SetAttributes(
-			attribute.Int("gen_ai.usage.input_tokens", res.InputTokens),
-			attribute.Int("gen_ai.usage.output_tokens", res.OutputTokens),
+			genaiattrs.InputTokens(res.InputTokens),
+			genaiattrs.OutputTokens(res.OutputTokens),
 		)
+		// gen_ai.response.model: what the backend reports serving. Fall back to
+		// the requested model when the backend does not echo one (e.g. Bedrock
+		// Converse), so the attribute is always present for AI Observability.
+		respModel := res.ResponseModel
+		if respModel == "" {
+			respModel = p.Model()
+		}
+		chatSpan.SetAttributes(genaiattrs.ResponseModel(respModel))
 		if res.FinishReason != "" {
 			chatSpan.SetAttributes(attribute.String("gen_ai.response.finish_reasons", res.FinishReason))
 		}

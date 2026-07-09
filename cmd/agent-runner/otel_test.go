@@ -98,8 +98,18 @@ func TestOTelSpanHierarchy(t *testing.T) {
 		if v, ok := attrs["gen_ai.system"]; !ok || v != "anthropic" {
 			t.Errorf("gen_ai.system = %q, want %q", v, "anthropic")
 		}
+		// gen_ai.provider.name is the current OTel convention, emitted alongside
+		// the deprecated gen_ai.system for one back-compat cycle.
+		if v, ok := attrs["gen_ai.provider.name"]; !ok || v != "anthropic" {
+			t.Errorf("gen_ai.provider.name = %q, want %q", v, "anthropic")
+		}
 		if v, ok := attrs["gen_ai.request.model"]; !ok || v != "claude-sonnet-4-20250514" {
 			t.Errorf("gen_ai.request.model = %q, want %q", v, "claude-sonnet-4-20250514")
+		}
+		// gen_ai.response.model reflects the model the backend reports serving
+		// (from the mock Anthropic response body).
+		if v, ok := attrs["gen_ai.response.model"]; !ok || v != "claude-sonnet-4-20250514" {
+			t.Errorf("gen_ai.response.model = %q, want %q", v, "claude-sonnet-4-20250514")
 		}
 	})
 

@@ -144,10 +144,11 @@ func (p *openaiProvider) Chat(ctx context.Context) (ChatResult, error) {
 	}
 
 	result := ChatResult{
-		Text:         text,
-		InputTokens:  int(completion.Usage.PromptTokens),
-		OutputTokens: int(completion.Usage.CompletionTokens),
-		FinishReason: choice.FinishReason,
+		Text:          text,
+		InputTokens:   int(completion.Usage.PromptTokens),
+		OutputTokens:  int(completion.Usage.CompletionTokens),
+		FinishReason:  choice.FinishReason,
+		ResponseModel: completion.Model,
 	}
 
 	// Extract tool calls whenever present, regardless of finish_reason.

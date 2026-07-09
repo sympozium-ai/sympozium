@@ -17,6 +17,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/sympozium-ai/sympozium/internal/ipc"
+	"github.com/sympozium-ai/sympozium/pkg/genaiattrs"
 )
 
 // maxToolIterations is the maximum number of LLM reasoning rounds before
@@ -354,12 +355,7 @@ func main() {
 		log.Println("TRACEPARENT env var not set")
 	}
 
-	ctx, runSpan := obs.startRunSpan(ctx,
-		attribute.String("instance", getEnv("INSTANCE_NAME", "")),
-		attribute.String("tenant.namespace", getEnv("AGENT_NAMESPACE", "")),
-		attribute.String("model", modelName),
-		attribute.String("task.summary", truncate(task, 200)),
-	)
+	ctx, runSpan := obs.startRunSpan(ctx, getEnv("INSTANCE_NAME", ""), getEnv("AGENT_NAMESPACE", ""), modelName, truncate(task, 200))
 	writeTraceContextMetadata(ctx)
 	logWithTrace(ctx, "info", "agent run started", map[string]any{
 		"instance":  getEnv("INSTANCE_NAME", ""),
@@ -466,6 +462,11 @@ func main() {
 	}
 
 	_ = os.MkdirAll("/ipc/output", 0o755)
+
+	// Attach the fully-assembled system prompt once on the run span rather than
+	// on every per-round gen_ai.chat span (persona prompts are large; repeating
+	// them per round bloats span payload).
+	runSpan.SetAttributes(genaiattrs.SystemInstructions(systemPrompt))
 
 	start := time.Now()
 
