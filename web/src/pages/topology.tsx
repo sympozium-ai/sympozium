@@ -123,19 +123,19 @@ function K8sNodeNode({ data }: NodeProps<Node<K8sNodeData>>) {
         </div>
       )}
       {(data.accelerators?.length ?? 0) > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1">
-          {data.accelerators!.filter((d) => d.kind !== "cpu").map((d) => (
+        <div className="flex flex-col items-start gap-1 mt-1">
+          {groupAccelerators(data.accelerators!).map((g) => (
             <Badge
-              key={d.name}
-              variant={d.healthy ? "outline" : "destructive"}
+              key={g.key}
+              variant={g.healthy ? "outline" : "destructive"}
               className={
-                d.healthy
-                  ? "text-[9px] border-primary/40 text-primary"
-                  : "text-[9px]"
+                g.healthy
+                  ? "text-[9px] border-primary/40 text-primary max-w-[210px] truncate"
+                  : "text-[9px] max-w-[210px] truncate"
               }
-              title={d.healthy ? d.name : `${d.name} — ${d.healthReason || "unhealthy"}`}
+              title={g.healthy ? g.names.join(", ") : `${g.names.join(", ")} — ${g.reasons.join(", ") || "unhealthy"}`}
             >
-              {draDeviceLabel(d)}
+              {g.count > 1 ? `${g.count}× ` : ""}{draDeviceLabel(g.sample)}
             </Badge>
           ))}
         </div>
@@ -150,9 +150,59 @@ function draDeviceLabel(d: DraDevice): string {
     const rate = d.rateGbps ? ` ${d.rateGbps}G` : "";
     return `nic · ${d.linkLayer || "rdma"}${rate}`;
   }
-  const model = d.model ? ` · ${d.model}` : "";
+  const model = d.model ? ` · ${shortModel(d.model)}` : "";
   const mem = d.memoryGi ? ` ${d.memoryGi}Gi` : "";
   return `${d.kind}${model}${mem}`;
+}
+
+/** One badge per accelerator *type* (identical kind+model+link collapse into
+ * a ×N count) so a multi-GPU node stays one row per device flavour instead of
+ * one giant card. Order: gpu, npu, nic; CPU is the node itself, not a chip. */
+interface DraGroup {
+  key: string;
+  kind: string;
+  count: number;
+  sample: DraDevice;
+  healthy: boolean;
+  names: string[];
+  reasons: string[];
+}
+
+function groupAccelerators(devices: DraDevice[]): DraGroup[] {
+  const order: Record<string, number> = { gpu: 0, npu: 1, nic: 2 };
+  const groups = new Map<string, DraGroup>();
+  for (const d of devices) {
+    if (d.kind === "cpu") continue;
+    const key = [d.kind, d.model || "", d.memoryGi || 0, d.linkLayer || "", d.rateGbps || 0].join("|");
+    const g = groups.get(key);
+    if (g) {
+      g.count++;
+      g.names.push(d.name);
+      g.healthy = g.healthy && d.healthy;
+      if (!d.healthy && d.healthReason) g.reasons.push(d.healthReason);
+    } else {
+      groups.set(key, {
+        key,
+        kind: d.kind,
+        count: 1,
+        sample: d,
+        healthy: d.healthy,
+        names: [d.name],
+        reasons: !d.healthy && d.healthReason ? [d.healthReason] : [],
+      });
+    }
+  }
+  return [...groups.values()].sort(
+    (a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || a.key.localeCompare(b.key),
+  );
+}
+
+/** Vendor model strings can be slash-joined variant lists ("Radeon Graphics /
+ * Radeon 8050S Graphics / Radeon 8060S Graphics") — keep the most specific
+ * variant and cap the length so one device can't blow up the card layout. */
+function shortModel(model: string): string {
+  const last = model.split("/").map((s) => s.trim()).filter(Boolean).pop() || model;
+  return last.length > 28 ? last.slice(0, 27) + "…" : last;
 }
 
 function ModelNode({ data }: NodeProps<Node<ModelNodeData>>) {
