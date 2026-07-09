@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="logo.svg" alt="sympozium.ai logo" width="600px;">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/logo-plate-dark.svg">
+    <img src="docs/assets/brand/logo-plate-light.svg" alt="Sympozium — agentic control plane, K8s-native" width="540">
+  </picture>
 </p>
 
 <p align="center">
