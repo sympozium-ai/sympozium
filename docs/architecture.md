@@ -225,6 +225,12 @@ Agents in a Ensemble can delegate tasks to other personas using the `delegate_to
 
 ## How It Works
 
+<p align="center">
+  <img src="assets/animations/run-lifecycle.gif" alt="One agent run over time: an AgentRun resource is applied, validated by the admission webhook, spawned as a Job into a locked-down pod (agent-runner, IPC bridge, skill sidecar) with ephemeral RBAC, then garbage-collected with credentials revoked and status reported back to the CR." width="880">
+  <br><em>One run, start to finish: apply → admit → spawn → execute → cleanup —
+  gated on the way in, revoked on the way out.</em>
+</p>
+
 1. **A message arrives** via a channel pod (Telegram, Slack, etc.) and is published to the NATS event bus.
 2. **The controller creates an AgentRun CR**, which reconciles into an ephemeral K8s Job — optional preRun lifecycle init containers, then an agent container + IPC bridge sidecar + optional sandbox + skill sidecars (with auto-provisioned RBAC). PostRun lifecycle hooks execute in a follow-up Job after the agent completes.
 3. **The agent container** calls the configured LLM provider (OpenAI, Anthropic, Azure, Ollama, LM Studio, Unsloth, or any OpenAI-compatible endpoint), with skills mounted as files, persistent memory provided by the memory sidecar (SQLite + FTS5 on a PersistentVolume), and tool sidecars providing runtime capabilities like `kubectl`. A legacy ConfigMap-based memory path is preserved as a fallback.
@@ -234,6 +240,12 @@ Agents in a Ensemble can delegate tasks to other personas using the `delegate_to
 7. **Node-based inference discovery** — for local inference providers (Ollama, vLLM, llama-cpp) installed directly on host nodes, an optional node-probe DaemonSet probes localhost ports and annotates each node with discovered providers and models (`sympozium.ai/inference-*`). The API server reads these annotations, and the web wizard lets users select a node to pin their agent pods to via `nodeSelector`.
 8. **Cluster-local model inference** — `Model` CRDs declare GGUF models as Kubernetes resources. The controller downloads weights to a PVC, deploys a llama-server (OpenAI-compatible), and exposes a ClusterIP Service. AgentRuns reference models by name via `spec.model.modelRef` — no API key needed. The web UI auto-wires Ready models as provider options during instance creation.
 9. **Everything is a Kubernetes resource** — instances, runs, policies, skills, models, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
+
+<p align="center">
+  <img src="assets/animations/transmission.gif" alt="An agent reaches its skills, memory, and MCP tools only through gated channels — admission, RBAC, and network policy — while a bypass attempt is denied." width="720">
+  <br><em>Every exchange between an agent and its tools passes through gated,
+  policy-checked channels; the bypass path is denied by NetworkPolicy.</em>
+</p>
 
 ---
 

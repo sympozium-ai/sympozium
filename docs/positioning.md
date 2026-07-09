@@ -34,6 +34,12 @@ driver that publishes what each accelerator *can do* and lets the **stock
 kube-scheduler** place workloads against physics ("this model at 20 tok/s"),
 with exclusive allocation and explainable failures.
 
+<p align="center">
+  <img src="assets/animations/claim-flow.gif" alt="The model claim lifecycle: llmfit-dra probes accelerators and publishes fit physics; a ModelClaim crosses from the coordination layer to the stock kube-scheduler, which selects the one node that satisfies it; the model is allocated exclusively and the endpoint served back." width="760">
+  <br><em>The claim lifecycle: probe → publish → claim → schedule → allocate → serve.
+  Sympozium never picks nodes — the claim is the only thing that crosses the boundary.</em>
+</p>
+
 The analogy that makes this precise: **a ModelClaim is to llmfit-dra what a
 PersistentVolumeClaim is to a CSI driver.** No one calls an application "a
 storage product" because its chart contains a `volumeClaimTemplate`. In the

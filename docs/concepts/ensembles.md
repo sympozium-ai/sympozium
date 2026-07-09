@@ -37,6 +37,11 @@ All generated resources have `ownerReferences` pointing back to the Ensemble —
 
 Ensembles support **typed relationships** between personas, enabling coordination patterns beyond independent scheduling:
 
+<p align="center">
+  <img src="../assets/animations/ensemble-workflow.gif" alt="An ensemble of agents coordinating inside a policy-governed boundary: a lead delegates to specialists, work flows in sequence to a reviewer, a supervisor observes, and all agents share memory through a common hub." width="640">
+  <br><em>The four relationship types in motion: delegate, sequence, supervise, share.</em>
+</p>
+
 ### Relationship Types
 
 | Type | Behaviour | Example |
@@ -350,6 +355,11 @@ The Web UI provides two canvas views for visualising persona relationships:
 - **Per-pack canvas** (Persona detail page → Workflow tab): editable — drag to connect personas, pick relationship type, save back to the CRD
 - **Global canvas** (Ensembles list page → Canvas view): read-only — shows all enabled packs together with live run status
 - **Dashboard widget** (Team Canvas panel): compact view with pack selector dropdown and live run status highlighting
+
+<p align="center">
+  <img src="../assets/animations/workflow-canvas.gif" alt="The visual workflow canvas: four agent cards connected by typed relationships — delegate, then, supervise — with model chips and connection handles." width="640">
+  <br><em>The workflow canvas: drag-to-connect personas, pick a relationship type, save to the CRD.</em>
+</p>
 
 Persona nodes show live run status with animated indicators:
 
