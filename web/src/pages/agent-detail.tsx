@@ -45,9 +45,11 @@ import {
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useRunsSeen } from "@/hooks/use-runs-seen";
 import {
+  costTooltip,
+  effectiveCost,
   formatAge,
   formatUsd,
-  SIMULATED_COST_TITLE,
+  sumEffectiveCosts,
   truncate,
 } from "@/lib/utils";
 import { YamlButton, instanceYamlFromResource } from "@/components/yaml-panel";
@@ -82,6 +84,7 @@ export function AgentDetailPage() {
         new Date(a.metadata.creationTimestamp || "").getTime(),
     )
     .slice(0, 20);
+  const runsSpend = sumEffectiveCosts(instanceRuns);
 
   useEffect(() => {
     if (paramTab && allowedTabs.has(paramTab)) {
@@ -212,7 +215,21 @@ export function AgentDetailPage() {
             <CardContent className="pt-6">
               {instanceRuns.length > 0 ? (
                 <div className="space-y-2">
-                  {instanceRuns.map((run) => (
+                  {runsSpend.count > 0 && (
+                    <div
+                      className="flex justify-end text-xs text-muted-foreground"
+                      title={
+                        runsSpend.anySimulated
+                          ? "Estimated spend for the runs listed — includes simulated rates"
+                          : "Estimated spend for the runs listed"
+                      }
+                    >
+                      total {formatUsd(runsSpend.totalMicro)}
+                    </div>
+                  )}
+                  {instanceRuns.map((run) => {
+                    const est = effectiveCost(run);
+                    return (
                     <Link
                       key={run.metadata.name}
                       to={`/runs/${run.metadata.name}`}
@@ -240,17 +257,12 @@ export function AgentDetailPage() {
                             tokens
                           </span>
                         )}
-                        {run.status?.costEstimate && (
-                          <span className="text-xs text-muted-foreground">
-                            {formatUsd(run.status.costEstimate.amountMicro)}
-                          </span>
-                        )}
-                        {run.simulatedCostEstimate && (
+                        {est && (
                           <span
-                            className="text-xs text-amber-400"
-                            title={SIMULATED_COST_TITLE}
+                            className="text-xs text-muted-foreground"
+                            title={costTooltip(est)}
                           >
-                            ~{formatUsd(run.simulatedCostEstimate.amountMicro)}
+                            {formatUsd(est.amountMicro)}
                           </span>
                         )}
                         <span className="text-xs text-muted-foreground">
@@ -259,7 +271,8 @@ export function AgentDetailPage() {
                         <ExternalLink className="h-3 w-3 text-muted-foreground" />
                       </div>
                     </Link>
-                  ))}
+                    );
+                  })}
                   {(allRuns || []).filter((r) => r.spec.agentRef === name)
                     .length > 20 && (
                     <Link

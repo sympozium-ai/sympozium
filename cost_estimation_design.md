@@ -380,3 +380,10 @@ The panel's open questions were resolved by the maintainer as follows:
 
 Still open, deferred and non-blocking: per-user apiserver authn/authz (blocks UI editing of real prices, per-tenant visibility, and price-change audit trails).
 
+## 15. Post-v1 maintainer UX revisions (2026-07-13, after live testing)
+
+1. **Single effective spend value.** The dual real+simulated presentation (amber SIMULATED badge, `~` prefix, two values side by side) was judged unhelpful in practice. Every view now renders ONE number per run: `costEstimate` when present, else `simulatedCostEstimate`. Source distinction lives in tooltips only. Rationale: on all-local clusters, simulated rates are the *only* source of numbers, so the loud labeling dominated every screen. The **storage/API invariant is unchanged** — simulated values are still read-time-only, never persisted, never in metrics; only the presentation merged. Totals sum effective values and note "includes simulated rates" in their tooltip when applicable.
+2. **Totals shipped earlier than planned**: runs page gets a per-row spend column + total across listed runs; the conversation view (agent-detail) gets a per-conversation (session) total. Computed client-side from the runs list response.
+3. **Known trap found in testing**: UI-created runs get `provider: custom` (apiserver `createRun` infers provider by baseURL substring and misses e.g. `http://172.18.0.1:8080/v1`), while YAML-created runs say `llama-server` — so simulated entries may need both provider keys. Follow-up: `createRun` should prefer the Agent's declared provider over URL sniffing.
+4. **UX nit found in testing**: saving simulated price rows without flipping the enable toggle silently does nothing; consider auto-enabling on first save or making the toggle state more prominent.
+

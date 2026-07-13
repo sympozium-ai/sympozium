@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { AgentRun, CostEstimate } from "@/lib/api";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -26,9 +27,38 @@ export function formatUsd(micro: number): string {
   return `$${dollars.toFixed(dollars < 1 ? 4 : 2)}`;
 }
 
-/** Tooltip for simulated cost estimates. */
-export const SIMULATED_COST_TITLE =
-  "Hypothetical cost from user-defined simulated prices. Estimate covers the final attempt only.";
+/** The single spend number to show for a run: the real estimate from the
+ *  cluster price table when present, else the simulated estimate, else null. */
+export function effectiveCost(run: AgentRun): CostEstimate | null {
+  return run.status?.costEstimate ?? run.simulatedCostEstimate ?? null;
+}
+
+/** Tooltip explaining where a cost estimate came from. */
+export function costTooltip(est: CostEstimate): string {
+  const key = est.priceKey ? ` (${est.priceKey})` : "";
+  return est.source === "simulated"
+    ? `Based on user-defined simulated rates${key}. Estimate covers the final attempt only.`
+    : `Estimated from the cluster price table${key}. Estimate covers the final attempt only.`;
+}
+
+/** Sum the effective estimates of a set of runs in integer micro-USD. */
+export function sumEffectiveCosts(runs: AgentRun[]): {
+  totalMicro: number;
+  anySimulated: boolean;
+  count: number;
+} {
+  let totalMicro = 0;
+  let anySimulated = false;
+  let count = 0;
+  for (const run of runs) {
+    const est = effectiveCost(run);
+    if (!est) continue;
+    totalMicro += est.amountMicro;
+    if (est.source === "simulated") anySimulated = true;
+    count++;
+  }
+  return { totalMicro, anySimulated, count };
+}
 
 export function truncate(s: string, max: number): string {
   if (s.length <= max) return s;

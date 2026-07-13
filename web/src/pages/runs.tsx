@@ -45,7 +45,14 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { formatAge, truncate } from "@/lib/utils";
+import {
+  costTooltip,
+  effectiveCost,
+  formatAge,
+  formatUsd,
+  sumEffectiveCosts,
+  truncate,
+} from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRunsSeen } from "@/hooks/use-runs-seen";
 import type { AgentRun } from "@/lib/api";
@@ -95,6 +102,8 @@ export function RunsPage() {
       r.spec.agentRef.toLowerCase().includes(search.toLowerCase()) ||
       r.spec.task.toLowerCase().includes(search.toLowerCase()),
   );
+
+  const spend = sumEffectiveCosts(filtered);
 
   const handleCreate = () => {
     createRun.mutate(form, {
@@ -204,7 +213,7 @@ export function RunsPage() {
         className="max-w-sm"
       />
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">
@@ -263,6 +272,25 @@ export function RunsPage() {
           <CardContent>
             <p className="text-xl font-semibold">
               {(observability.data?.toolInvocations || 0).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">
+              Est. Spend
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p
+              className="text-xl font-semibold"
+              title={
+                spend.anySimulated
+                  ? "Estimated spend for the runs listed below — includes simulated rates"
+                  : "Estimated spend for the runs listed below"
+              }
+            >
+              {spend.count > 0 ? formatUsd(spend.totalMicro) : "—"}
             </p>
           </CardContent>
         </Card>
@@ -335,6 +363,7 @@ export function RunsPage() {
               <TableHead>Task</TableHead>
               <TableHead>Phase</TableHead>
               <TableHead>Tokens</TableHead>
+              <TableHead>Est. Spend</TableHead>
               <TableHead>Age</TableHead>
               <TableHead className="w-20" />
             </TableRow>
@@ -387,6 +416,16 @@ export function RunsPage() {
                   {run.status?.tokenUsage
                     ? `${run.status.tokenUsage.totalTokens.toLocaleString()}`
                     : "—"}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {(() => {
+                    const est = effectiveCost(run);
+                    return est ? (
+                      <span title={costTooltip(est)}>
+                        {formatUsd(est.amountMicro)}
+                      </span>
+                    ) : null;
+                  })()}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {formatAge(run.metadata.creationTimestamp)}

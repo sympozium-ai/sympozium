@@ -537,10 +537,10 @@ function ModelPricingSection() {
             </Label>
           </div>
           <p className="text-sm text-muted-foreground">
-            Simulated prices produce clearly-labeled hypothetical estimates for
-            what runs would cost — including on local providers (e.g. internal
-            chargeback). They never affect real cost records. This is a shared
-            cluster-wide setting, visible to all users of this cluster.
+            Define rates for providers without list prices (e.g. local models,
+            internal chargeback). Runs matching these rates show them as their
+            estimated spend. This is a shared cluster-wide setting, visible to
+            all users of this cluster.
           </p>
 
           {readOnly && (

@@ -25,11 +25,7 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useRunsSeen } from "@/hooks/use-runs-seen";
-import {
-  formatAge,
-  formatUsd,
-  SIMULATED_COST_TITLE as SIMULATED_TITLE,
-} from "@/lib/utils";
+import { costTooltip, effectiveCost, formatAge, formatUsd } from "@/lib/utils";
 
 export function RunDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -66,8 +62,7 @@ export function RunDetailPage() {
   const duration = usage?.durationMs
     ? `${(usage.durationMs / 1000).toFixed(1)}s`
     : "—";
-  const cost = run.status?.costEstimate;
-  const simCost = run.simulatedCostEstimate;
+  const est = effectiveCost(run);
 
   return (
     <div className="space-y-6">
@@ -91,7 +86,7 @@ export function RunDetailPage() {
       </div>
 
       {/* Stats row */}
-      {(usage || cost || simCost) && (
+      {(usage || est) && (
         <div className="grid gap-4 sm:grid-cols-4">
           {usage && (
             <>
@@ -139,50 +134,19 @@ export function RunDetailPage() {
               </Card>
             </>
           )}
-          {(cost || simCost) && (
+          {est && (
             <Card>
               <CardContent className="flex items-center gap-3 p-4">
                 <DollarSign className="h-5 w-5 text-green-400" />
-                <div className="min-w-0">
+                <div className="min-w-0" title={costTooltip(est)}>
                   <p className="text-sm text-muted-foreground">Est. spend</p>
-                  {cost ? (
-                    <>
-                      <p className="text-lg font-bold">
-                        {formatUsd(cost.amountMicro)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        in {formatUsd(cost.inputAmountMicro)} · out{" "}
-                        {formatUsd(cost.outputAmountMicro)}
-                      </p>
-                    </>
-                  ) : (
-                    <p
-                      className="text-lg font-bold flex items-center gap-1.5"
-                      title={SIMULATED_TITLE}
-                    >
-                      ~{formatUsd(simCost!.amountMicro)}
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/40 text-amber-400 px-1 py-0 text-[10px]"
-                      >
-                        SIMULATED
-                      </Badge>
-                    </p>
-                  )}
-                  {cost && simCost && (
-                    <p
-                      className="text-xs text-muted-foreground flex items-center gap-1.5"
-                      title={SIMULATED_TITLE}
-                    >
-                      ~{formatUsd(simCost.amountMicro)}
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/40 text-amber-400 px-1 py-0 text-[10px]"
-                      >
-                        SIMULATED
-                      </Badge>
-                    </p>
-                  )}
+                  <p className="text-lg font-bold">
+                    {formatUsd(est.amountMicro)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    in {formatUsd(est.inputAmountMicro)} · out{" "}
+                    {formatUsd(est.outputAmountMicro)}
+                  </p>
                 </div>
               </CardContent>
             </Card>
