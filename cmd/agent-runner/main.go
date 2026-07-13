@@ -446,40 +446,10 @@ func main() {
 	}
 
 	// Apply tool policy: allow/deny lists filter the assembled tool set.
-	// - allow only: all tools not in the allow list are denied (allowlist mode)
-	// - deny only: tools in the deny list are removed (blocklist mode)
-	// - both: allow takes precedence — only allowed tools pass, denied are also removed (least privilege)
 	allowList := os.Getenv("TOOL_POLICY_ALLOW")
 	denyList := os.Getenv("TOOL_POLICY_DENY")
 	if allowList != "" || denyList != "" {
-		allowed := make(map[string]bool)
-		for _, name := range strings.Split(allowList, ",") {
-			name = strings.TrimSpace(name)
-			if name != "" {
-				allowed[name] = true
-			}
-		}
-		denied := make(map[string]bool)
-		for _, name := range strings.Split(denyList, ",") {
-			name = strings.TrimSpace(name)
-			if name != "" {
-				denied[name] = true
-			}
-		}
-		useAllowlist := len(allowed) > 0
-		filtered := tools[:0]
-		for _, t := range tools {
-			if denied[t.Name] {
-				log.Printf("tool policy: denied tool %q", t.Name)
-				continue
-			}
-			if useAllowlist && !allowed[t.Name] {
-				log.Printf("tool policy: tool %q not in allow list", t.Name)
-				continue
-			}
-			filtered = append(filtered, t)
-		}
-		tools = filtered
+		tools = applyToolPolicy(tools, allowList, denyList)
 	}
 
 	apiKey := firstNonEmpty(
@@ -683,6 +653,41 @@ func readSkipMarker(path string) (string, bool) {
 		reason = "preRun hook requested skip"
 	}
 	return reason, true
+}
+
+// applyToolPolicy filters tools based on allow/deny lists.
+// - deny only: tools in the deny list are removed (blocklist mode)
+// - allow only: all tools not in the allow list are denied (allowlist mode)
+// - both: deny wins on conflict — a tool in both lists is denied (least privilege)
+func applyToolPolicy(tools []ToolDef, allowList, denyList string) []ToolDef {
+	allowed := make(map[string]bool)
+	for _, name := range strings.Split(allowList, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			allowed[name] = true
+		}
+	}
+	denied := make(map[string]bool)
+	for _, name := range strings.Split(denyList, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			denied[name] = true
+		}
+	}
+	useAllowlist := len(allowed) > 0
+	filtered := make([]ToolDef, 0, len(tools))
+	for _, t := range tools {
+		if denied[t.Name] {
+			log.Printf("tool policy: denied tool %q", t.Name)
+			continue
+		}
+		if useAllowlist && !allowed[t.Name] {
+			log.Printf("tool policy: tool %q not in allow list", t.Name)
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	return filtered
 }
 
 func firstNonEmpty(vals ...string) string {

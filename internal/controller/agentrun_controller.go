@@ -43,6 +43,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/ipc"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
+	"github.com/sympozium-ai/sympozium/internal/toolpolicy"
 	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 	"gopkg.in/yaml.v3"
 )
@@ -1068,7 +1069,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				VolumeMounts:     targetInst.Spec.VolumeMounts,
 				Env:              targetInst.Spec.Agents.Default.Env,
 				Timeout:          targetInst.Spec.Agents.Default.ParseRunTimeout(),
-				ToolPolicy:       lookupToolPolicyForAgent(ctx, r.Client, &targetInst),
+				ToolPolicy:       toolpolicy.ForAgent(ctx, r.Client, &targetInst),
 			},
 		}
 

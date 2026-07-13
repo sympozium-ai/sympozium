@@ -23,6 +23,7 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/toolpolicy"
 )
 
 const ensembleFinalizer = "sympozium.ai/ensemble-finalizer"
@@ -636,38 +637,6 @@ func resolveBaseURL(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alpha1
 
 // resolveProviderHeadersSecretRef selects the provider-headers secret, letting a
 // persona-level ref override the ensemble-level one.
-// resolveToolPolicy converts an AgentConfig's ToolPolicy to a ToolPolicySpec
-// for use in an AgentRun. Returns nil if the persona has no tool policy.
-func resolveToolPolicy(persona *sympoziumv1alpha1.AgentConfigSpec) *sympoziumv1alpha1.ToolPolicySpec {
-	if persona.ToolPolicy == nil {
-		return nil
-	}
-	return &sympoziumv1alpha1.ToolPolicySpec{
-		Allow: persona.ToolPolicy.Allow,
-		Deny:  persona.ToolPolicy.Deny,
-	}
-}
-
-// lookupToolPolicyForAgent resolves the ToolPolicy for an Agent instance by
-// looking up the Ensemble it belongs to and finding the matching AgentConfig.
-func lookupToolPolicyForAgent(ctx context.Context, c client.Reader, inst *sympoziumv1alpha1.Agent) *sympoziumv1alpha1.ToolPolicySpec {
-	ensembleName := inst.Labels["sympozium.ai/ensemble"]
-	configName := inst.Labels["sympozium.ai/agent-config"]
-	if ensembleName == "" || configName == "" {
-		return nil
-	}
-	var ensemble sympoziumv1alpha1.Ensemble
-	if err := c.Get(ctx, types.NamespacedName{Name: ensembleName, Namespace: inst.Namespace}, &ensemble); err != nil {
-		return nil
-	}
-	for i := range ensemble.Spec.AgentConfigs {
-		if ensemble.Spec.AgentConfigs[i].Name == configName {
-			return resolveToolPolicy(&ensemble.Spec.AgentConfigs[i])
-		}
-	}
-	return nil
-}
-
 func resolveProviderHeadersSecretRef(pack *sympoziumv1alpha1.Ensemble, persona *sympoziumv1alpha1.AgentConfigSpec) string {
 	ref := pack.Spec.ProviderHeadersSecretRef
 	if persona.ProviderHeadersSecretRef != "" {
@@ -1558,7 +1527,7 @@ func (r *EnsembleReconciler) deliverStimulus(ctx context.Context, log logr.Logge
 			VolumeMounts:     targetInst.Spec.VolumeMounts,
 			Env:              targetInst.Spec.Agents.Default.Env,
 			Timeout:          targetInst.Spec.Agents.Default.ParseRunTimeout(),
-			ToolPolicy:       lookupToolPolicyForAgent(ctx, r.Client, &targetInst),
+			ToolPolicy:       toolpolicy.ForAgent(ctx, r.Client, &targetInst),
 		},
 	}
 

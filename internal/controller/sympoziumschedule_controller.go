@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/toolpolicy"
 )
 
 // maxScheduleRunCreateRetries bounds the collision-retry loop when the
@@ -258,7 +259,7 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			VolumeMounts:     instance.Spec.VolumeMounts,
 			Env:              instance.Spec.Agents.Default.Env,
 			Timeout:          instance.Spec.Agents.Default.ParseRunTimeout(),
-			ToolPolicy:       lookupToolPolicyForAgent(ctx, r.Client, instance),
+			ToolPolicy:       toolpolicy.ForAgent(ctx, r.Client, instance),
 		},
 	}
 
