@@ -14,9 +14,44 @@ permissions:
   contents: read
   packages: write
 
+# A newer push supersedes an in-flight run of the same ref. The fleet is
+# tagged by sha + latest, so the superseding run rewrites every tag the
+# cancelled one would have written — back-to-back pushes stop paying for
+# the whole 18-image fleet twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  fmt:
-    name: Format
+  # Gate the expensive fleet build on whether anything that reaches an
+  # image actually changed. Verification is one cheap job and always runs.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'images/**'
+              - 'web/**'
+              - '.github/workflows/build.yaml'
+
+  # fmt, vet, build, test, and codegen used to be five runners each paying
+  # its own checkout + setup-go + module download. The steps are strictly
+  # cheaper back-to-back on one warm cache; they stay separate steps so a
+  # failure still names itself.
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,58 +72,14 @@ jobs:
             exit 1
           fi
 
-  vet:
-    name: Vet
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Vet
         run: go vet ./...
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Build
         run: go build ./...
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Test
         run: go test -race -short ./...
-
-  codegen:
-    name: Codegen & Helm sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Check generated code is up to date
         run: |
@@ -104,8 +95,8 @@ jobs:
 
   build-and-push:
     runs-on: ubuntu-latest
-    needs: [fmt, vet, build, test, codegen]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, verify]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.code == 'true'
     strategy:
       matrix:
         image:
@@ -158,5 +149,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped per image: 18 matrix jobs writing mode=max into ONE
+          # shared scope evicted each other constantly — every build ran
+          # effectively cold.
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
