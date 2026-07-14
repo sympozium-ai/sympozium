@@ -34,7 +34,7 @@ IMAGES = controller apiserver ipc-bridge webhook agent-runner web-proxy node-pro
 		 skill-k8s-ops skill-sre-observability skill-github-gitops skill-llmfit skill-memory \
 		 llmfit-daemon mcp-bridge
 
-.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks integration-tests ux-tests
+.PHONY: all build test clean generate manifests docker-build docker-push install help web-build web-dev web-dev-serve web-clean web-install setup-hooks integration-tests ux-tests tail-agents
 
 all: build
 
@@ -259,6 +259,15 @@ VITE_PORT ?= 5173
 
 API_LOCAL_PORT ?= 8081
 NATS_LOCAL_PORT ?= 4222
+
+AGENT_NAMESPACE ?= default
+TAIL_ARGS ?=
+
+tail-agents: ## Follow the logs of every agent run, live (AGENT_NAMESPACE=default; TAIL_ARGS='--skills')
+	@NAMESPACE=$(AGENT_NAMESPACE) hack/tail-agents.sh $(TAIL_ARGS); \
+	code=$$?; \
+	if [ $$code -eq 130 ] || [ $$code -eq 143 ]; then exit 0; fi; \
+	exit $$code
 
 port-forward-nats: ## Port-forward NATS from the cluster to localhost:4222
 	kubectl port-forward -n sympozium-system --address 127.0.0.1 svc/nats $(NATS_LOCAL_PORT):4222
