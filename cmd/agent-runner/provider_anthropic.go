@@ -82,7 +82,7 @@ func (p *anthropicProvider) Chat(ctx context.Context) (ChatResult, error) {
 	if err != nil {
 		var apiErr *anthropic.Error
 		if errors.As(err, &apiErr) {
-				return ChatResult{}, fmt.Errorf("Anthropic API error (HTTP %d): %s",
+			return ChatResult{}, fmt.Errorf("Anthropic API error (HTTP %d): %s",
 				apiErr.StatusCode, truncate(apiErr.Error(), 500))
 		}
 		return ChatResult{}, fmt.Errorf("Anthropic API error: %w", err)

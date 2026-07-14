@@ -52,10 +52,10 @@ func executeToolCallWithTelemetry(ctx context.Context, name, argsJSON, callID st
 	toolSpan.End()
 
 	detailedLog.LogAgent("tool_result", map[string]any{
-		"tool":       name,
-		"result_len": len(result),
-		"result":     result,
-		"is_error":   isErr,
+		"tool":        name,
+		"result_len":  len(result),
+		"result":      result,
+		"is_error":    isErr,
 		"duration_ms": time.Since(start).Milliseconds(),
 	})
 
