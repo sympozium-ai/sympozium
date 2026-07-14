@@ -39,7 +39,8 @@ func executeToolCallWithTelemetry(ctx context.Context, name, argsJSON, callID st
 		result = executeToolCall(toolCtx, name, argsJSON)
 	}
 
-	if strings.HasPrefix(result, "Error:") {
+	isErr := strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "MCP Error:")
+	if isErr {
 		err := fmt.Errorf("%s", result)
 		markSpanError(toolSpan, err)
 		obs.recordToolInvocation(toolCtx, name, "error")
@@ -49,5 +50,14 @@ func executeToolCallWithTelemetry(ctx context.Context, name, argsJSON, callID st
 	}
 	toolSpan.SetAttributes(attribute.Int64("duration_ms", time.Since(start).Milliseconds()))
 	toolSpan.End()
+
+	detailedLog.LogAgent("tool_result", map[string]any{
+		"tool":       name,
+		"result_len": len(result),
+		"result":     result,
+		"is_error":   isErr,
+		"duration_ms": time.Since(start).Milliseconds(),
+	})
+
 	return result
 }

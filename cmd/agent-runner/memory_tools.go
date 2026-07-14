@@ -357,7 +357,6 @@ func autoStoreMemory(parent context.Context, task, response string) {
 		return
 	}
 
-	detailedLog.LogAgent("memory_store", map[string]any{"task": task, "response": response})
 	// Truncate to keep stored entries reasonably sized.
 	const maxTask = 500
 	const maxResponse = 1000

@@ -408,7 +408,6 @@ func readFileTool(args map[string]any) string {
 	}
 
 	content := string(data)
-	detailedLog.LogAgent("tool_result", map[string]any{"tool": "read_file", "result_len": len(content), "result": content})
 	if len(content) > 8_000 {
 		content = content[:8_000] + fmt.Sprintf("\n... (truncated, file is %d bytes)", len(data))
 	}
@@ -785,7 +784,6 @@ func fetchURLTool(args map[string]any) string {
 		content = htmlToText(content)
 	}
 
-	detailedLog.LogAgent("tool_result", map[string]any{"tool": "fetch_url", "url": rawURL, "result_len": len(content), "result": content})
 	if len(content) > maxChars {
 		content = content[:maxChars] + fmt.Sprintf("\n\n... (truncated at %d chars, total ~%d)", maxChars, len(string(body)))
 	}
@@ -1147,7 +1145,6 @@ func formatExecResult(r execResult) string {
 	if output == "" {
 		output = "(no output)"
 	}
-	detailedLog.LogAgent("exec_output", map[string]any{"request_id": r.ID, "output_len": len(output), "output": output})
 	if len(output) > 8_000 {
 		output = output[:8_000] + "\n... (output truncated)"
 	}

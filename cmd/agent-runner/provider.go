@@ -108,8 +108,25 @@ func runAgentLoop(ctx context.Context, p LLMProvider) (string, int, int, int, er
 		if err != nil {
 			markSpanError(chatSpan, err)
 			chatSpan.End()
+			detailedLog.LogLLM("error", map[string]any{
+				"provider": p.Name(),
+				"model":    p.Model(),
+				"round":    round,
+				"error":    err.Error(),
+			})
 			return "", totalInputTokens, totalOutputTokens, totalToolCalls, err
 		}
+
+		detailedLog.LogLLM("response", map[string]any{
+			"provider":      p.Name(),
+			"model":         p.Model(),
+			"round":         round,
+			"finish_reason": res.FinishReason,
+			"text":          res.Text,
+			"tool_calls":    len(res.ToolCalls),
+			"input_tokens":  res.InputTokens,
+			"output_tokens": res.OutputTokens,
+		})
 
 		totalInputTokens += res.InputTokens
 		totalOutputTokens += res.OutputTokens

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,48 +14,95 @@ import (
 	"time"
 )
 
+const maxEntryBytes = 1024 * 1024 // 1 MB per JSONL entry
+
 var detailedLog *DetailedLogger
 
-// DetailedLogger writes untruncated JSONL logs to agent.jsonl and llm.jsonl.
 type DetailedLogger struct {
 	agentFile *os.File
 	llmFile   *os.File
+	agentBuf  *bufio.Writer
+	llmBuf    *bufio.Writer
+	agentSize int64
+	llmSize   int64
 	seq       atomic.Int64
 	maxSize   int64
 	runID     string
 	mu        sync.Mutex
 }
 
-// NewDetailedLogger opens (or creates) agent.jsonl and llm.jsonl under path.
-// When runID is non-empty, logs are written to a per-run subdirectory.
 func NewDetailedLogger(path, runID string, maxSize int64) (*DetailedLogger, error) {
 	if runID != "" {
 		path = filepath.Join(path, runID)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		return nil, fmt.Errorf("creating log dir: %w", err)
 	}
 
-	agentFile, err := os.OpenFile(filepath.Join(path, "agent.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	agentFile, err := os.OpenFile(filepath.Join(path, "agent.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening agent.jsonl: %w", err)
 	}
 
-	llmFile, err := os.OpenFile(filepath.Join(path, "llm.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	llmFile, err := os.OpenFile(filepath.Join(path, "llm.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		agentFile.Close()
 		return nil, fmt.Errorf("opening llm.jsonl: %w", err)
 	}
 
-	return &DetailedLogger{
+	var agentSize, llmSize int64
+	if info, err := agentFile.Stat(); err == nil {
+		agentSize = info.Size()
+	}
+	if info, err := llmFile.Stat(); err == nil {
+		llmSize = info.Size()
+	}
+
+	dl := &DetailedLogger{
 		agentFile: agentFile,
 		llmFile:   llmFile,
+		agentBuf:  bufio.NewWriterSize(agentFile, 64*1024),
+		llmBuf:    bufio.NewWriterSize(llmFile, 64*1024),
+		agentSize: agentSize,
+		llmSize:   llmSize,
 		maxSize:   maxSize,
 		runID:     runID,
-	}, nil
+	}
+
+	// Seed seq from existing files so restarts don't produce duplicate seq values.
+	dl.seedSeqFromFiles(path)
+
+	return dl, nil
 }
 
-// LogAgent writes an untruncated event to agent.jsonl. No-op on nil receiver.
+func (dl *DetailedLogger) seedSeqFromFiles(dir string) {
+	var maxSeq int64
+	for _, name := range []string{"agent.jsonl", "llm.jsonl"} {
+		f, err := os.Open(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 256*1024), 2*1024*1024)
+		for scanner.Scan() {
+			var entry map[string]any
+			if json.Unmarshal(scanner.Bytes(), &entry) == nil {
+				if s, ok := entry["seq"].(float64); ok && int64(s) > maxSeq {
+					maxSeq = int64(s)
+				}
+			}
+		}
+		f.Close()
+	}
+	if maxSeq > 0 {
+		dl.seq.Store(maxSeq)
+	}
+}
+
+func (dl *DetailedLogger) Enabled() bool {
+	return dl != nil
+}
+
 func (dl *DetailedLogger) LogAgent(event string, fields map[string]any) {
 	if dl == nil {
 		return
@@ -62,7 +110,6 @@ func (dl *DetailedLogger) LogAgent(event string, fields map[string]any) {
 	dl.writeEntry(true, event, fields)
 }
 
-// LogLLM writes an untruncated event to llm.jsonl. No-op on nil receiver.
 func (dl *DetailedLogger) LogLLM(event string, fields map[string]any) {
 	if dl == nil {
 		return
@@ -79,6 +126,9 @@ func (dl *DetailedLogger) writeEntry(isAgent bool, event string, fields map[stri
 		"event":  event,
 	}
 	for k, v := range fields {
+		if s, ok := v.(string); ok && len(s) > maxEntryBytes {
+			v = s[:maxEntryBytes] + "... (truncated by detailed logger)"
+		}
 		entry[k] = v
 	}
 
@@ -92,102 +142,131 @@ func (dl *DetailedLogger) writeEntry(isAgent bool, event string, fields map[stri
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
-	var f *os.File
+	var buf *bufio.Writer
+	var sizePtr *int64
 	if isAgent {
-		f = dl.agentFile
+		buf = dl.agentBuf
+		sizePtr = &dl.agentSize
 	} else {
-		f = dl.llmFile
+		buf = dl.llmBuf
+		sizePtr = &dl.llmSize
 	}
-	if f == nil {
+	if buf == nil {
 		return
 	}
 
-	if _, err := f.Write(data); err != nil {
+	n, err := buf.Write(data)
+	if err != nil {
 		log.Printf("detailed_logging: write error: %v", err)
 		return
 	}
+	*sizePtr += int64(n)
 
-	if info, err := f.Stat(); err == nil && info.Size() > dl.maxSize {
-		dl.rotate()
+	if *sizePtr > dl.maxSize {
+		dl.rotate(isAgent)
 	}
 }
 
-// Close flushes and closes both log files. No-op on nil receiver.
 func (dl *DetailedLogger) Close() {
 	if dl == nil {
 		return
 	}
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
+	if dl.agentBuf != nil {
+		_ = dl.agentBuf.Flush()
+	}
 	if dl.agentFile != nil {
 		_ = dl.agentFile.Sync()
 		_ = dl.agentFile.Close()
 		dl.agentFile = nil
+		dl.agentBuf = nil
+	}
+	if dl.llmBuf != nil {
+		_ = dl.llmBuf.Flush()
 	}
 	if dl.llmFile != nil {
 		_ = dl.llmFile.Sync()
 		_ = dl.llmFile.Close()
 		dl.llmFile = nil
+		dl.llmBuf = nil
 	}
 }
 
-// rotate renames each oversize file to .1.jsonl and reopens fresh.
-// Must be called with dl.mu held.
-func (dl *DetailedLogger) rotate() {
-	if dl.agentFile != nil {
-		if info, err := dl.agentFile.Stat(); err == nil && info.Size() > dl.maxSize {
-			path := dl.agentFile.Name()
-			_ = dl.agentFile.Sync()
-			_ = dl.agentFile.Close()
-			rotated := strings.TrimSuffix(path, ".jsonl") + ".1.jsonl"
-			_ = os.Rename(path, rotated)
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-			if err != nil {
-				log.Printf("detailed_logging: failed to reopen agent after rotation: %v", err)
-				dl.agentFile = nil
-			} else {
-				dl.agentFile = f
-			}
-		}
+// rotate renames the oversize file and reopens fresh. Must be called with dl.mu held.
+func (dl *DetailedLogger) rotate(isAgent bool) {
+	var filePtr **os.File
+	var bufPtr **bufio.Writer
+	var sizePtr *int64
+	if isAgent {
+		filePtr = &dl.agentFile
+		bufPtr = &dl.agentBuf
+		sizePtr = &dl.agentSize
+	} else {
+		filePtr = &dl.llmFile
+		bufPtr = &dl.llmBuf
+		sizePtr = &dl.llmSize
 	}
-	if dl.llmFile != nil {
-		if info, err := dl.llmFile.Stat(); err == nil && info.Size() > dl.maxSize {
-			path := dl.llmFile.Name()
-			_ = dl.llmFile.Sync()
-			_ = dl.llmFile.Close()
-			rotated := strings.TrimSuffix(path, ".jsonl") + ".1.jsonl"
-			_ = os.Rename(path, rotated)
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-			if err != nil {
-				log.Printf("detailed_logging: failed to reopen llm after rotation: %v", err)
-				dl.llmFile = nil
-			} else {
-				dl.llmFile = f
-			}
-		}
+
+	f := *filePtr
+	if f == nil {
+		return
+	}
+
+	path := f.Name()
+	if *bufPtr != nil {
+		_ = (*bufPtr).Flush()
+	}
+	_ = f.Sync()
+	_ = f.Close()
+
+	rotated := strings.TrimSuffix(path, ".jsonl") + ".1.jsonl"
+	if err := os.Rename(path, rotated); err != nil {
+		log.Printf("detailed_logging: rotation rename failed: %v — disabling this stream", err)
+		*filePtr = nil
+		*bufPtr = nil
+		return
+	}
+
+	newF, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		log.Printf("detailed_logging: failed to reopen after rotation: %v", err)
+		*filePtr = nil
+		*bufPtr = nil
+	} else {
+		*filePtr = newF
+		*bufPtr = bufio.NewWriterSize(newF, 64*1024)
+		*sizePtr = 0
 	}
 }
 
 // parseSize parses size strings like "50m" or "1g" into bytes.
-// Returns defaultVal on empty string or parse error.
-func parseSize(s string, defaultVal int64) int64 {
+func parseSize(s string, defaultVal int64) (int64, error) {
 	if s == "" {
-		return defaultVal
+		return defaultVal, nil
 	}
 	s = strings.ToLower(strings.TrimSpace(s))
-	if strings.HasSuffix(s, "g") {
-		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
-		if err != nil {
-			return defaultVal
-		}
-		return n * 1024 * 1024 * 1024
+
+	var multiplier int64
+	var numStr string
+
+	switch {
+	case strings.HasSuffix(s, "g"):
+		multiplier = 1024 * 1024 * 1024
+		numStr = s[:len(s)-1]
+	case strings.HasSuffix(s, "m"):
+		multiplier = 1024 * 1024
+		numStr = s[:len(s)-1]
+	default:
+		return 0, fmt.Errorf("unsupported size format %q: use 'm' (megabytes) or 'g' (gigabytes) suffix", s)
 	}
-	if strings.HasSuffix(s, "m") {
-		n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
-		if err != nil {
-			return defaultVal
-		}
-		return n * 1024 * 1024
+
+	n, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q: %w", s, err)
 	}
-	return defaultVal
+	if n <= 0 {
+		return 0, fmt.Errorf("size must be positive, got %q", s)
+	}
+	return n * multiplier, nil
 }

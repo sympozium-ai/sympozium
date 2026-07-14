@@ -8,6 +8,12 @@ long JSON or commands.
 Detailed file logging is an opt-in mode that writes **untruncated** JSONL log
 files alongside the normal truncated stdout output.
 
+> **Security note:** Log files may contain sensitive data — API keys echoed by
+> commands, credentials read from config files, full LLM payloads. Files are
+> created with owner-only permissions (`0600`/`0700`), but you should also
+> restrict access to the underlying volume via RBAC and avoid storing logs on
+> long-lived PVCs unless you have a retention/scrubbing policy in place.
+
 ---
 
 ## How It Works
@@ -16,11 +22,12 @@ When enabled, agent-runner writes two JSONL files:
 
 | File | Contents |
 |------|----------|
-| `agent.jsonl` | Untruncated agent-runner events: tool calls, exec requests, tool results, lifecycle events |
-| `llm.jsonl` | Full LLM request and response payloads |
+| `agent.jsonl` | Agent-runner events: tool calls, tool results, exec requests, lifecycle events |
+| `llm.jsonl` | LLM request and response payloads (logged centrally for all providers) |
 
-Every line in both files includes a shared `seq` counter and `run_id` field,
-so you can merge and sort them for a complete chronological view.
+Every line in both files includes a shared `seq` counter, `run_id`, and
+`epoch` field, so you can merge and sort them for a complete chronological view
+— even across container restarts.
 
 Stdout (`kubectl logs`) continues to use truncated output — nothing changes
 for normal operations.
@@ -95,17 +102,19 @@ Each line is a self-contained JSON object.
 
 ## Merging Log Files
 
-The `seq` counter is shared across both files. To get a unified chronological
-view, merge and sort by `seq`:
+The `seq` counter is shared across both files. Each process start includes a
+unique `epoch` value, so if a container restarts with the same `AGENT_RUN_ID`
+on a PVC, entries from separate runs are distinguishable. To get a unified
+chronological view, sort by `epoch` then `seq`:
 
 ```bash
-jq -s 'sort_by(.seq)' agent.jsonl llm.jsonl
+jq -s 'sort_by([.epoch, .seq])' agent.jsonl llm.jsonl
 ```
 
 Or stream both files interleaved:
 
 ```bash
-cat agent.jsonl llm.jsonl | jq -s 'sort_by(.seq) | .[]'
+cat agent.jsonl llm.jsonl | jq -s 'sort_by([.epoch, .seq]) | .[]'
 ```
 
 ---
