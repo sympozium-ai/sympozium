@@ -347,6 +347,15 @@ agentSandbox:
   # and SandboxWarmPool CRs (apiGroup: agents.x-k8s.io).
   rbac: true
 
+# -- Persona delegation behavior.
+delegation:
+  # -- Opt-in controller-side delegation executor. When true, the controller
+  # follows ensemble "delegation" relationship edges after a run succeeds and
+  # spawns the target persona's run directly — a fallback for models that never
+  # emit the delegate_to_persona tool call. Default false: the tool-driven
+  # delegation path remains authoritative and behavior is unchanged when off.
+  controllerExecutor: false
+
 # -- Cluster-local inference models.
 # Each item creates a Model CR that the controller reconciles into
 # PVC + Deployment + Service. Supports llama-cpp (GGUF), vLLM, TGI, or custom servers.
