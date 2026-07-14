@@ -46,8 +46,8 @@ jobs:
         run: |
           mkdir -p _site/charts .helm-packages
           # Download chart packages from all GitHub releases
-          for tag in $(gh release list -R velatir/sympozium -L 100 --json tagName -q '.[].tagName'); do
-            gh release download "$tag" -R velatir/sympozium -p 'sympozium-*.tgz' -D .helm-packages 2>/dev/null || true
+          for tag in $(gh release list -R sympozium-ai/sympozium -L 100 --json tagName -q '.[].tagName'); do
+            gh release download "$tag" -R sympozium-ai/sympozium -p 'sympozium-*.tgz' -D .helm-packages 2>/dev/null || true
           done
           # Generate index.yaml and serve chart packages from Pages
           if ls .helm-packages/*.tgz 1>/dev/null 2>&1; then
