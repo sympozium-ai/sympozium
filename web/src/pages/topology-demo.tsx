@@ -19,12 +19,250 @@ import {
   useReactFlow,
   ReactFlowProvider,
   MarkerType,
+  Handle,
+  Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { HardDrive } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { StimulusDialogProvider } from "@/components/canvas-primitives";
 import { nodeTypes, NODE_SIZES } from "@/pages/topology";
+import { draDeviceDetail, groupAccelerators } from "@/lib/dra";
+import type { DraDevice } from "@/lib/api";
 import { useArrowKeyPan, KeyboardGuide } from "@/hooks/use-arrow-key-pan";
 import Dagre from "@dagrejs/dagre";
+
+// ── Accelerator inventory helpers ────────────────────────────────────────────
+// Mirrors what llmfit-dra reports from ResourceSlices (GET /api/v1/dra/nodes).
+// The node cards group identical flavours into a "×N" leaf, so these fixtures
+// stamp out one DraDevice per physical card rather than a pre-summed count.
+
+type GpuFlavour = {
+  model: string;
+  vendor: string;
+  memoryGi: number;
+  memoryBandwidthGBs: number;
+  computeTFLOPS: number;
+};
+
+/** Real published specs, so the demo reads as a plausible fleet rather than
+ * invented numbers: HBM capacity, memory bandwidth, dense BF16 throughput. */
+const GPU: Record<string, GpuFlavour> = {
+  h200: { model: "NVIDIA H200-SXM5-141GB", vendor: "nvidia", memoryGi: 141, memoryBandwidthGBs: 4800, computeTFLOPS: 989 },
+  l40s: { model: "NVIDIA L40S 48GB", vendor: "nvidia", memoryGi: 48, memoryBandwidthGBs: 864, computeTFLOPS: 362 },
+};
+
+/** N identical accelerators of one flavour. `unhealthy` marks a single card
+ * bad so the demo also shows the degraded path the cards render in red. */
+function cards(
+  kind: "gpu" | "npu",
+  prefix: string,
+  count: number,
+  f: GpuFlavour,
+  unhealthy?: { index: number; reason: string },
+): DraDevice[] {
+  return Array.from({ length: count }, (_, i) => {
+    const bad = unhealthy?.index === i;
+    return {
+      name: `${prefix}-${i}`,
+      kind,
+      model: f.model,
+      vendor: f.vendor,
+      memoryGi: f.memoryGi,
+      memoryBandwidthGBs: f.memoryBandwidthGBs,
+      computeTFLOPS: f.computeTFLOPS,
+      healthy: !bad,
+      ...(bad ? { healthReason: unhealthy!.reason } : {}),
+    };
+  });
+}
+
+/** Fabric NICs — what makes multi-node tensor parallelism possible, and the
+ * reason a card-dense node is worth scheduling onto at all. */
+function nics(
+  prefix: string,
+  count: number,
+  linkLayer: "infiniband" | "ethernet",
+  rateGbps: number,
+): DraDevice[] {
+  return Array.from({ length: count }, (_, i) => ({
+    name: `${prefix}-${i}`,
+    kind: "nic",
+    healthy: true,
+    linkLayer,
+    rateGbps,
+  }));
+}
+
+// ── Workstation node ─────────────────────────────────────────────────────────
+// Demo-only. The shared K8sNodeNode in topology.tsx renders a cluster node as a
+// flat spec sheet, which makes an 8-GPU box look like any other row in a list.
+// This card leads with the physical machine — chassis, then the bays the
+// accelerators are actually plugged into — so a viewer reads "compute node with
+// cards attached" rather than "a node that happens to mention a GPU name".
+// It stays local to /topology/demo so the live topology page is untouched.
+
+interface WorkstationData extends Record<string, unknown> {
+  name: string;
+  ip: string;
+  chassis: string;
+  formFactor: string;
+  totalRamGb: number;
+  cpuCores: number;
+  backend: string;
+  /** Physical accelerator slots in the chassis — the denominator of "6/8 used". */
+  bays: number;
+  modelFitCount: number;
+  stale?: boolean;
+  providers: { name: string; models: string[] }[];
+  accelerators: DraDevice[];
+}
+
+/** The bay strip: one glyph per physical slot, filled or empty. This is the
+ * whole point of the card — you can see the cards seated in the machine, and
+ * see the headroom left in a half-populated box. */
+function BayStrip({ cards: seated, bays }: { cards: DraDevice[]; bays: number }) {
+  const slots = Array.from({ length: bays }, (_, i) => seated[i]);
+  return (
+    <div className="flex flex-wrap gap-[3px] mt-1 mb-1.5">
+      {slots.map((d, i) => (
+        <div
+          key={i}
+          title={
+            d
+              ? `bay ${i}: ${d.model}${d.healthy ? "" : ` — ${d.healthReason}`}`
+              : `bay ${i}: empty`
+          }
+          className={
+            "h-3.5 w-2.5 border-[1.5px] " +
+            (!d
+              ? "border-dashed border-foreground/25"
+              : d.healthy
+                ? "border-emerald-400/70 bg-emerald-400/40"
+                : "border-destructive bg-destructive/40")
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
+function WorkstationNode({ data }: NodeProps<Node<WorkstationData>>) {
+  const seated = data.accelerators.filter((d) => d.kind === "gpu" || d.kind === "npu");
+  const fabric = data.accelerators.filter((d) => d.kind === "nic");
+  const groups = groupAccelerators(seated);
+  const fabricGroups = groupAccelerators(fabric);
+  const faults = seated.filter((d) => !d.healthy);
+
+  return (
+    <div className="border border-foreground/20 bg-card min-w-[280px] max-w-[300px] shadow-md cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors">
+      <Handle type="target" position={Position.Top} className="!bg-foreground !w-2 !h-2" />
+      <Handle type="source" position={Position.Bottom} className="!bg-foreground !w-2 !h-2" />
+
+      {/* Chassis header — the machine itself */}
+      <div className="flex items-center justify-between border-b border-foreground/15 bg-foreground/[0.04] px-3 py-1">
+        <span className="text-[8px] uppercase tracking-[0.15em] text-muted-foreground">
+          Workstation
+        </span>
+        <span className="text-[8px] font-mono text-muted-foreground">
+          {data.formFactor}
+        </span>
+      </div>
+
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-2">
+          <HardDrive className="h-4 w-4 text-foreground shrink-0" />
+          <span className="font-semibold text-sm text-foreground truncate">{data.name}</span>
+          {data.stale && (
+            <Badge variant="destructive" className="text-[8px] px-1 py-0">stale</Badge>
+          )}
+        </div>
+        <p className="text-[10px] text-muted-foreground font-mono">{data.ip}</p>
+        <p className="text-[10px] text-muted-foreground truncate" title={data.chassis}>
+          {data.chassis}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2.5 text-[10px] text-muted-foreground mt-0.5">
+          <span>{data.totalRamGb} GB RAM</span>
+          <span>{data.cpuCores} cores</span>
+          <span>{data.backend}</span>
+          <span>{data.modelFitCount} models fit</span>
+        </div>
+
+        {/* Accelerator bays */}
+        <div className="mt-2 pt-1.5 border-t border-foreground/10">
+          <div className="flex items-center justify-between">
+            <span className="text-[8px] uppercase tracking-[0.15em] text-muted-foreground">
+              Accelerator bays
+            </span>
+            <span
+              className={
+                "text-[9px] font-mono " +
+                (faults.length > 0 ? "text-destructive" : "text-muted-foreground")
+              }
+            >
+              {seated.length}/{data.bays} used
+              {faults.length > 0 && ` · ${faults.length} fault`}
+            </span>
+          </div>
+          {data.bays > 0 ? (
+            <>
+              <BayStrip cards={seated} bays={data.bays} />
+              {groups.map((g) => (
+                <div
+                  key={g.key}
+                  className={
+                    "flex items-baseline gap-1.5 font-mono text-[10px] " +
+                    (g.healthy ? "" : "text-destructive")
+                  }
+                  title={g.healthy ? g.names.join(", ") : `${g.names.join(", ")} — ${g.reasons.join(", ")}`}
+                >
+                  <span className="text-muted-foreground/60 select-none">└─</span>
+                  <span className="shrink-0">{g.count}×</span>
+                  <span className="truncate">{draDeviceDetail(g.sample)}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="text-[10px] text-muted-foreground/70 italic mt-1">
+              no accelerators — CPU inference only
+            </p>
+          )}
+        </div>
+
+        {/* Fabric — what makes multi-node tensor parallelism possible */}
+        {fabricGroups.length > 0 && (
+          <div className="mt-1.5 pt-1.5 border-t border-foreground/10">
+            <span className="text-[8px] uppercase tracking-[0.15em] text-muted-foreground">
+              Fabric
+            </span>
+            {fabricGroups.map((g) => (
+              <div key={g.key} className="flex items-baseline gap-1.5 font-mono text-[10px]">
+                <span className="text-muted-foreground/60 select-none">└─</span>
+                <span className="shrink-0">{g.count}×</span>
+                <span className="truncate">{draDeviceDetail(g.sample)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {data.providers.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {data.providers.map((p) => (
+              <Badge
+                key={p.name}
+                variant="outline"
+                className="text-[9px] border-foreground/20 text-foreground"
+              >
+                {p.name}
+                {p.models?.length > 0 && ` (${p.models.length})`}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Demo data generator ──────────────────────────────────────────────────────
 
@@ -53,86 +291,119 @@ function buildDemoTopology(): { nodes: Node[]; edges: Edge[] } {
     },
   });
 
-  // ── K8s Nodes ────────────────────────────────────────────────────────────
+  // ── Workstations ─────────────────────────────────────────────────────────
+  // An H200 estate: the same accelerator scaled across differently-shaped
+  // machines, so the cards show full boxes, half-populated boxes with headroom,
+  // faulted bays, and — for contrast — a render box and a CPU-only node.
   const k8sNodes = [
     {
-      name: "gpu-node-a100-01",
-      ip: "10.42.1.10",
-      providers: [{ name: "vllm", models: ["llama-3.1-70b", "codestral-22b"] }],
-      fitness: { totalRamGb: 256, availableRamGb: 48, cpuCores: 64, hasGpu: true, gpuName: "NVIDIA A100 80GB", gpuVramGb: 80, modelFitCount: 6, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-a100-02",
-      ip: "10.42.1.11",
-      providers: [{ name: "vllm", models: ["mistral-large-2", "qwen2.5-72b"] }],
-      fitness: { totalRamGb: 256, availableRamGb: 72, cpuCores: 64, hasGpu: true, gpuName: "NVIDIA A100 80GB", gpuVramGb: 80, modelFitCount: 5, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-a100-03",
-      ip: "10.42.1.12",
-      providers: [{ name: "vllm", models: ["deepseek-v3"] }],
-      fitness: { totalRamGb: 256, availableRamGb: 64, cpuCores: 64, hasGpu: true, gpuName: "NVIDIA A100 80GB", gpuVramGb: 80, modelFitCount: 4, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-a100-04",
-      ip: "10.42.1.13",
-      providers: [{ name: "vllm", models: ["phi-4-14b"] }],
-      fitness: { totalRamGb: 256, availableRamGb: 120, cpuCores: 64, hasGpu: true, gpuName: "NVIDIA A100 80GB", gpuVramGb: 80, modelFitCount: 7, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-h100-01",
-      ip: "10.42.2.20",
-      providers: [{ name: "vllm", models: ["llama-3.1-405b"] }, { name: "tgi", models: ["command-r-plus"] }],
-      fitness: { totalRamGb: 512, availableRamGb: 128, cpuCores: 128, hasGpu: true, gpuName: "NVIDIA H100 80GB", gpuVramGb: 80, modelFitCount: 8, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-h100-02",
-      ip: "10.42.2.21",
-      providers: [{ name: "vllm", models: ["mixtral-8x22b", "starcoder2-15b"] }],
-      fitness: { totalRamGb: 512, availableRamGb: 96, cpuCores: 128, hasGpu: true, gpuName: "NVIDIA H100 80GB", gpuVramGb: 80, modelFitCount: 6, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-h100-03",
-      ip: "10.42.2.22",
-      providers: [{ name: "tgi", models: ["gemma-2-27b"] }],
-      fitness: { totalRamGb: 512, availableRamGb: 200, cpuCores: 128, hasGpu: true, gpuName: "NVIDIA H100 80GB", gpuVramGb: 80, modelFitCount: 9, stale: false, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-h200-01",
+      name: "ws-h200-01",
       ip: "10.42.3.30",
-      providers: [{ name: "vllm", models: ["llama-3.3-70b", "nemotron-70b"] }],
-      fitness: { totalRamGb: 1024, availableRamGb: 256, cpuCores: 192, hasGpu: true, gpuName: "NVIDIA H200 141GB", gpuVramGb: 141, modelFitCount: 12, stale: false, backend: "CUDA" },
+      chassis: "Supermicro AS-8125GS-TNHR",
+      formFactor: "4U rack",
+      totalRamGb: 2048, cpuCores: 192, backend: "CUDA", bays: 8, modelFitCount: 18,
+      providers: [{ name: "vllm", models: ["llama-3.1-405b", "deepseek-r1-671b"] }],
+      accelerators: [...cards("gpu", "h200", 8, GPU.h200), ...nics("mlx5", 4, "infiniband", 400)],
     },
     {
-      name: "gpu-node-h200-02",
+      name: "ws-h200-02",
       ip: "10.42.3.31",
-      providers: [{ name: "vllm", models: ["dbrx-instruct"] }],
-      fitness: { totalRamGb: 1024, availableRamGb: 340, cpuCores: 192, hasGpu: true, gpuName: "NVIDIA H200 141GB", gpuVramGb: 141, modelFitCount: 14, stale: false, backend: "CUDA" },
+      chassis: "Supermicro AS-8125GS-TNHR",
+      formFactor: "4U rack",
+      totalRamGb: 2048, cpuCores: 192, backend: "CUDA", bays: 8, modelFitCount: 17,
+      providers: [{ name: "vllm", models: ["llama-3.3-70b", "nemotron-70b"] }],
+      accelerators: [...cards("gpu", "h200", 8, GPU.h200), ...nics("mlx5", 4, "infiniband", 400)],
     },
     {
-      name: "gpu-node-l40s-01",
+      name: "ws-h200-03",
+      ip: "10.42.3.32",
+      chassis: "Dell PowerEdge XE9680",
+      formFactor: "6U rack",
+      totalRamGb: 2048, cpuCores: 224, backend: "CUDA", bays: 8, modelFitCount: 14,
+      providers: [{ name: "vllm", models: ["mixtral-8x22b"] }, { name: "tgi", models: ["command-r-plus"] }],
+      // One bay faulted — the strip renders that slot red.
+      accelerators: [
+        ...cards("gpu", "h200", 8, GPU.h200, { index: 5, reason: "ECC uncorrectable" }),
+        ...nics("mlx5", 4, "infiniband", 400),
+      ],
+    },
+    {
+      name: "ws-h200-04",
+      ip: "10.42.3.33",
+      chassis: "Lenovo ThinkSystem SR780a V3",
+      formFactor: "5U rack",
+      totalRamGb: 1024, cpuCores: 128, backend: "CUDA", bays: 8, modelFitCount: 9,
+      providers: [{ name: "vllm", models: ["qwen2.5-72b", "codestral-22b"] }],
+      // Half-populated: four bays free, visible as dashed empty slots.
+      accelerators: [...cards("gpu", "h200", 4, GPU.h200), ...nics("mlx5", 2, "infiniband", 200)],
+    },
+    {
+      name: "ws-h200-05",
+      ip: "10.42.3.34",
+      chassis: "HPE ProLiant DL380a Gen11",
+      formFactor: "2U rack",
+      totalRamGb: 1024, cpuCores: 128, backend: "CUDA", bays: 4, modelFitCount: 8,
+      providers: [{ name: "vllm", models: ["llama-3.1-70b", "deepseek-v3"] }],
+      accelerators: [...cards("gpu", "h200", 4, GPU.h200), ...nics("mlx5", 2, "infiniband", 200)],
+    },
+    {
+      name: "ws-h200-06",
+      ip: "10.42.3.35",
+      chassis: "Supermicro SYS-741GE-TNRT",
+      formFactor: "tower",
+      totalRamGb: 512, cpuCores: 64, backend: "CUDA", bays: 4, modelFitCount: 5,
+      providers: [{ name: "vllm", models: ["gemma-2-27b", "starcoder2-15b"] }],
+      accelerators: [...cards("gpu", "h200", 2, GPU.h200), ...nics("mlx5", 1, "ethernet", 100)],
+    },
+    {
+      name: "ws-h200-07",
+      ip: "10.42.3.36",
+      chassis: "Dell PowerEdge XE9680",
+      formFactor: "6U rack",
+      totalRamGb: 2048, cpuCores: 224, backend: "CUDA", bays: 8, modelFitCount: 16,
+      providers: [{ name: "vllm", models: ["dbrx-instruct", "mistral-large-2"] }],
+      accelerators: [...cards("gpu", "h200", 8, GPU.h200), ...nics("mlx5", 4, "infiniband", 400)],
+    },
+    {
+      name: "ws-h200-08",
+      ip: "10.42.3.37",
+      chassis: "Supermicro SYS-741GE-TNRT",
+      formFactor: "tower",
+      totalRamGb: 512, cpuCores: 64, backend: "CUDA", bays: 4, modelFitCount: 4,
+      providers: [{ name: "ollama", models: ["llama-3.2-8b", "phi-4-14b"] }],
+      accelerators: [...cards("gpu", "h200", 2, GPU.h200), ...nics("mlx5", 1, "ethernet", 100)],
+    },
+    {
+      name: "ws-l40s-01",
       ip: "10.42.4.40",
-      providers: [{ name: "vllm", models: ["whisper-large-v3"] }, { name: "tgi", models: ["e5-mistral-7b"] }],
-      fitness: { totalRamGb: 128, availableRamGb: 32, cpuCores: 32, hasGpu: true, gpuName: "NVIDIA L40S 48GB", gpuVramGb: 48, modelFitCount: 3, stale: false, backend: "CUDA" },
+      chassis: "Dell Precision 7960 Tower",
+      formFactor: "tower",
+      totalRamGb: 256, cpuCores: 32, backend: "CUDA", bays: 4, modelFitCount: 3,
+      providers: [
+        { name: "vllm", models: ["whisper-large-v3", "nomic-embed-text"] },
+        { name: "tgi", models: ["e5-mistral-7b"] },
+      ],
+      accelerators: [
+        ...cards("gpu", "l40s", 4, GPU.l40s, { index: 2, reason: "thermal throttle" }),
+        ...nics("mlx5", 1, "ethernet", 100),
+      ],
+      stale: true,
     },
     {
-      name: "gpu-node-l40s-02",
-      ip: "10.42.4.41",
-      providers: [{ name: "vllm", models: ["nomic-embed-text"] }],
-      fitness: { totalRamGb: 128, availableRamGb: 64, cpuCores: 32, hasGpu: true, gpuName: "NVIDIA L40S 48GB", gpuVramGb: 48, modelFitCount: 4, stale: true, backend: "CUDA" },
-    },
-    {
-      name: "gpu-node-4090-01",
-      ip: "10.42.5.50",
-      providers: [{ name: "ollama", models: ["llama-3.2-8b", "phi-3-mini"] }],
-      fitness: { totalRamGb: 64, availableRamGb: 16, cpuCores: 16, hasGpu: true, gpuName: "NVIDIA RTX 4090 24GB", gpuVramGb: 24, modelFitCount: 2, stale: false, backend: "CUDA" },
+      name: "cpu-node-arm-01",
+      ip: "10.42.8.80",
+      chassis: "Ampere Altra Max M128-30",
+      formFactor: "1U rack",
+      totalRamGb: 256, cpuCores: 128, backend: "CPU", bays: 0, modelFitCount: 1,
+      providers: [{ name: "llama.cpp", models: ["qwen2.5-3b-gguf"] }],
+      accelerators: [],
     },
   ];
 
   for (const pn of k8sNodes) {
     nodes.push({
       id: `node-${pn.name}`,
-      type: "k8sNode",
+      type: "workstation",
       position: P,
       data: pn,
     });
@@ -159,25 +430,26 @@ function buildDemoTopology(): { nodes: Node[]; edges: Edge[] } {
 
   // ── Models (deployed pods) ───────────────────────────────────────────────
   const models = [
-    { name: "llama-3.1-70b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-a100-01" },
-    { name: "codestral-22b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-a100-01" },
-    { name: "mistral-large-2", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-a100-02" },
-    { name: "qwen2.5-72b", phase: "Loading", serverType: "vllm", gpu: 1, node: "gpu-node-a100-02" },
-    { name: "deepseek-v3", phase: "Ready", serverType: "vllm", gpu: 2, node: "gpu-node-a100-03" },
-    { name: "phi-4-14b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-a100-04" },
-    { name: "llama-3.1-405b", phase: "Ready", serverType: "vllm", gpu: 4, node: "gpu-node-h100-01" },
-    { name: "command-r-plus", phase: "Ready", serverType: "tgi", gpu: 2, node: "gpu-node-h100-01" },
-    { name: "mixtral-8x22b", phase: "Ready", serverType: "vllm", gpu: 2, node: "gpu-node-h100-02" },
-    { name: "starcoder2-15b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-h100-02" },
-    { name: "gemma-2-27b", phase: "Ready", serverType: "tgi", gpu: 1, node: "gpu-node-h100-03" },
-    { name: "llama-3.3-70b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-h200-01" },
-    { name: "nemotron-70b", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-h200-01" },
-    { name: "dbrx-instruct", phase: "Loading", serverType: "vllm", gpu: 2, node: "gpu-node-h200-02" },
-    { name: "whisper-large-v3", phase: "Ready", serverType: "vllm", gpu: 1, node: "gpu-node-l40s-01" },
-    { name: "e5-mistral-7b", phase: "Ready", serverType: "tgi", gpu: 1, node: "gpu-node-l40s-01" },
-    { name: "nomic-embed-text", phase: "Failed", serverType: "vllm", gpu: 1, node: "gpu-node-l40s-02" },
-    { name: "llama-3.2-8b", phase: "Ready", serverType: "ollama", gpu: 1, node: "gpu-node-4090-01" },
-    { name: "phi-3-mini", phase: "Ready", serverType: "ollama", gpu: 1, node: "gpu-node-4090-01" },
+    { name: "llama-3.1-405b", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-01" },
+    { name: "deepseek-r1-671b", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-01" },
+    { name: "llama-3.3-70b", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-02" },
+    { name: "nemotron-70b", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-02" },
+    { name: "mixtral-8x22b", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-03" },
+    { name: "command-r-plus", phase: "Ready", serverType: "tgi", gpu: 3, node: "ws-h200-03" },
+    { name: "qwen2.5-72b", phase: "Loading", serverType: "vllm", gpu: 2, node: "ws-h200-04" },
+    { name: "codestral-22b", phase: "Ready", serverType: "vllm", gpu: 2, node: "ws-h200-04" },
+    { name: "llama-3.1-70b", phase: "Ready", serverType: "vllm", gpu: 2, node: "ws-h200-05" },
+    { name: "deepseek-v3", phase: "Ready", serverType: "vllm", gpu: 2, node: "ws-h200-05" },
+    { name: "gemma-2-27b", phase: "Ready", serverType: "vllm", gpu: 1, node: "ws-h200-06" },
+    { name: "starcoder2-15b", phase: "Ready", serverType: "vllm", gpu: 1, node: "ws-h200-06" },
+    { name: "dbrx-instruct", phase: "Loading", serverType: "vllm", gpu: 4, node: "ws-h200-07" },
+    { name: "mistral-large-2", phase: "Ready", serverType: "vllm", gpu: 4, node: "ws-h200-07" },
+    { name: "llama-3.2-8b", phase: "Ready", serverType: "ollama", gpu: 1, node: "ws-h200-08" },
+    { name: "phi-4-14b", phase: "Ready", serverType: "ollama", gpu: 1, node: "ws-h200-08" },
+    { name: "whisper-large-v3", phase: "Ready", serverType: "vllm", gpu: 1, node: "ws-l40s-01" },
+    { name: "e5-mistral-7b", phase: "Ready", serverType: "tgi", gpu: 1, node: "ws-l40s-01" },
+    { name: "nomic-embed-text", phase: "Failed", serverType: "vllm", gpu: 1, node: "ws-l40s-01" },
+    { name: "qwen2.5-3b-gguf", phase: "Ready", serverType: "llama.cpp", gpu: 0, node: "cpu-node-arm-01" },
   ];
 
   for (const m of models) {
@@ -731,14 +1003,16 @@ function buildDemoTopology(): { nodes: Node[]; edges: Edge[] } {
 function applyDemoLayout(nodes: Node[], edges: Edge[]): void {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  // Y bands
+  // Y bands. The workstation cards are ~250px tall — far taller than the flat
+  // node card this demo used to draw — so the rows below them need the room or
+  // the fleet overlaps the models it serves.
   const Y_GW = 0;
   const Y_K8S = 200;
-  const Y_INFRA = 430; // models + cloud providers
-  const Y_ENS_BASE = 680; // ensembles start here; dagre offsets below
+  const Y_INFRA = 520; // models + cloud providers
+  const Y_ENS_BASE = 780; // ensembles start here; dagre offsets below
 
   // ── 1. Classify nodes ────────────────────────────────────────────────────
-  const infraTypes = new Set(["gateway", "k8sNode", "cloudProvider", "model"]);
+  const infraTypes = new Set(["gateway", "workstation", "cloudProvider", "model"]);
   const infraNodes: Node[] = [];
   const appNodes: Node[] = []; // ensemble, stimulus, persona, agentRun
 
@@ -748,7 +1022,7 @@ function applyDemoLayout(nodes: Node[], edges: Edge[]): void {
   }
 
   // ── 2. K8s nodes — evenly spaced row ─────────────────────────────────────
-  const k8s = infraNodes.filter((n) => n.type === "k8sNode");
+  const k8s = infraNodes.filter((n) => n.type === "workstation");
   const K8S_GAP = 360;
   const totalInfraW = k8s.length * K8S_GAP;
   const k8sStart = -totalInfraW / 2;
@@ -855,7 +1129,7 @@ function applyDemoLayout(nodes: Node[], edges: Edge[]): void {
       .setGraph({ rankdir: "TB", nodesep: 40, ranksep: 80, edgesep: 20 });
 
     for (const n of treeNodes) {
-      const [w, h] = NODE_SIZES[n.type || ""] || [160, 50];
+      const [w, h] = DEMO_NODE_SIZES[n.type || ""] || [160, 50];
       g.setNode(n.id, { width: w, height: h });
     }
     for (const e of treeEdges) {
@@ -872,7 +1146,7 @@ function applyDemoLayout(nodes: Node[], edges: Edge[]): void {
     for (const n of treeNodes) {
       const pos = g.node(n.id);
       if (pos) {
-        const [w, h] = NODE_SIZES[n.type || ""] || [160, 50];
+        const [w, h] = DEMO_NODE_SIZES[n.type || ""] || [160, 50];
         const px = pos.x - w / 2;
         const py = pos.y - h / 2;
         positions.push({ id: n.id, x: px, y: py });
@@ -970,8 +1244,20 @@ function AnnotationNode({ data }: NodeProps<Node<{ message: string; variant: "wa
   );
 }
 
-// Extend nodeTypes with annotation
-const demoNodeTypes = { ...nodeTypes, annotation: AnnotationNode };
+// Extend nodeTypes with the demo-only annotation and workstation cards.
+const demoNodeTypes = {
+  ...nodeTypes,
+  annotation: AnnotationNode,
+  workstation: WorkstationNode,
+};
+
+/** Workstation cards are much taller than the shared k8sNode card they replace,
+ * so dagre needs their real footprint or the fleet row overlaps the models
+ * beneath it. */
+const DEMO_NODE_SIZES: Record<string, [number, number]> = {
+  ...NODE_SIZES,
+  workstation: [300, 250],
+};
 
 function useDemoSimulation(
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>,
@@ -1077,7 +1363,7 @@ function useDemoSimulation(
       const delay = 4000 + Math.random() * 4000;
       timers.push(setTimeout(() => {
         setNodes((prev) => {
-          const k8sNodes = prev.filter((n) => n.type === "k8sNode");
+          const k8sNodes = prev.filter((n) => n.type === "workstation");
           if (!k8sNodes.length) return prev;
           const target = pickRandom(k8sNodes);
           const annoId = `anno-warn-${randomId()}`;
@@ -1234,7 +1520,7 @@ function DemoCanvas() {
             nodeColor={(node) => {
               switch (node.type) {
                 case "cloudProvider": return "#e8562a";
-                case "k8sNode": return "#f0ece4";
+                case "workstation": return "#f0ece4";
                 case "model": return "#8a8c82";
                 case "ensemble": return "#e8562a";
                 case "persona": return "#f0ece4";
