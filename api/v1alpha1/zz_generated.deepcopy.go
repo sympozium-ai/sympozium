@@ -466,6 +466,11 @@ func (in *AgentRunSpec) DeepCopyInto(out *AgentRunSpec) {
 		*out = new(LifecycleHooks)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.UseContext != nil {
+		in, out := &in.UseContext, &out.UseContext
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Volumes != nil {
 		in, out := &in.Volumes, &out.Volumes
 		*out = make([]v1.Volume, len(*in))

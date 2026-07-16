@@ -171,6 +171,56 @@ type ExecResult struct {
 	TimedOut bool   `json:"timedOut,omitempty"`
 }
 
+// PromptRequest is written to /ipc/prompts/request-{RequestID}.json by a sidecar
+// that wants the agent-runner to issue a single LLM call on its behalf. This is
+// the sidecar-initiated prompting primitive introduced for VEL-1081: the sidecar
+// drives the orchestration loop and asks the model for structured output
+// without keeping the conversation context inside the LLM. Sympozium's agent
+// runner writes the matching PromptResult to /ipc/prompts/result-{RequestID}.json
+// and the sidecar blocks on its appearance.
+//
+// Whether the prompt is answered in isolation (stateless) or appended to the
+// existing conversation history is controlled by the run-level UseContext
+// toggle on the AgentRun CR — propagating to the agent-runner as the
+// USE_CONTEXT env. The sidecar cannot override this per-request: the safety
+// guarantees of context isolation are a run-time policy decision, not a
+// per-call opt-in.
+//
+// Schema is an optional JSON Schema the agent-runner should pass to the LLM
+// for structured output; on schema-violation the result Status is "error" and
+// Parsed is empty so the sidecar can decide whether to retry, reprompt, or
+// fall back.
+type PromptRequest struct {
+	RequestID string          `json:"requestId"`
+	Prompt    string          `json:"prompt"`
+	Schema    json.RawMessage `json:"schema,omitempty"`
+}
+
+// PromptResult is written to /ipc/prompts/result-{RequestID}.json by the agent
+// runner in response to a PromptRequest. Status mirrors AgentResult semantics
+// ("success" or "error"); on error the sidecar must inspect Error and decide
+// the next step (retry, reprompt, or surface).
+type PromptResult struct {
+	RequestID string          `json:"requestId"`
+	Status    string          `json:"status"`
+	Content   string          `json:"content,omitempty"`  // raw model text
+	Parsed    json.RawMessage `json:"parsed,omitempty"`   // schema-validated payload when Schema was set
+	Error     string          `json:"error,omitempty"`
+	Metrics   struct {
+		InputTokens  int `json:"inputTokens"`
+		OutputTokens int `json:"outputTokens"`
+	} `json:"metrics,omitempty"`
+}
+
+// ClearContextRequest is written to /ipc/context/clear-{RequestID}.json by a
+// sidecar to reset the agent runner's conversation state — typically between
+// independent units of work (e.g. between services in a Collector batch).
+// Fire-and-forget: no result file is produced.
+type ClearContextRequest struct {
+	RequestID string `json:"requestId"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // OutboundMessage is written to /ipc/messages/send-*.json for channel delivery.
 // Field names align with channel.OutboundMessage so the bridge can relay the
 // JSON directly without remapping.

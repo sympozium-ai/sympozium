@@ -93,6 +93,16 @@ type AgentRunSpec struct {
 	// +optional
 	Lifecycle *LifecycleHooks `json:"lifecycle,omitempty"`
 
+	// UseContext controls whether the agent-runner preserves conversation
+	// history between LLM calls. Set to false to force every prompt — including
+	// those issued via the sidecar-initiated prompt channel (VEL-1081) — to be
+	// answered in isolation. Default (nil) is true; matches the historical
+	// behaviour for runs that pre-date this field.
+	// Settable only on this CR; the sidecar cannot override it.
+	// +optional
+	// +kubebuilder:default=true
+	UseContext *bool `json:"useContext,omitempty"`
+
 	// Volumes are additional pod volumes to attach to the agent pod.
 	// Typically populated from Agent.Spec.Volumes by the controller,
 	// but may also be set directly on an AgentRun. Useful for mounting

@@ -527,6 +527,28 @@ func main() {
 		responseText, inputTokens, outputTokens, toolCalls, err = callOpenAI(ctx, provider, apiKey, baseURL, modelName, systemPrompt, task, tools, providerHeaders)
 	}
 
+	// After the main agent loop completes, keep the agent-runner alive to
+	// serve sidecar-initiated LLM prompt requests (VEL-1081). This blocks
+	// until /ipc/done is written, context is cancelled, or the run timeout
+	// elapses. Sidecars write /ipc/prompts/request-*.json to ask the model a
+	// question; we answer with the same provider (so context survives) and
+	// write the response to /ipc/prompts/result-*.json.
+	if err == nil && getEnv("ENABLE_PROMPT_SERVICE", "") == "true" {
+		if promptErr := runPromptServiceLoop(promptServiceDeps{
+			Ctx:             ctx,
+			ProviderName:    provider,
+			APIKey:          apiKey,
+			BaseURL:         baseURL,
+			Model:           modelName,
+			SystemPrompt:    systemPrompt,
+			Task:            task,
+			Tools:           tools,
+			ProviderHeaders: providerHeaders,
+		}); promptErr != nil {
+			log.Printf("prompt service exited with error: %v", promptErr)
+		}
+	}
+
 	elapsed := time.Since(start)
 
 	var res agentResult

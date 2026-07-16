@@ -595,6 +595,16 @@ spec:
                       type: string
                     type: array
                 type: object
+              useContext:
+                default: true
+                description: |-
+                  UseContext controls whether the agent-runner preserves conversation
+                  history between LLM calls. Set to false to force every prompt — including
+                  those issued via the sidecar-initiated prompt channel (VEL-1081) — to be
+                  answered in isolation. Default (nil) is true; matches the historical
+                  behaviour for runs that pre-date this field.
+                  Settable only on this CR; the sidecar cannot override it.
+                type: boolean
               volumeMounts:
                 description: |-
                   VolumeMounts are additional volume mounts applied to the main

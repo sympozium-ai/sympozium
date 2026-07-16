@@ -45,6 +45,8 @@ const (
 	DirTools     = "tools"
 	DirMessages  = "messages"
 	DirSchedules = "schedules"
+	DirPrompts   = "prompts" // sidecar-initiated LLM prompts (VEL-1081)
+	DirContext   = "context" // clear-context IPC (VEL-1081)
 )
 
 // Bridge is the IPC bridge sidecar process.
@@ -130,7 +132,7 @@ func (b *Bridge) Start(ctx context.Context) error {
 	)
 
 	// Create IPC directory structure
-	dirs := []string{DirInput, DirOutput, DirSpawn, DirTools, DirMessages, DirSchedules}
+	dirs := []string{DirInput, DirOutput, DirSpawn, DirTools, DirMessages, DirSchedules, DirPrompts, DirContext}
 	for _, dir := range dirs {
 		path := filepath.Join(b.BasePath, dir)
 		if err := os.MkdirAll(path, 0750); err != nil {
@@ -159,6 +161,16 @@ func (b *Bridge) Start(ctx context.Context) error {
 
 	// Watch for schedule requests
 	go b.watchSchedules(ctx)
+
+	// Watch for sidecar-initiated LLM prompt requests (VEL-1081).
+	go b.watchPromptRequests(ctx)
+
+	// Watch for prompt results emitted by the agent-runner (VEL-1081 audit
+	// channel — actual sidecar delivery is filesystem-direct).
+	go b.watchPromptResults(ctx)
+
+	// Watch for context-clear IPC (VEL-1081).
+	go b.watchContextClear(ctx)
 
 	// Subscribe to inbound events from the control plane
 	go b.subscribeToInbound(ctx)
@@ -530,6 +542,184 @@ func (b *Bridge) handleScheduleRequest(ctx context.Context, fe FileEvent) {
 	}
 
 	b.Log.Info("Forwarded schedule request to control plane")
+}
+
+// watchPromptRequests watches /ipc/prompts/ for sidecar-issued LLM prompt
+// requests (VEL-1081). Sidecars and the agent-runner share the same /ipc
+// volume, so direct filesystem delivery is used for in-pod communication;
+// the bridge's role here is auditing/observability: every request is
+// republished as a per-run NATS event so the control plane can record who
+// asked the model what. Result delivery is from agent-runner back to the
+// sidecar via the file system — agent-runner writes
+// /ipc/prompts/result-{RequestID}.json, and the sidecar polls for it.
+func (b *Bridge) watchPromptRequests(ctx context.Context) {
+	promptsPath := filepath.Join(b.BasePath, DirPrompts)
+	events, err := b.Watcher.Watch(ctx, promptsPath)
+	if err != nil {
+		b.Log.Error(err, "failed to watch prompts directory")
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case fe := <-events:
+			filename := filepath.Base(fe.Path)
+			if strings.HasPrefix(filename, "request-") {
+				b.handlePromptRequest(ctx, fe)
+			}
+		}
+	}
+}
+
+// handlePromptRequest validates the request ID is path-safe and publishes an
+// audit event. The agent-runner picks up the request file directly because
+// the two processes share the /ipc volume — this branch only emits the
+// observability record.
+func (b *Bridge) handlePromptRequest(ctx context.Context, fe FileEvent) {
+	if _, loaded := b.processedFiles.LoadOrStore(fe.Path, true); loaded {
+		return
+	}
+
+	data, err := os.ReadFile(fe.Path)
+	if err != nil {
+		b.Log.Error(err, "failed to read prompt request", "path", fe.Path)
+		b.processedFiles.Delete(fe.Path)
+		return
+	}
+
+	var req PromptRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		b.Log.Error(err, "dropping invalid prompt request", "path", fe.Path)
+		return
+	}
+	if !isSafeIPCID(req.RequestID) {
+		b.Log.Error(fmt.Errorf("unsafe requestId"), "dropping prompt request with path-unsafe requestId", "requestId", req.RequestID)
+		return
+	}
+
+	metadata := b.metadata()
+	topic := fmt.Sprintf("%s.%s", eventbus.TopicPromptRequest, b.AgentRunID)
+	event, _ := eventbus.NewEvent(topic, metadata, json.RawMessage(data))
+	if err := b.EventBus.Publish(ctx, topic, event); err != nil {
+		b.Log.Error(err, "failed to publish prompt request")
+		return
+	}
+	b.Log.Info("Forwarded sidecar prompt request", "requestId", req.RequestID)
+}
+
+// watchPromptResults watches /ipc/prompts/ for /ipc/prompts/result-*.json
+// files written by the agent-runner. The bridge forwards each as a per-run
+// NATS event for the control plane to log latency/usage, but the actual
+// delivery to the sidecar happens in-process — the sidecar polls the same
+// /ipc/prompts directory it wrote its request into and reads the matching
+// result-*.json file when it appears.
+func (b *Bridge) watchPromptResults(ctx context.Context) {
+	promptsPath := filepath.Join(b.BasePath, DirPrompts)
+	events, err := b.Watcher.Watch(ctx, promptsPath)
+	if err != nil {
+		b.Log.Error(err, "failed to watch prompts directory for results")
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case fe := <-events:
+			filename := filepath.Base(fe.Path)
+			if strings.HasPrefix(filename, "result-") {
+				b.handlePromptResultAudit(ctx, fe)
+			}
+		}
+	}
+}
+
+// handlePromptResultAudit publishes a NATS event for the agent-runner's
+// answer to a sidecar prompt request. The actual delivery to the waiting
+// sidecar happens via the filesystem file the agent-runner dropped into
+// /ipc/prompts/result-{id}.json.
+func (b *Bridge) handlePromptResultAudit(ctx context.Context, fe FileEvent) {
+	if _, loaded := b.processedFiles.LoadOrStore(fe.Path, true); loaded {
+		return
+	}
+
+	data, err := os.ReadFile(fe.Path)
+	if err != nil {
+		b.Log.Error(err, "failed to read prompt result", "path", fe.Path)
+		b.processedFiles.Delete(fe.Path)
+		return
+	}
+
+	var res PromptResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		b.Log.Error(err, "dropping invalid prompt result", "path", fe.Path)
+		return
+	}
+	if !isSafeIPCID(res.RequestID) {
+		b.Log.Error(fmt.Errorf("unsafe requestId"), "dropping prompt result with path-unsafe requestId", "requestId", res.RequestID)
+		return
+	}
+
+	metadata := b.metadata()
+	topic := fmt.Sprintf("%s.%s", eventbus.TopicPromptResult, b.AgentRunID)
+	event, _ := eventbus.NewEvent(topic, metadata, json.RawMessage(data))
+	if err := b.EventBus.Publish(ctx, topic, event); err != nil {
+		b.Log.Error(err, "failed to publish prompt result")
+		return
+	}
+	b.Log.Info("Forwarded prompt result", "requestId", res.RequestID)
+}
+
+// watchContextClear watches /ipc/context/ for sidecar clear-context IPC
+// (VEL-1081). The bridge consumes the file (no result delivery is needed)
+// and publishes a single per-run context.clear event so the agent-runner
+// resets its conversation history. Fire-and-forget.
+func (b *Bridge) watchContextClear(ctx context.Context) {
+	contextPath := filepath.Join(b.BasePath, DirContext)
+	events, err := b.Watcher.Watch(ctx, contextPath)
+	if err != nil {
+		b.Log.Error(err, "failed to watch context directory")
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case fe := <-events:
+			filename := filepath.Base(fe.Path)
+			if strings.HasPrefix(filename, "clear-") {
+				b.handleContextClear(ctx, fe)
+			}
+		}
+	}
+}
+
+// handleContextClear publishes the per-run context.clear event consumed by
+// the agent-runner. No result file is written; the sidecar already considers
+// the operation fire-and-forget.
+func (b *Bridge) handleContextClear(ctx context.Context, fe FileEvent) {
+	if _, loaded := b.processedFiles.LoadOrStore(fe.Path, true); loaded {
+		return
+	}
+
+	data, err := os.ReadFile(fe.Path)
+	if err != nil {
+		b.Log.Error(err, "failed to read context clear request", "path", fe.Path)
+		b.processedFiles.Delete(fe.Path)
+		return
+	}
+
+	metadata := b.metadata()
+	topic := fmt.Sprintf("%s.%s", eventbus.TopicContextClear, b.AgentRunID)
+	event, _ := eventbus.NewEvent(topic, metadata, json.RawMessage(data))
+	if err := b.EventBus.Publish(ctx, topic, event); err != nil {
+		b.Log.Error(err, "failed to publish context clear event")
+		return
+	}
+	b.Log.Info("Forwarded context clear request")
 }
 
 // subscribeToInbound subscribes to events from the control plane and
