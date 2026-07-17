@@ -58,21 +58,8 @@ const (
 	TopicAgentDelegateResult  = "agent.delegate.result" // per-run: agent.delegate.result.{parentRunID}
 	TopicAgentSubagentRequest = "agent.subagent.request"
 	TopicAgentSubagentResult  = "agent.subagent.result" // per-run: agent.subagent.result.{parentRunID}
-
-	// Sidecar-initiated LLM prompting (VEL-1081). The sidecar drives the
-	// orchestration loop and asks the agent-runner to issue single LLM calls
-	// instead of the model driving tool calls. TopicPromptRequest is the
-	// bridge-relayed request from the sidecar to the agent-runner;
-	// TopicPromptResult is the agent-runner's reply back through the bridge.
-	// Per-run: agent.prompt.result.{runID}.
-	TopicPromptRequest = "agent.prompt.request"
-	TopicPromptResult  = "agent.prompt.result"
-
-	// ContextClear is the agent-runner inbound event the bridge publishes when
-	// a sidecar writes /ipc/context/clear-{RequestID}.json.
-	TopicContextClear      = "agent.context.clear"
-	TopicScheduleUpsert    = "schedule.upsert"
-	TopicStimulusDelivered = "ensemble.stimulus.delivered"
+	TopicScheduleUpsert       = "schedule.upsert"
+	TopicStimulusDelivered    = "ensemble.stimulus.delivered"
 
 	// Density telemetry (from llmfit DaemonSet via FitnessCache)
 	TopicDensityUpdated     = "density.updated"           // per-node fitness snapshot

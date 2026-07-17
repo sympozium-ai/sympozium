@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -13,14 +12,13 @@ import (
 // It replays a scripted sequence of ChatResult values, one per Chat() call,
 // and records every AddToolResults invocation for assertions.
 type mockProvider struct {
-	name        string
-	model       string
-	turns       []ChatResult
-	turnErr     []error // err[i] returned on turn i (nil = no error)
-	idx         int
-	toolLog     [][]ToolResult
-	chatCalls   int
-	promptTurns []mockPromptTurn
+	name      string
+	model     string
+	turns     []ChatResult
+	turnErr   []error // err[i] returned on turn i (nil = no error)
+	idx       int
+	toolLog   [][]ToolResult
+	chatCalls int
 }
 
 func (p *mockProvider) Name() string  { return p.name }
@@ -42,30 +40,6 @@ func (p *mockProvider) Chat(ctx context.Context) (ChatResult, error) {
 
 func (p *mockProvider) AddToolResults(results []ToolResult) {
 	p.toolLog = append(p.toolLog, results)
-}
-
-// ResetContext (VEL-1081) is a no-op for the mock because the test loop
-// already seeds messages per-turn; production providers clear conversation
-// history so the next call behaves like a first-turn exchange.
-func (p *mockProvider) ResetContext() {}
-
-// Prompt (VEL-1081) returns canned output for the mock. Tests that need
-// to drive Prompt directly populate p.promptTurns ahead of time.
-func (p *mockProvider) Prompt(ctx context.Context, prompt string, useContext bool, schema json.RawMessage) (string, []byte, int, int, error) {
-	if len(p.promptTurns) == 0 {
-		return "", nil, 0, 0, fmt.Errorf("mockProvider: no promptTurns configured")
-	}
-	turn := p.promptTurns[0]
-	p.promptTurns = p.promptTurns[1:]
-	return turn.Content, turn.Parsed, turn.InTok, turn.OutTok, turn.Err
-}
-
-type mockPromptTurn struct {
-	Content string
-	Parsed  []byte
-	InTok   int
-	OutTok  int
-	Err     error
 }
 
 // TestRunAgentLoop_TerminalTextOnly: a single turn with text and no tool calls

@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -34,12 +32,11 @@ func newBedrockClient(ctx context.Context) (bedrockClientAPI, error) {
 
 // bedrockProvider adapts the Bedrock Converse API to LLMProvider.
 type bedrockProvider struct {
-	client      bedrockClientAPI
-	model       string
-	system      string
-	initialTask string
-	messages    []types.Message
-	tools       []types.Tool
+	client   bedrockClientAPI
+	model    string
+	system   string
+	messages []types.Message
+	tools    []types.Tool
 }
 
 func newBedrockProvider(ctx context.Context, model, systemPrompt, task string, tools []ToolDef) (*bedrockProvider, error) {
@@ -72,10 +69,9 @@ func newBedrockProviderWithClient(client bedrockClientAPI, model, systemPrompt, 
 	}
 
 	return &bedrockProvider{
-		client:      client,
-		model:       model,
-		system:      systemPrompt,
-		initialTask: task,
+		client: client,
+		model:  model,
+		system: systemPrompt,
 		messages: []types.Message{
 			{
 				Role: types.ConversationRoleUser,
@@ -190,107 +186,6 @@ func (p *bedrockProvider) AddToolResults(results []ToolResult) {
 		Role:    types.ConversationRoleUser,
 		Content: resultContent,
 	})
-}
-
-// ResetContext (VEL-1081) rebuilds the message slice to the seed state so
-// the next Chat or Prompt call behaves as if the conversation just began.
-func (p *bedrockProvider) ResetContext() {
-	p.messages = []types.Message{
-		{
-			Role: types.ConversationRoleUser,
-			Content: []types.ContentBlock{
-				&types.ContentBlockMemberText{Value: p.initialTask},
-			},
-		},
-	}
-}
-
-// Prompt (VEL-1081) issues a single Bedrock Converse call on behalf of a
-// sidecar. With useContext false the message slice is temporarily reset
-// (and restored via defer) so the answer is stateless. With useContext true
-// the prompt is appended and the assistant reply recorded so context grows
-// across Prompt calls within the loop. ToolConfig is omitted so the model is
-// expected to answer in text only; structured output (when Schema is set)
-// is parsed by the caller from the assistant's text block.
-func (p *bedrockProvider) Prompt(ctx context.Context, prompt string, useContext bool, schema json.RawMessage) (string, []byte, int, int, error) {
-	if strings.TrimSpace(prompt) == "" {
-		return "", nil, 0, 0, fmt.Errorf("prompt is empty")
-	}
-
-	var saved []types.Message
-	promptMsg := types.Message{
-		Role: types.ConversationRoleUser,
-		Content: []types.ContentBlock{
-			&types.ContentBlockMemberText{Value: prompt},
-		},
-	}
-	if !useContext {
-		saved = p.messages
-		p.messages = []types.Message{promptMsg}
-		defer func() { p.messages = saved }()
-	} else {
-		p.messages = append(p.messages, promptMsg)
-	}
-
-	input := &bedrockruntime.ConverseInput{
-		ModelId:  aws.String(p.model),
-		Messages: p.messages,
-		System: []types.SystemContentBlock{
-			&types.SystemContentBlockMemberText{Value: p.system},
-		},
-	}
-
-	converseCtx := ctx
-	if t := effectiveRequestTimeout("bedrock"); t > 0 {
-		var cancel context.CancelFunc
-		converseCtx, cancel = context.WithTimeout(ctx, t)
-		defer cancel()
-	}
-
-	output, err := p.client.Converse(converseCtx, input)
-	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			return "", nil, 0, 0, fmt.Errorf("Bedrock API error (%s): %s",
-				apiErr.ErrorCode(), apiErr.ErrorMessage())
-		}
-		return "", nil, 0, 0, fmt.Errorf("Bedrock API error: %w", err)
-	}
-
-	inTok, outTok := 0, 0
-	if output.Usage != nil {
-		inTok = int(aws.ToInt32(output.Usage.InputTokens))
-		outTok = int(aws.ToInt32(output.Usage.OutputTokens))
-	}
-	outputMsg, ok := output.Output.(*types.ConverseOutputMemberMessage)
-	if !ok {
-		return "", nil, inTok, outTok, fmt.Errorf("unexpected Bedrock output shape")
-	}
-	if len(outputMsg.Value.Content) == 0 {
-		return "", nil, inTok, outTok, fmt.Errorf("no content in Bedrock response")
-	}
-	var textContent string
-	for _, block := range outputMsg.Value.Content {
-		if tb, ok := block.(*types.ContentBlockMemberText); ok {
-			textContent += tb.Value
-		}
-	}
-
-	if useContext {
-		p.messages = append(p.messages, types.Message{
-			Role:    types.ConversationRoleAssistant,
-			Content: append([]types.ContentBlock(nil), outputMsg.Value.Content...),
-		})
-	}
-
-	var parsed []byte
-	if len(schema) > 0 {
-		trimmed := strings.TrimSpace(textContent)
-		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-			parsed = []byte(trimmed)
-		}
-	}
-	return textContent, parsed, inTok, outTok, nil
 }
 
 // bedrockToolUse holds the parsed fields from a Bedrock tool_use content block.

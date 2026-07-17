@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1927,16 +1926,6 @@ func (r *AgentRunReconciler) buildContainers(
 		{Name: "MODEL_NAME", Value: agentRun.Spec.Model.Model},
 		{Name: "MODEL_BASE_URL", Value: agentRun.Spec.Model.BaseURL},
 		{Name: "THINKING_MODE", Value: agentRun.Spec.Model.Thinking},
-	}
-
-	// UseContext (VEL-1081): propagates the AgentRun-spec UseContext toggle
-	// (default true) to the agent-runner. Settable only on this CR — the
-	// sidecar cannot override it.
-	if agentRun.Spec.UseContext != nil {
-		agentEnv = append(agentEnv, corev1.EnvVar{
-			Name:  "USE_CONTEXT",
-			Value: strconv.FormatBool(*agentRun.Spec.UseContext),
-		})
 	}
 
 	// Inject RUN_TIMEOUT from the AgentRun spec or instance config.

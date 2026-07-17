@@ -13,12 +13,11 @@ import (
 
 // anthropicProvider adapts the Anthropic Messages API to LLMProvider.
 type anthropicProvider struct {
-	client      anthropic.Client
-	model       string
-	system      string
-	initialTask string
-	messages    []anthropic.MessageParam
-	tools       []anthropic.ToolUnionParam
+	client   anthropic.Client
+	model    string
+	system   string
+	messages []anthropic.MessageParam
+	tools    []anthropic.ToolUnionParam
 }
 
 func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) *anthropicProvider {
@@ -52,10 +51,9 @@ func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, too
 	}
 
 	return &anthropicProvider{
-		client:      anthropic.NewClient(opts...),
-		model:       model,
-		system:      systemPrompt,
-		initialTask: task,
+		client: anthropic.NewClient(opts...),
+		model:  model,
+		system: systemPrompt,
 		messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(task)),
 		},
@@ -141,83 +139,4 @@ func (p *anthropicProvider) AddToolResults(results []ToolResult) {
 		blocks = append(blocks, anthropic.NewToolResultBlock(r.CallID, r.Content, r.IsError))
 	}
 	p.messages = append(p.messages, anthropic.NewUserMessage(blocks...))
-}
-
-// ResetContext (VEL-1081) rebuilds the message slice to the seed state so
-// the next Chat or Prompt call behaves as if the conversation just began.
-func (p *anthropicProvider) ResetContext() {
-	p.messages = []anthropic.MessageParam{
-		anthropic.NewUserMessage(anthropic.NewTextBlock(p.initialTask)),
-	}
-}
-
-// Prompt (VEL-1081) issues a single Anthropic Messages call on behalf of a
-// sidecar. With useContext false the message slice is temporarily reset for
-// the call (and restored via defer) so the answer is stateless. With
-// useContext true the prompt is appended and the assistant reply recorded
-// so context grows across Prompt calls within the loop. Tool-use is
-// suppressed via tool_choice=none — the model is expected to answer in text
-// only; structured output (when Schema is set) is parsed by the caller from
-// the assistant's text block.
-func (p *anthropicProvider) Prompt(ctx context.Context, prompt string, useContext bool, schema json.RawMessage) (string, []byte, int, int, error) {
-	if strings.TrimSpace(prompt) == "" {
-		return "", nil, 0, 0, fmt.Errorf("prompt is empty")
-	}
-
-	var saved []anthropic.MessageParam
-	if !useContext {
-		saved = p.messages
-		p.messages = []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		}
-		defer func() { p.messages = saved }()
-	} else {
-		p.messages = append(p.messages, anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)))
-	}
-
-	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(p.model),
-		MaxTokens: int64(8192),
-		System: []anthropic.TextBlockParam{
-			{Text: p.system},
-		},
-		Messages: p.messages,
-		// Suppress tool use so a sidecar-driven prompt returns text only.
-		ToolChoice: anthropic.ToolChoiceUnionParam{
-			OfNone: &anthropic.ToolChoiceNoneParam{},
-		},
-	}
-
-	msg, err := p.client.Messages.New(ctx, params)
-	if err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) {
-			return "", nil, 0, 0, fmt.Errorf("Anthropic API error (HTTP %d): %s",
-				apiErr.StatusCode, truncate(apiErr.Error(), 500))
-		}
-		return "", nil, 0, 0, fmt.Errorf("Anthropic API error: %w", err)
-	}
-
-	inTok := int(msg.Usage.InputTokens)
-	outTok := int(msg.Usage.OutputTokens)
-	var textContent strings.Builder
-	for _, block := range msg.Content {
-		if tb, ok := block.AsAny().(anthropic.TextBlock); ok {
-			textContent.WriteString(tb.Text)
-		}
-	}
-	text := textContent.String()
-
-	if useContext {
-		p.messages = append(p.messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(text)))
-	}
-
-	var parsed []byte
-	if len(schema) > 0 {
-		trimmed := strings.TrimSpace(text)
-		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-			parsed = []byte(trimmed)
-		}
-	}
-	return text, parsed, inTok, outTok, nil
 }
