@@ -85,6 +85,9 @@ nav:
     - Ensembles: concepts/ensembles.md
     - Skills & Sidecars: concepts/skills.md
     - Lifecycle Hooks: concepts/lifecycle-hooks.md
+    - Task Modes:
+      - Sidecar-Driven Mode: modes/sidecar-driven.md
+      - Adding a Task Mode: modes/extension-guide.md
     - Channels: concepts/channels.md
     - Agent Sandboxing: concepts/agent-sandbox.md
     - Security: concepts/security.md
