@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io/sympozium-ai/sympozium
+  REGISTRY: ghcr.io/velatir/sympozium
 
 permissions:
   contents: read

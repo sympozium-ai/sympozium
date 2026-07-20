@@ -15,7 +15,7 @@ permissions:
   actions: write
 
 env:
-  REGISTRY: ghcr.io/sympozium-ai/sympozium
+  REGISTRY: ghcr.io/velatir/sympozium
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
