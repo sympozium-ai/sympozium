@@ -619,7 +619,7 @@ spec:
               timeout:
                 description: Timeout is the maximum duration for this agent run.
                 type: string
-toolPolicy:
+              toolPolicy:
                 description: ToolPolicy defines which tools this agent is allowed
                   to use.
                 properties:
@@ -629,7 +629,7 @@ toolPolicy:
                       type: string
                     type: array
                   deny:
-                    description: Deny lists explicitly allowed tools.
+                    description: Deny lists explicitly denied tools.
                     items:
                       type: string
                     type: array
