@@ -13,13 +13,13 @@ Sidecar-driven mode is the first object-form mode and the only one shipped by de
 
 Sidecar-driven mode inverts the usual agent loop:
 
-- **The sidecar is the primary process.** It runs as the pod's orchestrator and drives the workflow end-to-end (clone repo, walk records, save batch, complete run).
+- **The sidecar is the primary process.** It runs as the pod's orchestrator and drives the workflow end-to-end (iterate records, decide, persist results, complete run).
 - **The agent-runner is a sub-call.** It runs in `AGENT_MODE=prompt-server` and just answers action decisions over `/ipc/prompts/`. There is no main agent loop.
 
 This solves the failure mode where smaller LLMs spiral into multi-step orchestrations with exponential token scaling. The sidecar owns the control flow; the LLM is consulted only at decision points.
 
 !!! note "When to use this mode"
-    Use sidecar-driven mode when your orchestrator already knows the steps it needs to take (clone, iterate, decide, save) and only needs the LLM to fill in the per-step decision. For free-form LLM-driven tasks, stick with the string form of `spec.task`.
+    Use sidecar-driven mode when your orchestrator already knows the steps it needs to take (iterate, decide, persist) and only needs the LLM to fill in the per-step decision. For free-form LLM-driven tasks, stick with the string form of `spec.task`.
 
 ## Example
 
@@ -27,10 +27,10 @@ This solves the failure mode where smaller LLMs spiral into multi-step orchestra
 apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
-  name: sd-collector-batch1
-  namespace: agents-backend
+  name: my-collector-batch-1
+  namespace: default
 spec:
-  agentRef: sd-agents-collector
+  agentRef: my-collector-agent
   agentId: collector
   cleanup: delete
   mode: task
@@ -38,15 +38,15 @@ spec:
   model:
     provider: openai
     model: gpt-5-mini
-    authSecretRef: velatir-openai-api-key
+    authSecretRef: openai-api-key
   skills:
-    - skillPackRef: sd-collector
+    - skillPackRef: my-collector
   task:
     mode: sidecar-driven
     tool: collector_run
     parameters:
       batchSize: "1"
-      services: '["xero"]'
+      services: '["example-com"]'
   timeout: 1h
 ```
 
@@ -55,7 +55,7 @@ The controller looks up `sidecar-driven` in the taskmodes registry, validates th
 1. Sets `AGENT_MODE=prompt-server` on the agent-runner container so the main loop is skipped.
 2. Finds the sidecar that declares `collector_run` in its `spec.sidecar.tools[]`.
 3. Overrides that sidecar's command to `["node", "/app/dist/cli.js", "collector-run"]` (the tool's `Exec` + `Subcommand`).
-4. Sets `SYMPOZIUM_RUN_CONFIG_JSON='{"batchSize":"1","services":"[\"xero\"]"}'` on that sidecar — the JSON-marshalled `parameters`.
+4. Sets `SYMPOZIUM_RUN_CONFIG_JSON='{"batchSize":"1","services":"[\"example-com\"]"}'` on that sidecar — the JSON-marshalled `parameters`.
 
 ## Lifecycle
 
@@ -69,7 +69,7 @@ sympozium controller reconciles the AgentRun
         ├─ handler.Validate(task) → ok
         ├─ handler.AdjustSidecars(task, resolvedSidecars)
         │    → []SidecarAdjustment{
-        │         SkillPackName: "sd-collector",
+        │         SkillPackName: "my-collector",
         │         OverrideCommand: ["node","/app/dist/cli.js","collector-run"],
         │         AddEnv: [{SYMPOZIUM_RUN_CONFIG_JSON, "<json>"}],
         │       }
@@ -78,7 +78,7 @@ sympozium controller reconciles the AgentRun
         │
         └─ buildContainers renders the pod
              - agent-runner container: AGENT_MODE=prompt-server appended
-             - sd-collector container: command overridden, SYMPOZIUM_RUN_CONFIG_JSON set
+             - my-collector container: command overridden, SYMPOZIUM_RUN_CONFIG_JSON set
              - ipc-bridge container: as usual
         │
         ▼
@@ -94,20 +94,20 @@ agent-runner (prompt-server):
      __SYMPOZIUM_RESULT__<json>__SYMPOZIUM_END__ for the controller's
      log scraper.
 
-sd-collector (collector-run):
+my-collector (collector-run):
   1. Reads SYMPOZIUM_RUN_CONFIG_JSON from env.
-  2. Boots the orchestrator: clone repo, select services, fetch pages.
-  3. For each service:
-     a. Calls sd_collector_map_urls internally.
+  2. Boots the orchestrator: select records, fetch resources.
+  3. For each record:
+     a. Calls collector_map_urls internally.
      b. Writes /ipc/prompts/request-{id}.json with the candidate list.
      c. Polls /ipc/prompts/result-{id}.json for the LLM's decision.
-     d. Calls sd_collector_fetch_page with discovery=true or false
+     d. Calls collector_fetch_page with discovery=true or false
         based on the decision.
      e. Repeats until every candidate is saved or skipped.
      f. Writes /ipc/context/clear-{id}.json to flatten the LLM's
-        conversation history between services.
-  4. Calls sd_collector_save_batch (commit, push, open PR).
-  5. Calls sd_collector_complete_run (report to API).
+        conversation history between records.
+  4. Calls collector_save_batch (persist the results).
+  5. Calls collector_complete_run (report to API).
   6. Writes /ipc/run-result.json with the final summary.
   7. **finally**: writes /ipc/done (the agent-runner is waiting on this).
 
@@ -124,13 +124,13 @@ ipc-bridge:
 ```yaml
 spec:
   sidecar:
-    image: .../sd-enrichment-engine:TAG
+    image: registry.example.com/my-collector-engine:TAG
     tools:
       - name: collector_run           # ← task.tool matches here
         exec: ["node", "/app/dist/cli.js"]
         subcommand: collector-run
         inputMode: args
-      - name: sd_collector_fetch_page # ← action-decision sub-tool
+      - name: collector_fetch_page    # ← action-decision sub-tool
         exec: ["node", "/app/dist/cli.js"]
         subcommand: collector-fetch-page
         inputMode: stdin
@@ -140,8 +140,8 @@ If no sidecar declares the named tool, the handler returns an error naming the a
 
 ```
 sidecar-driven: no sidecar declares tool "foo" (declared tools:
-[sd-collector.collector_run sd-collector.sd_collector_map_urls
-sd-collector.sd_collector_fetch_page])
+[my-collector.collector_run my-collector.collector_map_urls
+my-collector.collector_fetch_page])
 ```
 
 The error surfaces on `AgentRun.status.error` and the AgentRun transitions to `phase: Failed`. No pod is created.
@@ -162,7 +162,7 @@ const rawInput = collectorRunInputSchema.parse(JSON.parse(fromEnv));
 
 ## UseContext
 
-Sidecar-driven runs benefit from `useContext=true` (the default) so the LLM can navigate the multi-step `fetch_page` sequence within a service without losing conversation history.
+Sidecar-driven runs benefit from `useContext=true` (the default) so the LLM can navigate the multi-step decision sequence within a record without losing conversation history.
 
 Set `useContext: false` on the AgentRun spec to answer every prompt in isolation — useful for replaying a single decision or debugging a specific step.
 
@@ -191,7 +191,7 @@ To onboard a new sidecar (for example a parser orchestrator that follows the sam
     ```yaml
     spec:
       sidecar:
-        image: .../sd-parser:TAG
+        image: registry.example.com/my-parser:TAG
         tools:
           - name: parser_run
             exec: ["node", "/app/dist/cli.js"]
