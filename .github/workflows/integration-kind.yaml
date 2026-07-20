@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      REGISTRY: ghcr.io/sympozium-ai/sympozium
+      REGISTRY: ghcr.io/velatir/sympozium
       TAG: latest
       SYMPOZIUM_NAMESPACE: sympozium-system
       TEST_NAMESPACE: default
