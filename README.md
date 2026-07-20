@@ -152,6 +152,7 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 | Ollama & Local Inference | [deploy.sympozium.ai/docs/guides/ollama](https://deploy.sympozium.ai/docs/guides/ollama/) |
 | Writing Skills | [deploy.sympozium.ai/docs/guides/writing-skills](https://deploy.sympozium.ai/docs/guides/writing-skills/) |
 | Writing Tools | [deploy.sympozium.ai/docs/guides/writing-tools](https://deploy.sympozium.ai/docs/guides/writing-tools/) |
+| Writing Orchestrator Sidecars | [deploy.sympozium.ai/docs/sidecars/writing-orchestrator-sidecars](https://deploy.sympozium.ai/docs/sidecars/writing-orchestrator-sidecars/) |
 | LM Studio & Local Inference | [deploy.sympozium.ai/docs/guides/lm-studio](https://deploy.sympozium.ai/docs/guides/lm-studio/) |
 | llama-server | [deploy.sympozium.ai/docs/guides/llama-server](https://deploy.sympozium.ai/docs/guides/llama-server/) |
 | Unsloth | [deploy.sympozium.ai/docs/guides/unsloth](https://deploy.sympozium.ai/docs/guides/unsloth/) |

@@ -13,7 +13,7 @@ Sidecar-driven mode is the first object-form mode and the only one shipped by de
 
 Sidecar-driven mode inverts the usual agent loop:
 
-- **The sidecar is the primary process.** It runs as the pod's orchestrator and drives the workflow end-to-end (iterate records, decide, persist results, complete run).
+- **The sidecar is the primary process.** It runs as the pod's orchestrator and drives the workflow end-to-end (iterate, decide, persist, complete).
 - **The agent-runner is a sub-call.** It runs in `AGENT_MODE=prompt-server` and just answers action decisions over `/ipc/prompts/`. There is no main agent loop.
 
 This solves the failure mode where smaller LLMs spiral into multi-step orchestrations with exponential token scaling. The sidecar owns the control flow; the LLM is consulted only at decision points.
@@ -23,39 +23,41 @@ This solves the failure mode where smaller LLMs spiral into multi-step orchestra
 
 ## Example
 
+A photo tagger that walks a directory of images, asks the LLM to refine candidate tags for each one, and writes a JSON manifest.
+
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
-  name: my-collector-batch-1
+  name: photo-tagger-batch-1
   namespace: default
 spec:
-  agentRef: my-collector-agent
-  agentId: collector
+  agentRef: photo-tagger-agent
+  agentId: tagger
   cleanup: delete
   mode: task
-  sessionKey: ""
   model:
     provider: openai
     model: gpt-5-mini
     authSecretRef: openai-api-key
   skills:
-    - skillPackRef: my-collector
+    - skillPackRef: photo-tagger
   task:
     mode: sidecar-driven
-    tool: collector_run
+    tool: tagger_run
     parameters:
-      batchSize: "1"
-      services: '["example-com"]'
+      batchSize: "10"
+      inputDir: "/data/photos"
+      outputFile: "/data/tags.json"
   timeout: 1h
 ```
 
 The controller looks up `sidecar-driven` in the taskmodes registry, validates the task, and the [`SidecarDrivenHandler`][sidecar-driven-handler]:
 
 1. Sets `AGENT_MODE=prompt-server` on the agent-runner container so the main loop is skipped.
-2. Finds the sidecar that declares `collector_run` in its `spec.sidecar.tools[]`.
-3. Overrides that sidecar's command to `["node", "/app/dist/cli.js", "collector-run"]` (the tool's `Exec` + `Subcommand`).
-4. Sets `SYMPOZIUM_RUN_CONFIG_JSON='{"batchSize":"1","services":"[\"example-com\"]"}'` on that sidecar — the JSON-marshalled `parameters`.
+2. Finds the sidecar that declares `tagger_run` in its `spec.sidecar.tools[]`.
+3. Overrides that sidecar's command to `["python", "/app/tagger.py", "run"]` (the tool's `Exec` + `Subcommand`).
+4. Sets `SYMPOZIUM_RUN_CONFIG_JSON='{"batchSize":"10","inputDir":"/data/photos","outputFile":"/data/tags.json"}'` on that sidecar — the JSON-marshalled `parameters`.
 
 ## Lifecycle
 
@@ -69,8 +71,8 @@ sympozium controller reconciles the AgentRun
         ├─ handler.Validate(task) → ok
         ├─ handler.AdjustSidecars(task, resolvedSidecars)
         │    → []SidecarAdjustment{
-        │         SkillPackName: "my-collector",
-        │         OverrideCommand: ["node","/app/dist/cli.js","collector-run"],
+        │         SkillPackName: "photo-tagger",
+        │         OverrideCommand: ["python","/app/tagger.py","run"],
         │         AddEnv: [{SYMPOZIUM_RUN_CONFIG_JSON, "<json>"}],
         │       }
         ├─ handler.ConfigureAgentContainer(task, &agentEnv)
@@ -78,7 +80,7 @@ sympozium controller reconciles the AgentRun
         │
         └─ buildContainers renders the pod
              - agent-runner container: AGENT_MODE=prompt-server appended
-             - my-collector container: command overridden, SYMPOZIUM_RUN_CONFIG_JSON set
+             - photo-tagger container: command overridden, SYMPOZIUM_RUN_CONFIG_JSON set
              - ipc-bridge container: as usual
         │
         ▼
@@ -94,22 +96,19 @@ agent-runner (prompt-server):
      __SYMPOZIUM_RESULT__<json>__SYMPOZIUM_END__ for the controller's
      log scraper.
 
-my-collector (collector-run):
+photo-tagger (tagger_run):
   1. Reads SYMPOZIUM_RUN_CONFIG_JSON from env.
-  2. Boots the orchestrator: select records, fetch resources.
-  3. For each record:
-     a. Calls collector_map_urls internally.
-     b. Writes /ipc/prompts/request-{id}.json with the candidate list.
-     c. Polls /ipc/prompts/result-{id}.json for the LLM's decision.
-     d. Calls collector_fetch_page with discovery=true or false
-        based on the decision.
-     e. Repeats until every candidate is saved or skipped.
-     f. Writes /ipc/context/clear-{id}.json to flatten the LLM's
-        conversation history between records.
-  4. Calls collector_save_batch (persist the results).
-  5. Calls collector_complete_run (report to API).
-  6. Writes /ipc/run-result.json with the final summary.
-  7. **finally**: writes /ipc/done (the agent-runner is waiting on this).
+  2. Boots the orchestrator: walk the input directory, enumerate images.
+  3. For each image:
+     a. Runs cheap local pre-processing (thumbnail, EXIF, dominant colour).
+     b. Writes /ipc/prompts/request-{id}.json with the candidate tags.
+     c. Polls /ipc/prompts/result-{id}.json for the LLM's refined tags.
+     d. Calls tagger_persist (writes tags for this image to the manifest).
+     e. Writes /ipc/context/clear-{id}.json to flatten the LLM's
+        conversation history between images.
+  4. Calls tagger_finalize (closes the manifest, writes outputFile).
+  5. Writes /ipc/run-result.json with the final summary.
+  6. **finally**: writes /ipc/done (the agent-runner is waiting on this).
 
 ipc-bridge:
   - Republishes every /ipc/prompts/ request and result on per-run
@@ -124,15 +123,15 @@ ipc-bridge:
 ```yaml
 spec:
   sidecar:
-    image: registry.example.com/my-collector-engine:TAG
+    image: registry.example.com/photo-tagger:TAG
     tools:
-      - name: collector_run           # ← task.tool matches here
-        exec: ["node", "/app/dist/cli.js"]
-        subcommand: collector-run
+      - name: tagger_run           # ← task.tool matches here
+        exec: ["python", "/app/tagger.py"]
+        subcommand: run
         inputMode: args
-      - name: collector_fetch_page    # ← action-decision sub-tool
-        exec: ["node", "/app/dist/cli.js"]
-        subcommand: collector-fetch-page
+      - name: tagger_persist       # ← per-image persistence helper
+        exec: ["python", "/app/tagger.py"]
+        subcommand: persist
         inputMode: stdin
 ```
 
@@ -140,8 +139,8 @@ If no sidecar declares the named tool, the handler returns an error naming the a
 
 ```
 sidecar-driven: no sidecar declares tool "foo" (declared tools:
-[my-collector.collector_run my-collector.collector_map_urls
-my-collector.collector_fetch_page])
+[photo-tagger.tagger_run photo-tagger.tagger_persist
+photo-tagger.tagger_finalize])
 ```
 
 The error surfaces on `AgentRun.status.error` and the AgentRun transitions to `phase: Failed`. No pod is created.
@@ -150,11 +149,11 @@ The error surfaces on `AgentRun.status.error` and the AgentRun transitions to `p
 
 `task.parameters` is a flat `map[string]string`. The handler marshals it to JSON and sets it as `SYMPOZIUM_RUN_CONFIG_JSON` on the resolved sidecar. The sidecar's CLI parses the env into a typed input manifest.
 
-```ts
-// collector-run.ts
-const fromEnv = process.env.SYMPOZIUM_RUN_CONFIG_JSON;
-if (!fromEnv) throw new Error("SYMPOZIUM_RUN_CONFIG_JSON env var is required");
-const rawInput = collectorRunInputSchema.parse(JSON.parse(fromEnv));
+```python
+# tagger.py (run subcommand)
+import os, json
+config = json.loads(os.environ["SYMPOZIUM_RUN_CONFIG_JSON"])
+# config -> {"batchSize": "10", "inputDir": "/data/photos", "outputFile": "/data/tags.json"}
 ```
 
 !!! warning "Empty parameters serialise to `{}`, not `null`"
@@ -179,7 +178,7 @@ The agent-runner now observes `/ipc/done` (not `/ipc/run-result.json`) as its co
 
 ## Adding a sidecar-driven variant
 
-To onboard a new sidecar (for example a parser orchestrator that follows the same pattern):
+To onboard a new orchestrator sidecar that follows the same pattern:
 
 1. Add the `<tool-name>` subcommand to your sidecar's CLI. It must:
     - Read `SYMPOZIUM_RUN_CONFIG_JSON` from env.
@@ -191,15 +190,15 @@ To onboard a new sidecar (for example a parser orchestrator that follows the sam
     ```yaml
     spec:
       sidecar:
-        image: registry.example.com/my-parser:TAG
+        image: registry.example.com/my-orchestrator:TAG
         tools:
-          - name: parser_run
-            exec: ["node", "/app/dist/cli.js"]
-            subcommand: parser-run
+          - name: my_orchestrator_run
+            exec: ["python", "/app/orchestrator.py"]
+            subcommand: run
             inputMode: args
     ```
 
-3. From your trigger (k8s job, ensemble schedule, etc.) submit an AgentRun with `task: {mode: sidecar-driven, tool: parser-run, parameters: {...}}`.
+3. From your trigger (k8s job, ensemble schedule, etc.) submit an AgentRun with `task: {mode: sidecar-driven, tool: my_orchestrator_run, parameters: {...}}`.
 
 No controller changes are needed. The handler resolves the tool name to the matching sidecar and overrides its command.
 
@@ -208,6 +207,7 @@ If your variant needs additional config beyond `parameters`, extend `TaskSpec` w
 ## See also
 
 - [Extension guide](extension-guide.md) — how to add a new task mode.
+- [Writing Orchestrator Sidecars](../sidecars/writing-orchestrator-sidecars.md) — how to build the orchestrator's CLI (LLM-call helper, context clearing, atomic writes, `/ipc/done` semantics).
 - [`internal/controller/taskmodes/`][taskmodes] — handler package and registry.
 - [Custom Resources](../concepts/custom-resources.md) — the `AgentRun` CR shape.
 - [Skills & Sidecars](../concepts/skills.md) — declaring tools on a SkillPack.

@@ -1,6 +1,8 @@
-# Writing Custom Sidecars
+# Writing Tool Sidecars
 
-This guide explains how to build custom sidecar containers that process tool calls from Sympozium agents. If you just need to give an agent access to CLI tools like `kubectl` or `helm`, the [Writing Skills](writing-skills.md) guide covers that. This guide is for when you need **custom logic** — a database client, an API wrapper, a domain-specific computation engine — running in its own container.
+This guide explains how to build **tool-sidecar** containers that process tool calls from Sympozium agents in the default agent-driven mode. If you just need to give an agent access to CLI tools like `kubectl` or `helm`, the [Writing Skills](../guides/writing-skills.md) guide covers that. This guide is for when you need **custom logic** — a database client, an API wrapper, a domain-specific computation engine — running in its own container.
+
+> **Building an orchestrator instead?** A sidecar in [sidecar-driven mode](../modes/sidecar-driven.md) drives the workflow and calls the LLM as a sub-call — the IPC is different and `tool-executor.sh` does not apply. See [Writing Orchestrator Sidecars](writing-orchestrator-sidecars.md).
 
 ---
 
@@ -502,6 +504,6 @@ kubectl get agentrun test-echo -o jsonpath='{.status.result}'
 
 ## Learn More
 
-- [Writing Skills](writing-skills.md) — SkillPack CRD structure, RBAC, host access
-- [Writing Tools](writing-tools.md) — how tools work on the agent side
+- [Writing Skills](../guides/writing-skills.md) — SkillPack CRD structure, RBAC, host access
+- [Writing Tools](../guides/writing-tools.md) — how tools work on the agent side
 - [Skills & Sidecars](../concepts/skills.md) — architecture overview
