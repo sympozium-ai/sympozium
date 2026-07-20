@@ -25,15 +25,12 @@ concurrency:
 jobs:
   # Gate the expensive fleet build on whether anything that reaches an
   # image actually changed. Verification is one cheap job and always runs.
-  # `chart` gates the cheap chart-packaging job so it only runs when a CRD
-  # or chart template actually changed (rather than on every main push).
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_dispatch'
     outputs:
       code: ${{ steps.filter.outputs.code }}
-      chart: ${{ steps.filter.outputs.chart }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,9 +45,6 @@ jobs:
               - 'images/**'
               - 'web/**'
               - '.github/workflows/build.yaml'
-            chart:
-              - 'charts/**'
-              - 'config/crd/bases/**'
 
   # fmt, vet, build, test, and codegen used to be five runners each paying
   # its own checkout + setup-go + module download. The steps are strictly
@@ -169,13 +163,13 @@ jobs:
   # pinned to the latest release tag, bumped via the existing
   # velatir-sympozium-charts-published dispatch from release.yaml.
   #
-  # Gates on `needs.changes.outputs.chart == 'true'` so the job skips when
-  # only Go code changed (those bumps arrive via image-only pushes; the
-  # chart picks up the new code on the next tag). Workflow dispatch still
-  # forces a run so we can repush if OCI is ever wiped.
+  # Runs on EVERY push to main (and on workflow_dispatch). It does NOT gate
+  # on the `changes` filter — code-only pushes still need the chart republished
+  # so Chart.AppVersion carries the new image SHA, otherwise Flux stays
+  # pinned to the old chart and the new image is built but never consumed.
   publish-chart-oci:
     name: Publish chart to GHCR OCI (main)
-    needs: [changes, verify]
+    needs: [verify]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
