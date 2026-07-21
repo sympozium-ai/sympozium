@@ -7,10 +7,34 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// defaultPromptServiceLogMaxBytes is the per-line cap applied to the
+// LLM-prompt/response log lines emitted by runPromptServiceLoop. Operators
+// can override via PROMPT_SERVICE_LOG_MAX_BYTES (set to 0 to disable
+// prompt/response logging entirely).
+const defaultPromptServiceLogMaxBytes = 2048
+
+// envPromptServiceLogMaxBytes is the env-var knob for the prompt-service
+// log cap. Negative or non-integer values are ignored (default applies).
+const envPromptServiceLogMaxBytes = "PROMPT_SERVICE_LOG_MAX_BYTES"
+
+// promptServiceLogMaxBytes is the package-level cap applied to the
+// "prompt service req:" and "prompt service res:" log lines. Initialised
+// once at package init; tests may override directly.
+var promptServiceLogMaxBytes = func() int {
+	if v := os.Getenv(envPromptServiceLogMaxBytes); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+		log.Printf("WARNING: invalid %s=%q, using default %d", envPromptServiceLogMaxBytes, v, defaultPromptServiceLogMaxBytes)
+	}
+	return defaultPromptServiceLogMaxBytes
+}()
 
 // promptServiceDeps groups the inputs needed to build a fresh LLMProvider
 // instance for the prompt service loop. Each handleRequest call constructs a
@@ -78,6 +102,7 @@ func runPromptServiceLoop(deps promptServiceDeps) error {
 
 		log.Printf("prompt service: requestId=%s schema?=%v promptLen=%d",
 			req.RequestID, len(req.Schema) > 0, len(req.Prompt))
+		logPromptServiceReq(req)
 
 		text, parsed, inTok, outTok, err := p.Prompt(deps.Ctx, req.Prompt, useContext, req.Schema)
 		result := ipcPromptResult{
@@ -95,6 +120,7 @@ func runPromptServiceLoop(deps promptServiceDeps) error {
 		writePromptResult(promptsDir, req.RequestID, result)
 		log.Printf("prompt service: requestId=%s status=%s inTok=%d outTok=%d",
 			req.RequestID, result.Status, result.Metrics.InputTokens, result.Metrics.OutputTokens)
+		logPromptServiceRes(result)
 	}
 
 	processContextClear := func(req ipcClearContextRequest) {
@@ -240,6 +266,50 @@ func writePromptResult(dir, requestID string, result ipcPromptResult) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		log.Printf("prompt service: failed to write %s: %v", path, err)
 	}
+}
+
+// logPromptServiceReq emits a "req:" line capturing the prompt content for
+// the sidecar-driven loop. The cap is promptServiceLogMaxBytes (override
+// via PROMPT_SERVICE_LOG_MAX_BYTES); set to 0 to disable. The full byte
+// length is always recorded so operators can correlate with truncation.
+// Truncation reuses the shared `truncateStr(s, n)` helper from tools.go
+// (same body as `truncate` in main.go:864) — the same one used at tool
+// call-arg sites (tools.go:347), exec-label sites (tools.go:1088), and
+// provider error sites (provider_openai.go:119, provider_anthropic.go:88).
+// Marker convention: `s[:n] + "..."`.
+func logPromptServiceReq(req ipcPromptRequest) {
+	if promptServiceLogMaxBytes == 0 {
+		return
+	}
+	log.Printf("prompt service req: requestId=%s promptBytes=%d schemaBytes=%d prompt=%q",
+		req.RequestID, len(req.Prompt), len(req.Schema), truncateStr(req.Prompt, promptServiceLogMaxBytes))
+}
+
+// logPromptServiceRes emits a "res:" line capturing the LLM response for
+// the sidecar-driven loop. Prefers the parsed JSON (the actual LLM
+// decision the sidecar will act on) over the textual completion when
+// available; falls back to the text Content otherwise. The cap is
+// promptServiceLogMaxBytes (override via PROMPT_SERVICE_LOG_MAX_BYTES);
+// set to 0 to disable. The full byte length is always recorded so
+// operators can correlate with truncation. Truncation reuses the shared
+// `truncateStr(s, n)` helper so the marker format matches the rest of
+// the agent-runner.
+func logPromptServiceRes(result ipcPromptResult) {
+	if promptServiceLogMaxBytes == 0 {
+		return
+	}
+	payload := string(result.Parsed)
+	payloadKind := "parsed"
+	if payload == "" {
+		payload = result.Content
+		payloadKind = "content"
+	}
+	if result.Error != "" {
+		payload = "error: " + result.Error
+		payloadKind = "error"
+	}
+	log.Printf("prompt service res: requestId=%s status=%s payloadKind=%s payloadBytes=%d payload=%s",
+		result.RequestID, result.Status, payloadKind, len(payload), truncateStr(payload, promptServiceLogMaxBytes))
 }
 
 // buildLLMProvider constructs a fresh LLMProvider for the prompt service
