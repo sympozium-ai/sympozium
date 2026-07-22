@@ -31,7 +31,7 @@ func TestPersistFailureMemory_WithMemorySkill(t *testing.T) {
 
 	run := newTestRun()
 	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{{SkillPackRef: "memory"}}
-	run.Spec.Task = "check pod status"
+	run.Spec.Task = sympoziumv1alpha1.NewStringTask("check pod status")
 
 	// Patch memoryServerURLForRun by setting the instance/namespace to match
 	// what the test server expects — we override the client instead.
@@ -78,7 +78,7 @@ func TestPersistFailureMemory_WithoutMemorySkill(t *testing.T) {
 func TestPersistFailureMemory_TaskTruncation(t *testing.T) {
 	run := newTestRun()
 	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{{SkillPackRef: "memory"}}
-	run.Spec.Task = strings.Repeat("x", 1000)
+	run.Spec.Task = sympoziumv1alpha1.NewStringTask(strings.Repeat("x", 1000))
 
 	// We can't easily intercept the HTTP call without mocking the URL,
 	// but we can verify the function doesn't panic with a long task.

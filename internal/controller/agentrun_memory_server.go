@@ -29,7 +29,7 @@ func (r *AgentRunReconciler) persistFailureMemory(ctx context.Context, log logr.
 		return
 	}
 
-	task := agentRun.Spec.Task
+	task := agentRun.Spec.Task.GetPrompt()
 	if len(task) > 500 {
 		task = task[:500] + "..."
 	}

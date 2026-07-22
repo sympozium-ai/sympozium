@@ -2871,7 +2871,7 @@ func (m tuiModel) buildConversationContext(instName string) string {
 	sb.WriteString("Previous conversation:\n")
 	for _, r := range runs {
 		phase := string(r.Status.Phase)
-		sb.WriteString(fmt.Sprintf("User: %s\n", r.Spec.Task))
+		sb.WriteString(fmt.Sprintf("User: %s\n", r.Spec.Task.GetPrompt()))
 		if (phase == "Succeeded" || phase == "Completed") && r.Status.Result != "" {
 			sb.WriteString(fmt.Sprintf("Assistant: %s\n", r.Status.Result))
 		} else if phase == "Failed" {
@@ -7464,7 +7464,7 @@ func (m tuiModel) renderDetailSkillRuns(width, height int) string {
 		metaLine := tuiDimStyle.Render("   "+run.Spec.AgentRef+" • ") + phaseStyle.Render(phase) + tuiDimStyle.Render(" • "+age)
 		allLines = append(allLines, metaLine)
 
-		task := extractUserMessage(run.Spec.Task)
+		task := extractUserMessageFromTaskSpec(run.Spec.Task)
 		if len(task) > contentW {
 			task = task[:contentW-3] + "..."
 		}
@@ -7628,7 +7628,7 @@ func (m tuiModel) renderDetailFeed(width, height int) string {
 	for _, run := range runs {
 
 		// Prompt (task) line — strip conversation context for display
-		task := extractUserMessage(run.Spec.Task)
+		task := extractUserMessageFromTaskSpec(run.Spec.Task)
 		for _, wl := range wrapText(task, contentW) {
 			allLines = append(allLines, tuiFeedPromptStyle.Render(" ▸ "+wl))
 		}
@@ -7783,7 +7783,7 @@ func (m tuiModel) renderDetailPaneFullscreen() string {
 		// Build feed entries — oldest first. In fullscreen, show full results.
 		for _, run := range runs {
 			// Show only the user's actual message, not context preamble
-			task := extractUserMessage(run.Spec.Task)
+			task := extractUserMessageFromTaskSpec(run.Spec.Task)
 			for _, wl := range wrapText(task, contentW) {
 				allLines = append(allLines, tuiFeedPromptStyle.Render(" ▸ "+wl))
 			}
@@ -8617,7 +8617,7 @@ func tuiCreateRun(ns, instance, task string) (string, error) {
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: instance,
-			Task:     task,
+			Task:     sympoziumv1alpha1.NewStringTask(task),
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,
 				Model:                    inst.Spec.Agents.Default.Model,
@@ -8660,6 +8660,13 @@ func extractUserMessage(task string) string {
 	return task
 }
 
+func extractUserMessageFromTaskSpec(t *sympoziumv1alpha1.TaskSpec) string {
+	if t == nil {
+		return ""
+	}
+	return extractUserMessage(t.GetPrompt())
+}
+
 func tuiAbortRun(ns, name string) (string, error) {
 	ctx := context.Background()
 	var run sympoziumv1alpha1.AgentRun
@@ -8692,7 +8699,7 @@ func tuiRunStatus(ns, name string) (string, error) {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("%s │ phase:%s pod:%s task:%s",
-		run.Name, phase, pod, truncate(run.Spec.Task, 40)))
+		run.Name, phase, pod, truncate(run.Spec.Task.GetPrompt(), 40)))
 
 	// Show agent-sandbox info if present.
 	if run.Status.SandboxName != "" {

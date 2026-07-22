@@ -9,7 +9,7 @@ import (
 
 func convRun(instance, task string, phase sympoziumv1alpha1.AgentRunPhase, result, errMsg string) sympoziumv1alpha1.AgentRun {
 	return sympoziumv1alpha1.AgentRun{
-		Spec: sympoziumv1alpha1.AgentRunSpec{AgentRef: instance, Task: task},
+		Spec: sympoziumv1alpha1.AgentRunSpec{AgentRef: instance, Task: sympoziumv1alpha1.NewStringTask(task)},
 		Status: sympoziumv1alpha1.AgentRunStatus{
 			Phase:  phase,
 			Result: result,

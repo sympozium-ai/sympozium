@@ -148,7 +148,7 @@ func TestSidecarTools_PodSpecWiring(t *testing.T) {
 	}
 
 	// Agent container gets the read-only mount + manifest-path env.
-	cs, _ := r.buildContainers(run, false, nil, withTools, nil, nil)
+	cs, _, _ := r.buildContainers(run, false, nil, withTools, nil, nil)
 	agent := cs[0]
 	var mountOK bool
 	for _, m := range agent.VolumeMounts {

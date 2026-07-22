@@ -193,7 +193,7 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			AgentRef:     inst.Name,
 			AgentID:      "primary",
 			SessionKey:   fmt.Sprintf("web-%s-%d", inst.Name, time.Now().UnixNano()),
-			Task:         task,
+			Task:         sympoziumv1alpha1.NewStringTask(task),
 			SystemPrompt: systemPrompt,
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,

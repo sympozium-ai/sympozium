@@ -151,8 +151,8 @@ func TestBuildStimulusRunCarriesToolPolicyAndResolvedProvider(t *testing.T) {
 	if run.Spec.Model.AuthSecretRef != "claude-key" {
 		t.Errorf("AuthSecretRef = %q, want %q", run.Spec.Model.AuthSecretRef, "claude-key")
 	}
-	if run.Spec.Task != "research pharaohs" {
-		t.Errorf("Task = %q, want the stimulus prompt", run.Spec.Task)
+	if run.Spec.Task.GetPrompt() != "research pharaohs" {
+		t.Errorf("Task = %q, want the stimulus prompt", run.Spec.Task.GetPrompt())
 	}
 	if run.Labels["sympozium.ai/trigger-source"] != StimulusTriggerSourceManual {
 		t.Errorf("trigger-source = %q, want %q",

@@ -25,8 +25,25 @@ type AgentRunSpec struct {
 	// +optional
 	Parent *ParentRunRef `json:"parent,omitempty"`
 
-	// Task is the task description for the agent.
-	Task string `json:"task"`
+	// Task is the polymorphic task description for the agent. It accepts
+	// either a string (legacy Path A: the prompt passed to the LLM via
+	// the TASK env var) or an object describing an orchestration mode
+	// (e.g. {mode: "sidecar-driven", tool: "...", parameters: {...}}).
+	// The controller dispatches by the mode field for object form.
+	//
+	// String form preserves backward compatibility with every
+	// pre-existing AgentRun. Object form lets external contributors add
+	// new orchestration modes (sidecar-driven today, others tomorrow)
+	// by registering a TaskModeHandler — no changes to the central
+	// controller logic required.
+	//
+	// The CRD schema (oneOf: string | object) is hand-maintained in
+	// config/crd/bases/sympozium.ai_agentruns.yaml and the chart template;
+	// kubebuilder cannot express polymorphism directly. The Go side uses
+	// a pointer + custom UnmarshalJSON so the field round-trips cleanly.
+	// +kubebuilder:validation:XPreserveUnknownFields
+	// +kubebuilder:printerColumns:name="Task",type="string",JSONPath=".spec.task"
+	Task *TaskSpec `json:"task,omitempty"`
 
 	// SystemPrompt is the system prompt for the agent.
 	// +optional
@@ -92,6 +109,16 @@ type AgentRunSpec struct {
 	// PostRun hooks execute in a follow-up Job after the agent completes.
 	// +optional
 	Lifecycle *LifecycleHooks `json:"lifecycle,omitempty"`
+
+	// UseContext controls whether the agent-runner preserves conversation
+	// history between LLM calls. Set to false to force every prompt — including
+	// those issued via the sidecar-initiated prompt channel — to be answered
+	// in isolation. Default (nil) is true; matches the historical behaviour for
+	// runs that pre-date this field.
+	// Settable only on this CR; the sidecar cannot override it.
+	// +optional
+	// +kubebuilder:default=true
+	UseContext *bool `json:"useContext,omitempty"`
 
 	// Volumes are additional pod volumes to attach to the agent pod.
 	// Typically populated from Agent.Spec.Volumes by the controller,

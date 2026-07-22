@@ -155,7 +155,7 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 				SessionKey: req.ParentSessionKey,
 				SpawnDepth: req.CurrentDepth + 1,
 			},
-			Task:             req.Task,
+			Task:             sympoziumv1alpha1.NewStringTask(req.Task),
 			SystemPrompt:     req.SystemPrompt,
 			Model:            req.Model,
 			Skills:           req.Skills,

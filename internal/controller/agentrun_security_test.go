@@ -23,7 +23,7 @@ func TestBuildContainers_SkillSidecar_DefaultSecurityContext(t *testing.T) {
 		},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
+	containers, _, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
 
 	// Find the skill sidecar container
 	var skillContainer *corev1.Container
@@ -68,7 +68,7 @@ func TestBuildContainers_SkillSidecar_HostAccess_OverridesDefault(t *testing.T) 
 		},
 	}
 
-	containers, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
+	containers, _, _ := r.buildContainers(run, false, nil, sidecars, nil, nil)
 
 	var skillContainer *corev1.Container
 	for i := range containers {
@@ -97,7 +97,7 @@ func TestBuildContainers_AuthSecret_IndividualKeys(t *testing.T) {
 	run := newTestRun()
 	run.Spec.Model.AuthSecretRef = "my-auth-secret"
 
-	containers, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+	containers, _, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 	agentContainer := containers[0]
 
 	// Should NOT have envFrom (wholesale injection)
@@ -132,7 +132,7 @@ func TestBuildContainers_AuthSecret_OnlyAllowedKeys(t *testing.T) {
 	run := newTestRun()
 	run.Spec.Model.AuthSecretRef = "my-auth-secret"
 
-	containers, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+	containers, _, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 	agentContainer := containers[0]
 
 	allowed := make(map[string]bool)
@@ -154,7 +154,7 @@ func TestBuildContainers_NoAuthSecret_NoSecretKeyRefs(t *testing.T) {
 	run := newTestRun()
 	run.Spec.Model.AuthSecretRef = ""
 
-	containers, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+	containers, _, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 	agentContainer := containers[0]
 
 	for _, env := range agentContainer.Env {

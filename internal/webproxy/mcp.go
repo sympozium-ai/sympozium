@@ -241,7 +241,7 @@ func (p *Proxy) executeAgentTask(ctx context.Context, task string, session *mcpS
 			AgentRef:   inst.Name,
 			AgentID:    "primary",
 			SessionKey: fmt.Sprintf("mcp-%s-%d", inst.Name, time.Now().UnixNano()),
-			Task:       task,
+			Task:       sympoziumv1alpha1.NewStringTask(task),
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,
 				Model:                    inst.Spec.Agents.Default.Model,

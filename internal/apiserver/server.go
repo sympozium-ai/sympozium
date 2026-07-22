@@ -946,7 +946,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			AgentRef:   req.AgentRef,
 			AgentID:    req.AgentID,
 			SessionKey: req.SessionKey,
-			Task:       req.Task,
+			Task:       sympoziumv1alpha1.NewStringTask(req.Task),
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,
 				Model:                    model,

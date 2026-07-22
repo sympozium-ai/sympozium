@@ -20,11 +20,13 @@ import (
 // It also handles all OpenAI-compatible backends: LM Studio, Ollama, vLLM,
 // llamacpp, Azure OpenAI, and any OpenAI-schema provider.
 type openaiProvider struct {
-	client   openai.Client
-	provider string // provider identifier for telemetry ("openai", "lm-studio", …)
-	model    string
-	messages []openai.ChatCompletionMessageParamUnion
-	tools    []openai.ChatCompletionToolUnionParam
+	client      openai.Client
+	provider    string // provider identifier for telemetry ("openai", "lm-studio", …)
+	model       string
+	messages    []openai.ChatCompletionMessageParamUnion
+	system      string // system prompt kept separately so ResetContext can rebuild
+	initialTask string // initial user turn (kept for ResetContext to restore)
+	tools       []openai.ChatCompletionToolUnionParam
 }
 
 // newOpenAIProvider constructs an openaiProvider with the given config.
@@ -81,16 +83,19 @@ func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task stri
 		}))
 	}
 
-	return &openaiProvider{
-		client:   openai.NewClient(opts...),
-		provider: provider,
-		model:    model,
+	p := &openaiProvider{
+		client:      openai.NewClient(opts...),
+		provider:    provider,
+		model:       model,
+		system:      systemPrompt,
+		initialTask: task,
 		messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(task),
 		},
 		tools: oaiTools,
-	}, nil
+	}
+	return p, nil
 }
 
 func (p *openaiProvider) Name() string  { return p.provider }
@@ -200,6 +205,124 @@ func (p *openaiProvider) AddToolResults(results []ToolResult) {
 	for _, r := range results {
 		p.messages = append(p.messages, openai.ToolMessage(r.Content, r.CallID))
 	}
+}
+
+// ResetContext rebuilds the message slice to the seed state so
+// the next Chat or Prompt call behaves as if the conversation just began.
+// Used by the sidecar-initiated clearContext IPC between independent units
+// of work so token accumulation does not leak across boundaries.
+func (p *openaiProvider) ResetContext() {
+	p.messages = []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(p.system),
+		openai.UserMessage(p.initialTask),
+	}
+}
+
+// Prompt issues a single LLM call on behalf of a sidecar. When
+// useContext is false the call is stateless: messages are temporarily reset
+// to [system, prompt] for the call and restored on exit. Otherwise the
+// prompt is appended and the assistant reply recorded, so the conversation
+// history grows across Prompt calls within the loop. Schema is forwarded
+// via OpenAI's response_format json_schema when provided. The first return
+// is the raw text; the second is the parsed JSON payload when Schema was
+// set and the model emitted JSON.
+func (p *openaiProvider) Prompt(ctx context.Context, prompt string, useContext bool, schema json.RawMessage) (string, []byte, int, int, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return "", nil, 0, 0, fmt.Errorf("prompt is empty")
+	}
+
+	var saved []openai.ChatCompletionMessageParamUnion
+	rollbackUserTurn := false
+	if !useContext {
+		saved = p.messages
+		p.messages = []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(p.system),
+			openai.UserMessage(prompt),
+		}
+		defer func() { p.messages = saved }()
+	} else {
+		// Append the user turn only after the call succeeds; on API failure
+		// we pop it (see below) so a failed Prompt does not leave an orphan
+		// user turn in history that would be re-sent on every subsequent
+		// Prompt. Anthropic in particular rejects back-to-back user turns,
+		// so a single transient error would otherwise poison the run.
+		rollbackUserTurn = true
+		p.messages = append(p.messages, openai.UserMessage(prompt))
+		defer func() {
+			if rollbackUserTurn && len(p.messages) > 0 {
+				p.messages = p.messages[:len(p.messages)-1]
+			}
+		}()
+	}
+
+	params := openai.ChatCompletionNewParams{
+		Model:    openai.ChatModel(p.model),
+		Messages: p.messages,
+	}
+	if len(schema) > 0 {
+		var format struct {
+			Type   string          `json:"type"`
+			Name   string          `json:"name"`
+			Schema json.RawMessage `json:"schema"`
+			Strict *bool           `json:"strict,omitempty"`
+		}
+		if err := json.Unmarshal(schema, &format); err == nil && format.Type == "json_schema" {
+			params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{
+					JSONSchema: openai.ResponseFormatJSONSchemaJSONSchemaParam{
+						Name:   format.Name,
+						Schema: format.Schema,
+						Strict: openai.Bool(format.Strict == nil || *format.Strict),
+					},
+				},
+			}
+		}
+	}
+
+	completion, err := p.client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		var apiErr *openai.Error
+		if errors.As(err, &apiErr) {
+			return "", nil, 0, 0, fmt.Errorf("OpenAI API error (HTTP %d): %s",
+				apiErr.StatusCode, truncate(apiErr.Error(), 500))
+		}
+		return "", nil, 0, 0, fmt.Errorf("OpenAI API error: %w", err)
+	}
+
+	inTok := int(completion.Usage.PromptTokens)
+	outTok := int(completion.Usage.CompletionTokens)
+	if len(completion.Choices) == 0 {
+		return "", nil, inTok, outTok, fmt.Errorf("no choices in completion response")
+	}
+	choice := completion.Choices[0]
+	text := choice.Message.Content
+
+	if useContext {
+		// Record assistant reply so subsequent Prompt calls retain context.
+		p.messages = append(p.messages, openai.ChatCompletionMessageParamUnion{
+			OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+				Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+					OfString: openai.String(text),
+				},
+			},
+		})
+		// Success: cancel the deferred rollback so the user turn stays in
+		// history. (The deferred capture still runs to completion, but the
+		// guard short-circuits the pop.)
+		rollbackUserTurn = false
+	}
+
+	var parsed []byte
+	if len(schema) > 0 {
+		trimmed := strings.TrimSpace(text)
+		if json.Valid([]byte(trimmed)) {
+			parsed = []byte(trimmed)
+		} else {
+			return text, nil, inTok, outTok, fmt.Errorf(
+				"schema requested but model output was not valid JSON: %.200s", text)
+		}
+	}
+	return text, parsed, inTok, outTok, nil
 }
 
 // extractReasoningContent pulls the sanitized `reasoning_content` out of a

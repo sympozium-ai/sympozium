@@ -41,6 +41,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/controller/taskmodes"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/ipc"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
@@ -605,7 +606,21 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	// Build and create the Job
-	job := r.buildJob(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
+	job, err := r.buildJob(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
+	if err != nil {
+		// buildJob (which calls buildContainers) rejected the spec — most
+		// commonly an unknown task.mode or a handler validation failure.
+		// Surface the error on AgentRun.status so operators can see why the
+		// run never started, and mark it Failed.
+		log.Error(err, "task-mode dispatch rejected the AgentRun", "agentrun", agentRun.Name)
+		_ = r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+			ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
+			ar.Status.Error = err.Error()
+			now := metav1.Now()
+			ar.Status.CompletedAt = &now
+		})
+		return ctrl.Result{}, nil
+	}
 
 	// Inject shared workflow memory env vars and init container if the pack has shared memory.
 	r.injectSharedMemory(ctx, agentRun, job)
@@ -630,7 +645,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	// Update status to Running
-	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
+	err = r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
 		now := metav1.Now()
 		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseRunning
 		ar.Status.JobName = job.Name
@@ -1056,7 +1071,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 				break
 			}
 		}
-		task := buildHandoffTask(sourcePersona, agentRun.Spec.Task, agentRun.Status.Result, targetTask)
+		task := buildHandoffTask(sourcePersona, agentRun.Spec.Task.GetPrompt(), agentRun.Status.Result, targetTask)
 
 		// Create the successor AgentRun.
 		runName := fmt.Sprintf("%s-seq-%d", targetAgentName, time.Now().UnixMilli()%100000)
@@ -1086,7 +1101,7 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 			},
 			Spec: sympoziumv1alpha1.AgentRunSpec{
 				AgentRef: targetAgentName,
-				Task:     task,
+				Task:     sympoziumv1alpha1.NewStringTask(task),
 				AgentID:  fmt.Sprintf("sequential-from-%s", sourcePersona),
 				Model: sympoziumv1alpha1.ModelSpec{
 					Provider:                 resolveProvider(&targetInst),
@@ -1342,7 +1357,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 				break
 			}
 		}
-		task := buildHandoffTask(sourcePersona, agentRun.Spec.Task, agentRun.Status.Result, targetTask)
+		task := buildHandoffTask(sourcePersona, agentRun.Spec.Task.GetPrompt(), agentRun.Status.Result, targetTask)
 
 		// Create the delegation child AgentRun with deterministic name.
 		runName := fmt.Sprintf("%s-deleg-%s", targetAgentName, agentRun.Name)
@@ -1358,7 +1373,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 			},
 			Spec: sympoziumv1alpha1.AgentRunSpec{
 				AgentRef: targetAgentName,
-				Task:     task,
+				Task:     sympoziumv1alpha1.NewStringTask(task),
 				AgentID:  fmt.Sprintf("delegation-from-%s", sourcePersona),
 				Parent: &sympoziumv1alpha1.ParentRunRef{
 					RunName:    agentRun.Name,
@@ -1446,7 +1461,7 @@ func (r *AgentRunReconciler) triggerDelegationSuccessors(ctx context.Context, lo
 func scoreDelegationEdge(rel sympoziumv1alpha1.AgentConfigRelationship, agentRun *sympoziumv1alpha1.AgentRun) float64 {
 	cond := strings.ToLower(strings.TrimSpace(rel.Condition))
 	result := strings.ToLower(agentRun.Status.Result)
-	task := strings.ToLower(agentRun.Spec.Task)
+	task := strings.ToLower(agentRun.Spec.Task.GetPrompt())
 
 	// Exact keyword match in result text → highest score.
 	if cond != "" && strings.Contains(result, cond) {
@@ -2238,7 +2253,10 @@ func seccompProfileForPod(agentRun *sympoziumv1alpha1.AgentRun) *corev1.SeccompP
 	}
 }
 
-// buildJob constructs the Kubernetes Job for an AgentRun.
+// buildJob constructs the Kubernetes Job for an AgentRun. Returns an
+// (nil, err) when the spec is rejected at render time — for example an
+// unknown task.mode or a failed per-mode validation. The reconcile loop
+// surfaces the error on AgentRun.status and marks the run Failed.
 func (r *AgentRunReconciler) buildJob(
 	agentRun *sympoziumv1alpha1.AgentRun,
 	memoryEnabled bool,
@@ -2246,7 +2264,7 @@ func (r *AgentRunReconciler) buildJob(
 	sidecars []resolvedSidecar,
 	mcpServers []sympoziumv1alpha1.MCPServerRef,
 	allowedOutboundChannels []string,
-) *batchv1.Job {
+) (*batchv1.Job, error) {
 	labels := map[string]string{
 		"sympozium.ai/agent-run":       agentRun.Name,
 		"sympozium.ai/instance":        agentRun.Spec.AgentRef,
@@ -2263,8 +2281,11 @@ func (r *AgentRunReconciler) buildJob(
 	}
 	backoffLimit := int32(0)
 
-	// Build containers
-	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
+	// Build containers (task-mode dispatch happens inside buildContainers)
+	containers, initContainers, err := r.buildContainers(agentRun, memoryEnabled, observability, sidecars, mcpServers, allowedOutboundChannels)
+	if err != nil {
+		return nil, err
+	}
 	volumes := r.buildVolumes(agentRun, memoryEnabled, sidecars, mcpServers)
 	hostNetwork, hostPID := derivePodHostAccess(sidecars)
 	dnsPolicy := corev1.DNSClusterFirst
@@ -2310,10 +2331,17 @@ func (r *AgentRunReconciler) buildJob(
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 // buildContainers constructs the container list for an agent pod.
+//
+// Task mode dispatch (object-form spec.task, e.g. {mode: "sidecar-driven"})
+// is handled internally via resolveTaskModeAdjustments. On resolution
+// failure (unknown mode, handler validation failure) the function returns
+// an error so the reconcile loop can mark AgentRun.phase = Failed and surface
+// the message on status.error — rather than rendering a no-op pod that the
+// agent-runner silently fails on.
 func (r *AgentRunReconciler) buildContainers(
 	agentRun *sympoziumv1alpha1.AgentRun,
 	memoryEnabled bool,
@@ -2321,7 +2349,11 @@ func (r *AgentRunReconciler) buildContainers(
 	sidecars []resolvedSidecar,
 	mcpServers []sympoziumv1alpha1.MCPServerRef,
 	allowedOutboundChannels []string,
-) ([]corev1.Container, []corev1.Container) {
+) ([]corev1.Container, []corev1.Container, error) {
+	taskAdjustments, err := resolveTaskModeAdjustments(agentRun, sidecars)
+	if err != nil {
+		return nil, nil, err
+	}
 	readOnly := true
 	noPrivEsc := false
 	var initContainers []corev1.Container
@@ -2330,13 +2362,32 @@ func (r *AgentRunReconciler) buildContainers(
 		{Name: "AGENT_RUN_ID", Value: agentRun.Name},
 		{Name: "AGENT_ID", Value: agentRun.Spec.AgentID},
 		{Name: "SESSION_KEY", Value: agentRun.Spec.SessionKey},
-		{Name: "TASK", Value: agentRun.Spec.Task},
+		// TASK carries the string-form prompt only. Object-form tasks
+		// (e.g. {mode: "sidecar-driven"}) leave TASK empty so the
+		// agent-runner's prompt-server early-return fires; the per-mode
+		// handler (taskmodes) is responsible for any AGENT_MODE /
+		// orchestration-specific env it needs.
+		{Name: "TASK", Value: agentRun.Spec.Task.GetPrompt()},
 		{Name: "SYSTEM_PROMPT", Value: agentRun.Spec.SystemPrompt},
 		{Name: "MODEL_PROVIDER", Value: agentRun.Spec.Model.Provider},
 		{Name: "MODEL_NAME", Value: agentRun.Spec.Model.Model},
 		{Name: "MODEL_BASE_URL", Value: agentRun.Spec.Model.BaseURL},
 		{Name: "THINKING_MODE", Value: agentRun.Spec.Model.Thinking},
 	}
+
+	// UseContext propagates the AgentRun-spec UseContext toggle (default true)
+	// to the agent-runner. Settable only on this CR — the sidecar cannot
+	// override it.
+	if agentRun.Spec.UseContext != nil {
+		agentEnv = append(agentEnv, corev1.EnvVar{
+			Name:  "USE_CONTEXT",
+			Value: strconv.FormatBool(*agentRun.Spec.UseContext),
+		})
+	}
+
+	// Object-form tasks (e.g. sidecar-driven) append per-mode env vars
+	// via their TaskModeHandler.ConfigureAgentContainer. See task_mode_dispatch.go.
+	applyTaskModeToAgentContainer(agentRun.Spec.Task, &agentEnv)
 
 	// Inject RUN_TIMEOUT from the AgentRun spec or instance config.
 	if agentRun.Spec.Timeout != nil {
@@ -2795,6 +2846,31 @@ func (r *AgentRunReconciler) buildContainers(
 	for _, sc := range sidecars {
 		cmd := sc.sidecar.Command
 
+		// Apply any task-mode sidecar adjustments (e.g. sidecar-driven
+		// overrides the named initiator's command and appends
+		// SYMPOZIUM_RUN_CONFIG_JSON). Adjustments are looked up by
+		// SkillPack name; an adjustment for a sidecar that isn't in the
+		// resolved set is silently ignored (defensive: the handler
+		// returned an adjustment we can't apply).
+		var taskAdj *taskmodes.SidecarAdjustment
+		for i := range taskAdjustments {
+			if taskAdjustments[i].SkillPackName == sc.skillPackName {
+				taskAdj = &taskAdjustments[i]
+				break
+			}
+		}
+		if taskAdj != nil {
+			if len(taskAdj.OverrideCommand) > 0 {
+				cmd = taskAdj.OverrideCommand
+				slog.Info("task-mode: overriding sidecar command",
+					"agentrun", agentRun.Name,
+					"sidecar", sc.skillPackName,
+					"mode", agentRun.Spec.Task.GetMode(),
+					"argv", cmd,
+				)
+			}
+		}
+
 		var envVars []corev1.EnvVar
 		// SYMPOZIUM_SKILL_PACK identifies this sidecar to the tool-executor
 		// so it can filter exec-requests by their optional `target` field.
@@ -2803,8 +2879,13 @@ func (r *AgentRunReconciler) buildContainers(
 			Name:  "SYMPOZIUM_SKILL_PACK",
 			Value: sc.skillPackName,
 		})
+
 		for _, e := range sc.sidecar.Env {
 			envVars = append(envVars, toCoreEnvVar(e))
+		}
+
+		if taskAdj != nil {
+			envVars = append(envVars, taskAdj.AddEnv...)
 		}
 
 		mounts := []corev1.VolumeMount{
@@ -2994,7 +3075,7 @@ func (r *AgentRunReconciler) buildContainers(
 		}
 	}
 
-	return containers, initContainers
+	return containers, initContainers, nil
 }
 
 // toCoreEnvVar converts a simplified API EnvVar into a corev1.EnvVar, honoring
@@ -3893,7 +3974,7 @@ func (r *AgentRunReconciler) createInputConfigMap(ctx context.Context, agentRun 
 			},
 		},
 		Data: map[string]string{
-			"task":          agentRun.Spec.Task,
+			"task":          agentRun.Spec.Task.GetPrompt(),
 			"system-prompt": agentRun.Spec.SystemPrompt,
 			"agent-id":      agentRun.Spec.AgentID,
 			"session-key":   agentRun.Spec.SessionKey,

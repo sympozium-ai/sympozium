@@ -204,7 +204,10 @@ func (r *AgentRunReconciler) reconcilePendingAgentSandbox(
 	}
 
 	// Build containers/volumes using the existing shared logic.
-	containers, initContainers := r.buildContainers(agentRun, memoryEnabled, observability, taskSidecars, mcpServers, allowedOutboundChannels)
+	containers, initContainers, err := r.buildContainers(agentRun, memoryEnabled, observability, taskSidecars, mcpServers, allowedOutboundChannels)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	volumes := r.buildVolumes(agentRun, memoryEnabled, taskSidecars, mcpServers)
 
 	// Build the Sandbox CR or SandboxClaim.

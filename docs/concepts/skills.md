@@ -43,7 +43,7 @@ Every agent pod has these tools available out of the box (no skill sidecar requi
 | `schedule_task` | IPC (bridge) | Create, update, suspend, resume, or delete recurring `SympoziumSchedule` tasks |
 
 !!! note
-    **Native** tools run directly in the agent container. **IPC** tools communicate with sidecars or the IPC bridge via the shared `/ipc` volume. See the [Tool Authoring Guide](../guides/writing-tools.md) for how to add your own, or the [Sidecar Authoring Guide](../guides/writing-sidecars.md) to build a custom sidecar that processes IPC calls.
+    **Native** tools run directly in the agent container. **IPC** tools communicate with sidecars or the IPC bridge via the shared `/ipc` volume. See the [Tool Authoring Guide](../guides/writing-tools.md) for how to add your own, or the [Tool Sidecar Authoring Guide](../sidecars/writing-tool-sidecars.md) to build a custom sidecar that processes IPC calls.
 
 ## Native Sidecar Tools
 
@@ -69,7 +69,7 @@ sidecar code is required beyond the standard `tool-executor.sh`. The key idea is
   `"; rm -rf /"` is passed as one literal argument, never interpreted.
 
 A native tool therefore grants the model a cleaner interface, not more power. See
-[Native Sidecar Tools](../guides/writing-sidecars.md#native-sidecar-tools) for the full
+[Native Sidecar Tools](../sidecars/writing-tool-sidecars.md#native-sidecar-tools) for the full
 authoring reference and security model.
 
 ## Built-in SkillPacks

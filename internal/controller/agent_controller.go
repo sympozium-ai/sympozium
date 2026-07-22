@@ -863,7 +863,7 @@ func (r *AgentReconciler) ensureWebEndpointAgentRun(ctx context.Context, instanc
 			AgentRef:   instance.Name,
 			AgentID:    "web-endpoint",
 			SessionKey: "web-endpoint",
-			Task:       "Serve HTTP requests for this instance",
+			Task:       sympoziumv1alpha1.NewStringTask("Serve HTTP requests for this instance"),
 			Mode:       "server",
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 resolveProvider(instance),

@@ -85,12 +85,18 @@ nav:
     - Ensembles: concepts/ensembles.md
     - Skills & Sidecars: concepts/skills.md
     - Lifecycle Hooks: concepts/lifecycle-hooks.md
+    - Task Modes:
+      - Sidecar-Driven Mode: modes/sidecar-driven.md
+      - Adding a Task Mode: modes/extension-guide.md
     - Channels: concepts/channels.md
     - Agent Sandboxing: concepts/agent-sandbox.md
     - Security: concepts/security.md
     - Persistent Memory: concepts/persistent-memory.md
     - Scheduled Tasks: concepts/scheduled-tasks.md
     - Observability: concepts/observability.md
+  - Sidecars:
+    - Writing Tool Sidecars: sidecars/writing-tool-sidecars.md
+    - Writing Orchestrator Sidecars: sidecars/writing-orchestrator-sidecars.md
   - Guides:
     - Your First AgentRun: guides/first-agentrun.md
     - Using Ollama: guides/ollama.md
@@ -102,7 +108,6 @@ nav:
     - Prompt Engineering: guides/prompt-engineering.md
     - Writing Skills: guides/writing-skills.md
     - Writing Tools: guides/writing-tools.md
-    - Writing Sidecars: guides/writing-sidecars.md
     - Writing Integration Tests: guides/writing-integration-tests.md
     - Writing UX Tests (Cypress): guides/writing-ux-tests.md
     - Detailed File Logging: guides/detailed-logging.md

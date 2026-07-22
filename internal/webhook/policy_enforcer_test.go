@@ -60,7 +60,7 @@ func TestPolicyEnforcer_AllowsDeletingRun_WhenInstanceMissing(t *testing.T) {
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "already-deleted-instance",
-			Task:     "irrelevant",
+			Task:     sympoziumv1alpha1.NewStringTask("irrelevant"),
 		},
 	}
 
@@ -91,7 +91,7 @@ func TestPolicyEnforcer_RejectsCreate_WhenInstanceMissing(t *testing.T) {
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "nonexistent-instance",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 		},
 	}
 
@@ -117,7 +117,7 @@ func TestPolicyEnforcer_AllowsRun_WhenInstanceExistsAndNoPolicy(t *testing.T) {
 	}
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
-		Spec:       sympoziumv1alpha1.AgentRunSpec{AgentRef: "inst", Task: "x"},
+		Spec:       sympoziumv1alpha1.AgentRunSpec{AgentRef: "inst", Task: sympoziumv1alpha1.NewStringTask("x")},
 	}
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance).Build()
@@ -168,7 +168,7 @@ func TestPolicyEnforcer_AllowsDuplicateVolume_WhenSourcesEqual(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Volumes:  []corev1.Volume{vol},
 			Skills: []sympoziumv1alpha1.SkillRef{
 				{SkillPackRef: "db-tools"},
@@ -217,7 +217,7 @@ func TestPolicyEnforcer_RejectsDuplicateVolume_WhenSourcesDiffer(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Volumes: []corev1.Volume{{
 				Name: "vault-creds",
 				VolumeSource: corev1.VolumeSource{

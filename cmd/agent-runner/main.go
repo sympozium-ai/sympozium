@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -41,6 +44,29 @@ var llmMaxRetries = -1 // -1 means "use provider-appropriate default"
 // Defaults: 10 minutes for cloud providers, 30 minutes for local providers.
 // Override with RUN_TIMEOUT env var (Go duration string, e.g. "30m", "1h").
 var runTimeout time.Duration // 0 means "use provider-appropriate default"
+
+// AGENT_MODE values the agent-runner recognises. The controller sets
+// AGENT_MODE for object-form spec.task entries (see internal/controller/taskmodes).
+// Adding a new mode is a one-line change here + the corresponding handler in
+// the taskmodes registry; the rest of the dispatch (logger + error message)
+// is generated from this slice.
+//
+// Values must match the Mode() string each TaskModeHandler returns.
+var (
+	supportedAgentModePromptServer = "prompt-server"
+)
+
+// supportedAgentModes is the canonical list, ordered for stable logging.
+// New modes append here so the on-disk log message is stable.
+var supportedAgentModes = []string{
+	supportedAgentModePromptServer,
+}
+
+// formatSupportedAgentModes returns the supported modes as a comma-separated
+// string for human-readable error messages and startup logs.
+func formatSupportedAgentModes() string {
+	return strings.Join(supportedAgentModes, ", ")
+}
 
 func init() {
 	if val := os.Getenv("MAX_TOOL_ITERATIONS"); val != "" {
@@ -135,9 +161,55 @@ type streamChunk struct {
 	Index   int    `json:"index"`
 }
 
+// startupLogSupportedAgentModes prints the list of AGENT_MODE values this
+// agent-runner binary understands, so an operator reading the pod logs can
+// immediately see what the controller is allowed to set. Invoked once at
+// startup, before the mode dispatch happens. Source-of-truth is the
+// supportedAgentModes slice — adding a mode updates the log automatically.
+func startupLogSupportedAgentModes() {
+	log.Printf("supported AGENT_MODE values: %s", formatSupportedAgentModes())
+}
+
+// contextWithSignal returns a context that is cancelled when the parent
+// context is cancelled OR when SIGTERM/SIGINT is received. Used by mode
+// entry points (runPromptServer) that need to drain in-flight work on
+// shutdown. The signal-based cancellation is necessary because the
+// agent-runner is the long-lived primary process in prompt-server mode —
+// without signal handling the controller's grace-period would just SIGKILL
+// the pod and lose any in-flight prompt responses.
+//
+// Returns the context and a stop function the caller should defer to release
+// the signal handler slot.
+func contextWithSignal(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case sig := <-stop:
+			log.Printf("agent-runner: received signal %v, cancelling", sig)
+			cancel()
+		}
+		// Drain the signal so a second SIGTERM during shutdown doesn't
+		// immediately kill us. (We can't unregister a specific signal
+		// cleanly across platforms, so just consume.)
+		go func() {
+			for range stop {
+			}
+		}()
+	}()
+	return ctx, func() {
+		cancel()
+		signal.Stop(stop)
+		close(stop)
+	}
+}
+
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.Println("agent-runner starting")
+	startupLogSupportedAgentModes()
 
 	// Skip mode: a preRun lifecycle hook wrote the skip marker on the shared
 	// /ipc volume to signal there is no work to do. Short-circuit before the
@@ -188,7 +260,30 @@ func main() {
 		}
 	}
 	if task == "" {
-		fatal("TASK env var is empty and no /ipc/input/task.json found")
+		// AGENT_MODE selects the agent-runner's run-mode. The controller
+		// sets AGENT_MODE for object-form spec.task entries (e.g.
+		// {mode: "sidecar-driven"}); Path A (string-form task) leaves it
+		// unset and the LLM-driven main agent loop runs below.
+		//
+		// Supported modes are listed in supportedAgentModes (declared at
+		// package level so adding a new mode is a one-line change).
+		// Unknown values fail with the supported list in the error so the
+		// operator can see which mode they asked for vs. what's available.
+		//
+		// Object-mode handlers do not set TASK, so this branch fires for
+		// every sidecar-driven run.
+		switch mode := getEnv("AGENT_MODE", ""); mode {
+		case "":
+			// No AGENT_MODE and no TASK: classic misconfiguration.
+			fatal("TASK env var is empty and no /ipc/input/task.json found (and AGENT_MODE is unset; supported modes: " + formatSupportedAgentModes() + ")")
+		case supportedAgentModePromptServer:
+			runCtx, cancel := contextWithSignal(context.Background())
+			defer cancel()
+			runPromptServer(runCtx)
+			os.Exit(0)
+		default:
+			fatal(fmt.Sprintf("unsupported AGENT_MODE %q; supported: %v", mode, supportedAgentModes))
+		}
 	}
 
 	// Dry run mode: produce a synthetic result without calling the LLM.
@@ -511,6 +606,37 @@ func main() {
 		err          error
 	)
 
+	// Launch the prompt service in parallel with the main agent loop. The
+	// sidecar-initiated orchestrator drives its workflow from inside one of
+	// the agent's tool calls and writes /ipc/prompts/request-*.json while the
+	// main loop is still running, so the prompt service must be live *during*
+	// the main loop, not only after it. The goroutine exits when /ipc/done is
+	// written, the run context is cancelled, or the loop returns an error.
+	// promptWg.Wait (deferred below) guarantees the prompt service has drained
+	// before the agent-runner exits, so the sidecar's request poll never times
+	// out waiting for a result that arrives after the runner tore down.
+	var promptWg sync.WaitGroup
+	if getEnv("ENABLE_PROMPT_SERVICE", "") == "true" {
+		promptWg.Add(1)
+		go func() {
+			defer promptWg.Done()
+			if promptErr := runPromptServiceLoop(promptServiceDeps{
+				Ctx:             ctx,
+				ProviderName:    provider,
+				APIKey:          apiKey,
+				BaseURL:         baseURL,
+				Model:           modelName,
+				SystemPrompt:    systemPrompt,
+				Task:            task,
+				Tools:           tools,
+				ProviderHeaders: providerHeaders,
+			}); promptErr != nil {
+				log.Printf("prompt service exited with error: %v", promptErr)
+			}
+		}()
+	}
+	defer promptWg.Wait()
+
 	switch provider {
 	case "anthropic":
 		responseText, inputTokens, outputTokens, toolCalls, err = callAnthropic(ctx, apiKey, baseURL, modelName, systemPrompt, task, tools, providerHeaders)
@@ -523,6 +649,15 @@ func main() {
 		// OpenAI, Azure OpenAI, Ollama, LM Studio, and any OpenAI-compatible provider
 		responseText, inputTokens, outputTokens, toolCalls, err = callOpenAI(ctx, provider, apiKey, baseURL, modelName, systemPrompt, task, tools, providerHeaders)
 	}
+
+	// After the main agent loop completes, the prompt service continues to
+	// serve sidecar-initiated LLM prompt requests until /ipc/done is
+	// written (typically by the sidecar after it has finished its work) or
+	// the run context is cancelled. Sidecars write /ipc/prompts/request-*.json
+	// to ask the model a question; we answer with the same provider (so
+	// context survives) and write the response to /ipc/prompts/result-*.json.
+	// promptWg.Wait (above via defer) drains the goroutine before this
+	// function returns.
 
 	elapsed := time.Since(start)
 
@@ -858,4 +993,139 @@ func buildRelationshipContext(relJSON string) string {
 	}
 
 	return sb.String()
+}
+
+// runPromptServer is the entry point for AGENT_MODE=prompt-server.
+// The sidecar is the workflow driver, so the agent-runner skips the main
+// agent loop entirely. It runs the prompt service loop in a goroutine so
+// the sidecar can drive individual LLM calls via /ipc/prompts/, and exits
+// when the sidecar signals completion by writing /ipc/done.
+//
+// The sidecar is the authoritative writer of /ipc/done: it writes /ipc/done
+// only once its own work has fully completed (no in-flight prompt calls
+// remain), so by the time /ipc/done appears the prompt service can drain
+// safely without misclassifying responses.
+//
+// On exit the agent-runner copies the sidecar's /ipc/run-result.json
+// payload to /ipc/output/result.json and emits the SYMPOZIUM_RESULT log
+// line so the controller can surface the final payload on the AgentRun
+// for `kubectl describe` to display.
+func runPromptServer(ctx context.Context) {
+	start := time.Now()
+
+	_ = os.MkdirAll("/ipc/output", 0o755)
+
+	provider := strings.ToLower(getEnv("MODEL_PROVIDER", "openai"))
+	apiKey := firstNonEmpty(
+		os.Getenv("API_KEY"),
+		os.Getenv("OPENAI_API_KEY"),
+		os.Getenv("ANTHROPIC_API_KEY"),
+		os.Getenv("AZURE_OPENAI_API_KEY"),
+		os.Getenv("PROVIDER_API_KEY"),
+		os.Getenv("LLM_API_KEY"),
+	)
+	if fileKey, err := os.ReadFile("/secrets/api-key"); err == nil {
+		apiKey = firstNonEmpty(apiKey, strings.TrimSpace(string(fileKey)))
+	}
+	baseURL := strings.TrimRight(getEnv("MODEL_BASE_URL", ""), "/")
+	modelName := getEnv("MODEL_NAME", "gpt-4o-mini")
+	systemPrompt := getEnv("SYSTEM_PROMPT", "You are a helpful AI assistant.")
+
+	var providerHeaders map[string]string
+	if headersJSON := getEnv("MODEL_PROVIDER_HEADERS", ""); headersJSON != "" {
+		if err := json.Unmarshal([]byte(headersJSON), &providerHeaders); err != nil {
+			log.Printf("WARNING: failed to parse MODEL_PROVIDER_HEADERS: %v", err)
+		}
+	}
+
+	// In prompt-server mode the LLM has no conversational task — it just
+	// answers action decisions issued by the sidecar. An empty system prompt
+	// is fine; the sidecar passes the actual prompt on each request.
+	log.Printf("prompt-server mode: provider=%s model=%s", provider, modelName)
+
+	var promptWg sync.WaitGroup
+	promptWg.Add(1)
+	go func() {
+		defer promptWg.Done()
+		if err := runPromptServiceLoop(promptServiceDeps{
+			Ctx:             ctx,
+			ProviderName:    provider,
+			APIKey:          apiKey,
+			BaseURL:         baseURL,
+			Model:           modelName,
+			SystemPrompt:    systemPrompt,
+			Task:            "",
+			Tools:           nil,
+			ProviderHeaders: providerHeaders,
+		}); err != nil {
+			log.Printf("prompt service exited with error: %v", err)
+		}
+	}()
+
+	donePath := "/ipc/done"
+	resultPath := "/ipc/run-result.json"
+	outputPath := "/ipc/output/result.json"
+	pollInterval := 500 * time.Millisecond
+	poll := time.NewTicker(pollInterval)
+	defer poll.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("prompt-server: context cancelled, waiting for prompt service to drain")
+			promptWg.Wait()
+			return
+		case <-poll.C:
+			// Wait for the sidecar to signal completion by writing
+			// /ipc/done. The sidecar writes /ipc/run-result.json first
+			// and then /ipc/done, so by the time we observe /ipc/done
+			// the run-result payload should already be on disk.
+			if _, err := os.Stat(donePath); err != nil {
+				continue
+			}
+			log.Printf("prompt-server: %s observed after %s, exiting", donePath, time.Since(start))
+
+			result := loadAndEmitRunResult(resultPath, outputPath, start)
+			// Do NOT write /ipc/done here — the sidecar owns /ipc/done.
+			// Writing it here would race with in-flight prompt calls
+			// the sidecar is still waiting on.
+
+			if markerBytes, err := json.Marshal(result); err == nil {
+				fmt.Fprintf(os.Stdout, "\n__SYMPOZIUM_RESULT__%s__SYMPOZIUM_END__\n", string(markerBytes))
+			}
+			log.Println("prompt-server finished")
+			promptWg.Wait()
+			return
+		}
+	}
+}
+
+// loadAndEmitRunResult reads the sidecar's run-result payload from
+// resultPath (waiting briefly for the file to appear if the sidecar's
+// write hasn't propagated through the shared volume yet), parses it into
+// an agentResult (falling back to wrapping raw bytes or recording a
+// minimal success result if parsing fails), and writes it to outputPath.
+// Returns the resulting agentResult so the caller can emit the
+// SYMPOZIUM_RESULT marker.
+func loadAndEmitRunResult(resultPath, outputPath string, start time.Time) agentResult {
+	var result agentResult
+	data, err := os.ReadFile(resultPath)
+	if err != nil {
+		log.Printf("prompt-server: %s could not be read (%v); recording minimal success result", resultPath, err)
+		result = agentResult{
+			Status:   "success",
+			Response: "sidecar finished but did not write /ipc/run-result.json",
+		}
+	} else if uerr := json.Unmarshal(data, &result); uerr != nil {
+		log.Printf("prompt-server: %s was not a valid agentResult payload (%v); wrapping raw bytes", resultPath, uerr)
+		result = agentResult{
+			Status:   "success",
+			Response: string(data),
+		}
+	}
+	if result.Metrics.DurationMs == 0 {
+		result.Metrics.DurationMs = time.Since(start).Milliseconds()
+	}
+	writeJSON(outputPath, result)
+	return result
 }

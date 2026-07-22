@@ -45,7 +45,7 @@ func delegationFixtures() (*sympoziumv1alpha1.AgentRun, []client.Object) {
 	}
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{Name: "src-run", Namespace: "default"},
-		Spec:       sympoziumv1alpha1.AgentRunSpec{AgentRef: "team-architect", Task: "design it"},
+		Spec:       sympoziumv1alpha1.AgentRunSpec{AgentRef: "team-architect", Task: sympoziumv1alpha1.NewStringTask("design it")},
 		Status: sympoziumv1alpha1.AgentRunStatus{
 			Phase:  sympoziumv1alpha1.AgentRunPhaseSucceeded,
 			Result: "design complete",

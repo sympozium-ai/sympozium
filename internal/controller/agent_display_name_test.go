@@ -61,7 +61,7 @@ func TestBuildContainers_AgentDisplayNameEnv(t *testing.T) {
 	// With the annotation present.
 	run := newTestRun()
 	run.Annotations = map[string]string{"sympozium.ai/agent-display-name": "Research Assistant"}
-	cs, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+	cs, _, _ := r.buildContainers(run, false, nil, nil, nil, nil)
 	if cs[1].Name != "ipc-bridge" {
 		t.Fatalf("cs[1] = %q, want ipc-bridge", cs[1].Name)
 	}
@@ -71,7 +71,7 @@ func TestBuildContainers_AgentDisplayNameEnv(t *testing.T) {
 
 	// Without the annotation, the env must be omitted (bridge falls back to INSTANCE_NAME).
 	plain := newTestRun()
-	cs2, _ := r.buildContainers(plain, false, nil, nil, nil, nil)
+	cs2, _, _ := r.buildContainers(plain, false, nil, nil, nil, nil)
 	if _, ok := findEnv(cs2[1].Env, "AGENT_DISPLAY_NAME"); ok {
 		t.Error("AGENT_DISPLAY_NAME should be absent when the run has no display-name annotation")
 	}

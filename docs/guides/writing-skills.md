@@ -273,7 +273,7 @@ and the runtime runs `node /app/dist/cli.js evaluate-changes web` with
     diverge. Automated reconciliation is being explored — see
     [#226](https://github.com/sympozium-ai/sympozium/pull/226).
 
-See [Native Sidecar Tools](writing-sidecars.md#native-sidecar-tools) for the full field
+See [Native Sidecar Tools](../sidecars/writing-tool-sidecars.md#native-sidecar-tools) for the full field
 reference, the trust model, and the matching `tool-executor.sh`.
 
 ---

@@ -289,7 +289,7 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 			AgentRef:   msg.InstanceName,
 			AgentID:    "primary",
 			SessionKey: fmt.Sprintf("channel-%s-%s-%d", msg.Channel, msg.ChatID, time.Now().UnixNano()),
-			Task:       msg.Text,
+			Task:       sympoziumv1alpha1.NewStringTask(msg.Text),
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,
 				Model:                    inst.Spec.Agents.Default.Model,

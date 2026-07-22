@@ -575,8 +575,47 @@ spec:
                 description: SystemPrompt is the system prompt for the agent.
                 type: string
               task:
-                description: Task is the task description for the agent.
-                type: string
+                description: |-
+                  Task is the polymorphic task description for the agent. It accepts
+                  either a string (legacy Path A: the prompt passed to the LLM via
+                  the TASK env var) or an object describing an orchestration mode
+                  (e.g. {mode: "sidecar-driven", tool: "...", parameters: {...}}).
+                  The controller dispatches by the mode field for object form.
+
+                  String form preserves backward compatibility with every
+                  pre-existing AgentRun. Object form lets external contributors add
+                  new orchestration modes (sidecar-driven today, others tomorrow)
+                  by registering a TaskModeHandler — no changes to the central
+                  controller logic required.
+
+                  The CRD schema (oneOf: string | object) is hand-maintained in
+                  config/crd/bases/sympozium.ai_agentruns.yaml and the chart template;
+                  kubebuilder cannot express polymorphism directly. The Go side uses
+                  a pointer + custom UnmarshalJSON so the field round-trips cleanly.
+                properties:
+                  mode:
+                    description: |-
+                      Mode is the orchestration mode identifier for object form. The
+                      controller looks up the matching TaskModeHandler in its registry.
+                      Examples: "sidecar-driven".
+                    type: string
+                  parameters:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Parameters is the open shape of arguments to pass to the orchestrator.
+                      Each handler decides how to interpret them. For sidecar-driven mode
+                      the controller serialises them to JSON and sets the
+                      SYMPOZIUM_RUN_CONFIG_JSON env var on the resolved sidecar.
+                    type: object
+                  tool:
+                    description: |-
+                      Tool is the SkillPack tool name to invoke on the resolved sidecar.
+                      Semantics are mode-specific (the handler decides). For sidecar-driven
+                      mode this is required and identifies the sidecar's primary tool.
+                    type: string
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
               timeout:
                 description: Timeout is the maximum duration for this agent run.
                 type: string
@@ -595,6 +634,16 @@ spec:
                       type: string
                     type: array
                 type: object
+              useContext:
+                default: true
+                description: |-
+                  UseContext controls whether the agent-runner preserves conversation
+                  history between LLM calls. Set to false to force every prompt — including
+                  those issued via the sidecar-initiated prompt channel — to be answered
+                  in isolation. Default (nil) is true; matches the historical behaviour for
+                  runs that pre-date this field.
+                  Settable only on this CR; the sidecar cannot override it.
+                type: boolean
               volumeMounts:
                 description: |-
                   VolumeMounts are additional volume mounts applied to the main
@@ -2575,7 +2624,6 @@ spec:
             - agentRef
             - model
             - sessionKey
-            - task
             type: object
           status:
             description: AgentRunStatus defines the observed state of AgentRun.

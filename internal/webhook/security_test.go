@@ -58,7 +58,7 @@ func TestPolicyEnforcer_DeniesPathEnvVar(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Env:      map[string]string{"PATH": "/malicious/bin"},
 		},
 	}
@@ -83,7 +83,7 @@ func TestPolicyEnforcer_DeniesLdPreloadEnvVar(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Env:      map[string]string{"LD_PRELOAD": "/malicious/lib.so"},
 		},
 	}
@@ -108,7 +108,7 @@ func TestPolicyEnforcer_AllowsSafeEnvVars(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Env:      map[string]string{"MY_CUSTOM_VAR": "safe-value", "DEBUG": "true"},
 		},
 	}
@@ -140,7 +140,7 @@ func TestPolicyEnforcer_DeniesDisallowedLifecycleImage(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{Name: "evil", Image: "evil.io/malware:latest"},
@@ -169,7 +169,7 @@ func TestPolicyEnforcer_DeniesHookEnvValueAndValueFrom(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{
@@ -210,7 +210,7 @@ func TestPolicyEnforcer_DeniesHookEnvIncompleteSecretKeyRef(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{
@@ -250,7 +250,7 @@ func TestPolicyEnforcer_AllowsHookEnvSecretKeyRef(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{
@@ -295,7 +295,7 @@ func TestPolicyEnforcer_AllowsAllowedLifecycleImage(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{Name: "good", Image: "ghcr.io/sympozium-ai/my-hook:v1"},
@@ -325,7 +325,7 @@ func TestPolicyEnforcer_NoImagePolicy_AllowsAnyImage(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				PreRun: []sympoziumv1alpha1.LifecycleHookContainer{
 					{Name: "any", Image: "any-registry.io/anything:latest"},
@@ -359,7 +359,7 @@ func TestPolicyEnforcer_DeniesDisallowedSandboxImage(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Sandbox: &sympoziumv1alpha1.AgentRunSandboxSpec{
 				Enabled: true,
 				Image:   "evil.io/rootkit:latest",
@@ -394,7 +394,7 @@ func TestPolicyEnforcer_DeniesLifecycleRBAC_DeniedResources(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				RBAC: []sympoziumv1alpha1.RBACRule{
 					{
@@ -432,7 +432,7 @@ func TestPolicyEnforcer_AllowsLifecycleRBAC_NonDeniedResources(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef: "inst",
-			Task:     "x",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
 			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
 				RBAC: []sympoziumv1alpha1.RBACRule{
 					{
