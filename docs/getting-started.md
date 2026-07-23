@@ -536,12 +536,15 @@ metadata:
   name: quick-check
 spec:
   agentRef: devops
+  agentId: default
+  sessionKey: "quick-check-001"
   task: "How many nodes are in the cluster and what are their roles?"
   model:
-    name: gpt-4o
     provider: openai
+    model: gpt-4o
+    authSecretRef: my-openai-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 

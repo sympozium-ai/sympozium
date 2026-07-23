@@ -152,7 +152,7 @@ Or toggle them in the TUI by pressing Enter on the pack and using Space to toggl
 Edit the Ensemble YAML to change intervals:
 
 ```yaml
-personas:
+agentConfigs:
   - name: code-reviewer
     schedule:
       type: sweep

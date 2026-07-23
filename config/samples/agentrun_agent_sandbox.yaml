@@ -17,7 +17,7 @@ metadata:
   name: alice-sandbox-run-001
   namespace: default
 spec:
-  instanceRef: alice
+  agentRef: alice
   agentId: default
   sessionKey: "session-sandbox-001"
   task: "Analyze the cluster security posture and report findings"
@@ -38,7 +38,7 @@ metadata:
   name: alice-warmpool-run-001
   namespace: default
 spec:
-  instanceRef: alice
+  agentRef: alice
   agentId: default
   sessionKey: "session-warmpool-001"
   task: "Run diagnostics on failing deployments"

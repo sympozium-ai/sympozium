@@ -77,7 +77,7 @@ curl http://172.18.0.1:1234/v1/models
 
 ---
 
-## Creating a Agent
+## Creating an Agent
 
 LM Studio does not require an API key, but the `authRefs` field is mandatory —
 create a Secret with a placeholder value.
@@ -121,6 +121,8 @@ metadata:
   name: lmstudio-test
 spec:
   agentRef: lmstudio-agent
+  agentId: default
+  sessionKey: "lmstudio-test-001"
   task: "List all pods across every namespace and summarise their status."
   model:
     provider: openai
@@ -128,7 +130,7 @@ spec:
     baseURL: "http://172.18.0.1:1234/v1"
     authSecretRef: lmstudio-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 
@@ -185,7 +187,7 @@ spec:
   authRefs:
     - provider: openai
       secret: lmstudio-key
-  personas:
+  agentConfigs:
     - name: assistant
       displayName: "Local Assistant"
       systemPrompt: |

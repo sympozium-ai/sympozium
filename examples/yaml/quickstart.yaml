@@ -13,7 +13,7 @@
 # Then watch the agent run:
 #   kubectl get agentrun -l sympozium.ai/ensemble=quickstart-demo -w
 ---
-# Step 1: Create a Ensemble with one simple persona
+# Step 1: Create an Ensemble with one simple persona
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:
@@ -52,12 +52,14 @@ metadata:
   labels:
     sympozium.ai/ensemble: quickstart-demo
 spec:
-  instanceRef: assistant
-  agentID: primary
+  agentRef: assistant
+  agentId: primary
+  sessionKey: "quickstart-session-001"
   task: |
     Tell me what namespace you're running in and list all pods.
     Keep your response under 3 sentences.
   model:
-    name: gpt-4o
     provider: openai
+    model: gpt-4o
+    authSecretRef: my-openai-key
   timeout: "5m"

@@ -1,7 +1,7 @@
 ---
 # Example SympoziumSchedule - Create a recurring heartbeat task
 # Apply: kubectl apply -f sympoziumschedule-example.yaml
-# Prerequisites: SympoziumInstance "alice" must exist (see sympoziuminstance-example.yaml)
+# Prerequisites: Agent "alice" must exist (see agent-example.yaml)
 # Watch heartbeat runs: kubectl get agentrun -l sympozium.ai/schedule=alice-heartbeat -w
 apiVersion: sympozium.ai/v1alpha1
 kind: SympoziumSchedule
@@ -9,7 +9,7 @@ metadata:
   name: alice-heartbeat
   namespace: default
 spec:
-  instanceRef: alice
+  agentRef: alice
   schedule: "*/30 * * * *"  # Every 30 minutes
   type: heartbeat
   includeMemory: true

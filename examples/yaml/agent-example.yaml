@@ -1,45 +1,45 @@
 ---
-# Example SympoziumInstance - A single agent with channels, skills, and auth
-# Apply: kubectl apply -f sympoziuminstance-example.yaml
+# Example Agent - A single agent with channels, skills, and auth
+# Apply: kubectl apply -f agent-example.yaml
 # Prerequisites:
 #   1. Create secrets for channels and auth (replace placeholder secret names)
 #   2. Ensure a policy exists: kubectl get sympoziumpolicy default-policy
 #   3. Ensure skillpacks exist: kubectl get skillpack | grep -E 'k8s-ops|code-review'
 apiVersion: sympozium.ai/v1alpha1
-kind: SympoziumInstance
+kind: Agent
 metadata:
   name: alice
   namespace: default
 spec:
   channels:
     - type: telegram
-      secretRef: alice-telegram-secret
+      configRef:
+        secret: alice-telegram-secret
     - type: slack
-      secretRef: alice-slack-secret
+      configRef:
+        secret: alice-slack-secret
   agents:
     default:
       model: gpt-4o
-      image: ghcr.io/sympozium-ai/sympozium/agent-codex:latest
-      maxTokens: 128000
-    sandbox:
-      enabled: true
-      image: ghcr.io/sympozium-ai/sympozium/sandbox:latest
-      resourceLimits:
-        cpu: "2"
-        memory: 4Gi
-    subagents:
-      maxDepth: 3
-      maxConcurrent: 5
+      sandbox:
+        enabled: true
+        image: ghcr.io/sympozium-ai/sympozium/sandbox:latest
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+      subagents:
+        maxDepth: 3
+        maxConcurrent: 5
   skills:
     - skillPackRef: k8s-ops
-    - name: code-review
-    - name: security-audit
+    - skillPackRef: code-review
   policyRef: default-policy
   authRefs:
     - provider: github
-      secretName: alice-github-token
+      secret: alice-github-token
     - provider: openai
-      secretName: alice-openai-key
+      secret: alice-openai-key
   observability:
     enabled: true
     otlpEndpoint: otel-collector.observability.svc:4317

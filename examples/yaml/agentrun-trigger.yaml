@@ -15,7 +15,7 @@
 #
 # Method 4: Via TUI (terminal UI)
 #   sympozium
-#   Select your instance, type a message, press Enter
+#   Select your agent, type a message, press Enter
 #
 # Method 5: Programmatic (generate unique name)
 #   cat << 'APIEOF' | kubectl apply -f -
@@ -24,12 +24,14 @@
 #   metadata:
 #     name: manual-run-$(date +%s)
 #   spec:
-#     instanceRef: alice
-#     agentID: primary
+#     agentRef: alice
+#     agentId: primary
+#     sessionKey: "manual-$(date +%s)"
 #     task: "List all pods in the cluster"
 #     model:
-#       name: gpt-4o
 #       provider: openai
+#       model: gpt-4o
+#       authSecretRef: alice-openai-key
 #     timeout: "5m"
 #   APIEOF
 #
@@ -41,17 +43,19 @@
 #   kubectl logs job/agent-run-alice-run-001
 #   kubectl get agentrun alice-run-001 -o jsonpath='{.status.result}'
 ---
-# Quick test run (no instance needed if using default values)
+# Quick test run (requires Agent "alice" and secret "alice-openai-key")
 apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
-  name: test-run-$(date +%s)
+  name: test-run-001
   namespace: default
 spec:
-  instanceRef: alice
-  agentID: primary
+  agentRef: alice
+  agentId: primary
+  sessionKey: "test-session-001"
   task: "List all pods in the cluster"
   model:
-    name: gpt-4o
     provider: openai
+    model: gpt-4o
+    authSecretRef: alice-openai-key
   timeout: "5m"

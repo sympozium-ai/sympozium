@@ -24,7 +24,7 @@ examples/
 └── yaml/                  # YAML manifests (copy-paste ready)
     ├── quickstart.yaml               # All-in-one quick start
     ├── ensemble-example.yaml      # Team of agents
-    ├── sympoziuminstance-example.yaml  # Single agent
+    ├── agent-example.yaml            # Single agent
     ├── agentrun-example.yaml         # One-off task
     ├── sympoziumschedule-example.yaml  # Recurring task
     ├── ensemble-activate.yaml     # Activation examples
@@ -50,7 +50,7 @@ examples/
 
 ```bash
 kubectl apply -f yaml/ensemble-example.yaml
-sympozium  # Select Personas tab, press Enter on pack name
+sympozium  # Select Ensembles tab, press Enter on pack name
 ```
 
 ### Run a One-Off Task
@@ -62,7 +62,7 @@ kubectl apply -f yaml/agentrun-example.yaml
 ### Set Up Monitoring
 
 ```bash
-kubectl apply -f yaml/sympoziuminstance-example.yaml
+kubectl apply -f yaml/agent-example.yaml
 kubectl apply -f yaml/sympoziumschedule-example.yaml
 ```
 

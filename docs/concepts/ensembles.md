@@ -1,6 +1,6 @@
 # Ensembles
 
-Ensembles are the **recommended way to get started** with Sympozium. A Ensemble is a CRD that bundles multiple pre-configured agent personas — each with a system prompt, skills, tool policy, schedule, and memory seeds. Activating a pack is a single action: the Ensemble controller stamps out all the Kubernetes resources automatically.
+Ensembles are the **recommended way to get started** with Sympozium. An Ensemble is a CRD that bundles multiple pre-configured agent personas — each with a system prompt, skills, tool policy, schedule, and memory seeds. Activating a pack is a single action: the Ensemble controller stamps out all the Kubernetes resources automatically.
 
 ## Why Ensembles?
 
@@ -53,7 +53,7 @@ Ensembles support **typed relationships** between personas, enabling coordinatio
 
 ### Workflow Types
 
-The `workflowType` field on a Ensemble describes the overall orchestration pattern:
+The `workflowType` field on an Ensemble describes the overall orchestration pattern:
 
 | Value | Description |
 |-------|-------------|
@@ -70,7 +70,7 @@ metadata:
   name: research-delegation-example
 spec:
   workflowType: delegation
-  personas:
+  agentConfigs:
     - name: researcher
       systemPrompt: "You are a research analyst..."
     - name: writer
@@ -170,7 +170,7 @@ When a stimulus is delivered (automatically or manually), a system message appea
 
 ## Shared Workflow Memory
 
-By default, each persona in a Ensemble has its own **private memory** — an isolated SQLite database that only that persona can access. Shared Workflow Memory adds a second, **pack-level memory pool** that all personas can read from (and optionally write to), enabling cross-persona knowledge sharing.
+By default, each persona in an Ensemble has its own **private memory** — an isolated SQLite database that only that persona can access. Shared Workflow Memory adds a second, **pack-level memory pool** that all personas can read from (and optionally write to), enabling cross-persona knowledge sharing.
 
 ### Enabling Shared Memory
 
@@ -180,17 +180,19 @@ kind: Ensemble
 metadata:
   name: research-delegation-example
 spec:
+  # Define your personas here (lead, researcher, writer, reviewer in this example)
+  agentConfigs: []
   sharedMemory:
     enabled: true
     storageSize: "1Gi"
     accessRules:
-      - persona: lead
+      - agentConfig: lead
         access: read-write
-      - persona: researcher
+      - agentConfig: researcher
         access: read-write
-      - persona: writer
+      - agentConfig: writer
         access: read-write
-      - persona: reviewer
+      - agentConfig: reviewer
         access: read-only
 ```
 
@@ -246,6 +248,8 @@ kind: Ensemble
 metadata:
   name: research-delegation-example
 spec:
+  # Define your personas here (lead, researcher, writer, reviewer in this example)
+  agentConfigs: []
   sharedMemory:
     enabled: true
     storageSize: "1Gi"
@@ -364,7 +368,7 @@ Entries stored via `workflow_memory_store` are automatically tagged with the sou
 
 ### delegate_to_persona Tool
 
-Agents that belong to a Ensemble automatically receive the `delegate_to_persona` tool. This allows an agent to delegate a task to another persona in the same pack:
+Agents that belong to an Ensemble automatically receive the `delegate_to_persona` tool. This allows an agent to delegate a task to another persona in the same pack:
 
 ```
 Tool: delegate_to_persona
@@ -443,7 +447,7 @@ spec:
   category: custom
   version: "1.0.0"
   workflowType: delegation
-  personas:
+  agentConfigs:
     - name: planner
       displayName: "Planner"
       systemPrompt: |

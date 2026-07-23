@@ -6,29 +6,28 @@ metadata:
   name: alice-run-001
   namespace: default
 spec:
-  instanceRef: alice
-  agentID: primary
+  agentRef: alice
+  agentId: primary
   sessionKey: "session-abc123"
   task: "Review the latest pull request and provide feedback on code quality"
   model:
-    name: gpt-4o
     provider: openai
+    model: gpt-4o
+    authSecretRef: alice-openai-key
     # baseURL: https://api.githubcopilot.com  # uncomment for GitHub Copilot
     # baseURL: http://ollama.default.svc:11434/v1  # uncomment for Ollama
-    maxTokens: 128000
   sandbox:
     enabled: true
     image: ghcr.io/sympozium-ai/sympozium/sandbox:latest
   skills:
-    - code-review
+    - skillPackRef: code-review
   toolPolicy:
-    allowed:
+    allow:
       - read_file
-      - grep_search
-      - list_dir
-    denied:
-      - exec_command
-    requireApproval:
+      - list_directory
+      - fetch_url
+    deny:
+      - execute_command
       - write_file
   timeout: "10m"
-  cleanup: OnFailure
+  cleanup: keep  # keep the pod for debugging; use "delete" (default) to clean up

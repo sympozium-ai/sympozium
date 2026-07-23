@@ -34,11 +34,14 @@ kind: Agent
 metadata:
   name: my-agent
 spec:
+  agents:
+    default:
+      model: gpt-4o
   skills:
     - skillPackRef: memory
 ```
 
-Or reference it from a Ensemble:
+Or reference it from an Ensemble:
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -46,12 +49,15 @@ kind: Ensemble
 metadata:
   name: sre-watchdog
 spec:
-  personas:
+  agentConfigs:
     - name: sre-watchdog
+      systemPrompt: |
+        You are an SRE watchdog. Monitor the cluster and track recurring issues.
       skills:
-        - skillPackRef: k8s-ops
-        - skillPackRef: memory
+        - k8s-ops
+        - memory
       memory:
+        enabled: true
         seeds:
           - "Track recurring issues for trend analysis"
           - "Note any nodes that frequently report NotReady"
@@ -99,7 +105,7 @@ When agents work together in a **Ensemble**, each persona has its own private me
 
 | Aspect | Private Memory | Shared Workflow Memory |
 |--------|---------------|----------------------|
-| **Scope** | One instance | All personas in a Ensemble |
+| **Scope** | One instance | All personas in an Ensemble |
 | **Storage** | `<instance>-memory-db` PVC | `<pack>-shared-memory-db` PVC |
 | **Tools** | `memory_search`, `memory_store`, `memory_list` | `workflow_memory_search`, `workflow_memory_store`, `workflow_memory_list` |
 | **Access** | Always read-write | Per-persona: `read-write` or `read-only` |
@@ -116,13 +122,15 @@ kind: Ensemble
 metadata:
   name: research-delegation-example
 spec:
+  # Define your personas here (researcher and reviewer in this example)
+  agentConfigs: []
   sharedMemory:
     enabled: true
     storageSize: "1Gi"
     accessRules:
-      - persona: researcher
+      - agentConfig: researcher
         access: read-write
-      - persona: reviewer
+      - agentConfig: reviewer
         access: read-only
 ```
 

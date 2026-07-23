@@ -76,7 +76,7 @@ Every concept that traditional agent frameworks manage in application code, Symp
 |-------|-------------|
 | [Getting Started](getting-started.md) | Install, deploy, and onboard your first agent |
 | [Architecture](architecture.md) | System design and how it all fits together |
-| [Custom Resources](concepts/custom-resources.md) | The six CRDs that model every agentic concept |
+| [Custom Resources](concepts/custom-resources.md) | The nine CRDs that model every agentic concept |
 | [Ensembles](concepts/ensembles.md) | Pre-configured agent bundles |
 | [Skills & Sidecars](concepts/skills.md) | Isolated tool containers with ephemeral RBAC |
 | [Lifecycle Hooks](concepts/lifecycle-hooks.md) | PreRun and postRun containers for setup and teardown |

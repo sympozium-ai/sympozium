@@ -34,6 +34,7 @@ metadata:
 spec:
   agentRef: photo-tagger-agent
   agentId: tagger
+  sessionKey: "photo-tagger-batch-1"
   cleanup: delete
   mode: task
   model:

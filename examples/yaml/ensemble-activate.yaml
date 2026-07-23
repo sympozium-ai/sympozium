@@ -1,5 +1,5 @@
 ---
-# How to Activate a Ensemble
+# How to Activate an Ensemble
 # 
 # Step 1: Apply the Ensemble (creates the definition)
 #   kubectl apply -f ensemble-example.yaml
@@ -9,7 +9,7 @@
 #
 # Step 3: Activate via TUI (interactive wizard)
 #   sympozium
-#   - Navigate to Personas tab
+#   - Navigate to Ensembles tab
 #   - Press Enter on "example-team"
 #   - Select your API key secret
 #
@@ -21,7 +21,7 @@
 #   }'
 #
 # What gets created automatically:
-# - SympoziumInstances (one per persona)
+# - Agents (one per persona)
 # - SympoziumSchedules (heartbeat tasks)
 # - ConfigMaps (seeded memory)
 #

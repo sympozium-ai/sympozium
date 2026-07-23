@@ -81,7 +81,7 @@ curl http://172.18.0.1:8080/v1/models
 
 ---
 
-## Creating a Agent
+## Creating an Agent
 
 Unsloth-served models do not require an API key, but `authRefs` is mandatory —
 create a Secret with a placeholder value.
@@ -125,6 +125,8 @@ metadata:
   name: unsloth-test
 spec:
   agentRef: unsloth-agent
+  agentId: default
+  sessionKey: "unsloth-test-001"
   task: "List all pods across every namespace and summarise their status."
   model:
     provider: unsloth
@@ -132,7 +134,7 @@ spec:
     baseURL: "http://172.18.0.1:8080/v1"
     authSecretRef: unsloth-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 
@@ -202,7 +204,7 @@ spec:
   authRefs:
     - provider: unsloth
       secret: unsloth-key
-  personas:
+  agentConfigs:
     - name: assistant
       displayName: "Unsloth Assistant"
       systemPrompt: |

@@ -184,7 +184,7 @@ kind: Ensemble
 metadata:
   name: oncall-team
 spec:
-  personas:
+  agentConfigs:
     - name: triage-agent
       systemPrompt: "You are an SRE triage agent..."
       lifecycle:

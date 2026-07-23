@@ -47,6 +47,7 @@ metadata:
 spec:
   agents:
     default:
+      model: gpt-4o
       env:
         DETAILED_LOG_PATH: /var/log/agent
 ```
@@ -143,8 +144,14 @@ kind: AgentRun
 metadata:
   name: debug-run
 spec:
-  agentName: my-agent
+  agentRef: my-agent
+  agentId: default
+  sessionKey: "debug-run-001"
   task: "investigate the login failure"
+  model:
+    provider: openai
+    model: gpt-4o
+    authSecretRef: my-openai-key
   env:
     DETAILED_LOG_PATH: /var/log/agent
     DETAILED_LOG_MAX_SIZE: "100m"

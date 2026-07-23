@@ -28,7 +28,7 @@ defaultPersonas:
 #     }
 #   }'
 #
-# Or via the TUI:  sympozium  → Personas tab → select pack → Enter
+# Or via the TUI:  sympozium  → Ensembles tab → select pack → Enter
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 3: Activate via the Sympozium API server

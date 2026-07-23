@@ -81,6 +81,8 @@ metadata:
   name: my-secure-run
 spec:
   agentRef: my-agent
+  agentId: default
+  sessionKey: "secure-run-001"
   task: "Analyze cluster security"
   model:
     provider: anthropic
@@ -158,7 +160,7 @@ With warm pool:
   (~1 second)
 ```
 
-When configured on a Agent, the controller automatically creates and manages a `SandboxWarmPool` CR. Runs with `warmPoolRef` set create a `SandboxClaim` instead of a bare `Sandbox`.
+When configured on an Agent, the controller automatically creates and manages a `SandboxWarmPool` CR. Runs with `warmPoolRef` set create a `SandboxClaim` instead of a bare `Sandbox`.
 
 ## Relationship to Existing Safeguards
 

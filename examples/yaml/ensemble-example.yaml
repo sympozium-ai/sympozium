@@ -1,7 +1,7 @@
 ---
 # Example Ensemble - Create a team of agents with skills, schedules, and memory
 # Apply: kubectl apply -f ensemble-example.yaml
-# Then activate via TUI: sympozium (select Personas tab, press Enter on "example-team")
+# Then activate via TUI: sympozium (select Ensembles tab, press Enter on "example-team")
 apiVersion: sympozium.ai/v1alpha1
 kind: Ensemble
 metadata:

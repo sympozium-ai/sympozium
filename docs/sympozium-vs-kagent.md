@@ -60,7 +60,7 @@ This is the most fundamental difference between the two projects.
 
 ### Multi-Tenancy
 
-**Sympozium** is designed around a `Agent` CRD that represents a single tenant. Each instance gets its own channel connections, agent configurations, policy bindings, and memory store. Admission webhooks enforce policy boundaries. Multiple teams share a cluster without seeing each other's agents or data.
+**Sympozium** is designed around an `Agent` CRD that represents a single tenant. Each instance gets its own channel connections, agent configurations, policy bindings, and memory store. Admission webhooks enforce policy boundaries. Multiple teams share a cluster without seeing each other's agents or data.
 
 **kagent** uses Kubernetes namespace isolation and supports cross-namespace tool references, but does not have a first-class tenant abstraction or admission-webhook-based policy enforcement.
 

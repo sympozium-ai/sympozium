@@ -1,41 +1,44 @@
 ---
 # Example SkillPack - Extend agent capabilities with custom skills
 # Apply: kubectl apply -f skillpack-example.yaml
-# Use in SympoziumInstance: skills: [{skillPackRef: custom-devops}]
+# Use in an Agent: skills: [{skillPackRef: custom-devops}]
 apiVersion: sympozium.ai/v1alpha1
 kind: SkillPack
 metadata:
   name: custom-devops
+  namespace: default
 spec:
-  description: "Custom DevOps skills for our team"
   category: custom
   version: "1.0.0"
-  instructions: |
-    # Custom DevOps Skills
-    
-    ## Role
-    You are a DevOps specialist focused on our infrastructure.
-    
-    ## Tools Available
-    - execute_command: Run shell commands in the sidecar
-    - read_file: Read configuration files
-    - write_file: Update configuration files
-    
-    ## Procedures
-    
-    ### Deployment Checklist
-    1. Check deployment status
-    2. Review recent logs
-    3. Verify health endpoints
-    4. Report any issues
-    
-    ### Rollback Procedure
-    1. Identify the failing deployment
-    2. Check revision history
-    3. Execute rollback with kubectl
-    4. Verify recovery
-    
-    ## Example Tasks
-    - "Deploy the new version of api-gateway"
-    - "Roll back payments-service to v2.1.0"
-    - "Scale the frontend to 5 replicas"
+  skills:
+    - name: devops-procedures
+      description: Custom DevOps skills for our team
+      content: |
+        # Custom DevOps Skills
+
+        ## Role
+        You are a DevOps specialist focused on our infrastructure.
+
+        ## Procedures
+
+        ### Deployment Checklist
+        1. Check deployment status
+        2. Review recent logs
+        3. Verify health endpoints
+        4. Report any issues
+
+        ### Rollback Procedure
+        1. Identify the failing deployment
+        2. Check revision history
+        3. Execute rollback with kubectl
+        4. Verify recovery
+
+        ## Example Tasks
+        - "Deploy the new version of api-gateway"
+        - "Roll back payments-service to v2.1.0"
+        - "Scale the frontend to 5 replicas"
+      requires:
+        tools:
+          - execute_command
+          - read_file
+          - write_file

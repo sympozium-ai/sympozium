@@ -168,7 +168,7 @@ This reduces the exposed tools from 42 to 12, saving ~9K tokens per agent run.
 
 ### Filtering on MCPServerRef (Per-Instance)
 
-You can also set `toolsAllow`/`toolsDeny` on individual `mcpServers` entries in a `Agent`. This lets different agents use different subsets of the same MCP server:
+You can also set `toolsAllow`/`toolsDeny` on individual `mcpServers` entries in an `Agent`. This lets different agents use different subsets of the same MCP server:
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -176,8 +176,12 @@ kind: Agent
 metadata:
   name: network-triage-agent
 spec:
+  agents:
+    default:
+      model: gpt-4o
   mcpServers:
     - name: k8s-networking-mcp
+      toolsPrefix: k8snet
       toolsAllow:
         - get_pods
         - get_services
@@ -185,6 +189,7 @@ spec:
         - get_pod_logs
         - diagnose_service
     - name: dynatrace-mcp
+      toolsPrefix: dynatrace
       toolsDeny:
         - delete_dashboard
         - update_settings
@@ -213,11 +218,17 @@ kind: Agent
 metadata:
   name: my-agent
 spec:
+  agents:
+    default:
+      model: gpt-4o
   # ... other config ...
   mcpServers:
     - name: dynatrace-mcp
+      toolsPrefix: dynatrace
     - name: k8s-networking-mcp
+      toolsPrefix: k8snet
     - name: otel-collector-mcp
+      toolsPrefix: otel
 ```
 
 The controller automatically resolves each name to the MCPServer's Service URL from `status.url`. No manual URL configuration needed.

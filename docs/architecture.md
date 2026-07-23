@@ -221,7 +221,7 @@ graph TB
     style RT stroke:#e94560,stroke-width:2px
 ```
 
-Agents in a Ensemble can delegate tasks to other personas using the `delegate_to_persona` tool. The tool **blocks** until the child completes: the SpawnRouter subscribes to spawn requests, creates child AgentRuns via the Spawner (resolving persona names and validating relationship edges), and delivers the child's result back to the parent through NATS. The parent's `DelegateStatus` tracks in-flight delegations.
+Agents in an Ensemble can delegate tasks to other personas using the `delegate_to_persona` tool. The tool **blocks** until the child completes: the SpawnRouter subscribes to spawn requests, creates child AgentRuns via the Spawner (resolving persona names and validating relationship edges), and delivers the child's result back to the parent through NATS. The parent's `DelegateStatus` tracks in-flight delegations.
 
 ## How It Works
 

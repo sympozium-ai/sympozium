@@ -281,7 +281,13 @@ metadata:
   namespace: sympozium
 spec:
   agentRef: bedrock-assistant
+  agentId: default
+  sessionKey: "test-bedrock-001"
   task: "Say hello in one sentence"
+  model:
+    provider: bedrock
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    authSecretRef: my-instance-bedrock-key
 EOF
 
 # 5. Check results

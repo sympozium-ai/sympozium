@@ -6,7 +6,7 @@ This guide explains how to create a SkillPack — from simple Markdown instructi
 
 ## Concepts
 
-A **SkillPack** is a Kubernetes CRD that bundles one or more skills. When toggled on a Agent, the skills are mounted into every AgentRun pod for that instance.
+A **SkillPack** is a Kubernetes CRD that bundles one or more skills. When toggled on an Agent, the skills are mounted into every AgentRun pod for that instance.
 
 There are three layers to a skill, each optional beyond the first:
 
@@ -367,7 +367,7 @@ Use this sparingly and prefer read-only mounts whenever possible.
 
 ### Via the TUI
 
-1. Press `s` on a Agent to drill into the Skills view.
+1. Press `s` on an Agent to drill into the Skills view.
 2. Use `Space` or `Enter` to toggle the skill on/off.
 3. The next AgentRun will include the sidecar and RBAC.
 

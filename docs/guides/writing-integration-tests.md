@@ -85,8 +85,8 @@ cleanup() {
     info "Cleaning up..."
     kubectl delete agentrun "$RUN_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
     kubectl delete agent "$INSTANCE_NAME" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
-    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agentrun=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete jobs -n "$NAMESPACE" -l "sympozium.ai/agent-run=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
+    kubectl delete pods -n "$NAMESPACE" -l "sympozium.ai/agent-run=$RUN_NAME" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 # Ensure secret exists
@@ -149,7 +149,7 @@ while [[ $elapsed -lt $TIMEOUT ]]; do
     # Capture pod name early, before cleanup removes it
     if [[ -z "$pod" ]]; then
         pod=$(kubectl get pods -n "$NAMESPACE" \
-            -l "sympozium.ai/agentrun=$RUN_NAME" \
+            -l "sympozium.ai/agent-run=$RUN_NAME" \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     fi
     [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
@@ -256,9 +256,9 @@ not after it completes. The Job/pod is cleaned up quickly after the agent finish
 |---|---|---|
 | API smoke | `test/integration/test-api-smoke.sh` | API-only CRUD/list/get coverage for Ensembles, ad-hoc Instances, Skills, Policies, and Schedules |
 | API Ensemble provider switch | `test/integration/test-api-ensemble-provider-switch.sh` | Verifies OpenAI→Anthropic Ensemble updates propagate to stamped instances and subsequent AgentRuns (provider/auth/model/skills) |
-| API Ensemble + ad-hoc correctness | `test/integration/test-api-ensemble-adhoc-correctness.sh` | Verifies Ensemble propagation (authRef/provider/model/skills), ad-hoc parity, and that disabling a Ensemble removes stamped instances |
+| API Ensemble + ad-hoc correctness | `test/integration/test-api-ensemble-adhoc-correctness.sh` | Verifies Ensemble propagation (authRef/provider/model/skills), ad-hoc parity, and that disabling an Ensemble removes stamped instances |
 | API AgentRun container shape | `test/integration/test-api-agentrun-container-shape.sh` | Validates container count/names for AgentRun pods from plain instances (agent+ipc-bridge) and skill-backed instances (agent+ipc-bridge+skill sidecar) |
-| API Ensemble provisioning | `test/integration/test-api-ensemble-provisioning.sh` | Enabling a Ensemble via API stamps out Ensemble-labeled Instances and Schedules |
+| API Ensemble provisioning | `test/integration/test-api-ensemble-provisioning.sh` | Enabling an Ensemble via API stamps out Ensemble-labeled Instances and Schedules |
 | API schedule dispatch | `test/integration/test-api-schedule-dispatch.sh` | Creating a schedule via API results in dispatched AgentRuns (`status.totalRuns` / `lastRunName`) |
 | API observability | `test/integration/test-api-observability.sh` | OTEL collector deployment health + `/api/v1/observability/metrics` correctness (`collectorReachable`, payload sanity) |
 | API web-endpoint | `test/integration/test-api-web-endpoint.sh` | Web-endpoint skill enable/disable via PATCH, status endpoint, parameter propagation, idempotency |

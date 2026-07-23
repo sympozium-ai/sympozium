@@ -3,33 +3,34 @@
 # Apply: kubectl apply -f agentrun-example.yaml
 # Watch progress: kubectl get agentrun alice-run-001 -w
 # View results: kubectl get agentrun alice-run-001 -o yaml
+# Prerequisites: Agent "alice" must exist (see agent-example.yaml) and the
+# secret "alice-openai-key" must contain OPENAI_API_KEY.
 apiVersion: sympozium.ai/v1alpha1
 kind: AgentRun
 metadata:
   name: alice-run-001
   namespace: default
 spec:
-  instanceRef: alice
-  agentID: primary
+  agentRef: alice
+  agentId: primary
   sessionKey: "session-abc123"
   task: "Review the latest pull request and provide feedback on code quality"
   model:
-    name: gpt-4o
     provider: openai
-    maxTokens: 128000
+    model: gpt-4o
+    authSecretRef: alice-openai-key
   sandbox:
     enabled: true
     image: ghcr.io/sympozium-ai/sympozium/sandbox:latest
   skills:
-    - code-review
+    - skillPackRef: code-review
   toolPolicy:
-    allowed:
+    allow:
       - read_file
-      - grep_search
-      - list_dir
-    denied:
-      - exec_command
-    requireApproval:
+      - list_directory
+      - fetch_url
+    deny:
+      - execute_command
       - write_file
   timeout: "10m"
-  cleanup: OnFailure
+  cleanup: keep  # keep the pod for debugging; use "delete" (default) to clean up

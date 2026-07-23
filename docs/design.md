@@ -114,7 +114,7 @@ Sympozium takes the best of both:
 
 ### 3.1 `Agent` — per-user/per-tenant gateway
 
-Replaces the monolithic gateway. Each user or tenant gets a `Agent` that
+Replaces the monolithic gateway. Each user or tenant gets an `Agent` that
 declares their desired channels, agents, and policy bindings.
 
 ```yaml
@@ -453,7 +453,7 @@ Ensemble CRD bundles multiple agent personas — each with a system prompt,
 skills, tool policy, schedule, and memory seeds — into a one-click installable
 package. Think of them as **Helm Charts for AI agents**.
 
-When a Ensemble is activated (via the TUI wizard or kubectl), the controller
+When an Ensemble is activated (via the TUI wizard or kubectl), the controller
 stamps out all the underlying resources automatically:
 
 ```
@@ -494,8 +494,8 @@ spec:
   category: platform
   version: "1.0.0"
 
-  # Personas — each becomes a Agent + Schedule
-  personas:
+  # Personas — each becomes an Agent + Schedule
+  agentConfigs:
     - name: security-guardian
       displayName: "Security Guardian"
       systemPrompt: |
@@ -514,6 +514,8 @@ spec:
         seeds:
           - "Follow CIS Kubernetes Benchmark v1.8 guidelines"
     - name: sre-watchdog
+      systemPrompt: |
+        You are an SRE watchdog...
       # ... additional personas
 
   # Shared auth — patched by the TUI wizard during activation

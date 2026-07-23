@@ -155,7 +155,7 @@ type SkillRef struct {
 }
 ```
 
-### 4.2 On a Agent
+### 4.2 On an Agent
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -163,6 +163,9 @@ kind: Agent
 metadata:
   name: platform-agent
 spec:
+  agents:
+    default:
+      model: gpt-4o
   skills:
     - skillPackRef: github-gitops
       params:
@@ -1002,11 +1005,12 @@ metadata:
   name: gitops-watcher
   namespace: default
 spec:
-  provider: openai
-  model: gpt-4o
-  apiKeyRef:
-    secretName: openai-secret
-    key: OPENAI_API_KEY
+  agents:
+    default:
+      model: gpt-4o
+  authRefs:
+    - provider: openai
+      secret: openai-secret
   skills:
     - skillPackRef: k8s-ops
     - skillPackRef: github-gitops

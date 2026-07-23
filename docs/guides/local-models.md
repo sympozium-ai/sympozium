@@ -133,7 +133,7 @@ metadata:
   name: my-local-team
 spec:
   modelRef: qwen3-8b-q4    # all personas use this model
-  personas:
+  agentConfigs:
     - name: researcher
       systemPrompt: "You are a research assistant..."
     - name: writer

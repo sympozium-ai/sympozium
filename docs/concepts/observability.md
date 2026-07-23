@@ -12,6 +12,9 @@ kind: Agent
 metadata:
   name: my-agent
 spec:
+  agents:
+    default:
+      model: gpt-4o
   observability:
     enabled: true
     otlpEndpoint: sympozium-otel-collector.sympozium-system.svc:4317

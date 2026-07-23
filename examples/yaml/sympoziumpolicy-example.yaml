@@ -1,35 +1,28 @@
 ---
 # Example SympoziumPolicy - Define tool access rules for agents
 # Apply: kubectl apply -f sympoziumpolicy-example.yaml
-# Use in SympoziumInstance: policyRef: restrictive-policy
+# Use in an Agent: policyRef: restrictive-policy
 apiVersion: sympozium.ai/v1alpha1
 kind: SympoziumPolicy
 metadata:
   name: restrictive-policy
+  namespace: default
 spec:
-  description: "Restrictive policy for security-focused agents"
-  rules:
-    - name: default-deny
-      action: deny
-      description: "Deny all tools by default"
-    - name: allow-read-only
-      action: allow
-      tools:
-        - read_file
-        - list_directory
-        - fetch_url
-      description: "Allow read-only operations"
-    - name: require-approval-for-write
-      action: approve
-      tools:
-        - write_file
-        - execute_command
-      description: "Require manual approval for destructive operations"
-    - name: allow-grep
-      action: allow
-      tools:
-        - grep_search
-      description: "Allow search operations"
-  sandbox:
-    enabled: true
-    image: ghcr.io/sympozium-ai/sympozium/sandbox:latest
+  toolGating:
+    defaultAction: deny
+    rules:
+      # Allow read-only operations
+      - tool: read_file
+        action: allow
+      - tool: list_directory
+        action: allow
+      - tool: fetch_url
+        action: allow
+      # Require manual approval for destructive operations
+      - tool: write_file
+        action: ask
+      - tool: execute_command
+        action: ask
+  sandboxPolicy:
+    required: true
+    defaultImage: ghcr.io/sympozium-ai/sympozium/sandbox:latest

@@ -1,6 +1,6 @@
 # Writing Ensembles
 
-A Ensemble bundles multiple agent personas into a single CRD. When activated,
+An Ensemble bundles multiple agent personas into a single CRD. When activated,
 the Ensemble controller stamps out all the Kubernetes resources — Agents,
 SympoziumSchedules, and memory seeds — automatically.
 
@@ -16,7 +16,7 @@ This guide walks through creating a custom Ensemble from scratch.
 
 ---
 
-## Anatomy of a Ensemble
+## Anatomy of an Ensemble
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -27,9 +27,10 @@ spec:
   description: "My custom agent team"
   category: custom
   version: "1.0.0"
-  personas:
+  agentConfigs:
     - name: my-agent
-      # ... persona spec
+      systemPrompt: "You are a helpful assistant."
+      # ... more persona fields (see below)
 ```
 
 ### Top-level fields
@@ -43,7 +44,7 @@ spec:
 | `baseURL` | No | Override provider API endpoint (for Ollama, LM Studio, etc.) |
 | `modelRef` | No | Reference a [cluster-local Model](./local-models.md) — all personas use this model, no API key needed |
 | `sharedMemory` | No | Shared memory pool for cross-persona knowledge sharing (see Step 5) |
-| `personas` | Yes | List of agent personas (see below) |
+| `agentConfigs` | Yes | List of agent personas (see below) |
 
 ### Persona fields
 
@@ -76,7 +77,7 @@ spec:
   description: "Data engineering agents for pipeline monitoring"
   category: data
   version: "1.0.0"
-  personas:
+  agentConfigs:
     - name: pipeline-monitor
       displayName: "Pipeline Monitor"
       systemPrompt: |
@@ -217,9 +218,9 @@ spec:
     enabled: true
     storageSize: "1Gi"
     accessRules:
-      - persona: pipeline-monitor
+      - agentConfig: pipeline-monitor
         access: read-write
-      - persona: schema-auditor
+      - agentConfig: schema-auditor
         access: read-only
 ```
 
@@ -326,7 +327,7 @@ spec:
   category: data
   version: "1.0.0"
   policyRef: default-policy
-  personas:
+  agentConfigs:
     - name: pipeline-monitor
       displayName: "Pipeline Monitor"
       systemPrompt: |
@@ -434,7 +435,7 @@ kubectl get sympoziumschedule -l sympozium.ai/ensemble=data-team
 
 ## What the controller creates
 
-When a Ensemble is activated, the controller stamps out resources for each
+When an Ensemble is activated, the controller stamps out resources for each
 persona:
 
 ```

@@ -33,6 +33,7 @@ spec:
     provider: ollama
     model: qwen3.5
     baseURL: http://localhost:11434/v1
+    authSecretRef: ollama-key
   env:
     MAX_TOOL_ITERATIONS: "50"  # Max LLM rounds (each round may invoke multiple tools)
 ```

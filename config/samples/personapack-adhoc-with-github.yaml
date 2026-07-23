@@ -1,7 +1,7 @@
 ---
-# Example: Ad-hoc SympoziumInstance with github-gitops skill.
+# Example: Ad-hoc Agent with github-gitops skill.
 #
-# This creates a single agent instance (not a Ensemble) that has
+# This creates a single Agent (not an Ensemble) that has
 # the github-gitops skill configured with a target repository.
 # Useful for quick one-off agents or testing.
 #
@@ -17,7 +17,7 @@
 #   4. Apply:  kubectl apply -f ensemble-adhoc-with-github.yaml
 #
 apiVersion: sympozium.ai/v1alpha1
-kind: SympoziumInstance
+kind: Agent
 metadata:
   name: my-github-agent
   namespace: default
@@ -39,7 +39,7 @@ spec:
     maxSizeKB: 256
   policyRef: default-policy
 ---
-# Heartbeat schedule that references the instance above.
+# Heartbeat schedule that references the Agent above.
 # The task includes a team objective so the agent knows what to work on.
 apiVersion: sympozium.ai/v1alpha1
 kind: SympoziumSchedule
@@ -47,7 +47,7 @@ metadata:
   name: my-github-agent-heartbeat
   namespace: default
 spec:
-  instanceRef: my-github-agent
+  agentRef: my-github-agent
   schedule: "0 * * * *"
   task: |
     OBJECTIVE: Review open PRs and triage new issues in the repository.

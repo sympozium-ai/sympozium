@@ -17,7 +17,7 @@ Sympozium is a **Kubernetes-native agent orchestration platform** written in Go.
 ## Repository Layout
 
 ```
-api/v1alpha1/           # CRD type definitions (Agent, AgentRun, SympoziumPolicy, SkillPack, SympoziumSchedule, Ensemble)
+api/v1alpha1/           # CRD type definitions (Agent, AgentRun, SympoziumPolicy, SkillPack, SympoziumSchedule, Ensemble, Model, MCPServer, SympoziumConfig)
 cmd/
   agent-runner/         # Agent container — LLM loop + tool execution
   apiserver/            # HTTP + WebSocket API server
@@ -69,6 +69,9 @@ docs/                   # Design & contributor documentation
 | `SkillPack` | Bundled skills (Markdown instructions) + optional sidecar container + RBAC |
 | `SympoziumSchedule` | Cron-based recurring AgentRun creation (heartbeat, scheduled, sweep) |
 | `Ensemble` | Pre-configured agent bundles — stamps out Agents, Schedules, and memory automatically |
+| `Model` | Cluster-local inference — GGUF/HuggingFace source, llama-cpp/vllm/tgi backend, OpenAI-compatible endpoint |
+| `MCPServer` | Managed MCP server lifecycle — stdio or HTTP transport, tool discovery, allow/deny filtering |
+| `SympoziumConfig` | Platform-wide singleton — gateway, canary, and pricing settings |
 
 Type definitions live in `api/v1alpha1/`. After modifying types, regenerate with:
 
@@ -183,7 +186,7 @@ TEST_MODEL=gpt-5.2 TEST_TIMEOUT=180 ./test/integration/test-write-file.sh
 
 See `docs/writing-integration-tests.md` for the full guide and template. Tests follow this pattern:
 
-1. Create a `Agent` + `AgentRun` with a deterministic task
+1. Create an `Agent` + `AgentRun` with a deterministic task
 2. Poll `status.phase` until `Succeeded` or `Failed`
 3. Validate results (pod logs, status, filesystem)
 4. Clean up all test resources
@@ -236,7 +239,7 @@ Each Agent has a ConfigMap (`<name>-memory`) mounted at `/memory/MEMORY.md`. The
 
 ### Skills
 
-SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on a Agent, skills are mounted at `/skills/` and sidecars are injected into agent pods. See `docs/writing-skills.md`.
+SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on an Agent, skills are mounted at `/skills/` and sidecars are injected into agent pods. See `docs/writing-skills.md`.
 
 ---
 
@@ -270,7 +273,7 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 1. Create `channels/<name>/main.go`
 2. Create `images/channel-<name>/Dockerfile`
 3. Add to `CHANNELS` list in `Makefile`
-4. The controller's `buildChannelDeployment` in `internal/controller/sympoziuminstance_controller.go` handles deployment
+4. The controller's `buildChannelDeployment` in `internal/controller/agent_controller.go` handles deployment
 
 ### Modifying a CRD
 1. Edit type in `api/v1alpha1/<name>_types.go`
@@ -278,11 +281,11 @@ SkillPacks are CRDs containing Markdown instructions + optional sidecar definiti
 3. Run `make install` to apply updated CRDs to cluster
 4. Update the reconciler in `internal/controller/`
 
-### Adding a Ensemble
+### Adding an Ensemble
 1. Create a YAML file in `config/personas/<name>.yaml`
 2. Define personas with system prompts, skills, schedules, and memory seeds
 3. Apply: `kubectl apply -f config/personas/<name>.yaml`
-4. Activate via the TUI Personas tab or by patching `spec.authRefs` with kubectl
+4. Activate via the TUI Ensembles tab or by patching `spec.authRefs` with kubectl
 
 ### Rebuilding after changes
 ```bash

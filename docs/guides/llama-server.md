@@ -88,7 +88,7 @@ target covers llama-server since they share the same endpoints (`/health` and
 
 ---
 
-## Creating a Agent
+## Creating an Agent
 
 llama-server does not require an API key, but the `authRefs` field is mandatory —
 create a Secret with a placeholder value.
@@ -127,6 +127,8 @@ metadata:
   name: llama-server-test
 spec:
   agentRef: llama-server-agent
+  agentId: default
+  sessionKey: "llama-server-test-001"
   task: "List all pods across every namespace and summarise their status."
   model:
     provider: llama-server
@@ -134,7 +136,7 @@ spec:
     baseURL: "http://172.18.0.1:8080/v1"
     authSecretRef: llama-server-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 
@@ -188,7 +190,7 @@ spec:
   authRefs:
     - provider: llama-server
       secret: llama-server-key
-  personas:
+  agentConfigs:
     - name: assistant
       displayName: "Local Assistant"
       systemPrompt: |

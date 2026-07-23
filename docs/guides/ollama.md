@@ -91,9 +91,9 @@ For example: `http://172.18.0.1:11434/v1`
 
 ---
 
-## Creating a Agent
+## Creating an Agent
 
-Create a Agent that points at your Ollama server. Ollama does not
+Create an Agent that points at your Ollama server. Ollama does not
 require an API key, but the `authRefs` field is mandatory -- create a Secret
 with a placeholder value.
 
@@ -137,6 +137,8 @@ metadata:
   name: ollama-test
 spec:
   agentRef: ollama-agent
+  agentId: default
+  sessionKey: "ollama-test-001"
   task: "List all pods across every namespace and summarise their status."
   model:
     provider: ollama
@@ -144,7 +146,7 @@ spec:
     baseURL: "http://172.18.0.1:11434/v1"
     authSecretRef: ollama-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 

@@ -9,8 +9,10 @@ Sympozium models every agentic concept as a Kubernetes Custom Resource:
 | `SympoziumPolicy` | NetworkPolicy | Feature and tool gating — what an agent can and cannot do |
 | `SkillPack` | ConfigMap | Portable skill bundles — kubectl, Helm, or custom tools — mounted into agent pods as files, with optional sidecar containers for cluster ops |
 | `SympoziumSchedule` | CronJob | Recurring tasks — heartbeats, sweeps, scheduled runs with cron expressions |
-| `Ensemble` | Helm Chart / Operator Bundle | Pre-configured agent bundles — activating a pack stamps out instances, schedules, and memory for each persona |
-| `Model` | Deployment + Service | [Cluster-local inference](../guides/local-models.md) — declares a GGUF model, controller deploys llama-server and exposes an OpenAI-compatible endpoint |
+| `Ensemble` | Helm Chart / Operator Bundle | Pre-configured agent bundles — activating a pack stamps out Agents, Schedules, and memory for each persona |
+| `Model` | Deployment + Service | [Cluster-local inference](../guides/local-models.md) — declares a model (GGUF or HuggingFace), controller deploys an inference server (llama.cpp, vLLM, or TGI) and exposes an OpenAI-compatible endpoint |
+| `MCPServer` | Deployment + Service | Managed [Model Context Protocol](../mcp-servers.md) server — external tool providers with auto-discovery and allow/deny filtering |
+| `SympoziumConfig` | Cluster configuration | Platform-wide singleton — gateway, canary, and pricing settings |
 
 ---
 
@@ -53,12 +55,15 @@ metadata:
   name: quick-check
 spec:
   agentRef: my-agent
+  agentId: default
+  sessionKey: "quick-check-001"
   task: "How many nodes are in the cluster?"
   model:
-    name: gpt-4o
     provider: openai
+    model: gpt-4o
+    authSecretRef: my-openai-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 

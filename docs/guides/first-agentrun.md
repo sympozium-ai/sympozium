@@ -43,9 +43,9 @@ kubectl create secret generic local-key \
 
 ---
 
-## Step 2: Create a Agent
+## Step 2: Create an Agent
 
-A Agent is the per-user/per-tenant configuration that declares
+An Agent is the per-user/per-tenant configuration that declares
 which model to use, which skills to mount, and which policy to follow.
 
 Save this as `instance.yaml`:
@@ -114,7 +114,7 @@ spec:
     model: gpt-4o
     authSecretRef: my-openai-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 
@@ -220,6 +220,8 @@ kubectl delete agentrun my-first-run
 ```yaml
 spec:
   agentRef: my-first-agent
+  agentId: primary
+  sessionKey: "session-002"
   task: "Check cluster health."
   model:
     provider: anthropic
@@ -227,7 +229,7 @@ spec:
     authSecretRef: my-anthropic-key
     thinking: medium
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "5m"
 ```
 
@@ -236,6 +238,8 @@ spec:
 ```yaml
 spec:
   agentRef: my-first-agent
+  agentId: primary
+  sessionKey: "session-003"
   task: "Analyse the deployment manifests in /workspace."
   model:
     provider: openai
@@ -252,13 +256,15 @@ spec:
 ```yaml
 spec:
   agentRef: my-first-agent
+  agentId: primary
+  sessionKey: "session-004"
   task: "Debug the failing cronjob."
   model:
     provider: openai
     model: gpt-4o
     authSecretRef: my-openai-key
   skills:
-    - k8s-ops
+    - skillPackRef: k8s-ops
   timeout: "10m"
   cleanup: keep
 ```
@@ -266,7 +272,7 @@ spec:
 ### Run without a schedule (one-off)
 
 Every AgentRun is one-off by default. If you want recurring runs, create a
-SympoziumSchedule or use a Ensemble with a schedule — see
+SympoziumSchedule or use an Ensemble with a schedule — see
 [Writing Ensembles](./writing-ensembles.md).
 
 ---

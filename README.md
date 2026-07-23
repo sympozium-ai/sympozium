@@ -65,7 +65,7 @@ Then deploy to your cluster and activate your first agents:
 
 ```bash
 sympozium install          # deploys CRDs, controllers, and built-in Ensembles
-sympozium                  # launch the TUI — go to Personas tab, press Enter to onboard
+sympozium                  # launch the TUI — go to Ensembles tab, press Enter to onboard
 sympozium serve            # open the web dashboard (port-forwards to the in-cluster UI)
 ```
 
@@ -113,13 +113,13 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 | **Synthetic Membrane** | Selective permeability for agent teams &mdash; control what agents share via trust groups, visibility tags, and field-level gating. [Read the paper](https://zenodo.org/records/20070699) |
 | **Agent Workflows** | Delegation, sequential pipelines, supervision, and stimulus triggers between personas &mdash; visualised on an interactive canvas |
 | **Shared Workflow Memory** | Pack-level SQLite memory pool for cross-persona knowledge sharing with per-persona access control and time decay |
-| **Ensembles** | Helm-like bundles for AI agent teams &mdash; activate a pack and the controller stamps out instances, schedules, and memory |
+| **Ensembles** | Helm-like bundles for AI agent teams &mdash; activate a pack and the controller stamps out Agents, Schedules, and memory |
 
 ### Platform Infrastructure
 
 | | |
 |---|---|
-| **Model Endpoints for Agents** | Declare GGUF models as CRDs &mdash; weights are downloaded, llama-server deployed, and OpenAI-compatible endpoints exposed for your personas. No API keys required. Placement is *claimed*, not decided here: with [llmfit-dra](https://github.com/sympozium-ai/llmfit-dra) installed, the stock scheduler places models by physics |
+| **Model Endpoints for Agents** | Declare models as CRDs &mdash; GGUF or HuggingFace weights are downloaded, an inference server (llama.cpp, vLLM, TGI, or custom) is deployed, and OpenAI-compatible endpoints are exposed for your personas. No API keys required. Placement is *claimed*, not decided here: with [llmfit-dra](https://github.com/sympozium-ai/llmfit-dra) installed, the stock scheduler places models by physics |
 | **Skill Sidecars** | Every skill runs in its own sidecar with ephemeral least-privilege RBAC, garbage-collected on completion |
 | **Multi-Channel** | Telegram, Slack, Discord, WhatsApp &mdash; each channel is a dedicated Deployment backed by NATS JetStream |
 | **Persistent Memory** | SQLite + FTS5 on a PersistentVolume &mdash; memories survive across ephemeral pod runs |
@@ -127,7 +127,10 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 | **Agent Sandbox** | Kernel-level isolation via [kubernetes-sigs/agent-sandbox](https://deploy.sympozium.ai/docs/concepts/agent-sandbox/) &mdash; gVisor or Kata with warm pools for instant starts |
 | **MCP Servers** | External tool providers via Model Context Protocol with auto-discovery and allow/deny filtering |
 | **TUI & Web UI** | Terminal and browser dashboards with live workflow canvas, or skip the UI entirely with Helm and kubectl |
-| **Any AI Provider** | OpenAI, Anthropic, Azure, Ollama, or any compatible endpoint &mdash; no vendor lock-in |
+| **Policy & Governance** | Cluster-wide `SympoziumPolicy` CRD &mdash; tool gating (allow/deny/ask), sandbox requirements, network egress rules, and image-registry allowlists, enforced by an admission webhook |
+| **Serving Mode** | Run an agent as a long-lived, OpenAI-compatible + MCP HTTP endpoint instead of a one-shot Job &mdash; agents as services |
+| **Observability & Cost** | OpenTelemetry traces and metrics, Prometheus endpoints, per-run trace IDs, and token usage with estimated cost on every AgentRun |
+| **Any AI Provider** | OpenAI, Anthropic, AWS Bedrock, Azure, Ollama, or any OpenAI-compatible endpoint (Groq, Mistral, DeepSeek, OpenRouter, vLLM, LM Studio, &hellip;) &mdash; no vendor lock-in |
 
 ---
 
