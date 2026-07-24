@@ -115,16 +115,18 @@ write_token_bytes() {
 }
 
 # wait_for_token waits for kubelet to project the new token bytes to the
-# apiserver pod. We can't read the file directly because the distroless
-# image has no shell, so we wait a short, fixed interval. The apiserver
-# re-reads the file on every request, so a few extra seconds is fine.
+# apiserver pod, then for the apiserver to accept the new token. We can't
+# read the file directly because the distroless image has no shell, so we
+# poll the apiserver's /api/v1/runs endpoint with the new bearer token and
+# break early once it returns anything other than 401.
 #
-# Args: $1 = expected token (plaintext, only used for logging)
+# Args: $1 = expected token (plaintext)
 wait_for_token() {
   local expected="$1"
   # On the velatir-agents-dev cluster the projected Secret volume
   # propagation latency has been observed at 60-90s (much higher than the
-  # upstream 1-2s default). We use a 120s budget to keep the test stable.
+  # upstream 1-2s default). We use a 120s budget to keep the test stable;
+  # the early-break on a 200/400 response keeps the common case fast.
   local timeout=120 elapsed=0
   apiserver_pod_name="$(kubectl get pod -n "${APISERVER_NAMESPACE}" \
     -l app.kubernetes.io/component=apiserver \
@@ -142,12 +144,17 @@ wait_for_token() {
     fail "Secret data does not match expected token (got length ${#decoded}, want length ${#expected})"
     return 1
   fi
-  info "Waiting up to ${timeout}s for kubelet to project the new file..."
+  info "Waiting up to ${timeout}s for kubelet to project + apiserver to accept the new token..."
   while [[ "$elapsed" -lt "$timeout" ]]; do
+    local code
+    code="$(request_health "$expected")"
+    if [[ "$code" != "401" ]]; then
+      return 0
+    fi
     sleep 2
     elapsed=$((elapsed + 2))
   done
-  return 0
+  return 1
 }
 
 # apiserver_pod_start returns the StartTime of the apiserver pod.
@@ -194,14 +201,10 @@ rotate_and_assert() {
   info "Round ${round}: writing new token to Secret"
   write_token_bytes "$new_token"
   if ! wait_for_token "$new_token"; then
-    fail "Round ${round}: projected file did not update within 10s"
+    fail "Round ${round}: apiserver did not accept the new token within 120s"
     return 1
   fi
   pass "Round ${round}: projected file updated to new token"
-
-  # Sleep a small margin to ensure the apiserver's per-request stat has
-  # had a chance to run.
-  sleep 2
 
   # 5. New token must authorize.
   local code
