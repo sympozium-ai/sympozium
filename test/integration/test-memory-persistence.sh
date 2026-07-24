@@ -53,7 +53,23 @@ trap cleanup EXIT
 
 resolve_apiserver_token() {
   [[ -n "$APISERVER_TOKEN" ]] && return 0
-  local secret_name
+  local token secret_name
+
+  # 1. Volume-mounted Secret (production chart).
+  secret_name="$(kubectl get deploy -n "$SYSTEM_NS" sympozium-apiserver \
+    -o jsonpath='{.spec.template.spec.volumes[?(@.name=="sympozium-ui-token")].secret.secretName}' 2>/dev/null || true)"
+  if [[ -n "$secret_name" ]]; then
+    APISERVER_TOKEN="$(kubectl get secret -n "$SYSTEM_NS" "$secret_name" \
+      -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+    [[ -n "$APISERVER_TOKEN" ]] && return 0
+  fi
+
+  # 2. Literal env value (dev mode with apiserver.webUI.token pinned).
+  APISERVER_TOKEN="$(kubectl get deploy -n "$SYSTEM_NS" sympozium-apiserver \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].value}' 2>/dev/null || true)"
+  [[ -n "$APISERVER_TOKEN" ]] && return 0
+
+  # 3. Legacy env.valueFrom.secretKeyRef.
   secret_name="$(kubectl get deploy -n "$SYSTEM_NS" sympozium-apiserver \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].valueFrom.secretKeyRef.name}' 2>/dev/null || true)"
   if [[ -n "$secret_name" ]]; then
