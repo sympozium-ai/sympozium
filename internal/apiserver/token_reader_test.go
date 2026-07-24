@@ -103,15 +103,42 @@ func TestTokenReader_SameMtimeSkipsReread(t *testing.T) {
 		t.Fatalf("first Current() = %q, want %q", got, "token-a")
 	}
 
-	// The reader caches by mtime only — subsequent Current() calls without
-	// a file change should not re-stat the file. We assert that by reading
-	// many times and verifying the cached value remains stable (any read
-	// failure would return "" or the stale value, both of which are
-	// observable here).
+	// The reader re-reads on every call, so subsequent reads without a
+	// file change must still return the same value (any read failure
+	// would return "" or the stale value, both observable here).
 	for i := 0; i < 1000; i++ {
 		if got := r.Current(); got != "token-a" {
 			t.Fatalf("iteration %d: Current() = %q, want %q", i, got, "token-a")
 		}
+	}
+}
+
+// TestTokenReader_RotationWithSameMtime exercises the regression that
+// motivated dropping the mtime cache: kubelet does not always bump the
+// projected file's mtime on a rapid Secret patch. If the apiserver
+// served the stale token in that window, the auth middleware would 401
+// requests with the new token. We simulate the kubelet behaviour by
+// rewriting the file with a new value but keeping the same mtime.
+func TestTokenReader_RotationWithSameMtime(t *testing.T) {
+	cf := newCounterFile(t, "token-a")
+	r := &tokenReader{path: cf.path}
+
+	if got := r.Current(); got != "token-a" {
+		t.Fatalf("first Current() = %q, want %q", got, "token-a")
+	}
+
+	// Rewrite with a new value but preserve the existing mtime. This
+	// mirrors the kubelet projection race that the previous mtime-cached
+	// implementation was vulnerable to.
+	if err := os.Chtimes(cf.path, time.Now(), time.Unix(0, 0)); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if err := os.WriteFile(cf.path, []byte("token-b"), 0o600); err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+
+	if got := r.Current(); got != "token-b" {
+		t.Fatalf("Current() after same-mtime rotation = %q, want %q", got, "token-b")
 	}
 }
 

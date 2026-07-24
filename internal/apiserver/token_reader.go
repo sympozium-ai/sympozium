@@ -18,11 +18,12 @@ import (
 //
 // The cost of a re-read is one open(2) + read(2) per request (a few µs),
 // which is negligible against the auth middleware's constant-time compare.
-// A previous mtime-based cache was tried and dropped because kubelet does
-// not always bump the projected file's mtime on rapid Secret patches (see
-// https://github.com/kubernetes/kubernetes/issues/59845 for the related
-// projection-throttling behavior); the mtime-skip optimisation is unsafe
-// in this environment.
+// We intentionally do not cache by file mtime: kubelet does not always
+// bump the projected file's mtime on rapid Secret patches
+// (https://github.com/kubernetes/kubernetes/issues/59845), so an mtime
+// cache could serve a stale token for the duration of the mtime-drift
+// window. The simple "always re-read" policy is correct under all
+// observed kubelet behaviors.
 type tokenReader struct {
 	path string
 
@@ -78,16 +79,6 @@ func (r *tokenReader) Current() string {
 			return r.now
 		}
 		return ""
-	}
-	// Fast-path: if the file mtime is the same as the cache, return the
-	// cached value without re-reading. The mtime check is best-effort —
-	// kubelet sometimes returns the same mtime for a rapid rotation — so
-	// callers must not assume the cache is authoritative across rotations.
-	// We refresh on every call regardless, but skip the ReadFile syscall
-	// when the mtime has not changed.
-	info, err := os.Stat(r.path)
-	if err == nil && info.ModTime().Equal(r.mtime) && r.hasValue {
-		return r.now
 	}
 	r.refresh()
 	if r.hasValue {

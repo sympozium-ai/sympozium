@@ -17,6 +17,9 @@
 set -euo pipefail
 
 APISERVER_NAMESPACE="${SYMPOZIUM_NAMESPACE:-sympozium-system}"
+# shellcheck source=lib/resolve-token.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/resolve-token.sh"
+
 APISERVER_URL="${APISERVER_URL:-http://127.0.0.1:19090}"
 PORT_FORWARD_LOCAL_PORT="${APISERVER_PORT:-19090}"
 SKIP_PORT_FORWARD="${SKIP_PORT_FORWARD:-0}"

@@ -9,6 +9,9 @@ set -euo pipefail
 
 NAMESPACE="${TEST_NAMESPACE:-default}"
 APISERVER_NAMESPACE="${SYMPOZIUM_NAMESPACE:-sympozium-system}"
+# shellcheck source=lib/resolve-token.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/resolve-token.sh"
+
 APISERVER_URL="${APISERVER_URL:-http://127.0.0.1:19090}"
 PORT_FORWARD_LOCAL_PORT="${APISERVER_PORT:-19090}"
 SKIP_PORT_FORWARD="${SKIP_PORT_FORWARD:-0}"
@@ -129,56 +132,6 @@ api_request() {
   printf "%s" "$resp"
 }
 
-resolve_apiserver_token() {
-  if [[ -n "${APISERVER_TOKEN}" ]]; then
-    return 0
-  fi
-
-  local token
-
-  # 1. Literal env value — set when apiserver.webUI.token is pinned in values.
-  token="$(kubectl get deploy -n "${APISERVER_NAMESPACE}" sympozium-apiserver \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].value}' 2>/dev/null || true)"
-  if [[ -n "$token" ]]; then
-    APISERVER_TOKEN="$token"
-    return 0
-  fi
-
-  # 2. Volume-mounted Secret — production chart with no webUI.token. The
-  #    apiserver hot-reloads by re-reading this file on every request, so
-  #    a Secret rotation propagates without a pod restart.
-  local secret_name
-  secret_name="$(kubectl get deploy -n "${APISERVER_NAMESPACE}" sympozium-apiserver \
-    -o jsonpath='{.spec.template.spec.volumes[?(@.name=="sympozium-ui-token")].secret.secretName}' 2>/dev/null || true)"
-  if [[ -n "$secret_name" ]]; then
-    token="$(kubectl get secret -n "${APISERVER_NAMESPACE}" "$secret_name" \
-      -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || true)"
-    if [[ -n "$token" ]]; then
-      APISERVER_TOKEN="$token"
-      return 0
-    fi
-  fi
-
-  # 3. Legacy chart (env.valueFrom.secretKeyRef) — kept for deployments
-  #    that have not yet been upgraded to the volume mount.
-  local legacy_secret_name legacy_secret_key
-  legacy_secret_name="$(kubectl get deploy -n "${APISERVER_NAMESPACE}" sympozium-apiserver \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].valueFrom.secretKeyRef.name}' 2>/dev/null || true)"
-  legacy_secret_key="$(kubectl get deploy -n "${APISERVER_NAMESPACE}" sympozium-apiserver \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYMPOZIUM_UI_TOKEN")].valueFrom.secretKeyRef.key}' 2>/dev/null || true)"
-  if [[ -z "$legacy_secret_key" ]]; then legacy_secret_key="token"; fi
-  if [[ -n "$legacy_secret_name" ]]; then
-    token="$(kubectl get secret -n "${APISERVER_NAMESPACE}" "$legacy_secret_name" \
-      -o jsonpath="{.data.${legacy_secret_key}}" 2>/dev/null | base64 -d 2>/dev/null || true)"
-    if [[ -n "$token" ]]; then
-      APISERVER_TOKEN="$token"
-      return 0
-    fi
-  fi
-
-  # Token may be disabled in some local setups.
-  APISERVER_TOKEN=""
-}
 
 start_port_forward_if_needed() {
   if [[ "${SKIP_PORT_FORWARD}" == "1" ]]; then return 0; fi

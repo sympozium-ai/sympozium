@@ -129,6 +129,15 @@ func main() {
 		log.Info("llmfit density poller enabled for API server")
 	}
 
+	// Build the token reader. Prefer the file (production path: Secret
+	// volume mount); fall back to --token / SYMPOZIUM_UI_TOKEN for dev
+	// setups that don't deploy the Secret. Hoisted above the serveUI
+	// branch so the same reader is used in both modes.
+	expected := apiserver.NewTokenReader(tokenFile, log.WithName("token-reader"))
+	if expected.Current() == "" {
+		expected.Seed(token)
+	}
+
 	if serveUI {
 		// Extract the "dist" subdirectory from the embedded FS.
 		frontendFS, fsErr := fs.Sub(webui.Dist, "dist")
@@ -136,23 +145,12 @@ func main() {
 			log.Error(fsErr, "failed to load embedded frontend")
 			os.Exit(1)
 		}
-		// Build the token reader. Prefer the file (production path: Secret
-		// volume mount); fall back to --token / SYMPOZIUM_UI_TOKEN for dev
-		// setups that don't deploy the Secret.
-		expected := apiserver.NewTokenReader(tokenFile, log.WithName("token-reader"))
-		if expected.Current() == "" {
-			expected.Seed(token)
-		}
 		log.Info("Serving web UI", "addr", addr, "auth", expected.Current() != "")
 		if err := server.StartWithUI(addr, expected, frontendFS); err != nil {
 			log.Error(err, "api server failed")
 			os.Exit(1)
 		}
 	} else {
-		expected := apiserver.NewTokenReader(tokenFile, log.WithName("token-reader"))
-		if expected.Current() == "" {
-			expected.Seed(token)
-		}
 		if err := server.Start(addr, expected); err != nil {
 			log.Error(err, "api server failed")
 			os.Exit(1)
