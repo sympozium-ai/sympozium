@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.47](https://github.com/sympozium-ai/sympozium/compare/v0.10.46...v0.10.47) (2026-08-07)
+
+
+### Features
+
+* opt out for automatic memories ([8b74fa0](https://github.com/sympozium-ai/sympozium/commit/8b74fa0ab9115b308d4d5fc63ca4fd6bb0467f30))
+
 ## [0.10.46](https://github.com/sympozium-ai/sympozium/compare/v0.10.45...v0.10.46) (2026-08-06)
 
 
