@@ -33,7 +33,6 @@
 </p>
 <p align="center">
   <b>The harness stays. The task cell goes.</b><br>
-  <a href="https://sympozium.ai/video/sympozium-harness-tasks.mp4">Watch the full-quality video</a> ·
   <a href="https://github.com/sympozium-ai/sympozium/discussions/472">Native cells release</a><br>
   <sub>Native Celln path: one active task at a time; live context does not survive a host crash.</sub>
 </p>
