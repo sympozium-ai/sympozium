@@ -3,16 +3,19 @@
 // ── Common K8s types ─────────────────────────────────────────────────────────
 
 export interface ObjectMeta {
+  generation?: number;
   uid?: string;
   name: string;
   namespace?: string;
   creationTimestamp?: string;
+  deletionTimestamp?: string;
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   generateName?: string;
 }
 
 export interface Condition {
+  observedGeneration?: number;
   type: string;
   status: string;
   reason: string;
@@ -180,7 +183,10 @@ export interface CellnTool {
     publisherKey: string;
     invocationABI: string;
     lane: string;
-    limits: { timeoutMillis: number; memoryBytes: number; argumentBytes: number; outputBytes: number; workspace: string; effects: string };
+    limits: { timeoutMillis: number; memoryBytes: number; argumentBytes: number; outputBytes: number; workspace: string; effects: string;
+      artifacts?: { operation: "read" | "write"; maxOperations: number; maxFiles: number; maxFileBytes: number; maxTotalBytes: number };
+      https?: { allowHosts: string[]; maxRequests: number; maxResponseBytes: number; timeoutMillis: number };
+    };
   };
   status?: { conditions?: Condition[] };
 }
@@ -262,6 +268,8 @@ export interface TaskModeSpec {
 export type AgentRunTask = string | TaskModeSpec;
 
 export interface AgentRunSpec {
+  executionLifecycle?: "one-shot" | "enduring";
+  enduring?: { leaseSeconds: number; maxTurns: number; maxModelRequests: number; maxOutputTokens: number; requireToolCall?: boolean };
   cellnSelection?: CellnSelection;
   agentRef: string;
   agentId: string;
@@ -289,6 +297,13 @@ export interface DelegateStatus {
 }
 
 export interface AgentRunStatus {
+  cellnParent?: {
+    binding: { incarnation: string; runUID: string };
+    createAttempted: boolean;
+    initialTurn?: ParentTurnExecution;
+    acceptedTurns: number;
+    activeTurn?: { name: string; uid: string };
+  };
   phase?: string;
   podName?: string;
   jobName?: string;
@@ -317,6 +332,19 @@ export interface AgentRun {
   status?: AgentRunStatus;
   /** Hypothetical estimate from user-defined simulated prices ("source":"simulated"). */
   simulatedCostEstimate?: CostEstimate;
+}
+
+export interface ParentTurnExecution {
+  id: string;
+  message: string;
+  child: string;
+  attempted: boolean;
+  result?: { succeeded: boolean; answer: string };
+}
+export interface AgentRunTurn {
+  metadata: ObjectMeta;
+  spec: { runName: string; runUID: string; message: string; cancelRequested?: boolean };
+  status?: { parentIncarnation?: string; execution?: ParentTurnExecution; conditions?: Condition[]; cancelAttempted?: boolean };
 }
 
 // ── SympoziumPolicy ──────────────────────────────────────────────────────────
@@ -1208,7 +1236,7 @@ export function setNamespace(ns: string) {
 
 async function apiFetch<T>(
   path: string,
-  init?: RequestInit & { skipNamespace?: boolean },
+  init?: RequestInit & { skipNamespace?: boolean; retryNetwork?: boolean },
 ): Promise<T> {
   const token = getToken();
   const headers = new Headers(init?.headers);
@@ -1232,7 +1260,7 @@ async function apiFetch<T>(
   // Retry network errors (port-forward drops, transient failures) up to 2
   // times with a short delay.  Non-network errors (4xx, 5xx) are NOT retried
   // here — React Query handles those via its own retry config.
-  const maxAttempts = 3;
+  const maxAttempts = init?.retryNetwork === false ? 1 : 3;
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -1332,11 +1360,22 @@ export const api = {
   },
 
   runs: {
+    cancelTurn: (name: string, namespace: string, turn: string, body: { runUID: string; turnUID: string }) =>
+      apiFetch<AgentRunTurn>(`/api/v1/runs/${encodeURIComponent(name)}/turns/${encodeURIComponent(turn)}/cancel?namespace=${encodeURIComponent(namespace)}`, { method: "POST", body: JSON.stringify(body), skipNamespace: true, retryNetwork: false }),
+    deleteEnduring: (name: string, namespace: string, uid: string) =>
+      apiFetch<void>(`/api/v1/runs/${encodeURIComponent(name)}?namespace=${encodeURIComponent(namespace)}&uid=${encodeURIComponent(uid)}`, { method: "DELETE", skipNamespace: true, retryNetwork: false }),
+    turns: (name: string, namespace: string, cursor = "") =>
+      apiFetch<{ runUID: string; items: AgentRunTurn[]; continue: string }>(`/api/v1/runs/${encodeURIComponent(name)}/turns?namespace=${encodeURIComponent(namespace)}&continue=${encodeURIComponent(cursor)}`, { skipNamespace: true }),
+    submitTurn: (name: string, namespace: string, body: { runUID: string; requestId: string; message: string }) =>
+      apiFetch<AgentRunTurn>(`/api/v1/runs/${encodeURIComponent(name)}/turns?namespace=${encodeURIComponent(namespace)}`, { method: "POST", body: JSON.stringify(body), skipNamespace: true, retryNetwork: false }),
     list: () => apiFetch<AgentRun[]>("/api/v1/runs"),
     get: (name: string) => apiFetch<AgentRun>(`/api/v1/runs/${name}`),
     create: (data: {
       agentRef: string;
       task: string;
+      executionLifecycle?: AgentRunSpec["executionLifecycle"];
+      enduring?: AgentRunSpec["enduring"];
+      systemPrompt?: string;
       model?: string;
       timeout?: string;
       backend?: string;
@@ -1347,6 +1386,9 @@ export const api = {
       apiFetch<AgentRun>("/api/v1/runs", {
         method: "POST",
         body: JSON.stringify(data),
+        // Creation has no request identity yet; an uncertain enduring creation
+        // must not automatically mint another run/parent.
+        retryNetwork: data.executionLifecycle !== "enduring",
       }),
     delete: (name: string) =>
       apiFetch<void>(`/api/v1/runs/${name}`, { method: "DELETE" }),
@@ -1367,7 +1409,7 @@ export const api = {
 
   cellnTools: {
     list: () => apiFetch<CellnTool[]>("/api/v1/celln-tools"),
-    preview: (agentRef: string, cellnSelection: CellnSelection) => apiFetch<CellnPermissionPreview>("/api/v1/celln-selection/preview", { method: "POST", body: JSON.stringify({ agentRef, cellnSelection }) }),
+    preview: (agentRef: string, cellnSelection: CellnSelection, executionLifecycle?: "enduring") => apiFetch<CellnPermissionPreview>("/api/v1/celln-selection/preview", { method: "POST", body: JSON.stringify({ agentRef, cellnSelection, executionLifecycle }) }),
   },
 
   harnessSessions: {

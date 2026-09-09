@@ -8,6 +8,10 @@ import (
 // AgentRunSpec defines the desired state of an AgentRun.
 // Each agent invocation (including sub-agents) produces an AgentRun CR.
 // +kubebuilder:validation:XValidation:rule="!has(self.cellnSelection) || (has(self.backend) && self.backend == 'celln' && !has(self.celln))",message="catalogue selection requires backend celln and cannot mix explicit artifacts"
+// +kubebuilder:validation:XValidation:rule="!has(self.executionLifecycle) || self.executionLifecycle != 'enduring' || (has(self.enduring) && has(self.backend) && self.backend == 'celln' && has(self.cellnSelection) && (!has(self.mode) || self.mode == 'task'))",message="enduring lifecycle requires Celln catalogue selection, limits, and task mode"
+// +kubebuilder:validation:XValidation:rule="!has(self.enduring) || (has(self.executionLifecycle) && self.executionLifecycle == 'enduring')",message="enduring limits require enduring lifecycle"
+// +kubebuilder:validation:XValidation:rule="!has(self.executionLifecycle) || self.executionLifecycle != 'one-shot' || !has(self.mode) || self.mode != 'server'",message="one-shot lifecycle cannot use server mode"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.executionLifecycle) || oldSelf.executionLifecycle != 'enduring' || (has(self.executionLifecycle) && self.executionLifecycle == 'enduring' && has(self.backend) && self.backend == 'celln' && has(self.cellnSelection) && has(self.enduring))",message="an enduring run cannot lose its lifecycle, Celln backend, selection or limits; delete the original run instead"
 type AgentRunSpec struct {
 	// AgentRef is the name of the Agent this run belongs to.
 	AgentRef string `json:"agentRef"`
@@ -96,6 +100,18 @@ type AgentRunSpec struct {
 	// +kubebuilder:validation:Enum=task;server
 	// +optional
 	Mode string `json:"mode,omitempty"`
+
+	// ExecutionLifecycle selects one-shot or enduring execution independently of Harness
+	// configuration. Omission preserves legacy task/server behaviour. Enduring
+	// is the native Celln parent/turn-worker path, not an OCI HarnessSession.
+	// +kubebuilder:validation:Enum=one-shot;enduring
+	// +optional
+	ExecutionLifecycle string `json:"executionLifecycle,omitempty"`
+
+	// Enduring bounds the complete parent lifetime, not a renewable per-turn
+	// allowance. Effective grants may only narrow these requested ceilings.
+	// +optional
+	Enduring *EnduringRunSpec `json:"enduring,omitempty"`
 
 	// DryRun skips the LLM call and produces a synthetic result, allowing
 	// pipeline execution paths to be traced without burning tokens.
@@ -344,6 +360,7 @@ const (
 
 // AgentRunStatus defines the observed state of AgentRun.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cellnIssuance) || has(self.cellnIssuance)",message="saved Celln issuance cannot be removed"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.cellnParent) || has(self.cellnParent)",message="saved Celln parent cannot be removed"
 type AgentRunStatus struct {
 	// CellnOnly records a new run's execution boundary before any finalizer or
 	// workload side effects. The controller refuses subsequent backend changes.
@@ -476,6 +493,9 @@ type AgentRunStatus struct {
 	// It is history, not dispatch permission or artifact readiness.
 	// +optional
 	CellnIssuance *CellnIssuanceStatus `json:"cellnIssuance,omitempty"`
+	// CellnParent binds enduring intent before any parent creation side effect.
+	// +optional
+	CellnParent *CellnParentStatus `json:"cellnParent,omitempty"`
 	// CellnReceipt retains the validated versioned terminal receipt as JSON.
 	// +kubebuilder:validation:MaxLength=131072
 	// +optional
@@ -651,6 +671,7 @@ type LifecycleHooks struct {
 // Each agent invocation produces an AgentRun CR that the orchestrator
 // reconciles into a Kubernetes Job.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnIssuance) || (has(self.status) && has(self.status.cellnIssuance))",message="saved Celln issuance status cannot be removed"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnParent) || (has(self.status) && has(self.status.cellnParent))",message="saved Celln parent status cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnOnly) || !oldSelf.status.cellnOnly || (has(self.status) && has(self.status.cellnOnly) && self.status.cellnOnly)",message="a recorded Celln-only execution boundary cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(self.status) || !has(self.status.cellnOnly) || !self.status.cellnOnly || (has(self.spec.backend) && self.spec.backend == 'celln')",message="a recorded Celln-only run cannot change execution backend"
 type AgentRun struct {

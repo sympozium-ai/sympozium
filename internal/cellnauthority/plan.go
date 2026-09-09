@@ -30,6 +30,12 @@ type PreparedSelection struct {
 }
 
 func Prepare(snapshot SelectionSnapshot, imageBytes int64) (*PreparedSelection, error) {
+	return prepare(snapshot, imageBytes, false)
+}
+
+// allowBroker is used only for read-only native-parent permission previews.
+// It must never be exposed as a one-shot composition/dispatch bypass.
+func prepare(snapshot SelectionSnapshot, imageBytes int64, allowBroker bool) (*PreparedSelection, error) {
 	subject := snapshot.Runtime
 	id, err := IdentifySubject("AgentRuntime", metav1.ObjectMeta{Namespace: subject.Namespace, Name: subject.Name, UID: subject.UID, Generation: subject.Generation}, snapshot.RuntimeSpec)
 	if err != nil || id != subject || subject.Namespace != snapshot.Agent.Namespace {
@@ -71,6 +77,9 @@ func Prepare(snapshot SelectionSnapshot, imageBytes int64) (*PreparedSelection, 
 		}
 		if err := validateLimits(tool.Limits); err != nil {
 			return nil, err
+		}
+		if !allowBroker && (tool.Limits.Artifacts != nil || tool.Limits.HTTPS != nil) {
+			return nil, fmt.Errorf("starter broker tools require the native enduring parent path")
 		}
 		if tool.Limits.TimeoutMillis > s.Limits.TimeoutMillis || tool.Limits.MemoryBytes > s.Limits.MemoryBytes || tool.Limits.ArgumentBytes > s.Limits.ArgumentBytes || tool.Limits.OutputBytes > s.Limits.OutputBytes || tool.Limits.Effects != s.Limits.Effects {
 			return nil, fmt.Errorf("selected limits exceed tool declaration")

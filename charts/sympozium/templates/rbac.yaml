@@ -38,6 +38,12 @@ metadata:
 rules:
   # CRDs
   - apiGroups: ["sympozium.ai"]
+    resources: ["agentrunturns"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["sympozium.ai"]
+    resources: ["agentrunturns/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["sympozium.ai"]
     resources:
       - agents
       - agentruntimes
@@ -209,6 +215,9 @@ metadata:
     {{- include "sympozium.labels" . | nindent 4 }}
 rules:
   # Catalogue selection UI can inspect reviewed metadata, never approve tools.
+  - apiGroups: ["sympozium.ai"]
+    resources: ["agentrunturns"]
+    verbs: ["get", "list", "create"]
   - apiGroups: ["sympozium.ai"]
     resources: ["cellntools"]
     verbs: ["get", "list", "watch"]

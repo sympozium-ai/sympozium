@@ -148,10 +148,18 @@ const DefaultRunHistoryLimit = 50
 // AgentRunReconciler reconciles AgentRun objects.
 // It watches AgentRun CRDs and reconciles them into Kubernetes Jobs/Pods.
 type AgentRunReconciler struct {
+	// ParentOnly refuses unrelated workloads before any status/finalizer writes.
+	// Use with a namespace-scoped cache and restricted parent-controller RBAC.
+	ParentOnly bool
 	client.Client
 	// CatalogueDispatcher is explicit operator wiring; nil refuses catalogue
 	// issuance rather than falling through to legacy forge or OCI execution.
 	CatalogueDispatcher CatalogueDispatcher
+	// ParentConfigPath explicitly enables experimental enduring-parent startup.
+	// Empty refuses new enduring runs; existing cleanup remains fail-closed.
+	ParentConfigPath string
+	// ParentAdmission optionally publishes prepared registrations before startup.
+	ParentAdmission ParentAdmission
 	// APIReader bypasses the controller cache for reads — needed when we
 	// must see status mutations committed by a concurrent reconcile that
 	// the watch-based cache may not yet have observed.
@@ -281,6 +289,9 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
+	}
+	if r.ParentOnly && !parentOnlyRun(agentRun) {
+		return ctrl.Result{}, nil
 	}
 
 	// If the AgentRun carries a traceparent annotation (set by channel router),
@@ -695,6 +706,20 @@ func (r *AgentRunReconciler) prepareTaskPrerequisites(
 
 // reconcilePending handles an AgentRun that needs a Job created.
 func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
+	if agentRun.Status.CellnParent != nil {
+		return r.reconcileCellnParent(ctx, agentRun)
+	}
+	if reason := agentRun.Spec.ValidateLifecycle(); reason != "" {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, reason)
+	}
+	if agentRun.Spec.ExecutionLifecycle == "enduring" {
+		if r.ParentConfigPath != "" {
+			return r.reconcileCellnParent(ctx, agentRun)
+		}
+		// Fail closed until the authenticated persistent-owner serving path is
+		// integrated. Never turn explicit enduring intent into a one-shot Job.
+		return ctrl.Result{}, r.failRun(ctx, agentRun, "Celln enduring lifecycle is not yet available on this controller")
+	}
 	if agentRun.Spec.CellnSelection != nil {
 		if agentRun.Spec.Backend != "celln" || agentRun.Spec.Celln != nil || !agentRun.Spec.Task.IsString() {
 			return ctrl.Result{}, r.failRun(ctx, agentRun, "Catalogue selection requires backend celln, a string task and no explicit artifacts")
@@ -1030,6 +1055,9 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 	defer span.End()
 
 	log.Info("Checking running AgentRun")
+	if agentRun.Status.CellnParent != nil || agentRun.Spec.ExecutionLifecycle == "enduring" {
+		return r.reconcileCellnParent(ctx, agentRun)
+	}
 
 	// Agent Sandbox mode — check Sandbox CR status instead of Job.
 	if agentRun.Status.SandboxName != "" || agentRun.Status.SandboxClaimName != "" {
@@ -1240,6 +1268,11 @@ func (r *AgentRunReconciler) checkAgentContainer(ctx context.Context, log logr.L
 // Instead of deleting immediately, it keeps up to RunHistoryLimit completed
 // runs per instance and prunes only the oldest ones beyond that threshold.
 func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
+	if controllerutil.ContainsFinalizer(agentRun, agentRunFinalizer) {
+		if err := r.stopCellnParent(ctx, agentRun); err != nil {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+	}
 	if agentRun.Status.CellnActionID != "" && controllerutil.ContainsFinalizer(agentRun, agentRunFinalizer) {
 		done, err := r.cancelCelln(ctx, agentRun)
 		if err != nil {
@@ -2024,6 +2057,10 @@ func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, 
 // reconcileDelete handles AgentRun deletion.
 func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Reconciling AgentRun deletion")
+	if err := r.stopCellnParent(ctx, agentRun); err != nil {
+		log.Error(err, "Celln parent deletion cleanup pending")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 	if agentRun.Status.CellnActionID != "" {
 		done, err := r.cancelCelln(ctx, agentRun)
 		if err != nil {
@@ -6382,10 +6419,20 @@ func (r *AgentRunReconciler) cleanupWorkspacePVC(ctx context.Context, log logr.L
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AgentRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.ParentOnly {
+		return ctrl.NewControllerManagedBy(mgr).For(&sympoziumv1alpha1.AgentRun{}).Complete(r)
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&sympoziumv1alpha1.AgentRun{}).
 		Owns(&batchv1.Job{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
+}
+
+func parentOnlyRun(run *sympoziumv1alpha1.AgentRun) bool {
+	if run.Status.CellnParent != nil {
+		return true
+	}
+	return run.Spec.Backend == "celln" && run.Spec.ExecutionLifecycle == "enduring" && run.Status.JobName == "" && run.Status.DeploymentName == "" && run.Status.CellnRequest == "" && run.Status.CellnActionID == "" && run.Status.CellnIssuance == nil
 }

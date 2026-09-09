@@ -1,0 +1,25 @@
+{
+  "status": "session-readiness-passed-left-running",
+  "scope": "local eight-hour one-shot developer session, not production installation or conversational support",
+  "cluster": "kind-celln-deployed",
+  "namespace": "celln-catalogue-proof-kl748",
+  "url": "http://127.0.0.1:9090/",
+  "expiresAt": "2026-09-08T23:42:26+01:00",
+  "sourceBase": "5bab7c8",
+  "sourceChanges": "interactive session helpers, explicit browser Harness selection and readable Celln result presentation in this worktree",
+  "apiImage": "localhost/sympozium-celln-api:mlp-interactive-v2",
+  "apiImageId": "67eaa0a4cc7e94ca828d15c9331d1b46b36727e88aa61ab058ebd3688725f983",
+  "controllerImage": "localhost/sympozium-celln-controller:35b45cd",
+  "cellnSourceTree": "identical to merged c83be719872c97983c1cba307246503425a5a193",
+  "liveEvidenceDirectory": "target/celln-live-proof/catalogue-live-3743624854",
+  "runs": [
+    {"name": "agent-pwsnk", "uid": "af90f015-624d-469a-b588-b647832506a9", "action": "celln-5a5371ee692b75bc274b1926ebf3aa7f30bf8efb8843431c331091a083301961", "phase": "Succeeded"},
+    {"name": "agent-sszff", "uid": "007c6a00-e868-42b3-82f5-9ceba70ea40f", "action": "celln-ac86eb184231287f0b0c326a543f5cd6985dc2750f66c8c516e4e911d5b59cc0", "phase": "Succeeded"}
+  ],
+  "browserChecks": ["actual authenticated API", "explicit runtime selection", "Celln backend selection", "uppercase then length lending", "effective permission preview", "two independently persisted real DeepSeek runs", "readable final answer", "Stream Connected", "visible topology nodes"],
+  "capabilityDiscovery": "actual verified-TLS router probe using separate read-only credential returned available=true; node preflight only",
+  "portableChecks": {"goRaceCatalogueSetup": "passed", "goVetCatalogueSetup": "passed", "typescriptBuild": "passed", "cypressSelectionAndResultContract": "8 passed", "shellSyntax": "passed", "diffCheck": "passed"},
+  "testCorrections": ["Cypress converts the interactive environment value to a number; condition now normalizes it with String before asserting", "contract-only selection tests now intercept permission preview instead of sending their dummy credential to the real API"],
+  "cleanup": {"currentSession": "pending by design: left running for user", "previousSession": "catalogue-live-3865234336 stopped via SIGUSR1; registered cleanup and original-controller restoration passed"},
+  "limitations": ["no persistent conversation", "no token streaming from native Harness", "only the registered ordered tool combination is ready", "no host reboot qualification", "browser-control connection unavailable; repository Cypress exercised the actual UI instead"]
+}

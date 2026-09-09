@@ -80,6 +80,7 @@ func deployedBrowserServer(t *testing.T, ctx context.Context, c client.Client, n
 	t.Helper()
 	objects, err := browserDeploymentObjects(namespace, image)
 	must(t, err)
+	configureInteractiveBrowser(t, namespace, objects)
 	for _, obj := range objects {
 		must(t, c.Create(ctx, obj))
 		if obj.GetNamespace() == "" {
@@ -95,6 +96,11 @@ func deployedBrowserServer(t *testing.T, ctx context.Context, c client.Client, n
 			})
 		}
 	}
+	return forwardBrowserServer(t, ctx, namespace, image)
+}
+
+func forwardBrowserServer(t *testing.T, ctx context.Context, namespace, image string) string {
+	t.Helper()
 	kube := os.Getenv("CELLN_CONTROLLER_KUBECONFIG")
 	args := []string{"--kubeconfig", kube, "--context", "kind-celln-deployed", "-n", namespace}
 	command(t, ctx, nil, "kubectl", append(append([]string{}, args...), "rollout", "status", "deployment/browser", "--timeout=90s")...)
@@ -138,7 +144,7 @@ func deployedBrowserServer(t *testing.T, ctx context.Context, c client.Client, n
 	}
 	// Positive and negative authentication checks use the actual deployed API,
 	// before a browser can create any run. Wrong credentials must not succeed.
-	for _, token := range []string{"", "wrong-proof-token", browserProofToken} {
+	for _, token := range []string{"", "wrong-proof-token", liveBrowserToken(t)} {
 		req, err := http.NewRequestWithContext(ctx, "GET", endpoint+"/api/v1/runs?namespace="+namespace, nil)
 		must(t, err)
 		if token != "" {
@@ -148,13 +154,13 @@ func deployedBrowserServer(t *testing.T, ctx context.Context, c client.Client, n
 		must(t, err)
 		resp.Body.Close()
 		want := http.StatusUnauthorized
-		if token == browserProofToken {
+		if token == liveBrowserToken(t) {
 			want = http.StatusOK
 		}
 		if resp.StatusCode != want {
 			t.Fatalf("deployed API auth status %d, want %d", resp.StatusCode, want)
 		}
-		if token != browserProofToken {
+		if token != liveBrowserToken(t) {
 			for _, path := range []string{"/api/v1/runs", "/api/v1/celln-selection/preview"} {
 				req, err := http.NewRequestWithContext(ctx, "POST", endpoint+path+"?namespace="+namespace, strings.NewReader(`{}`))
 				must(t, err)

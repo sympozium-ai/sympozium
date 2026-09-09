@@ -129,6 +129,7 @@ func deployCatalogueController(t *testing.T, ctx context.Context, c client.Clien
 	}
 	objects, err := controllerProofObjects(namespace, image, config, credentials)
 	must(t, err)
+	configureInteractiveController(t, objects)
 	for _, obj := range objects {
 		must(t, c.Create(ctx, obj))
 	}

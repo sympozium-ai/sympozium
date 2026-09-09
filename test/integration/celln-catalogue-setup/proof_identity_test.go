@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"math/big"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
@@ -29,9 +30,13 @@ func freshProofCertificate(t *testing.T, host string) tls.Certificate {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	must(t, err)
 	now := time.Now()
+	lifetime := time.Hour
+	if os.Getenv("CELLN_LIVE_INTERACTIVE") == "1" {
+		lifetime = 9 * time.Hour
+	}
 	certificate := &x509.Certificate{
 		SerialNumber: serial, Subject: pkix.Name{CommonName: "isolated Celln proof"},
-		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(lifetime),
 		IsCA: true, BasicConstraintsValid: true,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{ip},

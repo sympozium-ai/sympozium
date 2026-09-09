@@ -54,6 +54,10 @@ func liveIssuerKubeconfig(t *testing.T, ctx context.Context, dir, evidence, boot
 	}, metav1.CreateOptions{})
 	must(t, err)
 	seconds := int64(600)
+	if os.Getenv("CELLN_LIVE_INTERACTIVE") == "1" {
+		// A bounded development session, not a production renewal mechanism.
+		seconds = 9 * 60 * 60
+	}
 	issued, err := admin.CoreV1().ServiceAccounts(namespace).CreateToken(ctx, name, &authenticationv1.TokenRequest{Spec: authenticationv1.TokenRequestSpec{ExpirationSeconds: &seconds}}, metav1.CreateOptions{})
 	must(t, err)
 	if issued.Status.Token == "" {

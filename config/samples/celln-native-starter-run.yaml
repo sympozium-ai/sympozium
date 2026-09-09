@@ -1,0 +1,30 @@
+# Requires operator-installed catalogue revisions, all three grant layers,
+# and a matching native-parent registration. Names are examples: substitute
+# the installed Agent/AgentRuntime names and exact approved tool revisions.
+# This creates intent, not authority or a ready execution environment.
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRun
+metadata:
+  generateName: celln-starter-
+spec:
+  agentRef: celln-agent
+  backend: celln
+  executionLifecycle: enduring
+  cellnSelection:
+    runtimeRef: celln-native
+    toolRefs:
+      - name: workspace-read
+        revision: v1
+      - name: workspace-write
+        revision: v1
+      - name: https-fetch
+        revision: v1
+  model:
+    provider: deepseek
+    model: deepseek-chat
+  task: "Write violet to notes.txt using workspace-write with revision 0."
+  enduring:
+    leaseSeconds: 300
+    maxTurns: 6
+    maxModelRequests: 18
+    maxOutputTokens: 9216

@@ -70,6 +70,9 @@ func Identify(tool api.CellnTool) (ToolIdentity, error) {
 	if s.InvocationABI == "celln.json-stdio/v1" && (len(s.Description) > 512 || s.Limits.TimeoutMillis > 30000) {
 		return ToolIdentity{}, fmt.Errorf("tool metadata exceeds JSON adapter ceilings")
 	}
+	if (s.Limits.Artifacts != nil || s.Limits.HTTPS != nil) && (s.InvocationABI != "celln.json-stdio/v1" || s.Lane != "tool") {
+		return ToolIdentity{}, fmt.Errorf("starter broker capability requires a JSON-stdio tool")
+	}
 	for _, ref := range []api.CellnImmutableRef{s.Executable, s.Closure, s.ArgumentsSchema, s.ResultSchema} {
 		if !hashPattern.MatchString(ref.Hash) {
 			return ToolIdentity{}, fmt.Errorf("invalid immutable artifact hash")
@@ -90,7 +93,7 @@ func validateLimits(l api.CellnToolLimits) error {
 	if l.TimeoutMillis < 1 || l.TimeoutMillis > 300000 || l.MemoryBytes < 1 || l.MemoryBytes > 268435456 || l.ArgumentBytes < 1 || l.ArgumentBytes > 65536 || l.OutputBytes < 1 || l.OutputBytes > 65536 || l.Workspace != "none" || len(l.Egress) != 0 || len(l.Inputs) != 0 || (l.Effects != "none" && l.Effects != "external-side-effects") {
 		return fmt.Errorf("invalid or unsupported tool limits")
 	}
-	return nil
+	return validateBrokerLimits(l)
 }
 
 // ResolveTools preserves selection order and refuses the entire selection on
@@ -161,6 +164,9 @@ func ResolveTools(req ToolRequest) ([]ResolvedTool, error) {
 			limits.MemoryBytes = min(limits.MemoryBytes, grant.Limits.MemoryBytes)
 			limits.ArgumentBytes = min(limits.ArgumentBytes, grant.Limits.ArgumentBytes)
 			limits.OutputBytes = min(limits.OutputBytes, grant.Limits.OutputBytes)
+			if err := intersectBrokerLimits(&limits, grant.Limits); err != nil {
+				return nil, fmt.Errorf("%s: %w", layer.name, err)
+			}
 		}
 		result = append(result, ResolvedTool{Identity: identity, Spec: *found.Spec.DeepCopy(), Limits: limits})
 	}

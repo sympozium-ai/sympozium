@@ -1,0 +1,48 @@
+# Opt-in namespace-scoped native parent controller, not the general pod manager.
+# Create the namespace separately and set all namespaces before applying.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: celln-parent-controller
+  namespace: celln-parent-demo
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: celln-parent-controller
+  namespace: celln-parent-demo
+rules:
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns/status, agentrunturns/status]
+    verbs: [get, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns/finalizers]
+    verbs: [update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agents, agentruntimes, cellntools, agentrunturns]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [grant-operator, grant-runtime, grant-agent]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: celln-parent-controller
+  namespace: celln-parent-demo
+subjects:
+  - kind: ServiceAccount
+    name: celln-parent-controller
+    namespace: celln-parent-demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: celln-parent-controller

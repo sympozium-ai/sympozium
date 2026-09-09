@@ -173,12 +173,12 @@ func main() {
 			os.Exit(1)
 		}
 		log.Info("Serving web UI", "addr", addr, "auth", expected.Current() != "")
-		if err := server.StartWithUI(addr, expected, frontendFS); err != nil {
+		if err := server.ServeContext(ctx, addr, expected, frontendFS); err != nil {
 			log.Error(err, "api server failed")
 			os.Exit(1)
 		}
 	} else {
-		if err := server.Start(addr, expected); err != nil {
+		if err := server.ServeContext(ctx, addr, expected, nil); err != nil {
 			log.Error(err, "api server failed")
 			os.Exit(1)
 		}

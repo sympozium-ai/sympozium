@@ -1,0 +1,31 @@
+# Upgrade supplement for the local shared controller, whose cache is scoped to
+# sympozium-system. Does not grant workspace access to Celln guest tools.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: celln-shared-controller-workspaces
+  namespace: sympozium-system
+rules:
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions/status]
+    verbs: [get, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions/finalizers]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: celln-shared-controller-workspaces
+  namespace: sympozium-system
+subjects:
+  - kind: ServiceAccount
+    name: sympozium-controller-manager
+    namespace: sympozium-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: celln-shared-controller-workspaces

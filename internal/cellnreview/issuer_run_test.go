@@ -18,6 +18,25 @@ type issuanceStatusFault struct {
 	phase       string
 	afterCommit bool
 }
+
+func TestOneShotIssuanceRefusesParentIntentAndSavedOwner(t *testing.T) {
+	for _, mode := range []string{"enduring", "unknown", "stray-limits", "saved-parent", "one-shot", "legacy"} {
+		run := &api.AgentRun{Spec: api.AgentRunSpec{Backend: "celln"}}
+		switch mode {
+		case "enduring", "unknown", "one-shot":
+			run.Spec.ExecutionLifecycle = mode
+		case "stray-limits":
+			run.Spec.Enduring = &api.EnduringRunSpec{LeaseSeconds: 300, MaxTurns: 4}
+		case "saved-parent":
+			run.Status.CellnParent = &api.CellnParentStatus{}
+		}
+		err := provisionableRun(run)
+		if (err == nil) != (mode == "one-shot" || mode == "legacy") {
+			t.Fatalf("%s: unexpected admission: %v", mode, err)
+		}
+	}
+}
+
 type issuanceStatusWriter struct {
 	client.SubResourceWriter
 	owner issuanceStatusFault

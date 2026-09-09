@@ -413,12 +413,57 @@ spec:
                   pipeline execution paths to be traced without burning tokens.
                   The flag is automatically propagated to sequential successors.
                 type: boolean
+              enduring:
+                description: |-
+                  Enduring bounds the complete parent lifetime, not a renewable per-turn
+                  allowance. Effective grants may only narrow these requested ceilings.
+                properties:
+                  leaseSeconds:
+                    format: int32
+                    maximum: 86400
+                    minimum: 1
+                    type: integer
+                  maxModelRequests:
+                    format: int32
+                    maximum: 6144
+                    minimum: 0
+                    type: integer
+                  maxOutputTokens:
+                    format: int64
+                    maximum: 3145728
+                    minimum: 0
+                    type: integer
+                  maxTurns:
+                    format: int32
+                    maximum: 1024
+                    minimum: 1
+                    type: integer
+                  requireToolCall:
+                    description: |-
+                      RequireToolCall requires actual execution of at least one lent tool on
+                      every turn before successful completion; it grants no additional tools.
+                    type: boolean
+                required:
+                - leaseSeconds
+                - maxModelRequests
+                - maxOutputTokens
+                - maxTurns
+                type: object
               env:
                 additionalProperties:
                   type: string
                 description: Env defines custom environment variables to pass to the
                   agent container.
                 type: object
+              executionLifecycle:
+                description: |-
+                  ExecutionLifecycle selects one-shot or enduring execution independently of Harness
+                  configuration. Omission preserves legacy task/server behaviour. Enduring
+                  is the native Celln parent/turn-worker path, not an OCI HarnessSession.
+                enum:
+                - one-shot
+                - enduring
+                type: string
               imagePullSecrets:
                 description: ImagePullSecrets are secrets to use when pulling container
                   images.
@@ -2909,6 +2954,23 @@ spec:
                 artifacts
               rule: '!has(self.cellnSelection) || (has(self.backend) && self.backend
                 == ''celln'' && !has(self.celln))'
+            - message: enduring lifecycle requires Celln catalogue selection, limits,
+                and task mode
+              rule: '!has(self.executionLifecycle) || self.executionLifecycle != ''enduring''
+                || (has(self.enduring) && has(self.backend) && self.backend == ''celln''
+                && has(self.cellnSelection) && (!has(self.mode) || self.mode == ''task''))'
+            - message: enduring limits require enduring lifecycle
+              rule: '!has(self.enduring) || (has(self.executionLifecycle) && self.executionLifecycle
+                == ''enduring'')'
+            - message: one-shot lifecycle cannot use server mode
+              rule: '!has(self.executionLifecycle) || self.executionLifecycle != ''one-shot''
+                || !has(self.mode) || self.mode != ''server'''
+            - message: an enduring run cannot lose its lifecycle, Celln backend, selection
+                or limits; delete the original run instead
+              rule: '!has(oldSelf.executionLifecycle) || oldSelf.executionLifecycle
+                != ''enduring'' || (has(self.executionLifecycle) && self.executionLifecycle
+                == ''enduring'' && has(self.backend) && self.backend == ''celln''
+                && has(self.cellnSelection) && has(self.enduring))'
           status:
             description: AgentRunStatus defines the observed state of AgentRun.
             properties:
@@ -2985,6 +3047,147 @@ spec:
                   workload side effects. The controller refuses subsequent backend changes.
                   Absent on legacy runs: absence does not prove that Job-side RBAC is absent.
                 type: boolean
+              cellnParent:
+                description: CellnParent binds enduring intent before any parent creation
+                  side effect.
+                properties:
+                  acceptedTurns:
+                    description: |-
+                      AcceptedTurns counts subsequent turns; the initial turn uses one additional
+                      host turn. Claims consume budget even if dispatch later becomes uncertain.
+                    format: int32
+                    maximum: 1023
+                    minimum: 0
+                    type: integer
+                    x-kubernetes-validations:
+                    - message: accepted turn count cannot decrease
+                      rule: self >= oldSelf
+                  activeTurn:
+                    description: ActiveTurn remains until that exact child record
+                      contains a committed result.
+                    properties:
+                      name:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      uid:
+                        maxLength: 128
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    - uid
+                    type: object
+                  binding:
+                    description: |-
+                      CellnParentBinding freezes operator-approved routing and run intent before
+                      creation. It contains no credential and is not itself execution authority.
+                    properties:
+                      incarnation:
+                        maxLength: 71
+                        pattern: ^blake3:[0-9a-f]{64}$
+                        type: string
+                      launchProfile:
+                        maxLength: 71
+                        pattern: ^blake3:[0-9a-f]{64}$
+                        type: string
+                      principal:
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                      runUID:
+                        maxLength: 128
+                        minLength: 1
+                        type: string
+                      specSHA256:
+                        maxLength: 71
+                        pattern: ^sha256:[0-9a-f]{64}$
+                        type: string
+                      target:
+                        maxLength: 2048
+                        minLength: 1
+                        type: string
+                    required:
+                    - incarnation
+                    - launchProfile
+                    - principal
+                    - runUID
+                    - specSHA256
+                    - target
+                    type: object
+                    x-kubernetes-validations:
+                    - message: parent binding is immutable
+                      rule: self == oldSelf
+                  createAttempted:
+                    description: |-
+                      CreateAttempted must be persisted before POST. A lost response cannot clear
+                      this bit; reconciliation must inspect the same owner instead of replaying.
+                    type: boolean
+                    x-kubernetes-validations:
+                    - message: parent creation attempt cannot be cleared
+                      rule: '!oldSelf || self'
+                  initialTurn:
+                    properties:
+                      attempted:
+                        type: boolean
+                        x-kubernetes-validations:
+                        - message: turn attempt cannot be cleared
+                          rule: '!oldSelf || self'
+                      child:
+                        maxLength: 71
+                        pattern: ^blake3:[0-9a-f]{64}$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: turn child is immutable
+                          rule: self == oldSelf
+                      id:
+                        maxLength: 64
+                        pattern: ^[A-Za-z0-9_-]{1,64}$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: turn ID is immutable
+                          rule: self == oldSelf
+                      message:
+                        maxLength: 2048
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: turn input is immutable
+                          rule: self == oldSelf
+                      result:
+                        properties:
+                          answer:
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                          succeeded:
+                            type: boolean
+                        required:
+                        - answer
+                        - succeeded
+                        type: object
+                        x-kubernetes-validations:
+                        - message: committed turn result is immutable
+                          rule: self == oldSelf
+                    required:
+                    - attempted
+                    - child
+                    - id
+                    - message
+                    type: object
+                    x-kubernetes-validations:
+                    - message: committed turn result cannot be removed
+                      rule: '!has(oldSelf.result) || has(self.result)'
+                    - message: turn result requires an attempted submission
+                      rule: '!has(self.result) || self.attempted'
+                required:
+                - acceptedTurns
+                - binding
+                - createAttempted
+                type: object
+                x-kubernetes-validations:
+                - message: initial parent turn cannot be removed
+                  rule: '!has(oldSelf.initialTurn) || has(self.initialTurn)'
               cellnReceipt:
                 description: CellnReceipt retains the validated versioned terminal
                   receipt as JSON.
@@ -3261,11 +3464,16 @@ spec:
             x-kubernetes-validations:
             - message: saved Celln issuance cannot be removed
               rule: '!has(oldSelf.cellnIssuance) || has(self.cellnIssuance)'
+            - message: saved Celln parent cannot be removed
+              rule: '!has(oldSelf.cellnParent) || has(self.cellnParent)'
         type: object
         x-kubernetes-validations:
         - message: saved Celln issuance status cannot be removed
           rule: '!has(oldSelf.status) || !has(oldSelf.status.cellnIssuance) || (has(self.status)
             && has(self.status.cellnIssuance))'
+        - message: saved Celln parent status cannot be removed
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.cellnParent) || (has(self.status)
+            && has(self.status.cellnParent))'
         - message: a recorded Celln-only execution boundary cannot be removed
           rule: '!has(oldSelf.status) || !has(oldSelf.status.cellnOnly) || !oldSelf.status.cellnOnly
             || (has(self.status) && has(self.status.cellnOnly) && self.status.cellnOnly)'

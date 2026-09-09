@@ -1,0 +1,235 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: agentrunturns.sympozium.ai
+spec:
+  group: sympozium.ai
+  names:
+    kind: AgentRunTurn
+    listKind: AgentRunTurnList
+    plural: agentrunturns
+    shortNames:
+    - arturn
+    singular: agentrunturn
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AgentRunTurn is a durable message/result record, not another
+          running agent.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentRunTurnSpec carries data for an existing enduring run, never executable
+              or model authority. A run name cannot be reused to retarget an old turn.
+            properties:
+              cancelRequested:
+                description: |-
+                  CancelRequested signals this turn's sub-cell only, never the parent.
+                  Cancellation requires a recorded dispatch attempt and does not imply teardown.
+                type: boolean
+              message:
+                maxLength: 2048
+                minLength: 1
+                type: string
+              runName:
+                maxLength: 253
+                minLength: 1
+                type: string
+              runUID:
+                maxLength: 128
+                minLength: 1
+                type: string
+            required:
+            - message
+            - runName
+            - runUID
+            type: object
+            x-kubernetes-validations:
+            - message: turn input and parent identity are immutable
+              rule: self.runName == oldSelf.runName && self.runUID == oldSelf.runUID
+                && self.message == oldSelf.message
+            - message: turn cancellation cannot be withdrawn
+              rule: '!has(oldSelf.cancelRequested) || !oldSelf.cancelRequested ||
+                (has(self.cancelRequested) && self.cancelRequested)'
+          status:
+            description: |-
+              AgentRunTurnStatus has the same durable attempt/result rules as the initial
+              turn. The enclosing AgentRun retains lifetime and tool/model authority.
+            properties:
+              cancelAttempted:
+                description: |-
+                  CancelAttempted is persisted before sending cancellation. An uncertain send
+                  is reconciled from original turn evidence, never automatically repeated.
+                type: boolean
+              conditions:
+                description: |-
+                  Conditions describe reconciliation observations, not execution authority.
+                  A failed observation never permits clearing an attempt or replaying a turn.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              execution:
+                properties:
+                  attempted:
+                    type: boolean
+                    x-kubernetes-validations:
+                    - message: turn attempt cannot be cleared
+                      rule: '!oldSelf || self'
+                  child:
+                    maxLength: 71
+                    pattern: ^blake3:[0-9a-f]{64}$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: turn child is immutable
+                      rule: self == oldSelf
+                  id:
+                    maxLength: 64
+                    pattern: ^[A-Za-z0-9_-]{1,64}$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: turn ID is immutable
+                      rule: self == oldSelf
+                  message:
+                    maxLength: 2048
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: turn input is immutable
+                      rule: self == oldSelf
+                  result:
+                    properties:
+                      answer:
+                        maxLength: 2048
+                        minLength: 1
+                        type: string
+                      succeeded:
+                        type: boolean
+                    required:
+                    - answer
+                    - succeeded
+                    type: object
+                    x-kubernetes-validations:
+                    - message: committed turn result is immutable
+                      rule: self == oldSelf
+                required:
+                - attempted
+                - child
+                - id
+                - message
+                type: object
+                x-kubernetes-validations:
+                - message: committed turn result cannot be removed
+                  rule: '!has(oldSelf.result) || has(self.result)'
+                - message: turn result requires an attempted submission
+                  rule: '!has(self.result) || self.attempted'
+              parentIncarnation:
+                description: ParentIncarnation is fixed before dispatch, not selected
+                  by the message.
+                maxLength: 71
+                pattern: ^blake3:[0-9a-f]{64}$
+                type: string
+                x-kubernetes-validations:
+                - message: turn parent incarnation is immutable
+                  rule: self == oldSelf
+            type: object
+            x-kubernetes-validations:
+            - message: turn execution record cannot be removed
+              rule: '!has(oldSelf.execution) || has(self.execution)'
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: cancellation requires a recorded turn dispatch attempt
+          rule: '!has(self.spec.cancelRequested) || !self.spec.cancelRequested ||
+            (has(self.status) && has(self.status.execution) && has(self.status.execution.attempted)
+            && self.status.execution.attempted)'
+        - message: cancellation attempt cannot be cleared
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.cancelAttempted) || !oldSelf.status.cancelAttempted
+            || (has(self.status) && has(self.status.cancelAttempted) && self.status.cancelAttempted)'
+        - message: saved turn execution cannot be removed
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.execution) || (has(self.status)
+            && has(self.status.execution))'
+        - message: saved turn parent cannot be removed
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.parentIncarnation) ||
+            (has(self.status) && has(self.status.parentIncarnation))'
+    served: true
+    storage: true
+    subresources:
+      status: {}

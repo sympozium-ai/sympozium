@@ -44,4 +44,6 @@ export CELLN_LIVE_CATALOGUE=1
 export CELLN_LIVE_SYMPOZIUM_BINARY="$work/sympozium"
 export CELLN_LIVE_CONTROLLER_BINARY="$work/controller"
 cd "$repo"
-go test -race ./test/integration/celln-catalogue-setup -run '^TestLiveCatalogueHarness$' -count=1 -v
+test_timeout=10m
+if [[ ${CELLN_LIVE_INTERACTIVE:-} == 1 ]]; then test_timeout=9h; fi
+go test -race ./test/integration/celln-catalogue-setup -run '^TestLiveCatalogueHarness$' -count=1 -v -timeout="$test_timeout"

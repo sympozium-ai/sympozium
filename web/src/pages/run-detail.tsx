@@ -2,6 +2,9 @@ import { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CellnResult } from "@/components/celln-result";
+import { CellnConversation } from "@/components/celln-conversation";
+import { ApiError } from "@/lib/api";
 import { useRun, useGateVerdict, useRuntimes } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -29,7 +32,7 @@ import { costTooltip, effectiveCost, formatAge, formatUsd, taskText } from "@/li
 
 export function RunDetailPage() {
   const { name } = useParams<{ name: string }>();
-  const { data: run, isLoading } = useRun(name || "");
+  const { data: run, isLoading, error } = useRun(name || "");
   const gateVerdict = useGateVerdict();
   const runtimes = useRuntimes();
   const { markSeenUpTo } = useRunsSeen();
@@ -55,7 +58,7 @@ export function RunDetailPage() {
     );
   }
 
-  if (!run) {
+  if (!run || (error instanceof ApiError && error.status === 404)) {
     return <p className="text-muted-foreground">Run not found</p>;
   }
 
@@ -234,7 +237,8 @@ export function RunDetailPage() {
         </div>
       )}
 
-      {run.spec.cellnSelection && <div className="space-y-2 rounded-lg border border-amber-500/30 p-3 text-sm" data-testid="catalogue-run-summary">
+      {run.spec.executionLifecycle === "enduring" && <CellnConversation key={run.metadata.uid} run={run} observationUnavailable={Boolean(error)} />}
+      {run.spec.cellnSelection && run.spec.executionLifecycle !== "enduring" && <div className="space-y-2 rounded-lg border border-amber-500/30 p-3 text-sm" data-testid="catalogue-run-summary">
         <p className="font-medium">Harness in Celln — catalogue request</p>
         <p className="text-muted-foreground">Runtime: {run.spec.cellnSelection.runtimeRef || "Agent default (resolved by trusted issuance)"}</p>
         <p className="text-muted-foreground">Borrowed tools: {run.spec.cellnSelection.toolRefs.map((ref) => `${ref.name}@${ref.revision}`).join(" → ") || "none"}</p>
@@ -329,7 +333,9 @@ export function RunDetailPage() {
         <TabsContent value="result">
           <Card>
             <CardContent className="pt-6">
-              {run.status?.result ? (
+              {run.status?.result && run.spec.backend === "celln" && run.spec.cellnSelection ? (
+                <CellnResult output={run.status.result} />
+              ) : run.status?.result ? (
                 <div className="prose prose-sm prose-invert max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {run.status.result}

@@ -67,6 +67,44 @@ type CellnToolLimits struct {
 	Inputs []CellnImmutableRef `json:"inputs,omitempty"`
 	// +kubebuilder:validation:Enum=none;external-side-effects
 	Effects string `json:"effects"`
+	// Artifacts grants logical run-owned data operations, never host mounts.
+	// +optional
+	Artifacts *CellnArtifactLimits `json:"artifacts,omitempty"`
+	// HTTPS grants bounded credential-free GET via the host broker.
+	// +optional
+	HTTPS *CellnHTTPSLimits `json:"https,omitempty"`
+}
+
+type CellnArtifactLimits struct {
+	// +kubebuilder:validation:Enum=read;write
+	Operation string `json:"operation"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=64
+	MaxOperations int64 `json:"maxOperations"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=256
+	MaxFiles int64 `json:"maxFiles"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4096
+	MaxFileBytes int64 `json:"maxFileBytes"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1048576
+	MaxTotalBytes int64 `json:"maxTotalBytes"`
+}
+
+type CellnHTTPSLimits struct {
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=16
+	AllowHosts []string `json:"allowHosts"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=16
+	MaxRequests int64 `json:"maxRequests"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4096
+	MaxResponseBytes int64 `json:"maxResponseBytes"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=30000
+	TimeoutMillis int64 `json:"timeoutMillis"`
 }
 
 // +kubebuilder:object:root=true

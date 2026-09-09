@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -14,6 +15,84 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
+
+func TestCreateRunEnduringLifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		name, lifecycle, limits, task string
+		want                          int
+	}{
+		{"enduring", "enduring", `{"leaseSeconds":300,"maxTurns":4,"maxModelRequests":12,"maxOutputTokens":4096}`, "remember violet", http.StatusCreated},
+		{"one-shot", "one-shot", `null`, "one task", http.StatusCreated},
+		{"legacy", "", `null`, "one task", http.StatusCreated},
+		{"missing limits", "enduring", `null`, "task", http.StatusBadRequest},
+		{"wrong lifecycle", "persistent", `null`, "task", http.StatusBadRequest},
+		{"stray limits", "one-shot", `{"leaseSeconds":300,"maxTurns":4}`, "task", http.StatusBadRequest},
+		{"over budget", "enduring", `{"leaseSeconds":300,"maxTurns":1025}`, "task", http.StatusBadRequest},
+		{"oversized initial turn", "enduring", `{"leaseSeconds":300,"maxTurns":4}`, strings.Repeat("é", 1025), http.StatusBadRequest},
+		{"NUL initial turn", "enduring", `{"leaseSeconds":300,"maxTurns":4}`, "bad\x00message", http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "default"}}
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(agent).Build()
+			srv := NewServer(cl, nil, nil, logr.Discard())
+			body, err := json.Marshal(map[string]any{"agentRef": "agent", "task": tc.task, "systemPrompt": "Retain conversation context.", "backend": "celln", "provider": "deepseek", "model": "deepseek-chat", "cellnSelection": map[string]any{"toolRefs": []any{}}, "executionLifecycle": tc.lifecycle, "enduring": json.RawMessage(tc.limits)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := httptest.NewRecorder()
+			srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", bytes.NewReader(body)))
+			if response.Code != tc.want {
+				t.Fatalf("status %d, want %d: %s", response.Code, tc.want, response.Body.String())
+			}
+			var stored sympoziumv1alpha1.AgentRunList
+			if err := cl.List(t.Context(), &stored); err != nil {
+				t.Fatal(err)
+			}
+			if tc.want != http.StatusCreated {
+				if len(stored.Items) != 0 {
+					t.Fatal("invalid request persisted")
+				}
+				return
+			}
+			if len(stored.Items) != 1 {
+				t.Fatal("missing run")
+			}
+			run := stored.Items[0]
+			if run.Spec.ExecutionLifecycle != tc.lifecycle || run.Status.CellnParent != nil || run.Status.Phase != "" {
+				t.Fatal("lifecycle lost or admission fabricated")
+			}
+			if tc.lifecycle == "enduring" && (run.Spec.Enduring == nil || run.Spec.Enduring.MaxTurns != 4 || run.Spec.Enduring.MaxModelRequests != 12) {
+				t.Fatal("requested ceilings lost")
+			}
+			if run.Spec.SystemPrompt != "Retain conversation context." {
+				t.Fatal("explicit parent persona lost")
+			}
+		})
+	}
+}
+
+func TestCreateRunEnduringRefusesNonCatalogueExecution(t *testing.T) {
+	for _, backend := range []string{"celln", "job", ""} {
+		body, err := json.Marshal(map[string]any{
+			"agentRef": "agent", "task": "task", "backend": backend,
+			"executionLifecycle": "enduring", "enduring": map[string]int{"leaseSeconds": 300, "maxTurns": 4},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// No client: invalid intent must be refused before any Kubernetes lookup.
+		srv := NewServer(nil, nil, nil, logr.Discard())
+		response := httptest.NewRecorder()
+		srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", bytes.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("backend %q: %d %s", backend, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestCreateRunWithRuntimeRefCarriesHarnessPrompt(t *testing.T) {
 	scheme := runtime.NewScheme()

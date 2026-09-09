@@ -154,6 +154,9 @@ func (c *IssuerClient) IssueForRun(ctx context.Context, writer client.Client, re
 }
 
 func provisionableRun(run *api.AgentRun) error {
+	if (run.Spec.ExecutionLifecycle != "" && run.Spec.ExecutionLifecycle != "one-shot") || run.Spec.Enduring != nil || run.Status.CellnParent != nil {
+		return fmt.Errorf("one-shot issuance cannot provision a persistent parent")
+	}
 	if run.Spec.Backend != "celln" || run.DeletionTimestamp != nil || run.Status.CellnRequest != "" || run.Status.CellnActionID != "" || (run.Status.Phase != "" && run.Status.Phase != api.AgentRunPhasePending) {
 		return fmt.Errorf("run is not in undispatched Celln provisioning state")
 	}

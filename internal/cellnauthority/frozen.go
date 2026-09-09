@@ -97,6 +97,12 @@ func (l Loader) readRun(ctx context.Context, key types.NamespacedName) (*api.Age
 	if run.Spec.Backend != "celln" || run.Spec.AgentRef == "" || !run.Spec.Task.IsString() {
 		return nil, Subject{}, fmt.Errorf("catalogue planning requires a Celln string-task AgentRun")
 	}
+	// This catalogue protocol emits disposable one-shot execution authority.
+	// A parent needs its own independently bound launch/permit; controller routing
+	// alone is not sufficient to prevent a direct issuer caller crossing paths.
+	if (run.Spec.ExecutionLifecycle != "" && run.Spec.ExecutionLifecycle != "one-shot") || run.Spec.Enduring != nil || run.Status.CellnParent != nil {
+		return nil, Subject{}, fmt.Errorf("one-shot catalogue authority cannot admit a persistent parent")
+	}
 	id, err := IdentifySubject("AgentRun", run.ObjectMeta, run.Spec)
 	if err != nil {
 		return nil, Subject{}, err

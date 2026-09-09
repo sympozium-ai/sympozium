@@ -124,7 +124,15 @@ func TestLiveCatalogueHarness(t *testing.T) {
 	must(t, networkingv1.AddToScheme(scheme))
 	c, err := client.New(rest, client.Options{Scheme: scheme})
 	must(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	lifetime := 6 * time.Minute
+	interactive := os.Getenv("CELLN_LIVE_INTERACTIVE") == "1"
+	if interactive {
+		if !automatic || !browserSubmission || controllerImage == "" || os.Getenv("CELLN_LIVE_APISERVER_IMAGE") == "" || cancelActive || cancelUnissued || lostResponse || restartIssuer {
+			t.Fatal("interactive session requires the normal deployed browser/controller journey")
+		}
+		lifetime = 8*time.Hour + 5*time.Minute // reserve cleanup time after session expiry
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	t.Cleanup(cancel)
 	var deployment appsv1.Deployment
 	must(t, c.Get(ctx, types.NamespacedName{Namespace: "sympozium-system", Name: "harness-proof-controller"}, &deployment))
@@ -143,6 +151,9 @@ func TestLiveCatalogueHarness(t *testing.T) {
 		must(t, os.Mkdir(evidence, 0700))
 	}
 	t.Logf("evidence directory: %s", evidence)
+	if interactive {
+		startInteractiveBus(t, ctx, dir)
+	}
 	// Registered before resource/process cleanups, so a finalizer or teardown
 	// failure cannot leave an apparent overall passing evidence record.
 	t.Cleanup(func() {
@@ -279,7 +290,13 @@ func TestLiveCatalogueHarness(t *testing.T) {
 	backend := "http://" + backendAddr
 	startProcess(t, ctx, nil, binary, "--root", root, "dispatcher", "--listen", backendAddr, "--token-file", backendToken, "--node-name", "catalogue-live-proof", "--mote-store", filepath.Join(root, "motes"), "--tool-store", filepath.Join(root, "tools"), "--allow-egress-host", "api.deepseek.com", "--egress-slots", "1")
 	waitTCP(t, backendAddr)
-	startProcess(t, ctx, nil, binary, "route", "--listen", routerAddr, "--backends", backend, "--token-file", backendToken, "--client-token-file", routerToken, "--ownership-dir", filepath.Join(dir, "ownership"))
+	routeArgs := []string{"route", "--listen", routerAddr, "--backends", backend, "--token-file", backendToken, "--client-token-file", routerToken, "--ownership-dir", filepath.Join(dir, "ownership")}
+	capabilityToken := filepath.Join(dir, "capability-token")
+	if interactive {
+		must(t, os.WriteFile(capabilityToken, freshProofToken(t), 0600))
+		routeArgs = append(routeArgs, "--capability-token-file", capabilityToken)
+	}
+	startProcess(t, ctx, nil, binary, routeArgs...)
 	waitTCP(t, routerAddr)
 	target, err := url.Parse("http://" + routerAddr)
 	must(t, err)
@@ -314,6 +331,10 @@ func TestLiveCatalogueHarness(t *testing.T) {
 	t.Cleanup(router.Close)
 	routerCA := filepath.Join(dir, "router-ca.pem")
 	must(t, os.WriteFile(routerCA, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: router.Certificate().Raw}), 0600))
+	if interactive {
+		configureInteractiveDiscovery(t, ctx, c, ns.Name, router.URL, routerCA, capabilityToken)
+		browserURL = forwardBrowserServer(t, ctx, ns.Name, os.Getenv("CELLN_LIVE_APISERVER_IMAGE"))
+	}
 	// Run separately from response-loss/cancellation modes, whose exact POST
 	// counts describe execution attempts rather than authentication probes.
 	if !lostResponse && !cancelActive && !cancelUnissued {
@@ -360,6 +381,10 @@ func TestLiveCatalogueHarness(t *testing.T) {
 	cleanupRun := func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 50*time.Second)
 		defer stop()
+		if interactive {
+			cleanupInteractiveRuns(t, cleanup, c, ns.Name, evidence)
+			return
+		}
 		if err := c.Delete(cleanup, &api.AgentRun{ObjectMeta: metav1.ObjectMeta{Namespace: ns.Name, Name: runName}}); client.IgnoreNotFound(err) != nil {
 			t.Errorf("run cleanup: %v", err)
 			return
@@ -480,6 +505,10 @@ func TestLiveCatalogueHarness(t *testing.T) {
 	var issued cellnreview.IssuedSelection
 	must(t, json.Unmarshal([]byte(run.Status.CellnIssuance.Result), &issued))
 	profilePath := filepath.Join(root, "trusted-model-profiles", issued.Profile+".json")
+	if interactive {
+		holdInteractiveSession(t, ctx, c, ns.Name, browserURL, evidence, run)
+		return
+	}
 	if restartIssuer {
 		journalPath := filepath.Join(root, "sympozium-issuer-journal", issued.Profile+".json")
 		profileBefore, err := os.ReadFile(profilePath)

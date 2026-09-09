@@ -46,6 +46,44 @@ func TestFrozenSelectionRoundTripAndCurrentApprovals(t *testing.T) {
 	}
 }
 
+func TestOneShotCatalogueRefusesParentLifecycleAtFreezeAndRevalidation(t *testing.T) {
+	for _, mode := range []string{"enduring", "unknown", "stray-limits", "saved-parent", "one-shot"} {
+		t.Run(mode, func(t *testing.T) {
+			l, c, frozen := frozenFixture(t)
+			ctx := context.Background()
+			key := types.NamespacedName{Namespace: "tenant", Name: "run"}
+			var run api.AgentRun
+			if err := c.Get(ctx, key, &run); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "enduring", "unknown", "one-shot":
+				run.Spec.ExecutionLifecycle = mode
+			case "stray-limits":
+				run.Spec.Enduring = &api.EnduringRunSpec{LeaseSeconds: 300, MaxTurns: 4}
+			case "saved-parent":
+				run.Status.CellnParent = &api.CellnParentStatus{}
+			}
+			if err := c.Update(ctx, &run); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err := l.readRun(ctx, key)
+			if mode == "one-shot" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("one-shot planning admitted parent intent/state")
+			}
+			if err := l.Revalidate(ctx, *frozen); err == nil {
+				t.Fatal("old one-shot selection remained valid")
+			}
+		})
+	}
+}
+
 func TestFrozenSelectionNeverRetargetsOrExpandsOnRetry(t *testing.T) {
 	for _, mode := range []string{"run-task", "run-recreated", "source-revision", "source-withdrawn", "prepared-tampered", "limits-expanded", "tools-removed", "runtime-tampered"} {
 		t.Run(mode, func(t *testing.T) {

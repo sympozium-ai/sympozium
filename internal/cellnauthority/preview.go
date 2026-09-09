@@ -22,6 +22,13 @@ type PermissionPreview struct {
 }
 
 func (l Loader) Preview(ctx context.Context, agent types.NamespacedName, intent api.CellnCatalogueSelection) (*PermissionPreview, error) {
+	return l.PreviewLifecycle(ctx, agent, intent, "")
+}
+
+func (l Loader) PreviewLifecycle(ctx context.Context, agent types.NamespacedName, intent api.CellnCatalogueSelection, lifecycle string) (*PermissionPreview, error) {
+	if lifecycle != "" && lifecycle != "enduring" {
+		return nil, fmt.Errorf("unsupported preview lifecycle")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if intent.ToolRefs == nil || len(intent.ToolRefs) > 16 || (intent.RuntimeRef != "" && len(validation.IsDNS1123Subdomain(intent.RuntimeRef)) != 0) {
@@ -40,7 +47,7 @@ func (l Loader) Preview(ctx context.Context, agent types.NamespacedName, intent 
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := Prepare(*snapshot, 33554432)
+	prepared, err := prepare(*snapshot, 33554432, lifecycle == "enduring")
 	if err != nil {
 		return nil, err
 	}

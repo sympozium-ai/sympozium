@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/sympozium-ai/sympozium/internal/cellnauthority"
 	"io"
@@ -113,7 +114,7 @@ func (s *Server) Start(addr string, expected *tokenReader) error {
 func (s *Server) StartWithUI(addr string, expected *tokenReader, frontendFS fs.FS) error {
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           s.buildMux(frontendFS, expected),
+		Handler:           s.HandlerWithUI(expected, frontendFS),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -121,9 +122,44 @@ func (s *Server) StartWithUI(addr string, expected *tokenReader, frontendFS fs.F
 	return server.ListenAndServe()
 }
 
+// ServeContext joins HTTP shutdown when the owning process is cancelled. The
+// legacy Start methods remain available for callers that own their lifecycle.
+func (s *Server) ServeContext(ctx context.Context, addr string, expected *tokenReader, frontendFS fs.FS) error {
+	var handler http.Handler = s.Handler(expected)
+	if frontendFS != nil {
+		handler = s.HandlerWithUI(expected, frontendFS)
+	}
+	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdown); err != nil {
+			_ = server.Close()
+			<-done
+			return err
+		}
+		err := <-done
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
 // Handler returns the HTTP handler for testing. Pass nil or a reader whose
 // current() returns "" to skip auth.
 func (s *Server) Handler(expected *tokenReader) http.Handler { return s.buildMux(nil, expected) }
+
+// HandlerWithUI serves the same authenticated API and SPA as StartWithUI,
+// allowing an embedding server to own its listener and graceful shutdown.
+func (s *Server) HandlerWithUI(expected *tokenReader, frontendFS fs.FS) http.Handler {
+	return s.buildMux(frontendFS, expected)
+}
 
 // buildMux creates the HTTP mux with all API routes.
 // When frontendFS is non-nil, it serves the SPA for non-API paths.
@@ -161,6 +197,9 @@ func (s *Server) buildMux(frontendFS fs.FS, expected *tokenReader) http.Handler 
 	// Run endpoints
 	mux.HandleFunc("GET /api/v1/runs", s.listRuns)
 	mux.HandleFunc("GET /api/v1/runs/{name}", s.getRun)
+	mux.HandleFunc("GET /api/v1/runs/{name}/turns", s.listRunTurns)
+	mux.HandleFunc("POST /api/v1/runs/{name}/turns", s.createRunTurn)
+	mux.HandleFunc("POST /api/v1/runs/{name}/turns/{turn}/cancel", s.cancelRunTurn)
 	mux.HandleFunc("GET /api/v1/runs/{name}/telemetry", s.getRunTelemetry)
 	mux.HandleFunc("POST /api/v1/runs", s.createRun)
 	mux.HandleFunc("DELETE /api/v1/runs/{name}", s.deleteRun)
@@ -1114,7 +1153,11 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 
 	var run sympoziumv1alpha1.AgentRun
 	if err := s.client.Get(r.Context(), types.NamespacedName{Name: name, Namespace: ns}, &run); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		if k8serrors.IsNotFound(err) {
+			http.Error(w, "run not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "run storage unavailable", http.StatusServiceUnavailable)
+		}
 		return
 	}
 
@@ -1126,13 +1169,17 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 
 // CreateRunRequest is the request body for creating a new AgentRun.
 type CreateRunRequest struct {
-	AgentRef   string `json:"agentRef"`
-	Task       string `json:"task"`
-	AgentID    string `json:"agentId,omitempty"`
-	SessionKey string `json:"sessionKey,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Timeout    string `json:"timeout,omitempty"`
-	Backend    string `json:"backend,omitempty"`
+	// Lifecycle is an explicit request, not proof of host admission/readiness.
+	ExecutionLifecycle string                             `json:"executionLifecycle,omitempty"`
+	Enduring           *sympoziumv1alpha1.EnduringRunSpec `json:"enduring,omitempty"`
+	AgentRef           string                             `json:"agentRef"`
+	Task               string                             `json:"task"`
+	SystemPrompt       string                             `json:"systemPrompt,omitempty"`
+	AgentID            string                             `json:"agentId,omitempty"`
+	SessionKey         string                             `json:"sessionKey,omitempty"`
+	Model              string                             `json:"model,omitempty"`
+	Timeout            string                             `json:"timeout,omitempty"`
+	Backend            string                             `json:"backend,omitempty"`
 	// RuntimeRef selects an administrator-approved AgentRuntime. When omitted,
 	// the Agent's runtimeRef inheritance and legacy string-task behaviour apply.
 	RuntimeRef string `json:"runtimeRef,omitempty"`
@@ -1166,6 +1213,15 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Celln) != 0 && string(req.Celln) != "null" {
 		http.Error(w, "explicit celln artifacts require the AgentRun Kubernetes API and cannot be mixed with catalogue selection", http.StatusBadRequest)
+		return
+	}
+	lifecycle := sympoziumv1alpha1.AgentRunSpec{ExecutionLifecycle: req.ExecutionLifecycle, Enduring: req.Enduring, Backend: req.Backend, CellnSelection: req.CellnSelection}
+	if reason := lifecycle.ValidateLifecycle(); reason != "" {
+		http.Error(w, reason, http.StatusBadRequest)
+		return
+	}
+	if req.ExecutionLifecycle == "enduring" && (len(req.Task) > 2048 || strings.ContainsRune(req.Task, '\x00')) {
+		http.Error(w, "enduring initial message must be at most 2048 UTF-8 bytes without NUL", http.StatusBadRequest)
 		return
 	}
 
@@ -1242,11 +1298,14 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
-			AgentRef:   req.AgentRef,
-			AgentID:    req.AgentID,
-			SessionKey: req.SessionKey,
-			Task:       sympoziumv1alpha1.NewStringTask(req.Task),
-			Backend:    req.Backend,
+			ExecutionLifecycle: req.ExecutionLifecycle,
+			Enduring:           req.Enduring.DeepCopy(),
+			AgentRef:           req.AgentRef,
+			AgentID:            req.AgentID,
+			SessionKey:         req.SessionKey,
+			Task:               sympoziumv1alpha1.NewStringTask(req.Task),
+			SystemPrompt:       req.SystemPrompt,
+			Backend:            req.Backend,
 			Model: sympoziumv1alpha1.ModelSpec{
 				Provider:                 provider,
 				Model:                    model,
@@ -1299,7 +1358,22 @@ func (s *Server) deleteRun(w http.ResponseWriter, r *http.Request) {
 	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 	}
-	if err := s.client.Delete(r.Context(), run); err != nil {
+	// Optional for compatibility with existing callers. Interactive enduring
+	// clients must supply the observed UID so a reused name cannot be retargeted.
+	options := []client.DeleteOption{}
+	if values, supplied := r.URL.Query()["uid"]; supplied {
+		if len(values) != 1 || len(values[0]) == 0 || len(values[0]) > 128 {
+			http.Error(w, "one bounded run UID required", http.StatusBadRequest)
+			return
+		}
+		uid := types.UID(values[0])
+		options = append(options, client.Preconditions{UID: &uid})
+	}
+	if err := s.client.Delete(r.Context(), run, options...); err != nil {
+		if k8serrors.IsConflict(err) {
+			http.Error(w, "run identity changed; deletion refused", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

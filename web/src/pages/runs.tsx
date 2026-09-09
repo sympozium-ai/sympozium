@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CellnStarterTools } from "@/components/celln-starter-tools";
 import {
   Plus,
   Trash2,
@@ -78,6 +79,11 @@ export function RunsPage() {
   const runtimes = useRuntimes();
   const catalogue = useCellnTools();
   const [lentTools, setLentTools] = useState<{ name: string; revision: string }[]>([]);
+  const [enduring, setEnduring] = useState(false);
+  const [parentSystemPrompt, setParentSystemPrompt] = useState("");
+  const [requireToolCall, setRequireToolCall] = useState(false);
+  const [parentRequested, setParentRequested] = useState(false);
+  const [parentLimits, setParentLimits] = useState({ leaseSeconds: 300, maxTurns: 4, maxModelRequests: 12, maxOutputTokens: 4096 });
   const deleteRun = useDeleteRun();
   const createRun = useCreateRun();
   const gateVerdict = useGateVerdict();
@@ -98,6 +104,14 @@ export function RunsPage() {
   const runtimeName = form.runtimeRef || selectedAgent?.spec.runtimeRef || "";
   const selectedRuntime = (runtimes.data || []).find((runtime) => runtime.metadata.name === runtimeName);
   const cellnHarness = form.backend === "celln" && !!runtimeName;
+  const enduringRequest = cellnHarness && enduring;
+  const parentBounds = { leaseSeconds: [1, 86400], maxTurns: [1, 1024], maxModelRequests: [0, 6144], maxOutputTokens: [0, 3145728] } as const;
+  const invalidParent = enduringRequest && (new TextEncoder().encode(form.task).length > 2048 || form.task.includes("\0") ||
+    (requireToolCall && (lentTools.length === 0 || parentLimits.maxModelRequests < 2 || parentLimits.maxOutputTokens < 1)) ||
+    Object.entries(parentLimits).some(([key, value]) => {
+      const [min, max] = parentBounds[key as keyof typeof parentLimits];
+      return !Number.isInteger(value) || value < min || value > max;
+    }));
   const compatibleHarness = selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1";
   const staleTools = lentTools.some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision));
   const blockedSelection = cellnHarness && (!compatibleHarness || !form.model.trim() || catalogue.isLoading || catalogue.isError || staleTools);
@@ -138,15 +152,20 @@ export function RunsPage() {
   const hasCellnRuns = sorted.some((r) => r.spec.backend === "celln");
 
   const handleCreate = () => {
-    if (blockedSelection || jobIncompatible) return;
+    if (blockedSelection || jobIncompatible || invalidParent || parentRequested) return;
     const request = cellnHarness
       ? { ...form, runtimeRef: undefined, provider: "deepseek", cellnSelection: { runtimeRef: form.runtimeRef || undefined, toolRefs: lentTools } }
       : form;
-    createRun.mutate(request, {
+    if (enduringRequest) setParentRequested(true);
+    createRun.mutate({ ...request, ...(enduringRequest ? { executionLifecycle: "enduring" as const, enduring: { ...parentLimits, ...(requireToolCall ? { requireToolCall: true } : {}) }, systemPrompt: parentSystemPrompt } : {}) }, {
       onSuccess: () => {
         setOpen(false);
         setForm({ agentRef: "", task: "", model: "", timeout: "5m", backend: "job", runtimeRef: "" });
         setLentTools([]);
+        setEnduring(false);
+        setParentSystemPrompt("");
+        setRequireToolCall(false);
+        setParentRequested(false);
       },
     });
   };
@@ -269,9 +288,9 @@ export function RunsPage() {
                 {form.backend === "celln" && (
                   <>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Celln runs one bounded computation in a sealed microVM.
-                      No ensembles, delegation, shared memory, or streaming.
-                      Best for single-shot high-risk or sensitive tasks.
+                      Celln executes approved work in sealed microVMs. One-shot
+                      work uses a disposable cell; enduring Harness work requires
+                      a separately admitted persistent parent and per-turn children.
                     </p>
                     {!cellnHarness && <p className="text-xs text-amber-500/80 mt-1">
                       Uses whatever AI provider is configured on the KVM
@@ -280,8 +299,26 @@ export function RunsPage() {
                     {cellnHarness && <div className="space-y-3 rounded-md border p-3" data-testid="celln-harness-selection">
                       <p className="text-sm font-medium">Harness in Celln — {runtimeName}</p>
                       {!compatibleHarness && <p role="alert" className="text-xs text-red-400">This Harness does not declare the supported native JSON Celln contract. No backend fallback will be used.</p>}
-                      <p className="text-xs text-muted-foreground">The model loop runs inside the cell. DeepSeek model access is independently approved by the host; Kubernetes model credentials are not used. One-shot tasks only; conversations are not supported yet.</p>
+                      <p className="text-xs text-muted-foreground">The model loop runs inside the cell. DeepSeek model access is independently approved by the host; Kubernetes model credentials are not used.</p>
+                      <label className="flex items-center gap-2 text-sm"><input data-testid="celln-enduring-opt-in" type="checkbox" checked={enduring} onChange={(event) => setEnduring(event.target.checked)} />Enduring conversation (development — operator approval required)</label>
+                      {enduringRequest && <div className="space-y-2" data-testid="celln-enduring-limits">
+                        <p role="alert" className="text-xs text-amber-500">This creates a request, not a ready agent. A matching operator-prepared parent registration can admit it automatically. One-shot runtime metadata and node readiness do not establish enduring support. Fresh host-parent provisioning still requires operator preparation.</p>
+                        <label className="block space-y-1 text-xs">Harness system prompt (optional)
+                          <Textarea data-testid="celln-parent-system-prompt" value={parentSystemPrompt} onChange={(event) => setParentSystemPrompt(event.target.value)} placeholder="Instructions retained by the parent Harness" />
+                        </label>
+                        <p className="text-xs text-muted-foreground">These instructions must match the prepared parent registration exactly. An empty field requests no system prompt.</p>
+                        <label className="flex items-center gap-2 text-xs"><input data-testid="celln-require-tool-call" type="checkbox" checked={requireToolCall} onChange={(event) => setRequireToolCall(event.target.checked)} />Require a fresh borrowed-tool call on every turn</label>
+                        <p className="text-xs text-muted-foreground">Optional. Requires at least one selected tool and matching parent approval. A turn cannot report success without executing a lent tool; this does not require every selected tool.</p>
+                        {(Object.keys(parentLimits) as (keyof typeof parentLimits)[]).map((key) => <label key={key} className="block text-xs">{key}
+                          <Input data-testid={`celln-${key}`} type="number" min={parentBounds[key][0]} max={parentBounds[key][1]} step={1} value={Number.isNaN(parentLimits[key]) ? "" : parentLimits[key]} onChange={(event) => setParentLimits({ ...parentLimits, [key]: event.target.valueAsNumber })} />
+                        </label>)}
+                        <p className="text-xs">Max turns includes the initial message. Initial message: {new TextEncoder().encode(form.task).length}/2048 UTF-8 bytes. Context is retained while the parent lives, not restored after a crash.</p>
+                        {invalidParent && <p role="alert" className="text-xs text-red-400">Correct the bounded integer limits or initial message before submitting.</p>}
+                      </div>}
                       <Label>Borrowed catalogue tools (optional, maximum 16)</Label>
+                      {enduringRequest && compatibleHarness && !catalogue.isLoading && !catalogue.isError && <CellnStarterTools agentRef={form.agentRef} runtimeRef={form.runtimeRef || undefined} catalogue={catalogue.data || []} onSelect={setLentTools} />}
+                      <p className="text-xs text-muted-foreground" data-testid="celln-tools-explanation">Choose the tools this Harness may request. Selections are pinned to this run; installing a tool does not grant permission to use it. Agent, runtime and operator approvals must all allow it.</p>
+                      <p className="text-xs text-muted-foreground">Only installed catalogue tools appear below. Shell, Python, general HTTP access and workspace read/write are not implicitly included. Adding tools to an existing enduring parent requires a new run.</p>
                       {catalogue.isLoading && <p className="text-xs">Loading catalogue…</p>}
                       {catalogue.isError && <p role="alert" className="text-xs text-red-400">Cannot load the catalogue. Submission is disabled.</p>}
                       {!catalogue.isLoading && !catalogue.isError && !(catalogue.data || []).length && <p className="text-xs">No reviewed tools in this namespace. An empty selection lends no tools.</p>}
@@ -298,10 +335,10 @@ export function RunsPage() {
                         </label>;
                       })}
                       <p className="text-xs">Lending order: {lentTools.map((ref) => `${ref.name}@${ref.revision}`).join(" → ") || "none"}</p>
-                      {compatibleHarness && !staleTools && <CellnPermissionPreview agentRef={form.agentRef} selection={{ runtimeRef: form.runtimeRef || undefined, toolRefs: lentTools }} />}
+                      {compatibleHarness && !staleTools && <CellnPermissionPreview enduring={enduringRequest} agentRef={form.agentRef} selection={{ runtimeRef: form.runtimeRef || undefined, toolRefs: lentTools }} />}
                       {staleTools && <p role="alert" className="text-xs text-red-400">The catalogue changed. Clear and reselect the borrowed tools before submitting.</p>}
                       {!!lentTools.length && <Button type="button" variant="outline" size="sm" onClick={() => setLentTools([])}>Clear borrowed tools</Button>}
-                      <p className="text-xs text-amber-500">Selection readiness is not established. Catalogue metadata is not permission to run. Registered compositions can receive trusted issuance automatically; new combinations require operator preparation. Current approvals and effective permissions are checked before execution.</p>
+                      {!enduringRequest && <p className="text-xs text-amber-500">Selection readiness is not established. Catalogue metadata is not permission to run. Registered compositions can receive trusted issuance automatically; new combinations require operator preparation. Current approvals and effective permissions are checked before execution.</p>}
                     </div>}
                     {capabilities.data && !capabilities.data.celln.available ? (
                       <p className="flex items-start gap-1 text-xs text-red-400 mt-1">
@@ -327,11 +364,12 @@ export function RunsPage() {
                 className="w-full bg-primary hover:bg-primary/90 text-primary-foreground border-0"
                 onClick={handleCreate}
                 disabled={
-                  !form.agentRef || !form.task || createRun.isPending || blockedSelection || jobIncompatible
+                  !form.agentRef || !form.task || createRun.isPending || blockedSelection || jobIncompatible || invalidParent || parentRequested
                 }
               >
-                {createRun.isPending ? "Creating…" : cellnHarness ? "Request catalogue run" : "Create Run"}
+                {createRun.isPending ? "Creating…" : enduringRequest ? "Request enduring run" : cellnHarness ? "Request catalogue run" : "Create Run"}
               </Button>
+              {parentRequested && !createRun.isPending && <p role="alert" className="text-xs text-amber-500">Creation was not confirmed. Check the run list before making another request; this form will not resubmit it.</p>}
             </div>
           </DialogContent>
         </Dialog>

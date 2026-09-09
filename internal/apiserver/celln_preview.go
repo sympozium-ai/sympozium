@@ -83,10 +83,11 @@ func (s *Server) previewCellnSelection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		AgentRef  string                      `json:"agentRef"`
 		Selection api.CellnCatalogueSelection `json:"cellnSelection"`
+		Lifecycle string                      `json:"executionLifecycle,omitempty"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	d.DisallowUnknownFields()
-	if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || req.AgentRef == "" {
+	if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || req.AgentRef == "" || (req.Lifecycle != "" && req.Lifecycle != "enduring") {
 		http.Error(w, "bounded explicit catalogue selection required", http.StatusBadRequest)
 		return
 	}
@@ -95,7 +96,7 @@ func (s *Server) previewCellnSelection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Permission preview is not configured for this Agent; readiness is not established", http.StatusServiceUnavailable)
 		return
 	}
-	preview, err := l.Preview(r.Context(), types.NamespacedName{Namespace: ns, Name: req.AgentRef}, req.Selection)
+	preview, err := l.PreviewLifecycle(r.Context(), types.NamespacedName{Namespace: ns, Name: req.AgentRef}, req.Selection, req.Lifecycle)
 	if err != nil {
 		// Do not expose privileged ConfigMap names/contents or other bindings.
 		http.Error(w, "Selection permissions could not be resolved from current approvals; no execution authorized", http.StatusUnprocessableEntity)

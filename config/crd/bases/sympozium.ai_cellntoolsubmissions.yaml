@@ -98,6 +98,42 @@ spec:
                     maximum: 65536
                     minimum: 1
                     type: integer
+                  artifacts:
+                    description: Artifacts grants logical run-owned data operations,
+                      never host mounts.
+                    properties:
+                      maxFileBytes:
+                        format: int64
+                        maximum: 4096
+                        minimum: 1
+                        type: integer
+                      maxFiles:
+                        format: int64
+                        maximum: 256
+                        minimum: 1
+                        type: integer
+                      maxOperations:
+                        format: int64
+                        maximum: 64
+                        minimum: 1
+                        type: integer
+                      maxTotalBytes:
+                        format: int64
+                        maximum: 1048576
+                        minimum: 1
+                        type: integer
+                      operation:
+                        enum:
+                        - read
+                        - write
+                        type: string
+                    required:
+                    - maxFileBytes
+                    - maxFiles
+                    - maxOperations
+                    - maxTotalBytes
+                    - operation
+                    type: object
                   effects:
                     enum:
                     - none
@@ -108,6 +144,37 @@ spec:
                       type: string
                     maxItems: 0
                     type: array
+                  https:
+                    description: HTTPS grants bounded credential-free GET via the
+                      host broker.
+                    properties:
+                      allowHosts:
+                        items:
+                          type: string
+                        maxItems: 16
+                        minItems: 1
+                        type: array
+                      maxRequests:
+                        format: int64
+                        maximum: 16
+                        minimum: 1
+                        type: integer
+                      maxResponseBytes:
+                        format: int64
+                        maximum: 4096
+                        minimum: 1
+                        type: integer
+                      timeoutMillis:
+                        format: int64
+                        maximum: 30000
+                        minimum: 1
+                        type: integer
+                    required:
+                    - allowHosts
+                    - maxRequests
+                    - maxResponseBytes
+                    - timeoutMillis
+                    type: object
                   inputs:
                     items:
                       properties:

@@ -66,6 +66,7 @@ func runBrowserAction(t *testing.T, ctx context.Context, endpoint, namespace, ru
 		env = append(env, entry)
 	}
 	env = append(env, "CYPRESS_BASE_URL="+endpoint, "CYPRESS_PROOF_NAMESPACE="+namespace, "CYPRESS_PROOF_RUN="+run, "CYPRESS_PROOF_TASK="+task, "CYPRESS_PROOF_ACTION="+action)
+	env = append(env, "CYPRESS_PROOF_TOKEN="+liveBrowserToken(t), "CYPRESS_PROOF_INTERACTIVE="+os.Getenv("CELLN_LIVE_INTERACTIVE"))
 	out := command(t, ctx, env, filepath.Join(web, "node_modules", ".bin", "cypress"), "run", "--project", web, "--config-file", "cypress.celln-live.config.ts", "--browser", "electron")
 	t.Logf("browser proof: %s", out)
 }

@@ -8,10 +8,13 @@ describe("live Harness-in-Celln", () => {
     if (cancel) expect(run).to.be.a("string").and.not.be.empty;
     cy.visit(cancel ? "/runs" : run ? `/runs/${run}` : "/runs?create=1", {
       onBeforeLoad(win) {
-        win.localStorage.setItem("sympozium_token", "public-loopback-browser-fixture");
+        win.localStorage.setItem("sympozium_token", Cypress.env("PROOF_TOKEN") || "public-loopback-browser-fixture");
         win.localStorage.setItem("sympozium_namespace", namespace);
       },
     });
+    if (String(Cypress.env("PROOF_INTERACTIVE")) === "1") {
+      cy.contains("Stream Connected", { timeout: 20000 }).should("be.visible");
+    }
     if (cancel) {
       // Observe the actual authenticated DELETE; do not stub acceptance or
       // disappearance. The Go proof independently waits for finalization.
@@ -26,11 +29,23 @@ describe("live Harness-in-Celln", () => {
       cy.contains("Succeeded", { timeout: 20000 }).should("be.visible");
       cy.contains('[role="tab"]', "Result").click();
       cy.contains("CELLN has length 5").should("be.visible");
+      if (String(Cypress.env("PROOF_INTERACTIVE")) === "1") {
+        cy.get('[data-testid="celln-answer"]').should("have.text", "CELLN has length 5");
+        cy.screenshot("interactive-result");
+        cy.visit("/topology");
+        cy.contains("Stream Connected", { timeout: 20000 }).should("be.visible");
+        cy.get(".react-flow__node", { timeout: 20000 }).should("have.length.at.least", 1);
+        cy.screenshot("interactive-topology");
+      }
       return;
     }
     cy.get('[role="dialog"]').find('[role="combobox"]').eq(0).click();
     cy.get('[role="option"]').contains("agent").click();
     cy.get("textarea").type(Cypress.env("PROOF_TASK"));
+    if (String(Cypress.env("PROOF_INTERACTIVE")) === "1") {
+      cy.get('[role="dialog"]').find('[role="combobox"]').eq(1).click();
+      cy.get('[role="option"]').filter((_, el) => el.textContent?.startsWith("runtime") || false).click();
+    }
     cy.get('[role="dialog"]').find('[role="combobox"]').eq(2).click();
     cy.get('[role="option"]').contains("Celln —").click();
     for (const name of ["uppercase", "length"]) {
@@ -40,6 +55,9 @@ describe("live Harness-in-Celln", () => {
     cy.get('[data-testid="celln-permission-preview"]').contains("Shared cell memory ceiling:").scrollIntoView().should("be.visible");
     cy.get('[data-testid="celln-permission-preview"]').contains("uppercase@").should("be.visible");
     cy.get('[data-testid="celln-permission-preview"]').contains("length@").should("be.visible");
+    if (String(Cypress.env("PROOF_INTERACTIVE")) === "1") {
+      cy.screenshot("interactive-selection");
+    }
     cy.intercept("POST", "/api/v1/runs*").as("created");
     cy.contains("button", "Request catalogue run").click();
     cy.wait("@created").then(({ request, response }) => {

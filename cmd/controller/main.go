@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	llmfitv1alpha1 "github.com/sympozium-ai/llmfit-dra/api/v1alpha1"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/cellnparent"
 	"github.com/sympozium-ai/sympozium/internal/cellnreview"
 	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/dra"
@@ -53,6 +55,8 @@ func main() {
 	var maxRunHistory int
 	var delegationControllerExecutor bool
 	var watchNamespace string
+	var parentOnly bool
+	flag.BoolVar(&parentOnly, "celln-parent-only", false, "Run only native Celln parent/turn controllers; requires an explicit watch namespace and parent configuration.")
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -69,6 +73,10 @@ func main() {
 			"tool-driven delegation path is unchanged. Also enabled via "+
 			"SYMPOZIUM_DELEGATION_CONTROLLER_EXECUTOR=true.")
 	flag.Parse()
+	if parentOnly && (watchNamespace == "" || os.Getenv("CELLN_PARENT_CONFIG") == "" || os.Getenv("CELLN_PARENT_REGISTRATIONS") == "") {
+		fmt.Fprintln(os.Stderr, "parent-only mode requires an explicit watch namespace, CELLN_PARENT_CONFIG and CELLN_PARENT_REGISTRATIONS")
+		os.Exit(1)
+	}
 
 	// Resolve the image tag used for runtime-spawned pods (agent-runner,
 	// memory-server, MCP servers, channel sidecars). The package-level
@@ -124,6 +132,14 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
+	}
+
+	if parentOnly {
+		if err := runParentOnly(mgr, natsURL); err != nil {
+			setupLog.Error(err, "parent-only manager stopped")
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Set up the PodBuilder used by AgentRunReconciler
@@ -182,6 +198,7 @@ func main() {
 	}
 
 	agentRunReconciler := &controller.AgentRunReconciler{
+		ParentConfigPath:             os.Getenv("CELLN_PARENT_CONFIG"),
 		Client:                       mgr.GetClient(),
 		APIReader:                    mgr.GetAPIReader(),
 		Scheme:                       mgr.GetScheme(),
@@ -193,6 +210,14 @@ func main() {
 		DelegationControllerExecutor: delegationControllerExecutor,
 		DynamicClient:                dynamicClient,
 		Pricing:                      pricingLoader,
+	}
+	if configPath := os.Getenv("CELLN_PARENT_REGISTRATIONS"); configPath != "" {
+		dispatcher, err := cellnparent.LoadRegistrationDispatcher(configPath, agentRunReconciler.ParentConfigPath, mgr.GetAPIReader())
+		if err != nil {
+			setupLog.Error(err, "invalid prepared Celln parent admission configuration")
+			os.Exit(1)
+		}
+		agentRunReconciler.ParentAdmission = dispatcher
 	}
 	if configPath := os.Getenv("CELLN_CATALOGUE_CONFIG"); configPath != "" {
 		dispatcher, closeDispatcher, err := cellnreview.LoadRunDispatcher(configPath, mgr.GetClient(), mgr.GetAPIReader())
@@ -207,6 +232,12 @@ func main() {
 	if err := agentRunReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentRun")
 		os.Exit(1)
+	}
+	if agentRunReconciler.ParentConfigPath != "" {
+		if err := (&controller.AgentRunTurnReconciler{Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), ParentConfigPath: agentRunReconciler.ParentConfigPath}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create AgentRunTurn controller")
+			os.Exit(1)
+		}
 	}
 
 	if err := (&controller.SympoziumPolicyReconciler{
