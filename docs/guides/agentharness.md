@@ -1,5 +1,12 @@
 # AgentHarness: bring your agent into Sympozium
 
+!!! note "OCI adapters and native Celln are different execution paths"
+    This guide describes OCI adapters and `HarnessSession` chat. Native Celln
+    uses an enduring `AgentRun` with a live parent and disposable turn cells;
+    it does not inherit OCI session PVC/resume, SkillPack or MCP support.
+    See [skills, tools and execution](../concepts/skills-tools-and-execution.md)
+    and [native installation](celln-native-installation.md) for that path.
+
 ## The problem
 
 Sympozium already runs agents as isolated Kubernetes Jobs, but the agent loop

@@ -114,7 +114,8 @@ export function RunsPage() {
     }));
   const compatibleHarness = selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1";
   const staleTools = lentTools.some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision));
-  const blockedSelection = cellnHarness && (!compatibleHarness || !form.model.trim() || catalogue.isLoading || catalogue.isError || staleTools);
+  const incompatibleSkills = cellnHarness && !!selectedAgent?.spec.skills?.length;
+  const blockedSelection = cellnHarness && (incompatibleSkills || !compatibleHarness || !form.model.trim() || catalogue.isLoading || catalogue.isError || staleTools);
   const jobIncompatible = form.backend === "job" && !!selectedRuntime?.spec.celln && !selectedRuntime.spec.image;
 
   useEffect(() => {
@@ -157,7 +158,7 @@ export function RunsPage() {
       ? { ...form, runtimeRef: undefined, provider: "deepseek", cellnSelection: { runtimeRef: form.runtimeRef || undefined, toolRefs: lentTools } }
       : form;
     if (enduringRequest) setParentRequested(true);
-    createRun.mutate({ ...request, ...(enduringRequest ? { executionLifecycle: "enduring" as const, enduring: { ...parentLimits, ...(requireToolCall ? { requireToolCall: true } : {}) }, systemPrompt: parentSystemPrompt } : {}) }, {
+    createRun.mutate({ ...request, ...(enduringRequest ? { timeout: `${parentLimits.leaseSeconds}s`, executionLifecycle: "enduring" as const, enduring: { ...parentLimits, ...(requireToolCall ? { requireToolCall: true } : {}) }, systemPrompt: parentSystemPrompt } : {}) }, {
       onSuccess: () => {
         setOpen(false);
         setForm({ agentRef: "", task: "", model: "", timeout: "5m", backend: "job", runtimeRef: "" });
@@ -298,6 +299,8 @@ export function RunsPage() {
                     </p>}
                     {cellnHarness && <div className="space-y-3 rounded-md border p-3" data-testid="celln-harness-selection">
                       <p className="text-sm font-medium">Harness in Celln — {runtimeName}</p>
+                      {incompatibleSkills && <p role="alert" className="text-xs text-red-400">This Agent has SkillPacks ({selectedAgent?.spec.skills?.map((skill) => skill.skillPackRef || skill.configMapRef).join(", ")}) that native Celln cannot use. Choose a dedicated native Agent with borrowed tools, or a compatible backend. Skills will not be silently removed.</p>}
+                      <p className="text-xs text-muted-foreground">Skills are instructions; borrowed tools perform operations. Existing SkillPack sidecars and MCP connections are not automatically available in Celln.</p>
                       {!compatibleHarness && <p role="alert" className="text-xs text-red-400">This Harness does not declare the supported native JSON Celln contract. No backend fallback will be used.</p>}
                       <p className="text-xs text-muted-foreground">The model loop runs inside the cell. DeepSeek model access is independently approved by the host; Kubernetes model credentials are not used.</p>
                       <label className="flex items-center gap-2 text-sm"><input data-testid="celln-enduring-opt-in" type="checkbox" checked={enduring} onChange={(event) => setEnduring(event.target.checked)} />Enduring conversation (development — operator approval required)</label>

@@ -108,7 +108,15 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	// see the resolved values rather than a runtime name they cannot use. When
 	// the task names neither an image nor a runtime, the Agent's runtimeRef is
 	// inherited.
-	run.Spec.Task = taskmodes.ApplyAgentRuntime(run.Spec.Task, instance.Spec.RuntimeRef)
+	// A catalogue-selected Celln runtime is a signed guest profile, not an
+	// OCI adapter. Its authority is resolved by the native controller. Keep
+	// the original task here; all ordinary policy checks below still apply,
+	// including rejection of an explicitly requested OCI harness on Celln.
+	if run.Spec.Backend != "celln" || run.Spec.CellnSelection == nil {
+		run.Spec.Task = taskmodes.ApplyAgentRuntime(run.Spec.Task, instance.Spec.RuntimeRef)
+	} else if len(run.Spec.Skills) != 0 || len(instance.Spec.Skills) != 0 || len(instance.Spec.MCPServers) != 0 {
+		return admission.Denied("native Celln does not support SkillPacks or Agent MCP connections; select a dedicated Agent with approved borrowed tools, or a compatible backend")
+	}
 	normalized, err := taskmodes.NormalizeHarnessTask(run.Namespace, run.Spec.Task, func(ns, name string) (*sympoziumv1alpha1.AgentRuntime, error) {
 		var rt sympoziumv1alpha1.AgentRuntime
 		if err := pe.Client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &rt); err != nil {

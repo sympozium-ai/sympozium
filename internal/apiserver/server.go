@@ -1233,6 +1233,16 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Timeout == "" {
 		req.Timeout = "5m"
+		if req.ExecutionLifecycle == "enduring" {
+			req.Timeout = fmt.Sprintf("%ds", req.Enduring.LeaseSeconds)
+		}
+	}
+	if req.ExecutionLifecycle == "enduring" {
+		duration, err := time.ParseDuration(req.Timeout)
+		if err != nil || duration < time.Duration(req.Enduring.LeaseSeconds)*time.Second {
+			http.Error(w, "enduring run timeout must be a valid duration at least as long as its lease", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Look up the Agent to inherit auth, model, and skills.
@@ -1243,6 +1253,11 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		} else {
 			http.Error(w, "failed to get instance: "+err.Error(), http.StatusInternalServerError)
 		}
+		return
+	}
+
+	if req.CellnSelection != nil && (len(inst.Spec.Skills) != 0 || len(inst.Spec.MCPServers) != 0) {
+		http.Error(w, "native Celln cannot use this Agent's SkillPacks or MCP connections; use a dedicated Agent with approved borrowed tools, or choose a compatible backend. Nothing was submitted or silently removed", http.StatusBadRequest)
 		return
 	}
 

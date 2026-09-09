@@ -2,9 +2,9 @@
 
 This is the installation path for a persistent native Harness parent and
 disposable per-turn cells. It is separate from the one-shot router installation.
-The chart wiring has local render/refusal tests; it has **not yet passed the
-framework deployment or real-model acceptance test**. It is not an installable
-release announcement. Track this work against epic #464 and starter-tools #467.
+The chart wiring and standalone installation commands are deployed on framework
+for qualification. Full installed acceptance is still in progress; this is not
+a release announcement. Track epic #464 and starter-tools #467.
 
 ## Architecture and boundaries
 
@@ -76,12 +76,59 @@ Prepare these explicitly before enabling the chart:
    RBAC must authorize the API server's intended reads. Preview is not proof
    of owner readiness or permission to execute.
 
-Celln now has a standalone `starter-package` command for cold artifact packaging
-with an operator signing seed. All five bundles were packaged on framework
-without touching its existing dispatcher. This does not approve their publisher,
-admit the motes, create grants or bind Kubernetes catalogue identities. Those
-installation steps still need extraction from the fixture and qualification
-before this can be called a standard installation.
+## Standalone preparation and installation
+
+Celln provides `starter-package`, `starter-inspect`, `starter-admit` and
+`starter-configure`. See Celln's `docs/NATIVE_STARTER_PACKAGING.md` for the
+explicit publisher approval, package hash and bounded-effects approval steps.
+Admission executes guest member checks; configuration does not launch a model
+or read its credential. Preserve the resulting configuration and receipt.
+
+After the general controller has completed its namespace-separated rollout and
+the dedicated namespace exists, run:
+
+```sh
+sympozium --kubeconfig /ABS/FRAMEWORK_KUBECONFIG -n celln-agents \
+  celln-tool install-native \
+  --configuration-dir /ABS/REVIEWED_CONFIGURATION \
+  --output-dir /ABS/NEW_PRIVATE_INSTALLATION_OUTPUT \
+  --state-path /var/lib/sympozium-celln/starter \
+  --owner-target https://OWNER_ADDRESS:19443 \
+  --scope STABLE_INSTALLATION_ID \
+  --reviewed-package-hash blake3:REVIEWED_PACKAGE_JSON_HASH \
+  --approve-starter-tools
+```
+
+This creates `celln-native`, `celln-agent`, three tool revisions and three
+explicit grant ConfigMaps, then binds their actual UIDs/generations into
+`registrations.json`. It writes `preview.json`, `run.json` and `installed.json`
+but submits no run and asserts no execution readiness. Existing resources or
+output directories are refused. Inspect partial state after failure; do not
+delete journals or change the scope to retry consumed authority.
+
+The native runtime intentionally has no OCI image or OCI Ready condition.
+Upgrade the admission webhook too: catalogue-selected Celln tasks must not
+inherit an OCI adapter from `Agent.runtimeRef`. Explicit OCI harness tasks are
+still rejected on the Celln backend; all ordinary policy checks remain active.
+
+Create the controller Secret from registrations plus the owner bearer and CA
+files, and create the API preview ConfigMap from `preview.json` under the key
+`config.json`. The model key remains host-only. The owner needs a separate
+`trusted-parent-clients.json` principal/token-hash policy: its generic dispatcher
+`--token-file` does not grant parent access.
+
+Example hardened service units are in `config/host/sympozium-celln-native-*.service`.
+They use a dedicated non-root owner, loopback backend and separate TLS edge;
+review paths, node, UID, address and ceilings for the installation. Prepare
+certificates and host credentials separately, run `systemd-analyze verify`,
+and qualify startup before enabling them across reboots. Existing owners are
+not replaced. Certificate expiry and key rotation are operator responsibilities.
+
+For an incremental upgrade from v0.10.56, the additive bridge in
+`config/samples/celln-native-upgrade-rbac.yaml` provides the new API turn/catalogue
+and controller workspace permissions. It targets the standard service-account
+names. Remove that bridge only after the regular chart roles supply the same
+rights. Apply the new CRDs before upgrading consumers.
 
 ## Build and chart wiring
 

@@ -1,0 +1,55 @@
+# Additive bridge for an existing multi-namespace v0.10.56 installation while
+# qualifying the native release. The current chart already includes these
+# rules; remove this bridge only after that chart's RBAC is installed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sympozium-native-upgrade-manager
+rules:
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions/status]
+    verbs: [get, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [workspacesessions/finalizers]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sympozium-native-upgrade-manager
+subjects:
+  - kind: ServiceAccount
+    name: sympozium-controller-manager
+    namespace: sympozium-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sympozium-native-upgrade-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sympozium-native-upgrade-api
+rules:
+  - apiGroups: [sympozium.ai]
+    resources: [agentrunturns]
+    verbs: [get, list, watch, create, update]
+  - apiGroups: [sympozium.ai]
+    resources: [cellntools]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sympozium-native-upgrade-api
+subjects:
+  - kind: ServiceAccount
+    name: sympozium-apiserver
+    namespace: sympozium-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sympozium-native-upgrade-api

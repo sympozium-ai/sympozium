@@ -1,0 +1,20 @@
+{
+  "apiVersion": "celln.native-starter-configured/v1",
+  "catalogueHash": "blake3:130a52bd1e240833902743ddb750f3ef85fbc0ecab4ae9ee9b09cb8bab43d9d2",
+  "executionAuthorized": false,
+  "hostLimits": {
+    "leaseSeconds": 3600,
+    "maxModelRequests": 36,
+    "maxOutputTokens": 18432,
+    "maxTurns": 12
+  },
+  "model": {
+    "model": "deepseek-chat",
+    "provider": "deepseek"
+  },
+  "modelProfile": "blake3:e6d7222adf46e6ac7973efc821995c608a1bae7ba0d26bd8e2955fb221c208d2",
+  "nativeTemplateHash": "blake3:07b462f9c6584acae2e9ceab3f00451bd48b64e84ab5c071d528493877f0b86a",
+  "packageHash": "blake3:7114835971abdfbbdb83d800daa69783a55600f56fbf563d190bdc5650d0ad94",
+  "principal": "sympozium:celln-agents",
+  "readiness": "not_established"
+}

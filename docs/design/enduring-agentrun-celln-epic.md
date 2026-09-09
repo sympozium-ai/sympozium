@@ -29,16 +29,21 @@ The merged local starter RC is the baseline, not proof of this deployment.
   uninstall before mutation while runs remain or the state read fails.
 - [ ] Extract host/artifact/catalogue preparation from the test fixture into
   supported installation tooling; qualify and publish combined images.
-  Partial: Celln's standalone operator-signed cold packager produced the five
-  native bundles on framework. Admission, grants and catalogue binding remain.
-- [ ] Establish controller ownership separation on framework without abandoning
+  Standalone package/admission/configuration and Kubernetes catalogue/grant
+  installation now work on framework. Qualified published images remain.
+- [x] Establish controller ownership separation on framework without abandoning
   existing multi-namespace workloads; install the host owner, TLS edge and grants.
-  Partial: namespace exclusion is implemented and unit/render tested; no shared
-  controller rollout or native owner installation is claimed yet.
+  General manager excludes only `celln-agents`; dedicated owner/TLS services and
+  node-pinned parent controller are running without replacing the old owner.
 - [ ] Qualify normal UI/YAML creation and permissions on that installation.
 - [ ] Real-model installed E2E: cross-turn files, HTTPS, cancellation/continue,
   refresh, credential rotation/restart, context loss and confirmed cleanup;
   regress ordinary Kubernetes and Celln one-shot execution.
+
+Installed progress and remaining release gates are recorded in
+`docs/evidence/celln-framework-installation-2026-09-09.md`. The Concepts glossary
+and guides now distinguish skills from tools, backend from lifecycle, and OCI
+session persistence from native parent context. No capability parity is claimed.
 
 Packaging instructions and outstanding prerequisites:
 `docs/guides/celln-native-installation.md`.

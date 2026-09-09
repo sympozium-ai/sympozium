@@ -1,0 +1,146 @@
+{
+  "admissionWindowMs": 120000,
+  "maxTurns": 12,
+  "modelProfile": "blake3:e6d7222adf46e6ac7973efc821995c608a1bae7ba0d26bd8e2955fb221c208d2",
+  "parent": {
+    "apiVersion": "celln.dev/v1alpha1",
+    "capabilities": {
+      "egress": [],
+      "memoryBytes": 268435456,
+      "outputBytes": 65536,
+      "timeoutMs": 3600000,
+      "workspace": "none"
+    },
+    "execution": {
+      "lane": "agent",
+      "requireHardwareIsolation": true
+    },
+    "forge": null,
+    "id": "native-parent",
+    "inputs": [],
+    "invocation": {
+      "alias": "/parent",
+      "args": []
+    },
+    "mote": {
+      "hash": "blake3:6c13fffee6f3869b5aaa9e39ede18afd0db95ece5a7bb98fa607204d4b0c1f4d"
+    },
+    "tools": [
+      {
+        "alias": "/parent",
+        "closure": {
+          "hash": "blake3:c51c450212c97f15478bac4217a7b6d647dc3af209c16d7c0cc1f13960485caa"
+        },
+        "hash": "blake3:b4713fe0beff6c8a482cbd617993598ef28de3958207d1825add9096449785a6"
+      }
+    ],
+    "workload": {
+      "caller": "sympozium:celln-agents",
+      "id": "native-parent"
+    }
+  },
+  "reservedMemoryBytes": 1342177280,
+  "template": {
+    "contract": "celln.json-tools/v1",
+    "max_calls": 1,
+    "max_turns": 3,
+    "model": "deepseek-chat",
+    "system": "Use the borrowed tools when requested. Read files with workspace-read rather than relying on remembered content. Keep replies brief.",
+    "task": "",
+    "tools": [
+      {
+        "description": "workspace-read",
+        "hash": "blake3:1ac5c808617ba96435d7d75f8411090a8d3d471646fe8cff4dfa6a8d2e3f7d3a",
+        "input_bytes": 8192,
+        "input_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"name\":{\"maxLength\":256,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}",
+          "hash": "blake3:fca322a33fcc0fe0e18a5bc45a89129223ee122872da0c824ce832c2e9ef6bf0"
+        },
+        "name": "workspace-read",
+        "output_bytes": 32768,
+        "output_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"content\":{\"maxLength\":4096,\"minLength\":0,\"type\":\"string\"},\"error\":{\"maxLength\":1024,\"minLength\":1,\"type\":\"string\"},\"revision\":{\"maximum\":65536,\"minimum\":0,\"type\":\"integer\"}},\"required\":[],\"type\":\"object\"}",
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "path": "/workspace-read",
+        "timeout_ms": 30000
+      },
+      {
+        "description": "workspace-write",
+        "hash": "blake3:5d7b000afc4e1ab88117108f441f6e3215469a42499c48d7bf11d7fb4eae64df",
+        "input_bytes": 8192,
+        "input_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"content\":{\"maxLength\":4096,\"minLength\":0,\"type\":\"string\"},\"name\":{\"maxLength\":256,\"minLength\":1,\"type\":\"string\"},\"revision\":{\"maximum\":65536,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"name\",\"revision\",\"content\"],\"type\":\"object\"}",
+          "hash": "blake3:fc86cca378df79943f713a1b43cb47b7b723f4e9067f7a3f41923d539e9fa0f5"
+        },
+        "name": "workspace-write",
+        "output_bytes": 32768,
+        "output_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"content\":{\"maxLength\":4096,\"minLength\":0,\"type\":\"string\"},\"error\":{\"maxLength\":1024,\"minLength\":1,\"type\":\"string\"},\"revision\":{\"maximum\":65536,\"minimum\":0,\"type\":\"integer\"}},\"required\":[],\"type\":\"object\"}",
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "path": "/workspace-write",
+        "timeout_ms": 30000
+      },
+      {
+        "description": "https-fetch",
+        "hash": "blake3:726e30d7449a7037a6682e885837b1b9f9e3906dc335a79863fe2d8c69809e6b",
+        "input_bytes": 8192,
+        "input_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"url\":{\"maxLength\":2048,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"url\"],\"type\":\"object\"}",
+          "hash": "blake3:acb9467ecab2e7a24aec893e749fe2fd461e1332aed33637886fb73d4884fb51"
+        },
+        "name": "https-fetch",
+        "output_bytes": 32768,
+        "output_schema": {
+          "bytes": "{\"additionalProperties\":false,\"properties\":{\"content\":{\"maxLength\":4096,\"minLength\":0,\"type\":\"string\"},\"error\":{\"maxLength\":1024,\"minLength\":1,\"type\":\"string\"},\"revision\":{\"maximum\":65536,\"minimum\":0,\"type\":\"integer\"}},\"required\":[],\"type\":\"object\"}",
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "path": "/https-fetch",
+        "timeout_ms": 30000
+      }
+    ],
+    "url": "https://api.deepseek.com/chat/completions"
+  },
+  "totalModelRequests": 36,
+  "totalOutputTokens": 18432,
+  "turnModelRequests": 3,
+  "turnOutputTokens": 1536,
+  "worker": {
+    "apiVersion": "celln.dev/v1alpha1",
+    "capabilities": {
+      "egress": [],
+      "memoryBytes": 268435456,
+      "outputBytes": 65536,
+      "timeoutMs": 60000,
+      "workspace": "none"
+    },
+    "execution": {
+      "lane": "agent",
+      "requireHardwareIsolation": true
+    },
+    "forge": null,
+    "id": "native-worker",
+    "inputs": [],
+    "invocation": {
+      "alias": "/worker",
+      "args": []
+    },
+    "mote": {
+      "hash": "blake3:5183c0a6695391f9b80780349ba152c58c4ee7677c0ec03dffea9430108cf51e"
+    },
+    "tools": [
+      {
+        "alias": "/worker",
+        "closure": {
+          "hash": "blake3:561524029eccebbd9a36a801d965bccf1e5ad5d90a3cb10e0073c3fed73c080a"
+        },
+        "hash": "blake3:b2d60750dbee791feb02bec642ba8ac331ee48489d544d8aa36719216a67d423"
+      }
+    ],
+    "workload": {
+      "caller": "sympozium:celln-agents",
+      "id": "native-worker"
+    }
+  }
+}

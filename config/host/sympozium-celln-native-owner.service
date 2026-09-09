@@ -1,0 +1,40 @@
+[Unit]
+Description=Sympozium native Celln parent owner
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/var/lib/sympozium-celln/starter /opt/sympozium-celln-native /etc/celln-native
+ConditionPathExists=/dev/kvm
+
+[Service]
+Type=exec
+User=celln-native
+Group=celln-native
+SupplementaryGroups=kvm
+WorkingDirectory=/var/lib/sympozium-celln/starter/authority
+Environment=CELLN_RUNTIME_DIR=/opt/sympozium-celln-native/share/celln
+ExecStart=/opt/sympozium-celln-native/bin/celln --root /var/lib/sympozium-celln/starter/authority dispatcher --listen 127.0.0.1:18787 --token-file /etc/celln-native/owner-token --node-name framework-native --mote-store /var/lib/sympozium-celln/starter/authority/motes --tool-store /var/lib/sympozium-celln/starter/authority/tools --max-cells 4 --memory-bytes 2147483648 --egress-slots 2 --allow-egress-host api.deepseek.com --allow-egress-host example.com
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillMode=control-group
+UMask=0077
+MemoryMax=4G
+CPUQuota=200%
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=/dev/kvm rw
+ReadWritePaths=/var/lib/sympozium-celln/starter/authority
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

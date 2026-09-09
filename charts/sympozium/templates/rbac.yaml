@@ -217,7 +217,8 @@ rules:
   # Catalogue selection UI can inspect reviewed metadata, never approve tools.
   - apiGroups: ["sympozium.ai"]
     resources: ["agentrunturns"]
-    verbs: ["get", "list", "create"]
+    # Cancellation records intent with a resourceVersion-guarded Update.
+    verbs: ["get", "list", "watch", "create", "update"]
   - apiGroups: ["sympozium.ai"]
     resources: ["cellntools"]
     verbs: ["get", "list", "watch"]

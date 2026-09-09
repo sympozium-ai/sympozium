@@ -35,6 +35,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/strvals"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -161,6 +162,7 @@ the output as a credential and do not paste it into logs or shell history.`,
 func initClient() error {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
 	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
 		return fmt.Errorf("failed to register scheme: %w", err)
 	}

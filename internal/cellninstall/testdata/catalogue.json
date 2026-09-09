@@ -1,0 +1,155 @@
+{
+  "systemPrompt": "Use the borrowed tools when requested. Read files with workspace-read rather than relying on remembered content. Keep replies brief.",
+  "tools": [
+    {
+      "name": "workspace-read",
+      "spec": {
+        "argumentsSchema": {
+          "hash": "blake3:fca322a33fcc0fe0e18a5bc45a89129223ee122872da0c824ce832c2e9ef6bf0"
+        },
+        "closure": {
+          "hash": "blake3:13ef3dc755e8ab613618ec811bcac42ac0c33101b3f67138a9f77aa00603fa6b"
+        },
+        "description": "workspace-read",
+        "entryPoint": "/workspace-read",
+        "executable": {
+          "hash": "blake3:1ac5c808617ba96435d7d75f8411090a8d3d471646fe8cff4dfa6a8d2e3f7d3a"
+        },
+        "invocationABI": "celln.json-stdio/v1",
+        "lane": "tool",
+        "limits": {
+          "argumentBytes": 8192,
+          "artifacts": {
+            "maxFileBytes": 4096,
+            "maxFiles": 8,
+            "maxOperations": 4,
+            "maxTotalBytes": 16384,
+            "operation": "read"
+          },
+          "effects": "none",
+          "memoryBytes": 268435456,
+          "outputBytes": 32768,
+          "timeoutMillis": 30000,
+          "workspace": "none"
+        },
+        "platform": "linux/amd64",
+        "publisherKey": "69e51c15a8df09003cb4efe1d697d8cf925ff48b17dbb5aee8ac61f574bd3b8b",
+        "resultSchema": {
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "revision": "v1",
+        "supportOwner": "native-starter-operator"
+      }
+    },
+    {
+      "name": "workspace-write",
+      "spec": {
+        "argumentsSchema": {
+          "hash": "blake3:fc86cca378df79943f713a1b43cb47b7b723f4e9067f7a3f41923d539e9fa0f5"
+        },
+        "closure": {
+          "hash": "blake3:81624864f116a0af116789078ad508a942df180623c5dd55c3085d23e6b23241"
+        },
+        "description": "workspace-write",
+        "entryPoint": "/workspace-write",
+        "executable": {
+          "hash": "blake3:5d7b000afc4e1ab88117108f441f6e3215469a42499c48d7bf11d7fb4eae64df"
+        },
+        "invocationABI": "celln.json-stdio/v1",
+        "lane": "tool",
+        "limits": {
+          "argumentBytes": 8192,
+          "artifacts": {
+            "maxFileBytes": 4096,
+            "maxFiles": 8,
+            "maxOperations": 4,
+            "maxTotalBytes": 16384,
+            "operation": "write"
+          },
+          "effects": "external-side-effects",
+          "memoryBytes": 268435456,
+          "outputBytes": 32768,
+          "timeoutMillis": 30000,
+          "workspace": "none"
+        },
+        "platform": "linux/amd64",
+        "publisherKey": "69e51c15a8df09003cb4efe1d697d8cf925ff48b17dbb5aee8ac61f574bd3b8b",
+        "resultSchema": {
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "revision": "v1",
+        "supportOwner": "native-starter-operator"
+      }
+    },
+    {
+      "name": "https-fetch",
+      "spec": {
+        "argumentsSchema": {
+          "hash": "blake3:acb9467ecab2e7a24aec893e749fe2fd461e1332aed33637886fb73d4884fb51"
+        },
+        "closure": {
+          "hash": "blake3:aa4519a7107093586881ce8dd85206cc2d6b59c05dccd23637c8c6dfe2c57d69"
+        },
+        "description": "https-fetch",
+        "entryPoint": "/https-fetch",
+        "executable": {
+          "hash": "blake3:726e30d7449a7037a6682e885837b1b9f9e3906dc335a79863fe2d8c69809e6b"
+        },
+        "invocationABI": "celln.json-stdio/v1",
+        "lane": "tool",
+        "limits": {
+          "argumentBytes": 8192,
+          "effects": "external-side-effects",
+          "https": {
+            "allowHosts": [
+              "example.com"
+            ],
+            "maxRequests": 4,
+            "maxResponseBytes": 4096,
+            "timeoutMillis": 10000
+          },
+          "memoryBytes": 268435456,
+          "outputBytes": 32768,
+          "timeoutMillis": 30000,
+          "workspace": "none"
+        },
+        "platform": "linux/amd64",
+        "publisherKey": "69e51c15a8df09003cb4efe1d697d8cf925ff48b17dbb5aee8ac61f574bd3b8b",
+        "resultSchema": {
+          "hash": "blake3:872f84bc48fa31ccd9298cbfabef44698af8adaa3fc672d9dbf1f4743127e7fd"
+        },
+        "revision": "v1",
+        "supportOwner": "native-starter-operator"
+      }
+    }
+  ],
+  "worker": {
+    "closure": {
+      "hash": "blake3:561524029eccebbd9a36a801d965bccf1e5ad5d90a3cb10e0073c3fed73c080a"
+    },
+    "contractVersion": "celln.json-tools/v1",
+    "entryPoint": "/worker",
+    "executable": {
+      "hash": "blake3:b2d60750dbee791feb02bec642ba8ac331ee48489d544d8aa36719216a67d423"
+    },
+    "json": {
+      "maxCalls": 1,
+      "maxTurns": 3
+    },
+    "lane": "agent",
+    "lifecycle": "disposable-one-shot",
+    "limits": {
+      "memoryBytes": 268435456,
+      "outputBytes": 65536,
+      "taskBytes": 2048,
+      "timeoutMillis": 60000,
+      "workspace": "none"
+    },
+    "mote": {
+      "hash": "blake3:5183c0a6695391f9b80780349ba152c58c4ee7677c0ec03dffea9430108cf51e"
+    },
+    "platform": "linux/amd64",
+    "publisherKey": "69e51c15a8df09003cb4efe1d697d8cf925ff48b17dbb5aee8ac61f574bd3b8b",
+    "revision": "v1"
+  }
+}

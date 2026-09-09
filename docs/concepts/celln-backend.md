@@ -1,5 +1,13 @@
 # Celln Backend (Hermetic Execution)
 
+!!! note "This page describes the one-shot router path"
+    Native persistent Harness support is a separate, opt-in installation under
+    qualification. It uses an enduring `AgentRun`, a leased parent cell and
+    disposable child cells per turn, not the router described below. See
+    [native installation](../guides/celln-native-installation.md) and
+    [skills, tools and execution](skills-tools-and-execution.md). Router
+    reachability alone does not establish native parent readiness.
+
 Sympozium optionally integrates with [Celln](https://github.com/sympozium-ai/celln) to run a single bounded, high-risk, or sensitive computation in a hardware-isolated microVM instead of a Kubernetes Job. It is selected per run with `spec.backend: "celln"` on an `AgentRun`.
 
 Celln is disabled by default. Enabling it requires explicit router credentials,

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +23,7 @@ func TestCreateRunEnduringLifecycle(t *testing.T) {
 		want                          int
 	}{
 		{"enduring", "enduring", `{"leaseSeconds":300,"maxTurns":4,"maxModelRequests":12,"maxOutputTokens":4096}`, "remember violet", http.StatusCreated},
+		{"one-hour enduring", "enduring", `{"leaseSeconds":3600,"maxTurns":4,"maxModelRequests":12,"maxOutputTokens":4096}`, "remember violet", http.StatusCreated},
 		{"one-shot", "one-shot", `null`, "one task", http.StatusCreated},
 		{"legacy", "", `null`, "one task", http.StatusCreated},
 		{"missing limits", "enduring", `null`, "task", http.StatusBadRequest},
@@ -62,6 +64,9 @@ func TestCreateRunEnduringLifecycle(t *testing.T) {
 				t.Fatal("missing run")
 			}
 			run := stored.Items[0]
+			if tc.lifecycle == "enduring" && (run.Spec.Timeout == nil || run.Spec.Timeout.Duration != time.Duration(run.Spec.Enduring.LeaseSeconds)*time.Second) {
+				t.Fatal("default timeout must follow the requested parent lease, not the one-shot default")
+			}
 			if run.Spec.ExecutionLifecycle != tc.lifecycle || run.Status.CellnParent != nil || run.Status.Phase != "" {
 				t.Fatal("lifecycle lost or admission fabricated")
 			}
@@ -174,5 +179,36 @@ func TestCreateCatalogueRunRefusesAmbiguousOrImplicitModel(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("ambiguous catalogue accepted: %d", response.Code)
 		}
+	}
+}
+
+func TestCreateCatalogueRunRefusesInheritedIntegrations(t *testing.T) {
+	for _, integration := range []string{"skill", "mcp"} {
+		t.Run(integration, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "default"}}
+			if integration == "skill" {
+				agent.Spec.Skills = []sympoziumv1alpha1.SkillRef{{SkillPackRef: "k8s-ops"}}
+			} else {
+				agent.Spec.MCPServers = []sympoziumv1alpha1.MCPServerRef{{Name: "kubernetes"}}
+			}
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(agent).Build()
+			srv := NewServer(cl, nil, nil, logr.Discard())
+			response := httptest.NewRecorder()
+			srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"agentRef":"agent","task":"inspect cluster","backend":"celln","provider":"deepseek","model":"deepseek-chat","cellnSelection":{"toolRefs":[]}}`)))
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "SkillPacks or MCP") {
+				t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
+			}
+			var list sympoziumv1alpha1.AgentRunList
+			if err := cl.List(t.Context(), &list); err != nil {
+				t.Fatal(err)
+			}
+			if len(list.Items) != 0 {
+				t.Fatal("incompatible run persisted")
+			}
+		})
 	}
 }

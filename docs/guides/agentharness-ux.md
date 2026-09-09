@@ -1,5 +1,14 @@
 # AgentHarness user experience
 
+!!! note "Scope: OCI harness UX"
+    The `HarnessSession` flow below is the existing OCI adapter experience.
+    Native Celln instead uses an enduring `AgentRun`, with follow-up turns on
+    Run detail and no checkpoint/resume after parent loss. Skills are
+    instructions; tools are operations. Compatibility and permissions must not
+    be inferred from a harness name. See
+    [skills, tools and execution](../concepts/skills-tools-and-execution.md)
+    and [native installation](celln-native-installation.md).
+
 AgentHarness brings an existing agent harness into Sympozium without turning
 the cluster into a general-purpose container launcher. It solves the gap
 between a team's preferred agent loop and the platform controls needed to run

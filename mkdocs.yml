@@ -93,6 +93,7 @@ nav:
     - Channels: concepts/channels.md
     - Agent Sandboxing: concepts/agent-sandbox.md
     - Celln Backend: concepts/celln-backend.md
+    - Skills, Tools & Execution: concepts/skills-tools-and-execution.md
     - Security: concepts/security.md
     - Persistent Memory: concepts/persistent-memory.md
     - Scheduled Tasks: concepts/scheduled-tasks.md
@@ -104,6 +105,7 @@ nav:
     - Your First AgentRun: guides/first-agentrun.md
     - AgentHarness: guides/agentharness.md
     - AgentHarness UX: guides/agentharness-ux.md
+    - Native Celln Installation: guides/celln-native-installation.md
     - Using Ollama: guides/ollama.md
     - LM Studio & Local Inference: guides/lm-studio.md
     - Unsloth: guides/unsloth.md

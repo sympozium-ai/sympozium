@@ -1,0 +1,33 @@
+[Unit]
+Description=Sympozium native Celln TLS owner edge
+After=network-online.target sympozium-celln-native-owner.service
+Wants=network-online.target
+Requires=sympozium-celln-native-owner.service
+
+[Service]
+Type=exec
+DynamicUser=yes
+EnvironmentFile=/etc/celln-native/proxy.env
+LoadCredential=tls-cert:/etc/celln-native/tls.crt
+LoadCredential=tls-key:/etc/celln-native/tls.key
+ExecStart=/opt/sympozium-celln-native/bin/celln-parent-proxy --listen ${CELLN_NATIVE_TLS_LISTEN} --backend http://127.0.0.1:18787 --tls-cert %d/tls-cert --tls-key %d/tls-key
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=128M
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=/var/lib/sympozium-celln /etc/celln-native
+
+[Install]
+WantedBy=multi-user.target
