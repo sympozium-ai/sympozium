@@ -6,7 +6,8 @@ This epic overlays https://github.com/sympozium-ai/sympozium/issues/426 and
 coordinates with https://github.com/sympozium-ai/sympozium/issues/349.
 It does not discard the signed catalogue, independent admission, host model
 broker, warm-mote execution, cancellation, ownership or one-shot proofs already
-delivered there. Existing draft PR #463 remains the one-shot integration branch.
+delivered there. PR #463 now carries the integrated native persistent-harness
+release candidate, paired with sympozium-ai/celln#98.
 
 It supersedes #426's proposed use of a Celln-specific HarnessSession extension
 and its assumption that the entire Harness is reconstructed outside a disposable
@@ -26,15 +27,16 @@ Release gates:
   borrowed-tool work through browser/API/scoped controller/TLS. Latest full
   process proof: `parent-upgraded-environment-live.log` (64.19s), with joined
   cleanup. This is local evidence, not a merged release.
-- [ ] Useful, explicitly selected starter toolbox with truthful permissions:
-  isolated workspace read/write and host-brokered allowlisted HTTP fetch;
-  Python explicitly opt-in once its agent-code execution contract is qualified.
-  Existing `uppercase` is a proof tool, not the product's default toolbox.
+- [x] Useful, explicitly selected starter toolbox with truthful permissions:
+  run-owned workspace read/write and host-brokered allowlisted HTTPS fetch.
+  Signed catalogue installation, all grant layers, UI starter selection and
+  real guest effects passed in the combined system suite. Python is deferred.
 - [x] One integrated acceptance sequence: create, model/tool turn, follow-up,
   cancel follow-up, continue, refresh/reconnect, delete and confirm teardown.
-  Local full-process proof: `parent-full-browser-cancel-live.log`, 91.32s;
-  separate browser and controller checks, real model, committed cancellation
-  and another successful turn on the same parent. Not a merged release claim.
+  Latest proof: `docs/evidence/celln-starter-system-2026-09-09.md`, 108.77s;
+  real DeepSeek/KVM, browser/API/scoped controller/TLS, files and HTTPS,
+  committed cancellation, continued conversation, refresh and confirmed
+  three-parent teardown. Not a merged release claim.
 - [ ] Focused failure/security suite: lease expiry, parent/context loss,
   controller/API restart and lost acknowledgements without duplicate work;
   tenant isolation, grant narrowing/revocation, budgets and cancellation races.
@@ -43,7 +45,7 @@ Release gates:
 - [ ] Coherent reviewed/merged PRs and release notes with supported configuration
   and limitations. No unsigned or unavailable tools advertised as usable defaults.
 
-Deferred from this release: pause/resume, checkpoints/transparent crash recovery,
+Deferred from this release: Python, pause/resume, checkpoints/transparent crash recovery,
 initial-turn-only cancellation (whole-run stop/delete remains available),
 parallel/nested turn trees, arbitrary Pi/Hermes compatibility, performance tuning
 and exhaustive compatibility matrices. These are deferred, not completed.
