@@ -247,7 +247,7 @@ func TestTriggerSequentialSuccessors_SubagentChildrenDoNotTrigger(t *testing.T) 
 	ensemble := &sympoziumv1alpha1.Ensemble{
 		ObjectMeta: metav1.ObjectMeta{Name: "team", Namespace: "default"},
 		Spec: sympoziumv1alpha1.EnsembleSpec{
-			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "reviewer", Schedule: &sympoziumv1alpha1.ScheduleSpec{Task: "review"}}},
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "reviewer", Schedule: &sympoziumv1alpha1.AgentConfigSchedule{Task: "review"}}},
 			Relationships: []sympoziumv1alpha1.AgentConfigRelationship{
 				{Source: "architect", Target: "reviewer", Type: "sequential"},
 			},
