@@ -1035,10 +1035,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Celln execution defaults cannot be combined with SkillPacks or MCP connections; use a dedicated native Agent", http.StatusBadRequest)
 			return
 		}
-		// Do not auto-start an OCI HarnessSession when Celln is the Agent default.
-		if req.Execution.Backend == "celln" {
-			req.RuntimeRef = req.RuntimeRef // keep harness ref, but session creation gated below
-		}
+		// OCI HarnessSession auto-create is gated below when backend is celln.
 		inst.Spec.Execution = req.Execution.DeepCopy()
 	}
 
