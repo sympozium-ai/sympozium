@@ -118,6 +118,38 @@ Guest audits contain conversation/tool data and are deliberately not committed.
 Host audit retention is explicitly enabled via the private `authority/parent-audit`
 directory; default production operation need not retain it.
 
+## Follow-up technical qualification
+
+Celln revision `df59b2b` adds pre-launch host process identity and same-boot
+process-exit confirmation, preserving the strict stop-response ABI. Installed
+run `celln-agent-jnhq7`, UID `6f5e91c4-9903-4d63-aa3b-ad75c100c617`, completed
+a DeepSeek turn remembering `opal`. Its parent incarnation was
+`blake3:7c71e8690fa2fb9b9ffebc422eba17b6c77793e0e95889aea2c5f52295940552`.
+After restarting only the new owner, the run reported `ContextLost`. Normal
+API deletion returned 204 and Kubernetes confirmed deletion after the controller
+received host teardown acknowledgement. No finalizer was manually removed and
+no journal or authority was reset. Older qualification journals intentionally
+remain fail-closed because they lack a pre-launch process identity.
+
+The installed OCI Pi session suite passed against published digest
+`sha256:8c8f0df071dc5307b3b557e0233a70757d8a4be17cb688c1ca725cb41001bbd5`
+in `sympozium-harness-e2e`: real DeepSeek conversation across pod restart,
+SSE content and `[DONE]`, explicit stop/resume with the same remembered token
+and PVC, request audit, disconnect cancellation, idle timeout, actionable
+failure status, and deletion of owned resources. Test Agents and credentials
+were removed by the suite. The final proof used an SSH TCP tunnel directly to
+the API Service: disconnect cancellation did not propagate correctly in the
+earlier `kubectl port-forward` test path. The older runtime digest still bound
+in `default` returned JSON instead of SSE; it was not silently overwritten.
+The suite now rejects temporary non-JSON responses when waiting for a replacement
+session endpoint and verifies the actual remembered token after resume.
+
+The installed one-shot smoke did **not** pass. Its legacy v0.4.13 router has a
+plaintext URL and predates the current client-authentication/ownership contract.
+The updated controller refused before dispatch with `router requires HTTPS`.
+This is an unresolved installation upgrade gate, not a guest execution failure.
+The old dispatcher and router were not replaced and insecure HTTP was not enabled.
+
 The qualification TLS server certificate lasts 14 days, its CA 30 days from
 2026-09-09. The units were started, not enabled across reboots. Rotate certificates
 and deliberately provision production credentials before treating this as a

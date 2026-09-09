@@ -147,7 +147,8 @@ SECOND_RESPONSE=""
 # reaches the API server's connection. Retry that short propagation window.
 for _ in $(seq 1 10); do
   SECOND_RESPONSE="$(api_request POST "/api/v1/harness-sessions/${SESSION_NAME}/chat" "$SECOND_BODY" 2>/dev/null || true)"
-  [[ -n "$SECOND_RESPONSE" ]] && break
+  jq -e '.choices[0].message.content | type == "string"' >/dev/null 2>&1 <<<"$SECOND_RESPONSE" && break
+  SECOND_RESPONSE=""
   sleep 2
 done
 [[ -n "$SECOND_RESPONSE" ]] || fail "session adapter remained unavailable after pod restart"
@@ -192,12 +193,14 @@ wait_for_session_phase "$SESSION_NAME" Ready || fail "stopped session did not re
 RESUMED_RESPONSE=""
 for _ in $(seq 1 10); do
   RESUMED_RESPONSE="$(api_request POST "/api/v1/harness-sessions/${SESSION_NAME}/chat" "$SECOND_BODY" 2>/dev/null || true)"
-  [[ -n "$RESUMED_RESPONSE" ]] && break
+  jq -e '.choices[0].message.content | type == "string"' >/dev/null 2>&1 <<<"$RESUMED_RESPONSE" && break
+  RESUMED_RESPONSE=""
   sleep 2
 done
 [[ -n "$RESUMED_RESPONSE" ]] || fail "session adapter remained unavailable after resume"
 RESUMED_TEXT="$(jq -r '.choices[0].message.content // ""' <<<"$RESUMED_RESPONSE")"
 [[ -n "$RESUMED_TEXT" ]] || fail "session adapter returned no content after resume"
+[[ "$RESUMED_TEXT" == *"$MEMORY_TOKEN"* ]] || fail "resume lost conversation token: ${RESUMED_TEXT}"
 [[ "$(kubectl get pvc "$SESSION_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')" == "$PVC_UID" ]] || fail "resume replaced the durable state claim"
 pass "conversation state survived explicit stop/resume"
 
@@ -220,7 +223,7 @@ for _ in $(seq 1 30); do
   [[ "$LAST_REQUEST_STATE" == "cancelled" && "${ACTIVE_REQUESTS:-0}" == "0" ]] && break
   sleep 1
 done
-[[ "$LAST_REQUEST_STATE" == "cancelled" && "${ACTIVE_REQUESTS:-0}" == "0" ]] || fail "cancelled request remained active or was not audited"
+[[ "$LAST_REQUEST_STATE" == "cancelled" && "${ACTIVE_REQUESTS:-0}" == "0" ]] || fail "cancelled request remained active or was not audited: state=${LAST_REQUEST_STATE}, active=${ACTIVE_REQUESTS}"
 pass "client disconnect cancelled and audited in-flight model work"
 
 info "Proving trustworthy idle timeout"

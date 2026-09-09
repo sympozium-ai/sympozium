@@ -205,6 +205,15 @@ For a controller-only update, retain the same host, authority root and journals;
 do not restart the owner just to update the UI/controller. Restarted controllers
 must reconcile original identities rather than recreate parents.
 
+Current Celln owners record their host process identity before launching native
+parents. After a process crash/restart on the same Linux boot, PID namespace and
+UID, normal run deletion can complete once Celln verifies that the original
+process has exited. The finalizer is cleared by the normal controller only after
+that host acknowledgement. This does not restore files/context or permit replay.
+Older journals without process identity, host reboots and changed namespaces
+remain conservative: preserve their finalizers and evidence for operator
+reconciliation. Do not fabricate process records or reset journals.
+
 Before uninstall, close new submissions and stop/delete every run in the parent
 namespace through the normal API. Wait for confirmed cleanup and finalizer
 removal while the owner and controller are still running. The pre-delete hook
