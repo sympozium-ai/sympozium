@@ -11,7 +11,7 @@
   Agents don't need better prompts. They need shared situational awareness.<br>
   Sympozium is a <b>coordination layer</b> for multi-agent AI systems on Kubernetes &mdash;<br>
   selective permeability, structured handoffs, and shared memory.<br>
-  Every agent is a Pod. Every policy is a CRD. Every execution is a Job.</em><br><br>
+  Agents run in isolated workloads. Every policy is a CRD.</em><br><br>
   From the creator of <a href="https://github.com/k8sgpt-ai/k8sgpt">k8sgpt</a> and <a href="https://github.com/AlexsJones/llmfit">llmfit</a>
 </p>
 
@@ -27,7 +27,15 @@
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="Sympozium dashboard" width="800px;">
+  <a href="https://sympozium.ai/video/sympozium-harness-tasks.mp4">
+    <img src="docs/assets/agentharness/native-harness-tasks.gif" alt="Sympozium coordinates a persistent native harness: each bounded task executes in a fresh Celln child, returns its result, and is cleaned up while the harness retains live context." width="800">
+  </a>
+</p>
+<p align="center">
+  <b>The harness stays. The task cell goes.</b><br>
+  <a href="https://sympozium.ai/video/sympozium-harness-tasks.mp4">Watch the full-quality video</a> ·
+  <a href="https://github.com/sympozium-ai/sympozium/discussions/472">Native cells release</a><br>
+  <sub>Native Celln path: one active task at a time; live context does not survive a host crash.</sub>
 </p>
 
 ---
