@@ -16,6 +16,9 @@ namespace: sympozium-system
 # -- Controller (reconciles CRDs, manages agent pods)
 controller:
   replicas: 1
+  # -- Restrict the general manager to one namespace. Empty retains cluster-wide
+  # watches. Required when deploying the separate native parent controller.
+  watchNamespace: ""
   image:
     repository: ""  # defaults to {{ .Values.image.registry }}/controller
     tag: ""
@@ -441,6 +444,35 @@ agentSandbox:
 # Requires: Celln router deployed (see celln repo integrations/kubernetes/)
 # and celln host dispatcher installed on each KVM node (scripts/setup-host.sh).
 celln:
+  # -- Native enduring runs use a dedicated co-located provisioner, not the
+  # one-shot router. This opt-in does not install or approve guest artifacts.
+  nativeParent:
+    enabled: false
+    namespace: ""
+    nodeName: ""
+    image:
+      repository: ""
+      digest: ""
+    # Existing operator-owned directory on the selected node, mounted at the
+    # same absolute path. Contains authority/, journal/ and approvals/.
+    statePath: ""
+    # Existing Secret in nativeParent.namespace: registrations.json plus the
+    # owner bearer/CA files referenced by it. Never include model credentials.
+    configSecret: ""
+    grantConfigMaps:
+      operator: grant-operator
+      runtime: grant-runtime
+      agent: grant-agent
+    # Must match the existing host store owner; no recursive chown/fsGroup.
+    uid: 10001
+    gid: 10001
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
   # -- Experimental execution plane: explicitly configure before enabling.
   enabled: false
   installer:

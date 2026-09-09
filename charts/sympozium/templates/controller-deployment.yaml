@@ -28,6 +28,9 @@ spec:
           image: {{ include "sympozium.controllerImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            {{- if .Values.controller.watchNamespace }}
+            - --watch-namespace={{ .Values.controller.watchNamespace }}
+            {{- end }}
             {{- if .Values.controller.leaderElect }}
             - --leader-elect
             {{- end }}

@@ -1,0 +1,14 @@
+# Do not send target/, local evidence, credentials or communications artifacts
+# to the builder. This allowlist is specific to the parent-controller image.
+**
+!go.mod
+!go.sum
+!api/
+!api/**
+!internal/
+!internal/**
+!pkg/
+!pkg/**
+!cmd/
+!cmd/controller/
+!cmd/controller/**

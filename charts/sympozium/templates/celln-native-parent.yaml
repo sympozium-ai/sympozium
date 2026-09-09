@@ -1,0 +1,181 @@
+{{- $p := .Values.celln.nativeParent }}
+{{- if $p.enabled }}
+{{- if not .Values.rbac.create }}
+{{- fail "nativeParent requires rbac.create for its pre-delete safety check" }}
+{{- end }}
+{{- if or (not $p.namespace) (not .Values.controller.watchNamespace) (eq $p.namespace .Values.controller.watchNamespace) (eq $p.namespace (include "sympozium.namespace" .)) }}
+{{- fail "nativeParent requires a dedicated namespace and a distinct explicit controller.watchNamespace; drain existing runs before changing controller scope" }}
+{{- end }}
+{{- if or (not $p.nodeName) (not $p.configSecret) (not .Values.celln.permissionPreviewConfigMap) }}
+{{- fail "nativeParent requires nodeName, configSecret and celln.permissionPreviewConfigMap" }}
+{{- end }}
+{{- if or (not $p.image.repository) (not (regexMatch "^sha256:[a-f0-9]{64}$" $p.image.digest)) }}
+{{- fail "nativeParent requires an explicit combined controller/Celln image repository and sha256 digest" }}
+{{- end }}
+{{- if not (regexMatch "^/var/lib/sympozium-celln/[a-z0-9][a-z0-9-]{0,62}$" $p.statePath) }}
+{{- fail "nativeParent.statePath must be a dedicated /var/lib/sympozium-celln/<installation> directory" }}
+{{- end }}
+{{- if or (le (int $p.uid) 0) (le (int $p.gid) 0) }}
+{{- fail "nativeParent uid/gid must be non-root and match the prepared host store" }}
+{{- end }}
+{{- $g := $p.grantConfigMaps }}
+{{- if or (not $g.operator) (not $g.runtime) (not $g.agent) (eq $g.operator $g.runtime) (eq $g.operator $g.agent) (eq $g.runtime $g.agent) }}
+{{- fail "nativeParent requires three distinct grant ConfigMap names" }}
+{{- end }}
+# Namespace and host state are prepared separately: uninstall must not delete
+# live runs or their replay journals. No Helm-owned Namespace is created here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: celln-parent-controller
+  namespace: {{ $p.namespace | quote }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: celln-parent-controller
+  namespace: {{ $p.namespace | quote }}
+rules:
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns/status, agentrunturns/status]
+    verbs: [get, update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns/finalizers]
+    verbs: [update, patch]
+  - apiGroups: [sympozium.ai]
+    resources: [agents, agentruntimes, cellntools, agentrunturns]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ $g.operator | quote }}, {{ $g.runtime | quote }}, {{ $g.agent | quote }}]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: celln-parent-controller
+  namespace: {{ $p.namespace | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: celln-parent-controller
+    namespace: {{ $p.namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: celln-parent-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celln-parent-controller
+  namespace: {{ $p.namespace | quote }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celln-parent-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celln-parent-controller
+    spec:
+      serviceAccountName: celln-parent-controller
+      automountServiceAccountToken: false
+      # No relocation to another host with an empty authority/ownership store.
+      nodeSelector:
+        kubernetes.io/hostname: {{ $p.nodeName | quote }}
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $p.uid }}
+        runAsGroup: {{ $p.gid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: {{ printf "%s@%s" $p.image.repository $p.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/controller]
+          args:
+            - --celln-parent-only
+            - --watch-namespace={{ $p.namespace }}
+            - --leader-elect=false
+            - --metrics-bind-address=0
+            - --health-probe-bind-address=:8081
+          env:
+            - name: CELLN_PARENT_CONFIG
+              value: {{ printf "%s/approvals" $p.statePath | quote }}
+            - name: CELLN_PARENT_REGISTRATIONS
+              value: /etc/sympozium/celln-parent/registrations.json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+          resources:
+            {{- toYaml $p.resources | nindent 12 }}
+          volumeMounts:
+            - name: state
+              mountPath: {{ $p.statePath | quote }}
+            - name: configuration
+              mountPath: /etc/sympozium/celln-parent
+              readOnly: true
+            - name: kubernetes-identity
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: state
+          hostPath:
+            path: {{ $p.statePath | quote }}
+            type: Directory
+        - name: configuration
+          secret:
+            secretName: {{ $p.configSecret | quote }}
+            defaultMode: 0444
+        - name: kubernetes-identity
+          projected:
+            defaultMode: 0444
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+{{- end }}
