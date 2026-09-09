@@ -1,0 +1,119 @@
+name: Native Celln installation artifacts
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        default: ''
+      publish:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read pinned Celln release
+        id: celln
+        run: |
+          pin=images/celln-parent-controller/celln-release.json
+          jq -e '.version | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")' "$pin"
+          jq -e '.archiveSHA256 | test("^[a-f0-9]{64}$")' "$pin"
+          jq -e '.imageDigest | test("^sha256:[a-f0-9]{64}$")' "$pin"
+          {
+            echo "version=$(jq -r .version "$pin")"
+            echo "sha256=$(jq -r .archiveSHA256 "$pin")"
+            echo "image=ghcr.io/sympozium-ai/celln@$(jq -r .imageDigest "$pin")"
+          } >> "$GITHUB_OUTPUT"
+      - name: Assemble checksum-verified host package
+        env:
+          CELLN_VERSION: ${{ steps.celln.outputs.version }}
+          CELLN_SHA256: ${{ steps.celln.outputs.sha256 }}
+        run: |
+          mkdir -p native-dist/package
+          curl --fail --location --retry 3 \
+            "https://github.com/sympozium-ai/celln/releases/download/${CELLN_VERSION}/celln-x86_64-unknown-linux-musl.tar.gz" \
+            --output native-dist/celln.tar.gz
+          printf '%s  native-dist/celln.tar.gz\n' "$CELLN_SHA256" | sha256sum --check
+          tar -xzf native-dist/celln.tar.gz -C native-dist/package
+          native-dist/package/bin/celln --version
+          for binary in celln-pilot pilot-fetch celln-harness-parent celln-harness-turn celln-workspace-read celln-workspace-write celln-https-fetch; do
+            test -x "native-dist/package/share/celln/pilot/$binary"
+            if readelf -l "native-dist/package/share/celln/pilot/$binary" | grep -q INTERP; then
+              echo "Native guest binary is not static: $binary" >&2
+              exit 1
+            fi
+          done
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath \
+            -ldflags='-s -w' -o native-dist/package/bin/celln-parent-proxy ./cmd/celln-parent-proxy
+          cp native-dist/package/bin/celln-parent-proxy native-dist/package/bin/celln-execution-proxy
+          install -m 0755 config/host/renew-celln-tls.sh native-dist/package/bin/renew-celln-tls
+          mkdir -p native-dist/package/share/sympozium/systemd
+          cp config/host/sympozium-celln-{native-owner,native-proxy,router,router-proxy,tls-renew}.service \
+            config/host/sympozium-celln-tls-renew.timer native-dist/package/share/sympozium/systemd/
+          cp docs/guides/celln-native-installation.md docs/guides/celln-external-router-migration.md \
+            native-dist/package/share/sympozium/
+          jq -n --arg sympozium "$(git rev-parse HEAD)" --arg celln "$CELLN_VERSION" \
+            --arg archiveSHA256 "$CELLN_SHA256" \
+            '{sympoziumRevision:$sympozium,cellnVersion:$celln,cellnArchiveSHA256:$archiveSHA256,platform:"linux/amd64"}' \
+            > native-dist/package/share/sympozium/SOURCES.json
+          (cd native-dist/package && find . -type f -print0 | sort -z | xargs -0 sha256sum) > native-dist/SHA256SUMS
+          mv native-dist/SHA256SUMS native-dist/package/SHA256SUMS
+          tar -C native-dist/package -czf native-dist/sympozium-celln-native-linux-amd64.tar.gz .
+          (cd native-dist && sha256sum sympozium-celln-native-linux-amd64.tar.gz > sympozium-celln-native-linux-amd64.tar.gz.sha256)
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: inputs.publish || github.event_name == 'workflow_dispatch'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build matching parent controller
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/celln-parent-controller/Dockerfile
+          platforms: linux/amd64
+          push: ${{ inputs.publish || github.event_name == 'workflow_dispatch' }}
+          tags: ghcr.io/sympozium-ai/sympozium/celln-parent-controller:${{ inputs.tag || github.sha }}
+          build-args: |
+            CELLN_IMAGE=${{ steps.celln.outputs.image }}
+            IMAGE_TAG=${{ inputs.tag || '0.10.57' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/sympozium-ai/sympozium
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=celln-parent-controller
+          cache-to: type=gha,mode=max,scope=celln-parent-controller
+      - name: Record combined image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: printf '%s\n' "$IMAGE_DIGEST" > native-dist/celln-parent-controller.digest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-celln-linux-amd64
+          path: |
+            native-dist/sympozium-celln-native-linux-amd64.tar.gz
+            native-dist/sympozium-celln-native-linux-amd64.tar.gz.sha256
+            native-dist/celln-parent-controller.digest
+      - uses: softprops/action-gh-release@v2
+        if: inputs.tag != ''
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            native-dist/sympozium-celln-native-linux-amd64.tar.gz
+            native-dist/sympozium-celln-native-linux-amd64.tar.gz.sha256
+            native-dist/celln-parent-controller.digest

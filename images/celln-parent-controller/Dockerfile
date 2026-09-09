@@ -5,6 +5,7 @@ ARG CELLN_IMAGE
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
+ARG IMAGE_TAG=latest
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
@@ -12,7 +13,7 @@ COPY api/ api/
 COPY internal/ internal/
 COPY pkg/ pkg/
 COPY cmd/controller/ cmd/controller/
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=readonly -trimpath -o /controller ./cmd/controller
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=readonly -trimpath -ldflags="-X main.imageTag=${IMAGE_TAG}" -o /controller ./cmd/controller
 
 FROM ${CELLN_IMAGE}
 COPY --from=builder /controller /controller

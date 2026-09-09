@@ -1,0 +1,14 @@
+[Unit]
+Description=Renew operator-CA Celln endpoint certificate
+ConditionPathExists=/etc/celln-native/ca.key
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sympozium-celln-native/bin/renew-celln-tls /etc/celln-native 192.168.1.237
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/etc/celln-native

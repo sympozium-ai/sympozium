@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Celln endpoint certificate daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=sympozium-celln-tls-renew.service
+
+[Install]
+WantedBy=timers.target

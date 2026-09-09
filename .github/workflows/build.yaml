@@ -44,6 +44,8 @@ jobs:
               - 'images/**'
               - 'web/**'
               - '.github/workflows/build.yaml'
+              - '.github/workflows/native-artifacts.yaml'
+              - 'config/host/**'
 
   # fmt, vet, build, test, and codegen used to be five runners each paying
   # its own checkout + setup-go + module download. The steps are strictly
@@ -62,7 +64,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          unformatted=$(gofmt -l $(find . -name '*.go' -not -path './vendor/*'))
+          unformatted=$(find . -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -l)
           if [ -n "$unformatted" ]; then
             echo "::error::The following files are not formatted:"
             echo "$unformatted"
@@ -91,6 +93,19 @@ jobs:
 
       - name: Check Helm chart CRDs in sync
         run: make helm-sync-check
+
+  native-artifacts:
+    needs: [changes, verify]
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/native-artifacts.yaml
+    permissions:
+      contents: write
+      packages: write
+    with:
+      publish: ${{ github.event_name != 'pull_request' }}
+    secrets: inherit
 
   build-and-push:
     runs-on: ubuntu-latest

@@ -62,10 +62,11 @@ Detailed run/receipt evidence is retained privately under
 `/var/lib/celln-migration-backup-20260909/`. Neither contains a release artifact
 to copy into container build contexts. Do not commit private evidence or keys.
 
-This does not establish a published combined native-controller image, a
-downloadable qualified host package, automatic certificate renewal or reboot
-recovery. Qualification certificates are short-lived. The host services are not
-yet enabled as a production boot installation. Old failed native journals without
+At the time of the migration checks, public artifacts and boot/certificate
+handoff were still pending. The subsequent release handoff enabled the reviewed
+host units and daily leaf renewal, installed a 90-day leaf and distributed a
+long-lived operator CA certificate using the same protected CA key. This does not
+claim reboot/context recovery. Old failed native journals without
 process identity still require conservative operator reconciliation; no manual
 finalizer removal is claimed as cleanup. See the
 [migration guide](../guides/celln-external-router-migration.md).

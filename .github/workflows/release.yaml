@@ -19,6 +19,13 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  native-artifacts:
+    uses: ./.github/workflows/native-artifacts.yaml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+      publish: true
+    secrets: inherit
+
   release-cli:
     runs-on: ubuntu-latest
     strategy:
@@ -88,6 +95,7 @@ jobs:
           - web-proxy
           - node-probe
           - llmfit-daemon
+          - harness-reference
     steps:
       - uses: actions/checkout@v4
 

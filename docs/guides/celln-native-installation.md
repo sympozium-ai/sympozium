@@ -1,12 +1,13 @@
-# Native Celln installation — packaging work in progress
+# Native Celln installation — Linux amd64/KVM
 
 This is the installation path for a persistent native Harness parent and
 disposable per-turn cells. It is separate from the one-shot router installation.
 For an existing host dispatcher, see the
 [one-shot router migration](celln-external-router-migration.md).
-The chart wiring and standalone installation commands are deployed on framework
-for qualification. Full installed acceptance is still in progress; this is not
-a release announcement. Track epic #464 and starter-tools #467.
+The chart wiring and standalone installation commands are qualified on framework.
+Track epic #464 and starter-tools #467 for the supported MLP and deferred work.
+Release archives contain binaries and example units, not pre-approved authority,
+model credentials, a kernel, or a tenant-ready signed package.
 
 ## Architecture and boundaries
 
@@ -28,9 +29,9 @@ and reads of exactly three grant ConfigMaps. It cannot read Secrets through the
 API, issue its own Kubernetes tokens, change grants or launch tenant pods.
 Kubelet mounts the separately provisioned owner token/CA configuration Secret.
 
-No NATS credential is mounted in this first packaging increment. Kubernetes
-run/turn status remains the source of conversation history; event-bus fanout
-and deployed UI behaviour still need qualification.
+No NATS credential is mounted in this packaging increment. Kubernetes run/turn
+status remains the source of conversation history. The installed UI/API path is
+qualified; NATS event-bus fanout is not provided by this parent-only controller.
 
 ## Operator prerequisites
 
@@ -134,6 +135,20 @@ rights. Apply the new CRDs before upgrading consumers.
 
 ## Build and chart wiring
 
+Sympozium v0.10.57 publishes `sympozium-celln-native-linux-amd64.tar.gz`, its
+SHA-256 sidecar and `celln-parent-controller.digest` as release assets. The host
+archive combines the checksum-pinned Celln v0.5.8 bundle, both TLS proxies,
+certificate renewal helper and example service units. `SHA256SUMS` checks the
+unpacked files and `share/sympozium/SOURCES.json` records the source pair.
+Verify checksums and extract into a **new staging directory**, then review the
+installation paths; do not unpack over a running owner or its authority state.
+
+Use `ghcr.io/sympozium-ai/sympozium/celln-parent-controller` with the digest from
+the matching release asset. Native host/controller artifacts are amd64-only;
+the ordinary Sympozium image fleet still supports its existing platforms.
+The workflow also builds candidate artifacts before release so the downloaded
+bytes and container can be qualified on the actual host.
+
 Build `images/celln-parent-controller/Dockerfile` from this repository, providing
 `CELLN_IMAGE` as a qualified **digest-pinned** Celln image. That base must contain
 the matching `/usr/local/bin/celln` and required shared libraries. Record both
@@ -142,7 +157,8 @@ context allowlist excludes local `target/` evidence and credentials.
 
 Do not substitute an older published Celln image simply because it contains a
 binary with the right name. Native parent protocol/provisioning support must be
-qualified. No qualified combined image is published by this change.
+qualified. The exact release dependency is pinned in
+`images/celln-parent-controller/celln-release.json`.
 
 Merge the following settings into a reviewed installation's values. Placeholders
 are intentionally invalid; render/inspect before applying. Do not use
@@ -202,6 +218,21 @@ supervisor:
 - Existing one-shot and ordinary Kubernetes agents remain functional.
 
 ## Stop, upgrade and uninstall
+
+After qualification, enable the reviewed owner/proxy/router systemd units for
+startup; enabling a service is not proof of live-context recovery after reboot.
+Leave failed historical identities fenced. Do not automatically resubmit them.
+
+For an operator-managed private CA, `renew-celln-tls.sh` and the daily
+`sympozium-celln-tls-renew.timer` renew the endpoint certificate when less than
+30 days remain. The helper preserves the private leaf key, atomically replaces
+the certificate and restarts only running TLS edges. It refuses if the CA has
+less than 93 days remaining. Review the unit's credential directory and IP,
+monitor timer/service failures, and distribute CA trust deliberately before CA
+expiry. CA/key rotation remains an operator procedure, not implicit renewal.
+The CA signing key is root-only and never mounted in Kubernetes. Deployments
+with an external certificate authority should use that authority's renewal
+mechanism instead; do not install a local CA key just to use this example.
 
 For a controller-only update, retain the same host, authority root and journals;
 do not restart the owner just to update the UI/controller. Restarted controllers
