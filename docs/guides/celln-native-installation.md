@@ -9,6 +9,28 @@ Track epic #464 and starter-tools #467 for the supported MLP and deferred work.
 Release archives contain binaries and example units, not pre-approved authority,
 model credentials, a kernel, or a tenant-ready signed package.
 
+## Choosing Celln in the UI
+
+Kubernetes remains the default. Selecting a Harness on an Agent does not switch
+its runs to Celln.
+
+1. Open **Runs → New Run**. You can also follow the run-creation link from an
+   Agent’s **Harness** tab or the feed’s quick-task input; these carry the Agent
+   selection into the form.
+2. Choose **Celln** in **Execution environment** at the top of the form. The
+   availability message reports host eligibility, not permission to execute.
+3. Select the Agent and a compatible native **Harness for this run**. Existing
+   OCI harnesses and SkillPack sidecars do not become native Celln tools.
+4. For a continuing conversation, enable **Enduring conversation**, review its
+   lifetime and usage limits, and select approved borrowed tools. For a one-off
+   task, leave enduring mode off.
+5. Review the permission preview and submit. The operator preparation below is
+   still required; a catalogue entry or suggested toolbox is not a grant.
+
+The feed’s quick-send path still uses Kubernetes. Use New Run for Celln settings.
+The **Concepts** guide explains these choices first, with implementation and
+YAML terminology in an expandable glossary.
+
 ## Architecture and boundaries
 
 The existing host Celln owner retains the live parent, admits warm motes, owns

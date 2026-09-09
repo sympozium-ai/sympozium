@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -458,6 +459,12 @@ export function FeedPane({
 
           {/* Input */}
           <div className="border-t border-border/50 p-3">
+            <p className="mb-2 text-xs text-muted-foreground">
+              Quick tasks use Kubernetes. {" "}
+              <Link className="text-primary underline" to={`/runs?create=1&agent=${encodeURIComponent(activeTab)}`}>
+                Choose Celln, harness and tools in New Run
+              </Link>
+            </p>
             <div className="flex items-center gap-2">
               <Input
                 value={message}

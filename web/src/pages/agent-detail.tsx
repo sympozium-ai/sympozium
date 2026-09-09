@@ -504,6 +504,10 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
         <p className="text-sm text-muted-foreground">
           Administrator-approved runtime inherited by channels, schedules, and ordinary AgentRuns. A New Run choice can override it once.
         </p>
+        <p className="text-sm text-muted-foreground">
+          Choosing a harness does not select Celln. Kubernetes remains the default.
+          {" "}<Link className="text-primary underline" to={`/runs?create=1&agent=${encodeURIComponent(inst.metadata.name)}`}>Create a run and choose Kubernetes or Celln</Link>, then select the lifecycle and supported tools.
+        </p>
         <Select
           value={selected}
           onValueChange={(value) => patchAgent.mutate({

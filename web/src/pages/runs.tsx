@@ -120,6 +120,8 @@ export function RunsPage() {
 
   useEffect(() => {
     if (searchParams.get("create") === "1") {
+      const agentRef = searchParams.get("agent") || "";
+      setForm((current) => ({ ...current, agentRef }));
       setOpen(true);
       setSearchParams({}, { replace: true });
     }
@@ -193,12 +195,31 @@ export function RunsPage() {
             <DialogHeader>
               <DialogTitle>Create Run</DialogTitle>
               <DialogDescription>
-                Task an agent instance to perform work.
+                Choose where the work runs, then select an Agent and a compatible harness.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-2">
+              <fieldset className="space-y-2 rounded-md border p-3" data-testid="execution-environment">
+                <legend className="px-1 text-sm font-medium">Execution environment</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[["job", "Kubernetes", "Default · containers and OCI harnesses"], ["celln", "Celln", "Opt-in · hardware-isolated cells"]].map(([value, title, description]) => (
+                    <label key={value} className={`cursor-pointer rounded-md border p-3 ${form.backend === value ? "border-primary bg-primary/5" : "border-border"}`}>
+                      <span className="flex items-center gap-2 font-medium">
+                        <input type="radio" name="execution-environment" value={value} checked={form.backend === value}
+                          onChange={() => { setForm({ ...form, backend: value, model: value === "celln" && !form.model ? "deepseek-chat" : form.model }); setLentTools([]); }} />
+                        {title}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">{description}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Harness selection does not change the execution environment.</p>
+                {form.backend === "celln" && <p className="text-xs text-muted-foreground" role="status">
+                  {capabilities.isLoading ? "Checking Celln availability…" : capabilities.isError ? "Cannot check Celln availability. Operator setup and admission are required." : capabilities.data?.celln.available ? "Celln host eligibility detected. Your harness, tools and permissions still need approval." : `Celln needs operator setup: ${capabilities.data?.celln.reason || "no eligible host reported"}`}
+                </p>}
+              </fieldset>
               <div className="space-y-2">
-                <Label>Instance</Label>
+                <Label>Agent</Label>
                 <Select
                   value={form.agentRef}
                   onValueChange={(v) => { setForm({ ...form, agentRef: v, runtimeRef: "" }); setLentTools([]); }}
@@ -228,7 +249,7 @@ export function RunsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>One-run harness override (advanced)</Label>
+                <Label>Harness for this run</Label>
                 <Select
                   value={form.runtimeRef || "inherit"}
                   onValueChange={(v) => { setForm({ ...form, runtimeRef: v === "inherit" ? "" : v }); setLentTools([]); }}
@@ -246,7 +267,7 @@ export function RunsPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  This is normally not needed: runs inherit <span className="font-mono">{selectedAgent?.spec.runtimeRef || "the built-in runner"}</span> from the selected Agent. Choose another approved harness only for this run.
+                  Inherits <span className="font-mono">{selectedAgent?.spec.runtimeRef || "the built-in runner"}</span> from the Agent. Choose another approved harness for this run if needed. Celln requires a compatible native harness for an enduring conversation.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -273,19 +294,6 @@ export function RunsPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Backend</Label>
-                <Select
-                  value={form.backend}
-                  onValueChange={(v) => { setForm({ ...form, backend: v, model: v === "celln" && !form.model ? "deepseek-chat" : form.model }); setLentTools([]); }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Standard (Kubernetes Job)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="job">Standard — Kubernetes Job</SelectItem>
-                    <SelectItem value="celln">Celln — hermetic, hardware-isolated</SelectItem>
-                  </SelectContent>
-                </Select>
                 {jobIncompatible && <p role="alert" className="text-xs text-red-400">This Harness has no OCI image for the Job backend. Select Celln or choose an OCI-compatible Harness.</p>}
                 {form.backend === "celln" && (
                   <>
