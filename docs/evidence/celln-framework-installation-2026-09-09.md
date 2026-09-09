@@ -64,18 +64,51 @@ TLS. A package or grant alone is not execution readiness.
 - The glossary and OCI/native guides now state supported tools, permission
   boundaries and backend-specific persistence limits.
 
-The latest UI/API compatibility and timeout fixes are source-tested; they still
-need deployment/requalification. Initial installed images were private local
-qualification builds, not published release artifacts.
+API/UI and webhook revision `8e96f31` was subsequently deployed successfully.
+The API returned 400 before persisting an incompatible native request for the
+existing `foo` Agent's SkillPacks. An enduring request with no explicit timeout
+was persisted with `1h0m0s`, matching its lease.
+
+The ordinary Kubernetes `foo-g2669` smoke run succeeded using its existing local
+Qwen model and SkillPacks. Runner output was `SYMPOZIUM_STANDARD_OK`, with zero
+tool calls, 6169 input tokens, 73 output tokens and 33831 ms model duration.
+Its normal memory integration automatically stored a 170-byte test record;
+this was not a test of Kubernetes administration tool effects.
+
+The parent controller pod `celln-parent-controller-c99b4ff4f-z4v27` stayed on
+the same UID with zero restarts after creation at 09:55:49 UTC. Its projected
+credential directory was refreshed at 10:21:54 UTC; a new parent and status
+writes succeeded after that refresh, without restarting the controller.
+
+For deliberate owner loss, `celln-agent-tq7st` first completed a real-model
+initial turn. Restarting only the new native owner caused `CellnParentReady`
+to become false with reason `ContextLost` and message `Parent context
+unavailable; no automatic reconstruction`. The original incarnation and initial
+result remained recorded. The old dispatcher stayed active throughout.
+
+These are private local qualification images, not published release artifacts.
+
+## Automated regression results
+
+- Sympozium `go test ./...` passed. Targeted API, webhook, installer and chart
+  race tests passed. Web TypeScript checking and production bundling passed.
+- Celln `make ci` passed, including warning-free clippy.
+- Four explicit local KVM tests passed: signed closure admission, persistent
+  parent launcher, declared substrate and dispatch outcomes (including hostile
+  guest workspace/exec probes, stop/cancel and invalid-kernel refusal).
+- The JSON harness grant-issuance KVM test initially lacked its required package.
+  After generating that package with `celln-json-harness-proof --package-only`,
+  it passed in 3.23 seconds with no model calls. This is not a billable one-shot
+  model E2E or an installed framework router regression.
 
 ## Remaining release gates
 
 - Fresh installed browser creation, permission selection and refresh proof.
   Browser discovery returned no connected browser in this session. API tests
   are not a substitute for this gate.
-- Rebuild/deploy the final revisions, qualify projected credential rotation and
-  deliberate owner-loss handling, and run installed ordinary Kubernetes/OCI and
-  Celln one-shot regressions.
+- Rebuild/deploy any final UI edits; installed OCI persistent-session and Celln
+  one-shot router regressions remain, beyond the ordinary Kubernetes smoke and
+  local KVM coverage above.
 - Review/merge paired PRs, publish digest-pinned installation images, and verify
   the documented installation from those published artifacts before tagging.
 

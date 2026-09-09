@@ -261,9 +261,10 @@ export function RunsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Timeout</Label>
+                  <Label>{enduringRequest ? "Timeout (from parent lease)" : "Timeout"}</Label>
                   <Input
-                    value={form.timeout}
+                    value={enduringRequest ? `${parentLimits.leaseSeconds}s` : form.timeout}
+                    disabled={enduringRequest}
                     onChange={(e) =>
                       setForm({ ...form, timeout: e.target.value })
                     }
