@@ -3,8 +3,9 @@
 {{- if not .Values.rbac.create }}
 {{- fail "nativeParent requires rbac.create for its pre-delete safety check" }}
 {{- end }}
-{{- if or (not $p.namespace) (not .Values.controller.watchNamespace) (eq $p.namespace .Values.controller.watchNamespace) (eq $p.namespace (include "sympozium.namespace" .)) }}
-{{- fail "nativeParent requires a dedicated namespace and a distinct explicit controller.watchNamespace; drain existing runs before changing controller scope" }}
+{{- $separate := or (and .Values.controller.watchNamespace (ne $p.namespace .Values.controller.watchNamespace)) (has $p.namespace .Values.controller.excludeWatchNamespaces) }}
+{{- if or (not $p.namespace) (not $separate) (eq $p.namespace (include "sympozium.namespace" .)) }}
+{{- fail "nativeParent requires a dedicated namespace separated by controller.watchNamespace or controller.excludeWatchNamespaces" }}
 {{- end }}
 {{- if or (not $p.nodeName) (not $p.configSecret) (not .Values.celln.permissionPreviewConfigMap) }}
 {{- fail "nativeParent requires nodeName, configSecret and celln.permissionPreviewConfigMap" }}

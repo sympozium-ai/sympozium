@@ -19,6 +19,9 @@ controller:
   # -- Restrict the general manager to one namespace. Empty retains cluster-wide
   # watches. Required when deploying the separate native parent controller.
   watchNamespace: ""
+  # -- Alternative to watchNamespace: retain all other namespace watches while
+  # reserving these namespaces for independent controllers. Not an RBAC boundary.
+  excludeWatchNamespaces: []
   image:
     repository: ""  # defaults to {{ .Values.image.registry }}/controller
     tag: ""

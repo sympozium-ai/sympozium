@@ -35,10 +35,12 @@ and deployed UI behaviour still need qualification.
 Prepare these explicitly before enabling the chart:
 
 1. A dedicated namespace, for example `celln-agents`, outside the general
-   manager's watch scope. Do not change a cluster-wide manager to single-namespace
-   operation without inventorying and draining or reassigning its existing
-   workloads. Framework currently has workloads in multiple namespaces; do not
-   apply the example to that installation as an unattended upgrade.
+   manager's watch scope. Use `controller.excludeWatchNamespaces: [celln-agents]`
+   to retain its existing multi-namespace watches. This is mutually exclusive
+   with `controller.watchNamespace`. Exclusion filters namespaced caches, not
+   cluster-scoped discovery or Kubernetes RBAC. Start with an empty dedicated
+   namespace and verify the general controller rollout before creating runs.
+   Do not reassign already-bound runs by changing namespace configuration.
 2. A qualified Linux/KVM host owner with signed parent/worker motes, admitted
    native runtime and the exact `workspace-read`, `workspace-write`, `https-fetch`
    catalogue revisions. Installation alone grants no tool authority. Guest
@@ -74,9 +76,12 @@ Prepare these explicitly before enabling the chart:
    RBAC must authorize the API server's intended reads. Preview is not proof
    of owner readiness or permission to execute.
 
-The standalone artifact/catalogue preparation command is still outstanding;
-today those preparation steps are implemented in the test fixture. Completing
-that extraction is required before this can be called a standard installation.
+Celln now has a standalone `starter-package` command for cold artifact packaging
+with an operator signing seed. All five bundles were packaged on framework
+without touching its existing dispatcher. This does not approve their publisher,
+admit the motes, create grants or bind Kubernetes catalogue identities. Those
+installation steps still need extraction from the fixture and qualification
+before this can be called a standard installation.
 
 ## Build and chart wiring
 
@@ -96,7 +101,8 @@ are intentionally invalid; render/inspect before applying. Do not use
 
 ```yaml
 controller:
-  watchNamespace: sympozium-system
+  # Keep existing namespaces managed; reserve only the new native namespace.
+  excludeWatchNamespaces: [celln-agents]
 celln:
   # Native parents do not require enabling the legacy one-shot router.
   enabled: false

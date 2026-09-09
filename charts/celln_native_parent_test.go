@@ -231,3 +231,20 @@ func TestNativeParentDisabledByDefault(t *testing.T) {
 		t.Fatal("native parent deployment or changed controller scope enabled implicitly")
 	}
 }
+
+func TestNativeParentNamespaceExclusionRendering(t *testing.T) {
+	values := append(nativeParentValues(), "controller.watchNamespace=", "controller.excludeWatchNamespaces[0]=celln-agents")
+	raw, err := renderNativeParent(t, values)
+	if err != nil {
+		t.Fatalf("render exclusion mode: %v: %s", err, raw)
+	}
+	if !bytes.Contains(raw, []byte("--exclude-watch-namespaces=celln-agents")) || !bytes.Contains(raw, []byte("--watch-namespace=celln-agents")) || bytes.Contains(raw, []byte("--watch-namespace=sympozium-system")) {
+		t.Fatal("exclusion must retain other namespaces and scope the parent controller")
+	}
+	if raw, err := renderNativeParent(t, append(values, "controller.excludeWatchNamespaces[0]=wrong-namespace")); err == nil || !bytes.Contains(raw, []byte("nativeParent")) {
+		t.Fatalf("overlap accepted: %v: %s", err, raw)
+	}
+	if raw, err := renderNativeParent(t, append(values, "controller.watchNamespace=sympozium-system")); err == nil || !bytes.Contains(raw, []byte("choose either")) {
+		t.Fatalf("ambiguous inclusion/exclusion accepted: %v: %s", err, raw)
+	}
+}

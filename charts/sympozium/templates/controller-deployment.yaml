@@ -1,3 +1,6 @@
+{{- if and .Values.controller.watchNamespace .Values.controller.excludeWatchNamespaces }}
+{{- fail "choose either controller.watchNamespace or controller.excludeWatchNamespaces" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,6 +31,9 @@ spec:
           image: {{ include "sympozium.controllerImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            {{- if .Values.controller.excludeWatchNamespaces }}
+            - --exclude-watch-namespaces={{ join "," .Values.controller.excludeWatchNamespaces }}
+            {{- end }}
             {{- if .Values.controller.watchNamespace }}
             - --watch-namespace={{ .Values.controller.watchNamespace }}
             {{- end }}

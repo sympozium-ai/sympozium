@@ -55,12 +55,14 @@ func main() {
 	var maxRunHistory int
 	var delegationControllerExecutor bool
 	var watchNamespace string
+	var excludedNamespaces string
 	var parentOnly bool
 	flag.BoolVar(&parentOnly, "celln-parent-only", false, "Run only native Celln parent/turn controllers; requires an explicit watch namespace and parent configuration.")
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&watchNamespace, "watch-namespace", "", "Restrict namespaced cache watches to one namespace; empty watches all. This is not an authorization boundary; scope Kubernetes RBAC separately.")
+	flag.StringVar(&excludedNamespaces, "exclude-watch-namespaces", "", "Comma-separated namespaces owned by another manager; preserves watches in all other namespaces. Mutually exclusive with --watch-namespace; not an RBAC boundary.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -103,7 +105,7 @@ func main() {
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
-	cacheOptions, err := controllerCacheOptions(watchNamespace)
+	cacheOptions, err := controllerCacheOptions(watchNamespace, excludedNamespaces)
 	if err != nil {
 		setupLog.Error(err, "invalid watch namespace")
 		os.Exit(1)
