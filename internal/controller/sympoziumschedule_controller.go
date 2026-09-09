@@ -318,6 +318,13 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Resolve auth secret from the instance.
 	agentRun.Spec.Model.AuthSecretRef = resolveAuthSecret(instance)
 
+	if err := applyAgentExecutionDefaults(instance, agentRun); err != nil {
+		log.Error(err, "agent execution defaults are incompatible with this schedule run")
+		schedule.Status.Phase = "Error"
+		_ = r.Status().Update(ctx, schedule)
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
 	// Copy skill refs, excluding server-mode skills (e.g. web-endpoint) that
 	// should not be spawned as ephemeral schedule runs.
 	for _, skill := range instance.Spec.Skills {

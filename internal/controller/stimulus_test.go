@@ -135,8 +135,11 @@ func TestBuildStimulusRunCarriesToolPolicyAndResolvedProvider(t *testing.T) {
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pack, inst).Build()
 
-	run := BuildStimulusRun(context.Background(), c, pack, inst, "lead",
+	run, err := BuildStimulusRun(context.Background(), c, pack, inst, "lead",
 		StimulusTriggerSourceManual, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if run.Spec.ToolPolicy == nil {
 		t.Fatal("stimulus run dropped the agent config's ToolPolicy")

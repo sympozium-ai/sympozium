@@ -98,6 +98,12 @@ type AgentSpec struct {
 	// /workspace remains an ephemeral emptyDir as before.
 	// +optional
 	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
+
+	// Execution stores default run execution choices (environment, lifecycle,
+	// Celln catalogue tools). Omitted Agents keep historical Kubernetes Job
+	// behaviour. Changes here do not mutate already-live native Celln parents.
+	// +optional
+	Execution *AgentExecutionDefaults `json:"execution,omitempty"`
 }
 
 // MCPServerRef references a remote MCP server for tool integration.

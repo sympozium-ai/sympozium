@@ -67,7 +67,12 @@ template's nonempty system prompt is not implicitly substituted for empty intent
 
 ## Creation form (development request)
 
-In **Runs → New Run**, select the Agent, native Harness and Celln backend.
+In **Create/Edit Agent**, set execution environment to Celln, choose a compatible
+native Harness, pick one-shot or enduring, and save approved tool defaults on
+`Agent.spec.execution`. Subsequent runs inherit those defaults.
+
+In **Runs → New Run**, select the Agent (defaults prefill) or override the
+native Harness and Celln backend.
 Select **Enduring conversation (development — operator approval required)**
 and enter aggregate ceilings. **Request enduring run** submits explicit lifecycle
 intent; it does not establish that the selected runtime has an approved parent

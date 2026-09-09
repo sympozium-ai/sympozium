@@ -313,11 +313,12 @@ func (r *EnsembleReconciler) reconcileAgentConfig(
 		// existing Agents with no change here — the field-by-field form had to be
 		// extended for each one and drifted behind buildAgent (see #264).
 		//
-		// Runtime selection is administrator-owned rather than persona-owned, so
-		// retain an out-of-band runtimeRef while converging every Ensemble-owned
-		// field to buildAgent's desired spec.
+		// Runtime selection and execution defaults are administrator-owned rather
+		// than persona-owned, so retain those out-of-band fields while converging
+		// every Ensemble-owned field to buildAgent's desired spec.
 		desired := r.buildAgent(pack, persona, instanceName, modelEndpoint)
 		desired.Spec.RuntimeRef = existingInst.Spec.RuntimeRef
+		desired.Spec.Execution = existingInst.Spec.Execution.DeepCopy()
 
 		needsUpdate := false
 		specDrifted := !reflect.DeepEqual(existingInst.Spec, desired.Spec)
@@ -1379,7 +1380,10 @@ func (r *EnsembleReconciler) deliverStimulus(ctx context.Context, log logr.Logge
 		return fmt.Errorf("stimulus target agent %q not found: %w", targetAgentName, err)
 	}
 
-	agentRun := BuildStimulusRun(ctx, r.Client, pack, &targetInst, targetPersona, triggerSource, time.Now())
+	agentRun, err := BuildStimulusRun(ctx, r.Client, pack, &targetInst, targetPersona, triggerSource, time.Now())
+	if err != nil {
+		return fmt.Errorf("stimulus execution defaults: %w", err)
+	}
 	runName := agentRun.Name
 
 	if err := r.Create(ctx, agentRun); err != nil {

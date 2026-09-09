@@ -1,0 +1,30 @@
+# Agent with Celln execution defaults. Kubernetes remains the product default
+# when spec.execution is omitted. Defaults and toolbox suggestions do not grant
+# authority; operator/runtime admissions still apply at run time.
+# An explicit empty toolRefs list means "lend no tools" and is distinct from
+# omitting cellnSelection (no tool defaults to inherit).
+apiVersion: sympozium.ai/v1alpha1
+kind: Agent
+metadata:
+  name: native-celln-agent
+  namespace: default
+spec:
+  runtimeRef: json-harness   # must declare celln.json-tools/v1 for Celln
+  execution:
+    backend: celln
+    executionLifecycle: enduring
+    provider: deepseek
+    model: deepseek-chat
+    enduring:
+      leaseSeconds: 600
+      maxTurns: 8
+      maxModelRequests: 24
+      maxOutputTokens: 8192
+    cellnSelection:
+      toolRefs:
+        - name: workspace-write
+          revision: v1
+  agents:
+    default:
+      model: deepseek-chat
+  # Do not combine SkillPacks/MCP with native Celln defaults.

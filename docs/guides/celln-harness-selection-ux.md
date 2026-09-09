@@ -64,7 +64,10 @@ must not be reused for this Harness path.
 ## YAML and API parity
 
 Keep `Agent.spec.runtimeRef` as the default Harness reference and
-`AgentRun.spec.backend` as placement. `cellnSelection.toolRefs` names catalogue
+`Agent.spec.execution` for Agent-level placement, lifecycle and borrowed-tool
+defaults. Create/Edit Agent can save those defaults; subsequent runs inherit
+them unless overridden. `AgentRun.spec.backend` remains the effective placement
+recorded on each run. `cellnSelection.toolRefs` names catalogue
 revisions. It is deliberately separate from the existing required explicit
 artifact fields in `celln`, preserving that API and rejecting ambiguous mixtures:
 
@@ -120,7 +123,8 @@ selection flags. This waiting condition is not selection readiness or an
 automatic packaging/distribution service. Deploy the new controller before
 creating these requests; older controllers cannot enforce the new waiting path.
 
-Agent-level placement/tool defaults and conversational selection still need
+Agent-level placement/tool defaults are stored on `Agent.spec.execution` and
+inherited by supported entry points. Conversational New Run overrides still need
 explicit immutable/frozen identity semantics before exposure.
 Celln conversations remain unsupported until the ADR's external checkpoint and
 disposable-turn lifecycle is implemented and proven. Do not expose a chat

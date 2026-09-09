@@ -317,6 +317,14 @@ func (cr *ChannelRouter) handleInbound(ctx context.Context, event *eventbus.Even
 		run.Annotations["otel.dev/traceparent"] = fmt.Sprintf("00-%s-%s-01", sc.TraceID().String(), sc.SpanID().String())
 	}
 
+	if err := applyAgentExecutionDefaults(inst, run); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		cr.Log.Error(err, "agent execution defaults incompatible with channel dispatch",
+			"instance", msg.InstanceName, "channel", msg.Channel)
+		return
+	}
+
 	if err := cr.Client.Create(ctx, run); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

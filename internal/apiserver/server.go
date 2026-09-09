@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sympozium-ai/sympozium/internal/agentexecution"
 	"github.com/sympozium-ai/sympozium/internal/cellnauthority"
 	"io"
 	"io/fs"
@@ -629,6 +630,10 @@ type PatchInstanceRequest struct {
 	// RuntimeRef is administrator-owned. It is deliberately not an Ensemble
 	// persona setting, so runtime selection remains stable across reconciliation.
 	RuntimeRef *string `json:"runtimeRef,omitempty"`
+	// Execution updates Agent-level run defaults when non-nil.
+	Execution *sympoziumv1alpha1.AgentExecutionDefaults `json:"execution,omitempty"`
+	// ClearExecution removes Agent execution defaults. Takes precedence over Execution.
+	ClearExecution bool `json:"clearExecution,omitempty"`
 }
 
 // PatchWebEndpoint is the web endpoint patch payload.
@@ -666,6 +671,25 @@ func (s *Server) patchAgent(w http.ResponseWriter, r *http.Request) {
 		inst.Spec.RuntimeRef = strings.TrimSpace(*req.RuntimeRef)
 		if err := s.client.Update(r.Context(), &inst); err != nil {
 			http.Error(w, "updating runtime reference: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.ClearExecution || req.Execution != nil {
+		if req.ClearExecution {
+			inst.Spec.Execution = nil
+		} else {
+			if reason := req.Execution.Validate(); reason != "" {
+				http.Error(w, reason, http.StatusBadRequest)
+				return
+			}
+			if req.Execution.Backend == "celln" && (len(inst.Spec.Skills) > 0 || len(inst.Spec.MCPServers) > 0) {
+				http.Error(w, "Celln execution defaults cannot be combined with SkillPacks or MCP connections; use a dedicated native Agent", http.StatusBadRequest)
+				return
+			}
+			inst.Spec.Execution = req.Execution.DeepCopy()
+		}
+		if err := s.client.Update(r.Context(), &inst); err != nil {
+			http.Error(w, "updating execution defaults: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -805,25 +829,26 @@ func (s *Server) getWebEndpointStatus(w http.ResponseWriter, r *http.Request) {
 
 // CreateInstanceRequest is the request body for creating a new Agent.
 type CreateInstanceRequest struct {
-	Name               string                                  `json:"name"`
-	Provider           string                                  `json:"provider"`
-	Model              string                                  `json:"model"`
-	BaseURL            string                                  `json:"baseURL,omitempty"`
-	SecretName         string                                  `json:"secretName,omitempty"`
-	APIKey             string                                  `json:"apiKey,omitempty"`
-	AWSRegion          string                                  `json:"awsRegion,omitempty"`
-	AWSAccessKeyID     string                                  `json:"awsAccessKeyId,omitempty"`
-	AWSSecretAccessKey string                                  `json:"awsSecretAccessKey,omitempty"`
-	AWSSessionToken    string                                  `json:"awsSessionToken,omitempty"`
-	PolicyRef          string                                  `json:"policyRef,omitempty"`
-	RuntimeRef         string                                  `json:"runtimeRef,omitempty"`
-	Skills             []sympoziumv1alpha1.SkillRef            `json:"skills,omitempty"`
-	Channels           []sympoziumv1alpha1.ChannelSpec         `json:"channels,omitempty"`
-	HeartbeatInterval  string                                  `json:"heartbeatInterval,omitempty"`
-	NodeSelector       map[string]string                       `json:"nodeSelector,omitempty"`
-	AgentSandbox       *sympoziumv1alpha1.AgentSandboxDefaults `json:"agentSandbox,omitempty"`
-	RunTimeout         string                                  `json:"runTimeout,omitempty"`
-	RequireApproval    bool                                    `json:"requireApproval,omitempty"`
+	Name               string                                    `json:"name"`
+	Provider           string                                    `json:"provider"`
+	Model              string                                    `json:"model"`
+	BaseURL            string                                    `json:"baseURL,omitempty"`
+	SecretName         string                                    `json:"secretName,omitempty"`
+	APIKey             string                                    `json:"apiKey,omitempty"`
+	AWSRegion          string                                    `json:"awsRegion,omitempty"`
+	AWSAccessKeyID     string                                    `json:"awsAccessKeyId,omitempty"`
+	AWSSecretAccessKey string                                    `json:"awsSecretAccessKey,omitempty"`
+	AWSSessionToken    string                                    `json:"awsSessionToken,omitempty"`
+	PolicyRef          string                                    `json:"policyRef,omitempty"`
+	RuntimeRef         string                                    `json:"runtimeRef,omitempty"`
+	Skills             []sympoziumv1alpha1.SkillRef              `json:"skills,omitempty"`
+	Channels           []sympoziumv1alpha1.ChannelSpec           `json:"channels,omitempty"`
+	HeartbeatInterval  string                                    `json:"heartbeatInterval,omitempty"`
+	NodeSelector       map[string]string                         `json:"nodeSelector,omitempty"`
+	AgentSandbox       *sympoziumv1alpha1.AgentSandboxDefaults   `json:"agentSandbox,omitempty"`
+	RunTimeout         string                                    `json:"runTimeout,omitempty"`
+	RequireApproval    bool                                      `json:"requireApproval,omitempty"`
+	Execution          *sympoziumv1alpha1.AgentExecutionDefaults `json:"execution,omitempty"`
 }
 
 func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
@@ -1001,6 +1026,21 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	if req.RuntimeRef != "" {
 		inst.Spec.RuntimeRef = req.RuntimeRef
 	}
+	if req.Execution != nil {
+		if reason := req.Execution.Validate(); reason != "" {
+			http.Error(w, reason, http.StatusBadRequest)
+			return
+		}
+		if req.Execution.Backend == "celln" && (len(req.Skills) > 0 || len(inst.Spec.Skills) > 0 || len(inst.Spec.MCPServers) > 0) {
+			http.Error(w, "Celln execution defaults cannot be combined with SkillPacks or MCP connections; use a dedicated native Agent", http.StatusBadRequest)
+			return
+		}
+		// Do not auto-start an OCI HarnessSession when Celln is the Agent default.
+		if req.Execution.Backend == "celln" {
+			req.RuntimeRef = req.RuntimeRef // keep harness ref, but session creation gated below
+		}
+		inst.Spec.Execution = req.Execution.DeepCopy()
+	}
 
 	if len(req.Skills) > 0 {
 		inst.Spec.Skills = req.Skills
@@ -1018,7 +1058,8 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	// A persistent-capable Agent is usable only when its session exists. Create
 	// the deterministic session as part of the Agent creation path so every UI
 	// and API caller gets the same Agent-first lifecycle.
-	if req.RuntimeRef != "" {
+	// OCI persistent sessions remain a separate path from native Celln defaults.
+	if req.RuntimeRef != "" && (req.Execution == nil || req.Execution.Backend != "celln") {
 		var selectedRuntime sympoziumv1alpha1.AgentRuntime
 		if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.RuntimeRef, Namespace: ns}, &selectedRuntime); err == nil &&
 			selectedRuntime.Spec.ContractVersion == "v1alpha2" && selectedRuntime.Spec.Session != nil && selectedRuntime.Spec.Session.Protocol == "openai-chat" {
@@ -1207,6 +1248,8 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agentRef and task are required", http.StatusBadRequest)
 		return
 	}
+	// Explicit catalogue selections are validated before Agent lookup so malformed
+	// overrides fail closed without depending on inheritance.
 	if req.CellnSelection != nil && (req.Backend != "celln" || req.RuntimeRef != "" || req.Provider != "deepseek" || req.Model == "" || req.CellnSelection.ToolRefs == nil || len(req.CellnSelection.ToolRefs) > 16) {
 		http.Error(w, "catalogue selection requires backend celln, explicit DeepSeek provider/model and toolRefs; use only cellnSelection.runtimeRef for an override", http.StatusBadRequest)
 		return
@@ -1215,11 +1258,38 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "explicit celln artifacts require the AgentRun Kubernetes API and cannot be mixed with catalogue selection", http.StatusBadRequest)
 		return
 	}
-	lifecycle := sympoziumv1alpha1.AgentRunSpec{ExecutionLifecycle: req.ExecutionLifecycle, Enduring: req.Enduring, Backend: req.Backend, CellnSelection: req.CellnSelection}
-	if reason := lifecycle.ValidateLifecycle(); reason != "" {
-		http.Error(w, reason, http.StatusBadRequest)
+
+	// Look up the Agent to inherit auth, model, skills, and execution defaults.
+	var inst sympoziumv1alpha1.Agent
+	if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.AgentRef, Namespace: ns}, &inst); err != nil {
+		if k8serrors.IsNotFound(err) {
+			http.Error(w, fmt.Sprintf("instance %q not found in namespace %q", req.AgentRef, ns), http.StatusNotFound)
+		} else {
+			http.Error(w, "failed to get instance: "+err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
+
+	resolved, err := agentexecution.Resolve(&inst, agentexecution.Input{
+		Backend:            req.Backend,
+		ExecutionLifecycle: req.ExecutionLifecycle,
+		Enduring:           req.Enduring,
+		CellnSelection:     req.CellnSelection,
+		Provider:           req.Provider,
+		Model:              req.Model,
+		RuntimeRef:         req.RuntimeRef,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Backend = resolved.Backend
+	req.ExecutionLifecycle = resolved.ExecutionLifecycle
+	req.Enduring = resolved.Enduring
+	req.CellnSelection = resolved.CellnSelection
+	req.Provider = resolved.Provider
+	req.Model = resolved.Model
+
 	if req.ExecutionLifecycle == "enduring" && (len(req.Task) > 2048 || strings.ContainsRune(req.Task, '\x00')) {
 		http.Error(w, "enduring initial message must be at most 2048 UTF-8 bytes without NUL", http.StatusBadRequest)
 		return
@@ -1243,22 +1313,6 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "enduring run timeout must be a valid duration at least as long as its lease", http.StatusBadRequest)
 			return
 		}
-	}
-
-	// Look up the Agent to inherit auth, model, and skills.
-	var inst sympoziumv1alpha1.Agent
-	if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.AgentRef, Namespace: ns}, &inst); err != nil {
-		if k8serrors.IsNotFound(err) {
-			http.Error(w, fmt.Sprintf("instance %q not found in namespace %q", req.AgentRef, ns), http.StatusNotFound)
-		} else {
-			http.Error(w, "failed to get instance: "+err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if req.CellnSelection != nil && (len(inst.Spec.Skills) != 0 || len(inst.Spec.MCPServers) != 0) {
-		http.Error(w, "native Celln cannot use this Agent's SkillPacks or MCP connections; use a dedicated Agent with approved borrowed tools, or choose a compatible backend. Nothing was submitted or silently removed", http.StatusBadRequest)
-		return
 	}
 
 	// Resolve auth secret and provider from instance — first AuthRef wins.
@@ -1340,6 +1394,12 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	if req.CellnSelection != nil {
 		run.Spec.CellnSelection = req.CellnSelection.DeepCopy()
 		run.Spec.Model = sympoziumv1alpha1.ModelSpec{Provider: req.Provider, Model: req.Model}
+	}
+	if len(resolved.Inherited) > 0 {
+		if run.Annotations == nil {
+			run.Annotations = map[string]string{}
+		}
+		run.Annotations["sympozium.ai/execution-inherited"] = strings.Join(resolved.Inherited, ",")
 	}
 	if strings.TrimSpace(req.RuntimeRef) != "" {
 		run.Spec.Task = &sympoziumv1alpha1.TaskSpec{
@@ -2576,10 +2636,14 @@ func (s *Server) triggerStimulus(w http.ResponseWriter, r *http.Request) {
 
 	// Same builder the controller's readiness path uses, so a manual trigger
 	// produces an identical run — including the agent config's ToolPolicy.
-	agentRun := controller.BuildStimulusRun(
+	agentRun, err := controller.BuildStimulusRun(
 		r.Context(), s.client, &ensemble, &targetInst, targetPersona,
 		controller.StimulusTriggerSourceManual, time.Now(),
 	)
+	if err != nil {
+		http.Error(w, "stimulus execution defaults: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	runName := agentRun.Name
 
 	if err := s.client.Create(r.Context(), agentRun); err != nil {
@@ -3931,9 +3995,21 @@ func (s *Server) getClusterInfo(w http.ResponseWriter, r *http.Request) {
 // ── Capabilities endpoint ────────────────────────────────────────────────────
 
 // CapabilityStatus describes whether a feature is available in the cluster.
+// State is a stable machine-readable cause when known:
+// disabled, not_installed, unreachable, transport_invalid, credential_invalid,
+// not_approved, incompatible, no_capacity, ready, unknown.
+// For Celln, OneShot and Enduring keep router preflight distinct from native
+// parent readiness. A non-ready preflight must not be labelled "not installed"
+// when the failure is transport or credentials, and must not claim that every
+// existing Celln run will fail.
 type CapabilityStatus struct {
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
+	State     string `json:"state,omitempty"`
+	// OneShot is populated for Celln only: authenticated one-shot router preflight.
+	OneShot *CapabilityStatus `json:"oneShot,omitempty"`
+	// Enduring is populated for Celln only: native parent path (not inferred from one-shot).
+	Enduring *CapabilityStatus `json:"enduring,omitempty"`
 }
 
 // CapabilitiesResponse lists optional features and whether their prerequisites are met.

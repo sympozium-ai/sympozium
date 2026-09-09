@@ -81,6 +81,12 @@ func TestCreateRunEnduringLifecycle(t *testing.T) {
 }
 
 func TestCreateRunEnduringRefusesNonCatalogueExecution(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "default"}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(agent).Build()
 	for _, backend := range []string{"celln", "job", ""} {
 		body, err := json.Marshal(map[string]any{
 			"agentRef": "agent", "task": "task", "backend": backend,
@@ -89,13 +95,72 @@ func TestCreateRunEnduringRefusesNonCatalogueExecution(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// No client: invalid intent must be refused before any Kubernetes lookup.
-		srv := NewServer(nil, nil, nil, logr.Discard())
+		srv := NewServer(cl, nil, nil, logr.Discard())
 		response := httptest.NewRecorder()
 		srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", bytes.NewReader(body)))
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("backend %q: %d %s", backend, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestCreateRunInheritsAgentExecutionDefaults(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	agent := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "native", Namespace: "default"},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			RuntimeRef: "json-harness",
+			Execution: &sympoziumv1alpha1.AgentExecutionDefaults{
+				Backend:            "celln",
+				ExecutionLifecycle: "enduring",
+				Provider:           "deepseek",
+				Model:              "deepseek-chat",
+				Enduring:           &sympoziumv1alpha1.EnduringRunSpec{LeaseSeconds: 600, MaxTurns: 8, MaxModelRequests: 24, MaxOutputTokens: 8192},
+				CellnSelection:     &sympoziumv1alpha1.CellnCatalogueSelection{ToolRefs: []sympoziumv1alpha1.CellnCatalogueToolRef{{Name: "workspace-write", Revision: "v1"}}},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(agent).Build()
+	srv := NewServer(cl, nil, nil, logr.Discard())
+	response := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"agentRef":"native","task":"remember violet"}`)))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status %d: %s", response.Code, response.Body.String())
+	}
+	var stored sympoziumv1alpha1.AgentRunList
+	if err := cl.List(t.Context(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Items) != 1 {
+		t.Fatal("missing run")
+	}
+	run := stored.Items[0]
+	if run.Spec.Backend != "celln" || run.Spec.ExecutionLifecycle != "enduring" || run.Spec.CellnSelection == nil || len(run.Spec.CellnSelection.ToolRefs) != 1 {
+		t.Fatalf("inheritance lost: %+v", run.Spec)
+	}
+	if run.Annotations["sympozium.ai/execution-inherited"] == "" {
+		t.Fatal("expected inheritance audit annotation")
+	}
+	// Explicit empty tools must not inherit Agent tools.
+	response = httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/runs", strings.NewReader(`{"agentRef":"native","task":"no tools","backend":"celln","provider":"deepseek","model":"deepseek-chat","executionLifecycle":"one-shot","cellnSelection":{"toolRefs":[]}}`)))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("explicit empty: %d %s", response.Code, response.Body.String())
+	}
+	if err := cl.List(t.Context(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	var empty *sympoziumv1alpha1.AgentRun
+	for i := range stored.Items {
+		if stored.Items[i].Spec.Task.GetPrompt() == "no tools" {
+			empty = &stored.Items[i]
+		}
+	}
+	if empty == nil || empty.Spec.CellnSelection == nil || len(empty.Spec.CellnSelection.ToolRefs) != 0 {
+		t.Fatalf("explicit empty tools lost: %+v", empty)
 	}
 }
 

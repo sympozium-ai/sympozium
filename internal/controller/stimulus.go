@@ -50,11 +50,11 @@ func BuildStimulusRun(
 	targetPersona string,
 	triggerSource string,
 	now time.Time,
-) *sympoziumv1alpha1.AgentRun {
+) (*sympoziumv1alpha1.AgentRun, error) {
 	targetAgentName := targetInst.Name
 	runName := fmt.Sprintf("%s-stimulus-%d", targetAgentName, now.UnixMilli()%100000)
 
-	return &sympoziumv1alpha1.AgentRun{
+	run := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      runName,
 			Namespace: pack.Namespace,
@@ -86,4 +86,8 @@ func BuildStimulusRun(
 			ToolPolicy:       toolpolicy.ForAgent(ctx, c, targetInst),
 		},
 	}
+	if err := applyAgentExecutionDefaults(targetInst, run); err != nil {
+		return nil, err
+	}
+	return run, nil
 }

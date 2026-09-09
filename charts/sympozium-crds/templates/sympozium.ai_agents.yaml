@@ -2659,6 +2659,113 @@ spec:
                   username a shared bot posts under) so a multi-agent Ensemble shows which
                   agent is replying. Falls back to the Agent's metadata.name when empty.
                 type: string
+              execution:
+                description: |-
+                  Execution stores default run execution choices (environment, lifecycle,
+                  Celln catalogue tools). Omitted Agents keep historical Kubernetes Job
+                  behaviour. Changes here do not mutate already-live native Celln parents.
+                properties:
+                  backend:
+                    description: |-
+                      Backend selects the default execution environment.
+                      "job" (Kubernetes containers/OCI) remains the product default when unset.
+                      "celln" is a privileged opt-in for hardware-isolated cells.
+                    enum:
+                    - job
+                    - celln
+                    type: string
+                  cellnSelection:
+                    description: |-
+                      CellnSelection is the default catalogue selection for backend=celln.
+                      RuntimeRef here overrides Agent.spec.runtimeRef for inherited Celln runs only.
+                    properties:
+                      runtimeRef:
+                        description: |-
+                          RuntimeRef overrides Agent.spec.runtimeRef for this run only. The
+                          independently trusted grants must approve this exact Agent/runtime pair.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                        type: string
+                      toolRefs:
+                        items:
+                          properties:
+                            name:
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                              type: string
+                            revision:
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          - revision
+                          type: object
+                        maxItems: 16
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    required:
+                    - toolRefs
+                    type: object
+                    x-kubernetes-validations:
+                    - message: catalogue tool names must be unique
+                      rule: self.toolRefs.all(t, self.toolRefs.filter(x, x.name ==
+                        t.name).size() == 1)
+                  enduring:
+                    description: Enduring bounds inherited by enduring runs when the
+                      request omits limits.
+                    properties:
+                      leaseSeconds:
+                        format: int32
+                        maximum: 86400
+                        minimum: 1
+                        type: integer
+                      maxModelRequests:
+                        format: int32
+                        maximum: 6144
+                        minimum: 0
+                        type: integer
+                      maxOutputTokens:
+                        format: int64
+                        maximum: 3145728
+                        minimum: 0
+                        type: integer
+                      maxTurns:
+                        format: int32
+                        maximum: 1024
+                        minimum: 1
+                        type: integer
+                      requireToolCall:
+                        description: |-
+                          RequireToolCall requires actual execution of at least one lent tool on
+                          every turn before successful completion; it grants no additional tools.
+                        type: boolean
+                    required:
+                    - leaseSeconds
+                    - maxModelRequests
+                    - maxOutputTokens
+                    - maxTurns
+                    type: object
+                  executionLifecycle:
+                    description: |-
+                      ExecutionLifecycle selects the default one-shot or enduring lifecycle.
+                      Enduring is the native Celln parent/turn path, not an OCI HarnessSession.
+                    enum:
+                    - one-shot
+                    - enduring
+                    type: string
+                  model:
+                    description: Model is the default model id for inherited Celln
+                      catalogue runs.
+                    type: string
+                  provider:
+                    description: |-
+                      Provider is the default model provider for inherited Celln catalogue runs.
+                      Celln catalogue admission currently requires DeepSeek-hosted model grants.
+                    type: string
+                type: object
               imagePullSecrets:
                 description: ImagePullSecrets are secrets to use when pulling container
                   images.

@@ -56,6 +56,7 @@ var agentFieldsNotExpressibleByEnsemble = map[string]string{
 // convergence and needs explicit reconciliation code plus a preservation test.
 var agentFieldsPreservedOutOfBand = map[string]string{
 	"RuntimeRef": "runtime selection is administrator-owned rather than persona-owned",
+	"Execution":  "execution environment/lifecycle/tool defaults are administrator-owned rather than persona-owned",
 }
 
 // ── the properties ────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ func TestAgentUpdateConvergesToCreate(t *testing.T) {
 	drifted := wantAgent.DeepCopy()
 	fillStruct(t, reflect.ValueOf(&drifted.Spec).Elem(), 0)
 	wantAgent.Spec.RuntimeRef = drifted.Spec.RuntimeRef
+	wantAgent.Spec.Execution = drifted.Spec.Execution.DeepCopy()
 
 	r := newEnsembleTestReconciler(t, drifted)
 	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, ""); err != nil {
@@ -104,6 +106,24 @@ func TestAgentRuntimeRefSurvivesEnsembleReconcile(t *testing.T) {
 	got := getAgent(t, r, instanceName, existing.Namespace)
 	if got.Spec.RuntimeRef != "codex-v1" {
 		t.Fatalf("runtimeRef = %q after Ensemble reconcile, want administrator-owned value preserved", got.Spec.RuntimeRef)
+	}
+}
+
+func TestAgentExecutionDefaultsSurviveEnsembleReconcile(t *testing.T) {
+	pack, persona := convergenceFixture()
+	instanceName := agentInstanceName(pack, persona)
+	existing := (&EnsembleReconciler{}).buildAgent(pack, persona, instanceName, "")
+	existing.Spec.Execution = &sympoziumv1alpha1.AgentExecutionDefaults{
+		Backend: "celln", ExecutionLifecycle: "one-shot", Provider: "deepseek", Model: "deepseek-chat",
+		CellnSelection: &sympoziumv1alpha1.CellnCatalogueSelection{ToolRefs: []sympoziumv1alpha1.CellnCatalogueToolRef{}},
+	}
+	r := newEnsembleTestReconciler(t, existing)
+	if _, err := r.reconcileAgentConfig(context.Background(), logr.Discard(), pack, persona, 0, ""); err != nil {
+		t.Fatalf("reconcileAgentConfig: %v", err)
+	}
+	got := getAgent(t, r, instanceName, existing.Namespace)
+	if got.Spec.Execution == nil || got.Spec.Execution.Backend != "celln" || got.Spec.Execution.CellnSelection == nil {
+		t.Fatalf("execution defaults lost after Ensemble reconcile: %+v", got.Spec.Execution)
 	}
 }
 
