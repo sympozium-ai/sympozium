@@ -68,6 +68,10 @@ spec:
           {{- if .Values.celln.enabled }}
             - name: CELLN_ENABLED
               value: "true"
+            {{- if .Values.celln.caConfigMap }}
+            - name: SSL_CERT_FILE
+              value: /etc/sympozium/celln-router-ca/ca-bundle.crt
+            {{- end }}
             - name: CELLN_ROUTER_URL
               value: {{ .Values.celln.routerUrl | quote }}
             - name: CELLN_ALLOW_INSECURE_HTTP
@@ -132,6 +136,11 @@ spec:
               readOnly: true
           {{- end }}
           {{- if .Values.celln.enabled }}
+            {{- if .Values.celln.caConfigMap }}
+            - name: celln-router-ca
+              mountPath: /etc/sympozium/celln-router-ca
+              readOnly: true
+            {{- end }}
             - name: celln-capability-token
               mountPath: /etc/celln/capability
               readOnly: true
@@ -169,6 +178,11 @@ spec:
                 path: config.json
       {{- end }}
       {{- if .Values.celln.enabled }}
+        {{- if .Values.celln.caConfigMap }}
+        - name: celln-router-ca
+          configMap:
+            name: {{ .Values.celln.caConfigMap | quote }}
+        {{- end }}
         - name: celln-capability-token
           secret:
             secretName: {{ .Values.celln.capabilityTokenSecret | quote }}

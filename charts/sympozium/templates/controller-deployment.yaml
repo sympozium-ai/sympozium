@@ -138,6 +138,10 @@ spec:
               value: {{ .Values.celln.routerUrl | quote }}
             - name: CELLN_ALLOW_INSECURE_HTTP
               value: {{ .Values.celln.allowInsecureHttp | quote }}
+            {{- if .Values.celln.caConfigMap }}
+            - name: SSL_CERT_FILE
+              value: /etc/sympozium/celln-router-ca/ca-bundle.crt
+            {{- end }}
             - name: CELLN_HARNESS_ENABLED
               value: {{ .Values.celln.harnessEnabled | default false | quote }}
             {{- if .Values.celln.catalogueConfigSecret }}
@@ -178,8 +182,13 @@ spec:
             {{- toYaml .Values.controller.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret) }}
+          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap) }}
           volumeMounts:
+            {{- if .Values.celln.caConfigMap }}
+            - name: celln-router-ca
+              mountPath: /etc/sympozium/celln-router-ca
+              readOnly: true
+            {{- end }}
             {{- if .Values.celln.tokenSecret }}
             - name: celln-token
               mountPath: /etc/sympozium/celln
@@ -191,8 +200,13 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
-      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret) }}
+      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap) }}
       volumes:
+        {{- if .Values.celln.caConfigMap }}
+        - name: celln-router-ca
+          configMap:
+            name: {{ .Values.celln.caConfigMap | quote }}
+        {{- end }}
         {{- if .Values.celln.tokenSecret }}
         - name: celln-token
           secret:

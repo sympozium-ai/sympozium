@@ -27,6 +27,8 @@ func controllerCacheOptions(namespace string, exclusions ...string) (cache.Optio
 		}
 		// Namespace-local config is important: a global DefaultFieldSelector
 		// would also filter cluster-scoped resources, which have no namespace.
+		// Requires controller-runtime >= v0.20.4: v0.20.0's multi-namespace
+		// cache does not fall back to AllNamespaces for namespace-scoped List.
 		return cache.Options{DefaultNamespaces: map[string]cache.Config{
 			cache.AllNamespaces: {FieldSelector: fields.AndSelectors(selectors...)},
 		}}, nil

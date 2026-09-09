@@ -1,0 +1,32 @@
+[Unit]
+Description=Sympozium Celln execution router TLS edge
+After=sympozium-celln-router.service
+Requires=sympozium-celln-router.service
+
+[Service]
+Type=exec
+DynamicUser=yes
+EnvironmentFile=/etc/celln-router/proxy.env
+LoadCredential=tls-cert:/etc/celln-native/tls.crt
+LoadCredential=tls-key:/etc/celln-native/tls.key
+ExecStart=/opt/sympozium-celln-native/bin/celln-execution-proxy --execution-router --listen ${CELLN_ROUTER_TLS_LISTEN} --backend http://127.0.0.1:8788 --tls-cert %d/tls-cert --tls-key %d/tls-key
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=128M
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=/var/lib/celln /var/lib/celln-router /etc/celln-router /etc/celln-native
+
+[Install]
+WantedBy=multi-user.target

@@ -488,6 +488,9 @@ celln:
   # the router CLIENT bearer credential (at least 24 bytes). No token is generated
   # or inferred from model credentials. Missing configuration refuses dispatch.
   tokenSecret: ""
+  # -- Optional public ConfigMap with ca-bundle.crt containing the complete
+  # system CA bundle plus the operator router CA. Mounted without subPath.
+  caConfigMap: ""
   # -- Explicitly allow new native Harness submissions; recovery/cancel remains
   # available when false. Does not establish catalogue readiness.
   harnessEnabled: false
@@ -518,6 +521,9 @@ celln:
     repository: "ghcr.io/sympozium-ai/celln-installer"
     tag: "v0.4.13"
   router:
+    # -- Use an independently managed router/TLS endpoint. The chart configures
+    # clients only and creates no router/installer/ownership resources.
+    external: false
     replicas: 2
     # -- Complete, identical backend list on every replica; no Service that
     # load-balances different dispatcher owners. Current router supports HTTP only.

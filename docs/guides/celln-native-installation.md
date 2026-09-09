@@ -2,6 +2,8 @@
 
 This is the installation path for a persistent native Harness parent and
 disposable per-turn cells. It is separate from the one-shot router installation.
+For an existing host dispatcher, see the
+[one-shot router migration](celln-external-router-migration.md).
 The chart wiring and standalone installation commands are deployed on framework
 for qualification. Full installed acceptance is still in progress; this is not
 a release announcement. Track epic #464 and starter-tools #467.

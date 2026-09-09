@@ -1,0 +1,30 @@
+[Unit]
+Description=Sympozium host-local Celln execution router
+After=celln-dispatcher.service
+Requires=celln-dispatcher.service
+
+[Service]
+Type=exec
+User=celln-native
+Group=celln-native
+ExecStart=/opt/sympozium-celln-native/bin/celln route --listen 127.0.0.1:8788 --backends http://127.0.0.1:8787 --token-file /etc/celln-router/backend-token --client-token-file /etc/celln-router/client-token --capability-token-file /etc/celln-router/discovery-token --ownership-dir /var/lib/celln-router/ownership --mode round-robin
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=256M
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/celln-router/ownership
+
+[Install]
+WantedBy=multi-user.target

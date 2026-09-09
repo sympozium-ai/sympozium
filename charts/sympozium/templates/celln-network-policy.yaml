@@ -1,4 +1,4 @@
-{{- if .Values.celln.enabled }}
+{{- if and .Values.celln.enabled (not .Values.celln.router.external) }}
 # Mandatory for this privileged execution ingress, independently of the
 # optional policies for ordinary agent pods. Requires an enforcing CNI.
 apiVersion: networking.k8s.io/v1

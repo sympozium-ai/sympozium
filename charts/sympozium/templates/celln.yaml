@@ -2,6 +2,14 @@
 {{- if and (not (hasPrefix "https://" .Values.celln.routerUrl)) (not .Values.celln.allowInsecureHttp) }}
 {{- fail "Celln requires an HTTPS routerUrl or explicit celln.allowInsecureHttp acknowledgement" }}
 {{- end }}
+{{- if .Values.celln.router.external }}
+{{- if or (not .Values.celln.tokenSecret) (not .Values.celln.capabilityTokenSecret) (eq .Values.celln.tokenSecret .Values.celln.capabilityTokenSecret) }}
+{{- fail "external Celln router requires distinct execution and discovery token Secrets" }}
+{{- end }}
+{{- if .Values.celln.installer.enabled }}
+{{- fail "external Celln router cannot enable the legacy host installer" }}
+{{- end }}
+{{- else }}
 {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.celln.router.image.digest) }}
 {{- fail "celln.router.image.digest must pin a router supporting client auth and durable ownership" }}
 {{- end }}
@@ -252,4 +260,5 @@ spec:
     port: 8787
     targetPort: 8788
     protocol: TCP
+{{- end }}
 {{- end }}
