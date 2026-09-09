@@ -67,6 +67,12 @@ func TestCellnCapabilityContract(t *testing.T) {
 			if result.Available && !strings.Contains(result.Reason, "preflight") {
 				t.Fatal("readiness overstated")
 			}
+			if result.Available && (result.State != capabilityStateReady || result.OneShot == nil || !result.OneShot.Available) {
+				t.Fatalf("ready one-shot must set state/oneShot: %+v", result)
+			}
+			if result.Enduring == nil {
+				t.Fatal("enduring status required")
+			}
 		})
 	}
 }
@@ -110,8 +116,18 @@ func TestCellnCapabilityCredentialRotationAndTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CELLN_ALLOW_INSECURE_HTTP", "false")
-	if cellnCapabilityStatus().Available {
+	plaintext := cellnCapabilityStatus()
+	if plaintext.Available {
 		t.Fatal("plaintext accepted without acknowledgement")
+	}
+	if plaintext.State != capabilityStateTransportInvalid && (plaintext.OneShot == nil || plaintext.OneShot.State != capabilityStateTransportInvalid) {
+		t.Fatalf("plaintext must be transport_invalid, got %+v", plaintext)
+	}
+	if plaintext.Enduring == nil || plaintext.Enduring.State == "" {
+		t.Fatal("enduring readiness must stay distinct from one-shot transport failure")
+	}
+	if strings.Contains(strings.ToLower(plaintext.Reason), "not active") || strings.Contains(strings.ToLower(plaintext.Reason), "not installed") {
+		t.Fatalf("transport failure must not be described as absence: %q", plaintext.Reason)
 	}
 	t.Setenv("CELLN_ENABLED", "false")
 	if cellnCapabilityStatus().Available {

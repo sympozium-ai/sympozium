@@ -219,6 +219,10 @@ export interface WizardResult {
   runtimeRef?: string;
   /** Policy required to authorize the selected harness. */
   policyRef?: string;
+  /** Default execution environment: Kubernetes (job) or Celln. */
+  executionBackend?: "job" | "celln";
+  /** Default Celln lifecycle when executionBackend is celln. */
+  executionLifecycle?: "one-shot" | "enduring";
 }
 
 interface OnboardingWizardProps {
@@ -577,6 +581,8 @@ export function OnboardingWizard({
     awsSessionToken: defaults?.awsSessionToken || "",
     runtimeRef: defaultRuntimeRef,
     policyRef: defaults?.policyRef || "",
+    executionBackend: defaults?.executionBackend || "job",
+    executionLifecycle: defaults?.executionLifecycle || "one-shot",
   });
   const [inferenceMode, setInferenceMode] = useState<"workload" | "node">(
     "workload",
@@ -781,6 +787,8 @@ export function OnboardingWizard({
       awsSessionToken: d.awsSessionToken || "",
       runtimeRef: d.runtimeRef || "",
       policyRef: d.policyRef || "",
+      executionBackend: d.executionBackend || "job",
+      executionLifecycle: d.executionLifecycle || "one-shot",
     });
     setStep(steps[0]);
     setChannelActionIdx(0);
@@ -918,6 +926,46 @@ export function OnboardingWizard({
             {form.runtimeRef && !availablePolicies.some((policy) => policy.metadata.name === form.policyRef) && (
               <p className="text-xs text-amber-500">The selected harness needs an approving policy. Install the default harnesses for this namespace, or ask an administrator to provide one.</p>
             )}
+            <div className="space-y-2" data-testid="create-agent-execution-environment">
+              <Label>Default execution environment</Label>
+              <p className="text-xs text-muted-foreground">Kubernetes remains the product default. Celln is a privileged opt-in. Harness selection alone does not choose Celln or grant tools.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([["job", "Kubernetes", "Default · containers and OCI"], ["celln", "Celln", "Opt-in · hardware-isolated"]] as const).map(([value, title, description]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`rounded-md border p-3 text-left ${form.executionBackend === value ? "border-primary bg-primary/5" : "border-border"}`}
+                    onClick={() => setForm({
+                      ...form,
+                      executionBackend: value,
+                      executionLifecycle: value === "celln" ? form.executionLifecycle || "one-shot" : "one-shot",
+                      skills: value === "celln" ? [] : form.skills,
+                      provider: value === "celln" ? "deepseek" : form.provider,
+                      model: value === "celln" && !form.model ? "deepseek-chat" : form.model,
+                    })}
+                  >
+                    <p className="text-sm font-medium">{title}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </button>
+                ))}
+              </div>
+              {form.executionBackend === "celln" && (
+                <div className="space-y-2 rounded-md border p-3">
+                  <Label>Default Celln lifecycle</Label>
+                  <div className="flex gap-4 text-sm">
+                    {(["one-shot", "enduring"] as const).map((value) => (
+                      <label key={value} className="flex items-center gap-2">
+                        <input type="radio" name="create-agent-lifecycle" checked={form.executionLifecycle === value} onChange={() => setForm({ ...form, executionLifecycle: value })} />
+                        {value}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Approved tools can be set after creation on the Agent harness tab (with starter suggestions and an effective-permissions preview). An explicit empty tool list is distinct from inheritance. {capabilities?.celln?.available ? (capabilities.celln.oneShot?.reason || capabilities.celln.reason) : `Celln readiness: ${capabilities?.celln?.state || "unknown"} — ${capabilities?.celln?.reason || "not confirmed"}.`}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

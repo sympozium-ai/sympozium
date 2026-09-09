@@ -9,7 +9,7 @@ const CHOICES = [
   ["Who?", "Agent", "The identity and defaults: instructions, model settings, skills and approved access. Creating an Agent does not start a process. You can create one directly; an Ensemble is optional."],
   ["How?", "Harness", "The program that manages the model conversation and tool use. Choose an approved harness, or use the built-in runner where supported. A one-shot tool job may need neither a harness nor a model."],
   ["Where?", "Execution environment", "Kubernetes is the default and runs work in containers. Celln is opt-in and runs work in hardware-isolated cells. Choosing a harness does not switch the environment. Harness and tool support must match the environment."],
-  ["How long?", "Run lifecycle", "A one-shot completes a task and finishes. An enduring native run stays available for more messages within its limits. Both are AgentRuns—not different kinds of Agent."],
+  ["How long?", "Run lifecycle", "A one-shot completes a task and finishes. An enduring native run stays available for more messages within its limits. Both are AgentRuns—not different kinds of Agent. Save defaults on the Agent (execution environment, harness, lifecycle, approved tools); runs inherit them unless overridden."],
   ["With what access?", "Skills, tools and policy", "Skills explain how to do a job. Tools perform actions. Policy and permission grants limit which actions are allowed. Selecting a skill or tool requests access; it does not grant permission."],
 ];
 

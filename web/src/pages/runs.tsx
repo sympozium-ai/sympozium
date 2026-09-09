@@ -121,11 +121,20 @@ export function RunsPage() {
   useEffect(() => {
     if (searchParams.get("create") === "1") {
       const agentRef = searchParams.get("agent") || "";
-      setForm((current) => ({ ...current, agentRef }));
+      const agent = (instances.data || []).find((item) => item.metadata.name === agentRef);
+      const execution = agent?.spec.execution;
+      setForm((current) => ({
+        ...current,
+        agentRef,
+        backend: execution?.backend || current.backend || "job",
+        model: execution?.model || current.model,
+      }));
+      if (execution?.executionLifecycle === "enduring") setEnduring(true);
+      if (execution?.cellnSelection?.toolRefs) setLentTools(execution.cellnSelection.toolRefs);
       setOpen(true);
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, instances.data]);
 
   // Mark all runs as seen after a short delay so "new" dots are visible briefly.
   useEffect(() => {
@@ -222,7 +231,28 @@ export function RunsPage() {
                 <Label>Agent</Label>
                 <Select
                   value={form.agentRef}
-                  onValueChange={(v) => { setForm({ ...form, agentRef: v, runtimeRef: "" }); setLentTools([]); }}
+                  onValueChange={(v) => {
+                    const agent = (instances.data || []).find((item) => item.metadata.name === v);
+                    const execution = agent?.spec.execution;
+                    const nextBackend = execution?.backend || "job";
+                    setForm({
+                      ...form,
+                      agentRef: v,
+                      runtimeRef: "",
+                      backend: nextBackend,
+                      model: execution?.model || (nextBackend === "celln" && !form.model ? "deepseek-chat" : form.model),
+                    });
+                    setEnduring(execution?.executionLifecycle === "enduring");
+                    setLentTools(execution?.cellnSelection?.toolRefs || []);
+                    if (execution?.enduring) {
+                      setParentLimits({
+                        leaseSeconds: execution.enduring.leaseSeconds,
+                        maxTurns: execution.enduring.maxTurns,
+                        maxModelRequests: execution.enduring.maxModelRequests,
+                        maxOutputTokens: execution.enduring.maxOutputTokens,
+                      });
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select agent" />
@@ -388,17 +418,30 @@ export function RunsPage() {
       </div>
 
       {cellnUnavailable && hasCellnRuns && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400" data-testid="celln-capability-banner">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">
-              Celln backend is not active in this cluster
+              {capabilities.data?.celln.state === "transport_invalid"
+                ? "Celln transport configuration needs attention"
+                : capabilities.data?.celln.state === "not_installed"
+                  ? "Celln one-shot capabilities are not installed on the configured router"
+                  : capabilities.data?.celln.state === "unreachable"
+                    ? "Celln one-shot router is unreachable"
+                    : capabilities.data?.celln.state === "disabled"
+                      ? "Celln is disabled in this API process"
+                      : "Celln readiness could not be confirmed"}
             </p>
             <p className="text-xs text-amber-400/80 mt-0.5">
               {capabilities.data?.celln.reason ||
-                "The Celln router is not reachable."}{" "}
-              Runs below with backend "celln" will fail or stay stuck until
-              this is resolved.
+                "One-shot router preflight did not succeed."}{" "}
+              This does not prove Celln is absent, and it does not rewrite the
+              observed status of existing runs. Native enduring readiness is
+              checked separately
+              {capabilities.data?.celln.enduring?.reason
+                ? ` (${capabilities.data.celln.enduring.reason})`
+                : ""}.
+              Per-run admission still applies.
             </p>
           </div>
         </div>

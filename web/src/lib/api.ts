@@ -114,6 +114,8 @@ export interface ChannelStatus {
 export interface AgentSpec {
 	/** Administrator-approved AgentRuntime inherited by this Agent's runs. */
 	runtimeRef?: string;
+  /** Default run execution environment, lifecycle and Celln tool selection. */
+  execution?: AgentExecutionDefaults;
   channels?: ChannelSpec[];
   agents: AgentsSpec;
   skills?: SkillRef[];
@@ -965,11 +967,24 @@ export interface ProviderModelsResponse {
 export interface CapabilityStatus {
   available: boolean;
   reason?: string;
+  /** Stable cause: disabled, not_installed, unreachable, transport_invalid, credential_invalid, not_approved, incompatible, no_capacity, ready, unknown */
+  state?: string;
+  oneShot?: CapabilityStatus;
+  enduring?: CapabilityStatus;
 }
 
 export interface CapabilitiesResponse {
   agentSandbox: CapabilityStatus;
   celln: CapabilityStatus;
+}
+
+export interface AgentExecutionDefaults {
+  backend?: "job" | "celln";
+  executionLifecycle?: "one-shot" | "enduring";
+  enduring?: AgentRunSpec["enduring"];
+  cellnSelection?: CellnSelection;
+  provider?: string;
+  model?: string;
 }
 
 // ── Model Density (llmfit DaemonSet telemetry) ─────────────────────────────────────
@@ -1326,6 +1341,8 @@ export const api = {
         lifecycle?: LifecycleHooks | null;
         requireApproval?: boolean;
 		runtimeRef?: string;
+        execution?: AgentExecutionDefaults;
+        clearExecution?: boolean;
       },
     ) =>
       apiFetch<Agent>(`/api/v1/agents/${name}`, {
@@ -1352,6 +1369,7 @@ export const api = {
       agentSandbox?: { enabled: boolean; runtimeClass?: string };
       runTimeout?: string;
       requireApproval?: boolean;
+      execution?: AgentExecutionDefaults;
     }) =>
       apiFetch<Agent>("/api/v1/agents", {
         method: "POST",

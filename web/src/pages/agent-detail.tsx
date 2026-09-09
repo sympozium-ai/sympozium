@@ -4,19 +4,23 @@ import {
   useAgent,
   useCapabilities,
   usePatchAgent,
-	useCreateHarnessSession,
-	useHarnessSessions,
-	useSetHarnessSessionState,
+  useCreateHarnessSession,
+  useCellnTools,
+  useHarnessSessions,
+  useSetHarnessSessionState,
   useRuntimes,
   useRuns,
 } from "@/hooks/use-api";
 import { HarnessSessionChatDialog } from "@/components/harness-session-dialog";
+import { CellnStarterTools } from "@/components/celln-starter-tools";
+import { CellnPermissionPreview } from "@/components/celln-permission-preview";
 import { StatusBadge } from "@/components/status-badge";
 import { GithubAuthDialog } from "@/components/github-auth-dialog";
 import {
   api,
   type SkillRef,
   type Agent,
+  type AgentExecutionDefaults,
   type AgentSandboxInstanceSpec,
   type CapabilityStatus,
   type LifecycleHooks,
@@ -493,41 +497,153 @@ function defaultChatSessionName(agentName: string) {
 
 function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@/lib/api").AgentRuntime[] }) {
   const patchAgent = usePatchAgent();
+  const catalogue = useCellnTools();
+  const capabilities = useCapabilities();
   const selected = inst.spec.runtimeRef || "none";
+  const selectedRuntime = runtimes.find((runtime) => runtime.metadata.name === (inst.spec.runtimeRef || ""));
+  const execution = inst.spec.execution;
+  const backend = execution?.backend || "job";
+  const lifecycle = execution?.executionLifecycle || "one-shot";
+  const tools = execution?.cellnSelection?.toolRefs || [];
+  const compatibleHarness = selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1";
+  const hasSkills = !!inst.spec.skills?.length;
+
+  function saveExecution(next: AgentExecutionDefaults | undefined) {
+    if (!next) {
+      patchAgent.mutate({ name: inst.metadata.name, data: { clearExecution: true } });
+      return;
+    }
+    patchAgent.mutate({ name: inst.metadata.name, data: { execution: next } });
+  }
 
   return (
-    <Card>
+    <Card data-testid="agent-execution-defaults">
       <CardHeader>
-        <CardTitle className="text-base">Agent Harness Runtime</CardTitle>
+        <CardTitle className="text-base">Execution defaults</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Administrator-approved runtime inherited by channels, schedules, and ordinary AgentRuns. A New Run choice can override it once.
+          Saved on the Agent and inherited by New Run, feed quick-send, API, channels and schedules unless a run overrides them. Defaults and starter suggestions do not grant authority. Changing these settings does not mutate an already-live native Celln parent.
         </p>
-        <p className="text-sm text-muted-foreground">
-          Choosing a harness does not select Celln. Kubernetes remains the default.
-          {" "}<Link className="text-primary underline" to={`/runs?create=1&agent=${encodeURIComponent(inst.metadata.name)}`}>Create a run and choose Kubernetes or Celln</Link>, then select the lifecycle and supported tools.
-        </p>
-        <Select
-          value={selected}
-          onValueChange={(value) => patchAgent.mutate({
-            name: inst.metadata.name,
-            data: { runtimeRef: value === "none" ? "" : value },
-          })}
-          disabled={patchAgent.isPending}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Built-in agent-runner" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Built-in agent-runner</SelectItem>
-            {runtimes.map((runtime) => (
-              <SelectItem key={runtime.metadata.name} value={runtime.metadata.name}>
-                {runtime.metadata.name}{runtime.spec.supportOwner ? ` — ${runtime.spec.supportOwner}` : ""}
-              </SelectItem>
+
+        <div className="space-y-2" data-testid="agent-execution-environment">
+          <Label>Execution environment</Label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([["job", "Kubernetes", "Default · containers and OCI harnesses"], ["celln", "Celln", "Opt-in · hardware-isolated cells"]] as const).map(([value, title, description]) => (
+              <button
+                key={value}
+                type="button"
+                className={`rounded-md border p-3 text-left ${backend === value ? "border-primary bg-primary/5" : "border-border"}`}
+                disabled={patchAgent.isPending || (value === "celln" && hasSkills)}
+                onClick={() => {
+                  if (value === "job") {
+                    saveExecution({ backend: "job", executionLifecycle: "one-shot" });
+                    return;
+                  }
+                  saveExecution({
+                    backend: "celln",
+                    executionLifecycle: lifecycle === "enduring" ? "enduring" : "one-shot",
+                    provider: "deepseek",
+                    model: execution?.model || "deepseek-chat",
+                    cellnSelection: { toolRefs: tools },
+                    enduring: lifecycle === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
+                  });
+                }}
+              >
+                <p className="font-medium text-sm">{title}</p>
+                <p className="text-xs text-muted-foreground">{description}</p>
+              </button>
             ))}
-          </SelectContent>
-        </Select>
+          </div>
+          {hasSkills && <p role="alert" className="text-xs text-red-400">This Agent has SkillPacks. Native Celln needs a dedicated Agent with borrowed tools instead.</p>}
+          <p className="text-xs text-muted-foreground">
+            {capabilities.data?.celln.available
+              ? (capabilities.data.celln.oneShot?.reason || capabilities.data.celln.reason || "Celln one-shot preflight eligible.")
+              : `Celln readiness: ${capabilities.data?.celln.state || "unknown"} — ${capabilities.data?.celln.reason || "not confirmed"}. Transport/config issues are not the same as Celln being absent.`}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Default harness</Label>
+          <Select
+            value={selected}
+            onValueChange={(value) => patchAgent.mutate({
+              name: inst.metadata.name,
+              data: { runtimeRef: value === "none" ? "" : value },
+            })}
+            disabled={patchAgent.isPending}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Built-in agent-runner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Built-in agent-runner</SelectItem>
+              {runtimes.map((runtime) => (
+                <SelectItem key={runtime.metadata.name} value={runtime.metadata.name}>
+                  {runtime.metadata.name}{runtime.spec.supportOwner ? ` — ${runtime.spec.supportOwner}` : ""}{runtime.spec.celln?.contractVersion === "celln.json-tools/v1" ? " · native Celln" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Harness selection does not by itself select Celln or grant tools.</p>
+          {backend === "celln" && !compatibleHarness && <p role="alert" className="text-xs text-red-400">Celln defaults need a harness that declares celln.json-tools/v1.</p>}
+        </div>
+
+        {backend === "celln" && (
+          <div className="space-y-3 rounded-md border p-3">
+            <Label>Default lifecycle</Label>
+            <div className="flex gap-3 text-sm">
+              {(["one-shot", "enduring"] as const).map((value) => (
+                <label key={value} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="agent-lifecycle"
+                    checked={lifecycle === value}
+                    disabled={patchAgent.isPending}
+                    onChange={() => saveExecution({
+                      backend: "celln",
+                      executionLifecycle: value,
+                      provider: "deepseek",
+                      model: execution?.model || "deepseek-chat",
+                      cellnSelection: { toolRefs: tools },
+                      enduring: value === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
+                    })}
+                  />
+                  {value}
+                </label>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label>Approved borrowed tools (default)</Label>
+              <p className="text-xs text-muted-foreground">An explicit empty selection lends no tools and is distinct from leaving defaults unset. Starter suggestions do not grant permission.</p>
+              {compatibleHarness && !catalogue.isLoading && !catalogue.isError && (
+                <CellnStarterTools agentRef={inst.metadata.name} runtimeRef={inst.spec.runtimeRef || undefined} catalogue={catalogue.data || []} onSelect={(toolRefs) => saveExecution({
+                  backend: "celln",
+                  executionLifecycle: lifecycle === "enduring" ? "enduring" : "one-shot",
+                  provider: "deepseek",
+                  model: execution?.model || "deepseek-chat",
+                  cellnSelection: { toolRefs },
+                  enduring: lifecycle === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
+                })} />
+              )}
+              {compatibleHarness && <CellnPermissionPreview enduring={lifecycle === "enduring"} agentRef={inst.metadata.name} selection={{ runtimeRef: inst.spec.runtimeRef || undefined, toolRefs: tools }} />}
+              <Button type="button" variant="outline" size="sm" disabled={patchAgent.isPending || !execution?.cellnSelection} onClick={() => saveExecution({
+                backend: "celln",
+                executionLifecycle: lifecycle === "enduring" ? "enduring" : "one-shot",
+                provider: "deepseek",
+                model: execution?.model || "deepseek-chat",
+                cellnSelection: { toolRefs: [] },
+                enduring: lifecycle === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
+              })}>Set explicit empty tools</Button>
+            </div>
+          </div>
+        )}
+
+        {execution && (
+          <Button type="button" variant="ghost" size="sm" disabled={patchAgent.isPending} onClick={() => saveExecution(undefined)}>
+            Clear execution defaults (restore Kubernetes-only behaviour)
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
