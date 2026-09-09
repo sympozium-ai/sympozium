@@ -84,7 +84,8 @@ import type {
 import { taskText } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { useArrowKeyPan, KeyboardGuide } from "@/hooks/use-arrow-key-pan";
-import Dagre from "@dagrejs/dagre";
+import { applyDagreLayout } from "@/lib/topology-layout";
+export { NODE_SIZES, applyDagreLayout } from "@/lib/topology-layout";
 
 // ── Custom node components ────────────────────────────────────────────────────
 
@@ -323,7 +324,7 @@ function StandaloneAgentNode({ data }: NodeProps<Node<StandaloneAgentNodeData>>)
         : "bg-muted-foreground/40";
 
   return (
-    <div className="border border-primary/30 bg-card px-3 py-2 shadow-sm min-w-[150px]">
+    <div className="border border-primary/30 bg-card px-3 py-2 shadow-sm w-[240px]">
       <Handle type="target" position={Position.Top} className="!bg-primary !w-1.5 !h-1.5" />
       <Handle type="source" position={Position.Bottom} className="!bg-primary !w-1.5 !h-1.5" />
       <div className="flex items-center gap-1.5">
@@ -360,14 +361,14 @@ interface HarnessNodeData {
 
 function HarnessNode({ data }: NodeProps<Node<HarnessNodeData>>) {
   return (
-    <div className="border border-amber-500/40 bg-amber-500/5 px-3 py-2 shadow-sm min-w-[150px]">
+    <div className="border border-amber-500/40 bg-amber-500/5 px-3 py-2 shadow-sm w-[260px]">
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-1.5 !h-1.5" />
       <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-1.5 !h-1.5" />
       <div className="flex items-center gap-1.5">
         <Shield className="h-3.5 w-3.5 text-amber-400 shrink-0" />
         <Link to={`/harnesses/${data.name}`} className="text-[11px] font-medium hover:underline truncate">{data.name}</Link>
       </div>
-      <p className="mt-0.5 text-[9px] text-muted-foreground">{data.ready ? "Ready" : "Not ready"}{data.owner ? ` · ${data.owner}` : ""}</p>
+      <p className="mt-0.5 text-[9px] text-muted-foreground truncate">{data.ready ? "Ready" : "Not ready"}{data.owner ? ` · ${data.owner}` : ""}</p>
     </div>
   );
 }
@@ -556,56 +557,6 @@ export const nodeTypes = {
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
-/** Estimated node dimensions for dagre layout (width, height). */
-export const NODE_SIZES: Record<string, [number, number]> = {
-  gateway:       [220, 70],
-  k8sNode:       [280, 110],
-  cloudProvider: [180, 50],
-  model:         [200, 70],
-  ensemble:      [200, 50],
-  stimulus:      [140, 40],
-  persona:       [150, 50],
-  agent:         [170, 56],
-  agentRun:      [140, 40],
-  harness:       [170, 56],
-};
-
-/** Run dagre layout on nodes and edges, positioning top-to-bottom. */
-export function applyDagreLayout(nodes: Node[], edges: Edge[]): void {
-  const g = new Dagre.graphlib.Graph({ compound: true })
-    .setDefaultEdgeLabel(() => ({}))
-    .setGraph({
-      rankdir: "TB",
-      nodesep: 60,
-      ranksep: 100,
-      edgesep: 30,
-    });
-
-  for (const node of nodes) {
-    const [w, h] = NODE_SIZES[node.type || ""] || [160, 50];
-    if (node.parentId) continue; // skip children of compound nodes
-    g.setNode(node.id, { width: w, height: h });
-  }
-
-  for (const edge of edges) {
-    // Only add edges between nodes that exist in the graph (skip child-only edges).
-    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
-      g.setEdge(edge.source, edge.target);
-    }
-  }
-
-  Dagre.layout(g);
-
-  for (const node of nodes) {
-    if (node.parentId) continue;
-    const pos = g.node(node.id);
-    if (pos) {
-      const [w, h] = NODE_SIZES[node.type || ""] || [160, 50];
-      // dagre returns center positions; ReactFlow uses top-left.
-      node.position = { x: pos.x - w / 2, y: pos.y - h / 2 };
-    }
-  }
-}
 
 /** Build a stable fingerprint from entity IDs so we know when layout needs recomputing. */
 function entityFingerprint(
@@ -622,7 +573,7 @@ function entityFingerprint(
     (draNodes || []).map((n) => n.nodeName).sort().join(","),
     models.map((m) => m.metadata.name).sort().join(","),
     ensembles.map((e) => e.metadata.name).sort().join(","),
-    agents.map((a) => a.metadata.name).sort().join(","),
+    agents.map((a) => JSON.stringify([a.metadata.name, a.spec.runtimeRef, a.spec.agents])).sort().join(","),
     runtimes.map((r) => r.metadata.name).sort().join(","),
     hasGateway ? "gw" : "",
   ];
@@ -912,11 +863,11 @@ function buildTopology(
     if (agent.spec.runtimeRef && runtimes.some((runtime) => runtime.metadata.name === agent.spec.runtimeRef)) {
       edges.push({
         id: `e-${agentId}-harness-${agent.spec.runtimeRef}`,
-        source: agentId,
-        target: `harness-${agent.spec.runtimeRef}`,
+        source: `harness-${agent.spec.runtimeRef}`,
+        target: agentId,
         style: { stroke: "#f59e0b", strokeWidth: 1.5, strokeDasharray: "4 3" },
         markerEnd: { type: MarkerType.ArrowClosed, color: "#f59e0b" },
-        label: "executes with",
+        label: "default harness",
         labelStyle: { fontSize: 9, fill: "#8a8c82" },
         labelBgStyle: { fill: "#09090b", fillOpacity: 0.8 },
         labelBgPadding: [4, 2] as [number, number],
@@ -1259,7 +1210,9 @@ function buildTopology(
 
 // ── Inner component (needs ReactFlowProvider above it) ────────────────────────
 
-const TOPO_POSITIONS_KEY = "sympozium_topology_positions";
+// Keep the previous saved layout intact, but do not apply its old graph-depth
+// ordering to the new semantic rows. Manual positions remain supported here.
+const TOPO_POSITIONS_KEY = "sympozium_topology_positions_v2";
 const TOPO_LOCKED_KEY = "sympozium_topology_locked";
 
 function savePositions(nodes: Node[]) {
