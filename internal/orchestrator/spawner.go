@@ -139,8 +139,14 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 		"sympozium.ai/parent-run": req.ParentRunName,
 		"sympozium.ai/component":  "agent-run",
 	}
+	var annotations map[string]string
 	if req.BatchID != "" {
-		labels["sympozium.ai/subagent-batch-id"] = req.BatchID
+		// Label values are bounded (63 chars, restricted charset), so a raw
+		// caller-supplied BatchID can't go in directly; batchNameToken already
+		// sanitizes/bounds it for the run name. The unsanitized ID goes in an
+		// annotation, which has no such restriction.
+		labels["sympozium.ai/subagent-batch-id"] = batchNameToken(req.BatchID)
+		annotations = map[string]string{"sympozium.ai/subagent-batch-id-full": req.BatchID}
 	}
 
 	span.SetAttributes(attribute.String("run.name", runName))
@@ -148,9 +154,10 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 
 	agentRun := &sympoziumv1alpha1.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      runName,
-			Namespace: req.Namespace,
-			Labels:    labels,
+			Name:        runName,
+			Namespace:   req.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef:   req.InstanceName,
