@@ -133,6 +133,16 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 	runName := buildSubagentRunName(req.ParentRunName, req.CurrentDepth+1, req.ChildIndex, req.BatchID)
 	sessionKey := sessionkey.ForSub(req.ParentSessionKey, runName)
 
+	labels := map[string]string{
+		"sympozium.ai/instance":   req.InstanceName,
+		"sympozium.ai/agent-id":   req.AgentID,
+		"sympozium.ai/parent-run": req.ParentRunName,
+		"sympozium.ai/component":  "agent-run",
+	}
+	if req.BatchID != "" {
+		labels["sympozium.ai/subagent-batch-id"] = req.BatchID
+	}
+
 	span.SetAttributes(attribute.String("run.name", runName))
 	log.Info("Spawning sub-agent", "runName", runName)
 
@@ -140,12 +150,7 @@ func (s *Spawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, er
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      runName,
 			Namespace: req.Namespace,
-			Labels: map[string]string{
-				"sympozium.ai/instance":   req.InstanceName,
-				"sympozium.ai/agent-id":   req.AgentID,
-				"sympozium.ai/parent-run": req.ParentRunName,
-				"sympozium.ai/component":  "agent-run",
-			},
+			Labels:    labels,
 		},
 		Spec: sympoziumv1alpha1.AgentRunSpec{
 			AgentRef:   req.InstanceName,

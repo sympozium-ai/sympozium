@@ -1377,6 +1377,12 @@ func (r *AgentRunReconciler) triggerSequentialSuccessors(ctx context.Context, lo
 	if agentRun.Spec.AgentRef == "" {
 		return nil
 	}
+	// Child runs spawned by spawn_subagents batches must not independently
+	// execute sequential edges. The parent run collates batch results first,
+	// then it is the only run that should trigger downstream sequential stages.
+	if agentRun.Labels["sympozium.ai/subagent-batch-id"] != "" {
+		return nil
+	}
 	var sourceInst sympoziumv1alpha1.Agent
 	if err := r.Get(ctx, types.NamespacedName{Name: agentRun.Spec.AgentRef, Namespace: agentRun.Namespace}, &sourceInst); err != nil {
 		return nil // Instance gone — skip.

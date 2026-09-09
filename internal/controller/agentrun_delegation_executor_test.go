@@ -207,3 +207,113 @@ func TestDelegationEdgeActive(t *testing.T) {
 		}
 	}
 }
+
+func listSequentialRuns(t *testing.T, r *AgentRunReconciler) []sympoziumv1alpha1.AgentRun {
+	t.Helper()
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := r.List(context.Background(), &runs, client.InNamespace("default")); err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	var out []sympoziumv1alpha1.AgentRun
+	for _, ar := range runs.Items {
+		if ar.Labels["sympozium.ai/sequential-from"] != "" {
+			out = append(out, ar)
+		}
+	}
+	return out
+}
+
+func TestTriggerSequentialSuccessors_SubagentChildrenDoNotTrigger(t *testing.T) {
+	sourceInst := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "team-architect",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/agent-config": "architect",
+				"sympozium.ai/ensemble":     "team",
+			},
+		},
+	}
+	targetInst := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "team-reviewer",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/agent-config": "reviewer",
+				"sympozium.ai/ensemble":     "team",
+			},
+		},
+	}
+	ensemble := &sympoziumv1alpha1.Ensemble{
+		ObjectMeta: metav1.ObjectMeta{Name: "team", Namespace: "default"},
+		Spec: sympoziumv1alpha1.EnsembleSpec{
+			AgentConfigs: []sympoziumv1alpha1.AgentConfigSpec{{Name: "reviewer", Schedule: &sympoziumv1alpha1.ScheduleSpec{Task: "review"}}},
+			Relationships: []sympoziumv1alpha1.AgentConfigRelationship{
+				{Source: "architect", Target: "reviewer", Type: "sequential"},
+			},
+		},
+	}
+	parentRun := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "parent-run", Namespace: "default"},
+		Spec:       sympoziumv1alpha1.AgentRunSpec{AgentRef: "team-architect", Task: sympoziumv1alpha1.NewStringTask("fan out")},
+		Status: sympoziumv1alpha1.AgentRunStatus{
+			Phase:  sympoziumv1alpha1.AgentRunPhaseSucceeded,
+			Result: "batch collated",
+		},
+	}
+	childRunA := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sub-parent-run-batch-a-1-1",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/subagent-batch-id": "batch-a",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentRunSpec{AgentRef: "team-architect", Task: sympoziumv1alpha1.NewStringTask("task a")},
+		Status: sympoziumv1alpha1.AgentRunStatus{
+			Phase:  sympoziumv1alpha1.AgentRunPhaseSucceeded,
+			Result: "a",
+		},
+	}
+	childRunB := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sub-parent-run-batch-a-1-2",
+			Namespace: "default",
+			Labels: map[string]string{
+				"sympozium.ai/subagent-batch-id": "batch-a",
+			},
+		},
+		Spec: sympoziumv1alpha1.AgentRunSpec{AgentRef: "team-architect", Task: sympoziumv1alpha1.NewStringTask("task b")},
+		Status: sympoziumv1alpha1.AgentRunStatus{
+			Phase:  sympoziumv1alpha1.AgentRunPhaseSucceeded,
+			Result: "b",
+		},
+	}
+
+	r := newAgentRunTestReconciler(t, sourceInst, targetInst, ensemble, parentRun, childRunA, childRunB)
+	ctx := context.Background()
+
+	if err := r.triggerSequentialSuccessors(ctx, logr.Discard(), childRunA); err != nil {
+		t.Fatalf("child A triggerSequentialSuccessors: %v", err)
+	}
+	if err := r.triggerSequentialSuccessors(ctx, logr.Discard(), childRunB); err != nil {
+		t.Fatalf("child B triggerSequentialSuccessors: %v", err)
+	}
+	if got := listSequentialRuns(t, r); len(got) != 0 {
+		t.Fatalf("expected no sequential runs from subagent children, got %d", len(got))
+	}
+
+	if err := r.triggerSequentialSuccessors(ctx, logr.Discard(), parentRun); err != nil {
+		t.Fatalf("parent triggerSequentialSuccessors: %v", err)
+	}
+	if got := listSequentialRuns(t, r); len(got) != 1 {
+		t.Fatalf("expected 1 sequential run from parent, got %d", len(got))
+	}
+
+	if err := r.triggerSequentialSuccessors(ctx, logr.Discard(), childRunA); err != nil {
+		t.Fatalf("child A re-triggerSequentialSuccessors: %v", err)
+	}
+	if got := listSequentialRuns(t, r); len(got) != 1 {
+		t.Fatalf("expected exactly 1 sequential run after child re-trigger, got %d", len(got))
+	}
+}
