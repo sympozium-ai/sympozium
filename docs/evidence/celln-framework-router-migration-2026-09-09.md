@@ -31,6 +31,7 @@ This is qualification evidence, not a published-artifact or release claim.
 | Live-cell cancellation | `release-celln-cancel-retry-20260909` reached an observed running cell, was cancelled, returned its matching cancelled receipt, and completed normal finalizer removal with no remaining one-shot cells |
 | OCI Pi Harness one-shot after cache fix | `release-pi-oneshot-20260909-zpl66`, UID `7cc05749-4ac9-4274-86a1-82d020888205`, persisted `OCI_HARNESS_RELEASE_OK` and its pod name; succeeded 11:42:09 UTC |
 | Native enduring regression after migration | `celln-agent-pvcm2`, UID `3a89e1ef-42d6-4ba1-9220-e64559e666e3`, remembered `amber` in its initial turn, recalled it in a subsequent turn, then completed normal deletion |
+| Ordinary Kubernetes agent after cache fix | `release-ordinary-cache-fixed-20260909` persisted `ORDINARY_AGENT_RELEASE_OK` and its pod identity |
 | Local regression | `go test ./...`, targeted vet, and race tests for controller, reconciliation and TLS proxy passed |
 | Local installed UI access | HTTP 200 through the framework service tunnel on `127.0.0.1:38083` |
 
