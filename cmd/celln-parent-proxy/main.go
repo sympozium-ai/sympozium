@@ -21,12 +21,17 @@ func main() {
 	backend := flag.String("backend", "", "Fixed loopback HTTP dispatcher origin")
 	cert := flag.String("tls-cert", "", "Absolute operator certificate-chain file")
 	key := flag.String("tls-key", "", "Absolute operator private-key file")
+	executionRouter := flag.Bool("execution-router", false, "Expose only one-shot execution routes instead of parent routes")
 	flag.Parse()
 	if !filepath.IsAbs(*cert) || !filepath.IsAbs(*key) {
 		fmt.Fprintln(os.Stderr, "absolute TLS certificate and key required")
 		os.Exit(1)
 	}
-	handler, closeTransport, err := cellnparentproxy.New(*backend)
+	constructor := cellnparentproxy.New
+	if *executionRouter {
+		constructor = cellnparentproxy.NewExecution
+	}
+	handler, closeTransport, err := constructor(*backend)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

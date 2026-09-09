@@ -103,12 +103,10 @@ These are private local qualification images, not published release artifacts.
 
 ## Remaining release gates
 
-- Fresh installed browser creation, permission selection and refresh proof.
-  Browser discovery returned no connected browser in this session. API tests
-  are not a substitute for this gate.
-- Rebuild/deploy any final UI edits; installed OCI persistent-session and Celln
-  one-shot router regressions remain, beyond the ordinary Kubernetes smoke and
-  local KVM coverage above.
+- User-performed installed visual acceptance; the user elected to eyeball the
+  UI instead of connecting a browser. This review has not yet been reported.
+- Installed Celln direct/Harness one-shot router regressions and legacy-stack
+  migration. The installed OCI persistent-session suite has now passed below.
 - Review/merge paired PRs, publish digest-pinned installation images, and verify
   the documented installation from those published artifacts before tagging.
 
@@ -119,6 +117,14 @@ Host audit retention is explicitly enabled via the private `authority/parent-aud
 directory; default production operation need not retain it.
 
 ## Follow-up technical qualification
+
+Final UI revision `be3e9e5` is deployed, including the disabled timeout field
+which displays the enduring lease instead of a misleading editable five-minute
+default. Framework imported image manifest
+`sha256:f9e73d617c53a1b4057e09c585fe663545b487b61a7b21b185776cbeb16ae442`
+and serves `assets/index-hVwvQ9XS.js`. The build used a clean Git archive, not
+the dirty local generated assets or private qualification files. Health and
+served-asset checks passed after rollout.
 
 Celln revision `df59b2b` adds pre-launch host process identity and same-boot
 process-exit confirmation, preserving the strict stop-response ABI. Installed

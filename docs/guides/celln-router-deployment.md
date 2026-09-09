@@ -85,6 +85,21 @@ remain run-specific checks; discovery does not certify them.
 
 ## Upgrade, rotation and rollback boundaries
 
+### Optional host-local TLS edge
+
+`celln-parent-proxy --execution-router --backend http://127.0.0.1:8788
+--listen HOST_IP:9444 --tls-cert /absolute/server.crt --tls-key /absolute/server.key`
+provides a separate TLS 1.3 listener for the versioned execution routes. Without
+`--execution-router` the listener remains parent-only: the two allowlists cannot
+be combined. The router must run on the same host and listen on loopback;
+the proxy refuses remote/mutable backend origins and preserves router bearer
+authentication. Provision client CA trust independently; do not skip certificate
+verification. The edge does not upgrade an old router or create ownership state.
+This option has protocol-boundary tests but has not yet been deployed/qualified
+on framework. It is not a claim that the legacy installation is release-ready.
+
+### Migrating an existing installation
+
 This changes a router DaemonSet to a Deployment and changes Celln from default
 on to opt-in. Existing releases must supply the new settings explicitly. A
 bare `--set celln.enabled=true` is no longer enough. Do not perform a rolling

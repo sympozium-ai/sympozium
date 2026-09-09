@@ -27,6 +27,45 @@ func TestExactTurnCancellationRoutes(t *testing.T) {
 	}
 }
 
+func TestExecutionEdgeIsSeparateFromParentAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		method, path string
+		allowed      bool
+	}{
+		{"POST", "/v1/executions", true}, {"GET", "/v1/executions/run-123", true},
+		{"DELETE", "/v1/executions/run-123", true}, {"POST", "/v1/executions/run-123/cancel", true},
+		{"GET", "/v1/executions/run-123/audit", true}, {"GET", "/v1/capabilities", true},
+		{"POST", "/v1/parents", false}, {"GET", "/v1/parents/blake3:" + strings.Repeat("a", 64), false},
+		{"POST", "/v1/executions/run-123/audit", false}, {"GET", "/v1/executions/../parents", false},
+		{"GET", "/v1/executions/run/extra/path", false}, {"GET", "/v1/executions", false},
+	} {
+		if executionRoute(tc.method, tc.path) != tc.allowed {
+			t.Fatalf("unexpected execution route %s %s", tc.method, tc.path)
+		}
+		if tc.allowed && route(tc.method, tc.path) {
+			t.Fatal("execution route leaked into parent listener")
+		}
+	}
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(202) }))
+	defer backend.Close()
+	handler, closeTransport, err := NewExecution(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTransport()
+	for _, path := range []string{"/v1/parents", "/v1/executions?override=true", "/v1/executions%2fescape"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("POST", path, strings.NewReader(`{}`)))
+		if response.Code != 404 {
+			t.Fatalf("unexpected status for %s: %d", path, response.Code)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("forbidden request reached execution router")
+	}
+}
+
 func TestFixedTLSParentEdge(t *testing.T) {
 	var calls atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,6 @@
-// Package cellnparentproxy exposes only the parent protocol through TLS.
-// The fixed loopback dispatcher remains the bearer/principal authority.
+// Package cellnparentproxy provides disjoint parent and execution TLS edges.
+// Each listener exposes one protocol only. Its fixed loopback backend remains
+// the bearer/principal authority.
 package cellnparentproxy
 
 import (
@@ -19,6 +20,16 @@ var hash = regexp.MustCompile(`^blake3:[0-9a-f]{64}$`)
 var turn = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 func New(backend string) (http.Handler, func(), error) {
+	return newProxy(backend, route)
+}
+
+// NewExecution exposes only the one-shot router protocol. It is a separate
+// listener: enabling it never expands the native parent's route allowlist.
+func NewExecution(backend string) (http.Handler, func(), error) {
+	return newProxy(backend, executionRoute)
+}
+
+func newProxy(backend string, allowed func(string, string) bool) (http.Handler, func(), error) {
 	u, err := url.Parse(backend)
 	if err != nil || u.Scheme != "http" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() || u.Port() == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, nil, fmt.Errorf("fixed literal loopback HTTP dispatcher origin required")
@@ -35,8 +46,8 @@ func New(backend string) (http.Handler, func(), error) {
 		http.Error(w, "parent owner unavailable; reconcile original identity", http.StatusBadGateway)
 	}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawPath != "" || r.URL.RawQuery != "" || r.URL.ForceQuery || r.Header.Get("Upgrade") != "" || !route(r.Method, r.URL.Path) {
-			http.Error(w, "parent protocol route required", http.StatusNotFound)
+		if r.URL.RawPath != "" || r.URL.RawQuery != "" || r.URL.ForceQuery || r.Header.Get("Upgrade") != "" || !allowed(r.Method, r.URL.Path) {
+			http.Error(w, "configured protocol route required", http.StatusNotFound)
 			return
 		}
 		if r.ContentLength > 65536 {
@@ -56,6 +67,25 @@ func New(backend string) (http.Handler, func(), error) {
 		proxy.ServeHTTP(w, r)
 	})
 	return handler, transport.CloseIdleConnections, nil
+}
+
+var executionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
+func executionRoute(method, path string) bool {
+	if path == "/v1/executions" {
+		return method == http.MethodPost
+	}
+	if path == "/v1/capabilities" || path == "/v1/health" {
+		return method == http.MethodGet
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) < 4 || parts[0] != "" || parts[1] != "v1" || parts[2] != "executions" || !executionID.MatchString(parts[3]) {
+		return false
+	}
+	if len(parts) == 4 {
+		return method == http.MethodGet || method == http.MethodDelete
+	}
+	return len(parts) == 5 && ((parts[4] == "cancel" && method == http.MethodPost) || (parts[4] == "audit" && method == http.MethodGet))
 }
 
 func route(method, path string) bool {
