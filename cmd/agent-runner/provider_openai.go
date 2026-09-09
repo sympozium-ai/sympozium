@@ -41,6 +41,7 @@ func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task stri
 
 	opts := []openaioption.RequestOption{
 		openaioption.WithMaxRetries(retries),
+		openaioption.WithHTTPClient(tracingHTTPClient()),
 	}
 	if reqTimeout > 0 {
 		opts = append(opts, openaioption.WithRequestTimeout(reqTimeout))

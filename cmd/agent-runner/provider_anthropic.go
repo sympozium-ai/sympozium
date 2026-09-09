@@ -26,6 +26,7 @@ type anthropicProvider struct {
 func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) *anthropicProvider {
 	opts := []anthropicoption.RequestOption{
 		anthropicoption.WithMaxRetries(effectiveMaxRetries("anthropic")),
+		anthropicoption.WithHTTPClient(tracingHTTPClient()),
 	}
 	if t := effectiveRequestTimeout("anthropic"); t > 0 {
 		opts = append(opts, anthropicoption.WithRequestTimeout(t))
