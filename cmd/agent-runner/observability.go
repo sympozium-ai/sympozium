@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -255,13 +256,15 @@ func traceMetadata(ctx context.Context) map[string]string {
 	}
 }
 
-// tracingHTTPClient returns an *http.Client whose transport injects the W3C
-// traceparent header (via the global OTel propagator) into every outbound
-// request, so LLM provider calls join the same trace as the rest of the run
-// instead of arriving with no trace context at all. Mirrors the pattern
-// already used for memory-server calls (see memoryHTTPClient).
+// tracingHTTPClient returns an *http.Client that injects traceparent into
+// every request. Propagator is pinned, not left to the global, since
+// initObservability skips telemetry.Init (which sets the global) when OTel
+// is disabled or the collector is unreachable.
 func tracingHTTPClient() *http.Client {
-	return &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	return &http.Client{Transport: otelhttp.NewTransport(
+		http.DefaultTransport,
+		otelhttp.WithPropagators(propagation.TraceContext{}),
+	)}
 }
 
 func formatTraceparent(sc trace.SpanContext) string {
