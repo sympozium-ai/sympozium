@@ -588,7 +588,9 @@ function modelConnectionSpec(
       ? "anthropic-messages"
       : "openai-chat";
   const auth = celln
-    ? { credentialProfile: result.credentialProfile }
+    ? // The host operator maps the provider to a credential profile by default;
+      // the field is only overridden under Advanced.
+      { credentialProfile: result.credentialProfile || result.provider }
     : result.apiKey || !result.secretName
       ? {}
       : { secretRef: result.secretName };
@@ -723,6 +725,7 @@ export function OnboardingWizard({
   const [showYaml, setShowYaml] = useState(false);
   const [savingConnection, setSavingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState("");
+  const [advancedAuth, setAdvancedAuth] = useState(false);
   const { data: capabilities } = useCapabilities();
   const { data: clusterModels } = useModels();
   const [usingLocalModel, setUsingLocalModel] = useState(false);
@@ -804,7 +807,7 @@ export function OnboardingWizard({
       case "tools":
         return !catalogue.isLoading && !catalogue.isError && !staleTools && (form.borrowedTools || []).length <= 16;
       case "apikey":
-        if (celln) return !!form.credentialProfile;
+        if (celln) return true;
         if (form.modelConnectionRef) return true;
         if (
           form.provider === "ollama" ||
@@ -1455,18 +1458,38 @@ export function OnboardingWizard({
             <div className="space-y-4">
               {celln ? (
                 <div className="space-y-2">
-                  <Label>Host credential profile</Label>
-                  <Input
-                    value={form.credentialProfile || ""}
-                    onChange={(e) =>
-                      setForm({ ...form, credentialProfile: e.target.value })
-                    }
-                    placeholder="team-provider-key"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The host operator maps this profile to credentials. No key
-                    is stored in the cluster.
+                  <p className="text-sm text-muted-foreground">
+                    Native Celln keeps credentials on the host. The host
+                    operator maps this connection to a credential profile; no
+                    key is stored in the cluster.
                   </p>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-400 hover:text-blue-300"
+                    onClick={() => setAdvancedAuth(!advancedAuth)}
+                  >
+                    {advancedAuth ? "Hide advanced" : "Advanced"}
+                  </button>
+                  {advancedAuth && (
+                    <div className="space-y-2">
+                      <Label>Host credential profile</Label>
+                      <Input
+                        value={form.credentialProfile || ""}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            credentialProfile: e.target.value,
+                          })
+                        }
+                        placeholder={form.provider}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Defaults to the provider name. Set this only if your
+                        host operator configured a different credential
+                        mapping.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>

@@ -44,8 +44,8 @@ describe("Agent creation execution-plane flow", () => {
       cy.contains("label", "https-fetch@").find('input[type="checkbox"]').uncheck();
     });
     cy.wizardNext(); // provider (same list as the run flow)
-    cy.wizardNext(); // auth
-    cy.get('[role="dialog"]').find("input[placeholder='team-provider-key']").type("cypress-native-profile");
+    cy.wizardNext(); // auth (credential profile defaults to the provider)
+    cy.get('[role="dialog"]').should("contain", "keeps credentials on the host");
     cy.wizardNext(); // model
     cy.get("#native-model").should("have.value", "gpt-4o");
     cy.wizardNext(); // confirm
