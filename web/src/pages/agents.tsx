@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { executionFromWizard } from "@/lib/agent-execution";
 import {
   useAgents,
   useDeleteAgent,
@@ -74,14 +75,7 @@ export function AgentsPage() {
         awsSessionToken: result.awsSessionToken || undefined,
         runtimeRef: result.runtimeRef || undefined,
         policyRef: result.policyRef || undefined,
-        execution: result.executionBackend === "celln" ? {
-          backend: "celln",
-          executionLifecycle: result.executionLifecycle || "one-shot",
-          provider: "deepseek",
-          model: result.model || "deepseek-chat",
-          cellnSelection: { toolRefs: [] },
-          enduring: result.executionLifecycle === "enduring" ? { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 } : undefined,
-        } : undefined,
+        execution: executionFromWizard(result),
         skills: result.skills.map((skillPackRef) => {
           if (skillPackRef === "web-endpoint") {
             const params: Record<string, string> = {};

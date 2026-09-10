@@ -867,6 +867,17 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name, provider, and model are required", http.StatusBadRequest)
 		return
 	}
+	// Reject invalid execution defaults before any credential Secret is written.
+	if req.Execution != nil {
+		if reason := req.Execution.Validate(); reason != "" {
+			http.Error(w, reason, http.StatusBadRequest)
+			return
+		}
+		if req.Execution.Backend == "celln" && len(req.Skills) > 0 {
+			http.Error(w, "Celln execution defaults cannot be combined with SkillPacks; choose Kubernetes or explicitly remove the SkillPacks", http.StatusBadRequest)
+			return
+		}
+	}
 
 	inst := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1037,6 +1048,11 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		}
 		// OCI HarnessSession auto-create is gated below when backend is celln.
 		inst.Spec.Execution = req.Execution.DeepCopy()
+		if req.Execution.Backend == "celln" {
+			// Native files/context belong to the live parent, not the Kubernetes
+			// memory controller. Do not provision an unrelated memory service.
+			inst.Spec.Memory.Enabled = false
+		}
 	}
 
 	if len(req.Skills) > 0 {

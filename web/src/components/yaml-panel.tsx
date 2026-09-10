@@ -10,6 +10,7 @@ import { FileCode, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toYaml, type YamlValue } from "@/lib/yaml";
 import type { WizardResult } from "@/components/onboarding-wizard";
+import { executionFromWizard } from "@/lib/agent-execution";
 import type { Agent, Ensemble } from "@/lib/api";
 
 // ── YAML builders ─────────────────────────────────────────────────────────────
@@ -31,8 +32,7 @@ export function instanceYamlFromWizard(result: WizardResult): string {
       return ref;
     });
 
-  // Always include the memory skill
-  skills.unshift({ skillPackRef: "memory" });
+  if (result.skills.includes("memory")) skills.unshift({ skillPackRef: "memory" });
 
   const channels = result.channels.map((type) => {
     const ch: Record<string, YamlValue> = { type };
@@ -64,9 +64,12 @@ export function instanceYamlFromWizard(result: WizardResult): string {
     spec: {
       agents: { default: agentConfig },
       skills,
+      ...(result.runtimeRef ? { runtimeRef: result.runtimeRef } : {}),
+      ...(result.policyRef ? { policyRef: result.policyRef } : {}),
+      execution: executionFromWizard(result) as unknown as YamlValue,
       ...(channels.length > 0 ? { channels } : {}),
       ...(authRefs.length > 0 ? { authRefs } : {}),
-      memory: { enabled: true },
+      memory: { enabled: result.executionBackend !== "celln" },
     },
   };
 
@@ -140,6 +143,8 @@ export function instanceYamlFromResource(inst: Agent): string {
     spec.authRefs = inst.spec.authRefs as unknown as YamlValue;
   if (inst.spec.memory) spec.memory = inst.spec.memory as unknown as YamlValue;
   if (inst.spec.policyRef) spec.policyRef = inst.spec.policyRef;
+  if (inst.spec.runtimeRef) spec.runtimeRef = inst.spec.runtimeRef;
+  if (inst.spec.execution) spec.execution = inst.spec.execution as unknown as YamlValue;
 
   const obj: Record<string, YamlValue> = {
     apiVersion: "sympozium.ai/v1alpha1",

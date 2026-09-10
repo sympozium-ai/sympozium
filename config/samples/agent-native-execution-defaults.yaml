@@ -1,0 +1,42 @@
+# Requires the native starter catalogue, qualified owner and explicit operator
+# grants bound to THIS Agent's identity/spec. This manifest grants no authority.
+apiVersion: sympozium.ai/v1alpha1
+kind: Agent
+metadata:
+  name: native-assistant
+  namespace: celln-agents
+spec:
+  runtimeRef: celln-native
+  agents:
+    default:
+      model: deepseek-chat
+  skills: [] # Native SkillPacks/sidecars are not supported.
+  memory:
+    enabled: false # Native context/files live only while the parent lives.
+  execution:
+    backend: celln
+    executionLifecycle: enduring
+    provider: deepseek
+    model: deepseek-chat
+    cellnSelection:
+      runtimeRef: celln-native
+      toolRefs: # Use [] to explicitly request no tools.
+        - name: workspace-read
+          revision: v1
+        - name: workspace-write
+          revision: v1
+    enduring:
+      leaseSeconds: 600
+      maxTurns: 8
+      maxModelRequests: 24
+      maxOutputTokens: 8192
+---
+# After operator approval: no need to repeat the plane or tool selection.
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRun
+metadata:
+  generateName: native-assistant-
+  namespace: celln-agents
+spec:
+  agentRef: native-assistant
+  task: Write violet to notes.txt with workspace-write, using revision 0.

@@ -37,6 +37,57 @@ func newInstanceTestServer(t *testing.T) (*Server, *runtime.Scheme) {
 	return NewServer(cl, nil, nil, logr.Discard()), scheme
 }
 
+func TestCreateAgentNativeToolDefaultsRoundTrip(t *testing.T) {
+	srv, _ := newInstanceTestServer(t)
+	body := `{"name":"native-wizard","provider":"deepseek","model":"deepseek-chat","runtimeRef":"native","skills":[],"execution":{"backend":"celln","executionLifecycle":"enduring","provider":"deepseek","model":"deepseek-chat","cellnSelection":{"runtimeRef":"native","toolRefs":[{"name":"workspace-read","revision":"v1"}]},"enduring":{"leaseSeconds":600,"maxTurns":8,"maxModelRequests":24,"maxOutputTokens":8192}}}`
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/agents?namespace=default", bytes.NewBufferString(body)))
+	if rec.Code >= 300 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var agent sympoziumv1alpha1.Agent
+	if err := srv.client.Get(context.Background(), types.NamespacedName{Name: "native-wizard", Namespace: "default"}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	if agent.Spec.Execution == nil || agent.Spec.Execution.CellnSelection.ToolRefs[0].Revision != "v1" || agent.Spec.Memory.Enabled || len(agent.Spec.Skills) != 0 || len(agent.Spec.AuthRefs) != 0 {
+		t.Fatalf("native defaults not preserved: %+v", agent.Spec)
+	}
+	var secrets corev1.SecretList
+	if err := srv.client.List(context.Background(), &secrets); err != nil || len(secrets.Items) != 0 {
+		t.Fatalf("native wizard created credentials: %v, count=%d", err, len(secrets.Items))
+	}
+	var sessions sympoziumv1alpha1.HarnessSessionList
+	if err := srv.client.List(context.Background(), &sessions); err != nil || len(sessions.Items) != 0 {
+		t.Fatalf("native wizard created OCI session: %v, count=%d", err, len(sessions.Items))
+	}
+	// A plain request must inherit the saved plane, lifecycle and exact tools.
+	rec = httptest.NewRecorder()
+	srv.buildMux(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/runs?namespace=default", bytes.NewBufferString(`{"agentRef":"native-wizard","task":"Read the workspace"}`)))
+	if rec.Code >= 300 {
+		t.Fatalf("run: %d %s", rec.Code, rec.Body.String())
+	}
+	var run sympoziumv1alpha1.AgentRun
+	if err := json.Unmarshal(rec.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Spec.Backend != "celln" || run.Spec.ExecutionLifecycle != "enduring" || run.Spec.CellnSelection == nil || run.Spec.CellnSelection.ToolRefs[0].Revision != "v1" {
+		t.Fatalf("run lost wizard defaults: %+v", run.Spec)
+	}
+}
+
+func TestCreateAgentInvalidNativeSkillsDoesNotWriteSecret(t *testing.T) {
+	srv, _ := newInstanceTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.buildMux(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/agents?namespace=default", bytes.NewBufferString(`{"name":"invalid-native","provider":"deepseek","model":"deepseek-chat","apiKey":"test-not-a-real-key","skills":[{"skillPackRef":"k8s-ops"}],"execution":{"backend":"celln","cellnSelection":{"toolRefs":[]}}}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400: %d %s", rec.Code, rec.Body.String())
+	}
+	var secrets corev1.SecretList
+	if err := srv.client.List(context.Background(), &secrets); err != nil || len(secrets.Items) != 0 {
+		t.Fatalf("invalid request wrote credentials: %v, count=%d", err, len(secrets.Items))
+	}
+}
+
 func TestInstallDefaultRuntimes(t *testing.T) {
 	policy := &sympoziumv1alpha1.SympoziumPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: "harness-examples", Namespace: "sympozium-system", Labels: map[string]string{"sympozium.ai/harness-example": "true"}},

@@ -42,9 +42,10 @@ import {
   Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCapabilities, useModels } from "@/hooks/use-api";
+import { useCapabilities, useModels, useCellnTools } from "@/hooks/use-api";
+import { agentCreationSteps } from "@/lib/agent-execution";
 import { api } from "@/lib/api";
-import type { AgentRuntime, SympoziumPolicy } from "@/lib/api";
+import type { AgentRuntime, SympoziumPolicy, CellnSelection } from "@/lib/api";
 import {
   YamlModal,
   instanceYamlFromWizard,
@@ -223,6 +224,8 @@ export interface WizardResult {
   executionBackend?: "job" | "celln";
   /** Default Celln lifecycle when executionBackend is celln. */
   executionLifecycle?: "one-shot" | "enduring";
+  /** Immutable catalogue revisions requested as defaults; never permission grants. */
+  borrowedTools?: CellnSelection["toolRefs"];
 }
 
 interface OnboardingWizardProps {
@@ -254,6 +257,8 @@ interface OnboardingWizardProps {
 type WizardStep =
   | "name"
   | "runtime"
+  | "plane"
+  | "tools"
   | "provider"
   | "apikey"
   | "model"
@@ -265,27 +270,13 @@ type WizardStep =
 
 function stepsForMode(
   mode: "agent" | "persona" | "canary",
-  runtimePreselected = false,
+  celln = false,
 ): WizardStep[] {
   if (mode === "canary") {
     return ["provider", "apikey", "model"];
   }
   if (mode === "agent") {
-    const steps: WizardStep[] = [
-      "name",
-      "provider",
-      "apikey",
-      "model",
-      "skills",
-      "heartbeat",
-      "channels",
-      "confirm",
-      "channelAction",
-    ];
-    // The dedicated Create → Agent Harness flow has already selected a
-    // persistent runtime. Do not make the user confirm the same decision.
-    if (!runtimePreselected) steps.splice(1, 0, "runtime");
-    return steps;
+    return [...agentCreationSteps(celln)] as WizardStep[];
   }
   return [
     "provider",
@@ -310,7 +301,9 @@ function StepIndicator({
 }) {
   const labels: Record<WizardStep, string> = {
     name: "Name",
-    runtime: "Execution",
+    runtime: "Harness / Run",
+    plane: "Execution plane",
+    tools: "Borrow tools",
     provider: "Provider",
     apikey: "Auth",
     model: "Model",
@@ -323,6 +316,8 @@ function StepIndicator({
   const icons: Record<WizardStep, React.ReactNode> = {
     name: <Server className="h-3.5 w-3.5" />,
     runtime: <Terminal className="h-3.5 w-3.5" />,
+    plane: <Server className="h-3.5 w-3.5" />,
+    tools: <Wrench className="h-3.5 w-3.5" />,
     provider: <Bot className="h-3.5 w-3.5" />,
     apikey: <Key className="h-3.5 w-3.5" />,
     model: <Sparkles className="h-3.5 w-3.5" />,
@@ -550,8 +545,7 @@ export function OnboardingWizard({
   const defaultRuntimeRef = selectableRuntimes.some(
     (runtime) => runtime.metadata.name === defaults?.runtimeRef,
   ) ? defaults?.runtimeRef || "" : "";
-  const steps = stepsForMode(mode, !!defaultRuntimeRef);
-  const [step, setStep] = useState<WizardStep>(steps[0]);
+  const [step, setStep] = useState<WizardStep>(mode === "agent" ? "name" : "provider");
   const [form, setForm] = useState<WizardResult>({
     name: defaults?.name || "",
     provider: defaults?.provider || "",
@@ -583,7 +577,16 @@ export function OnboardingWizard({
     policyRef: defaults?.policyRef || "",
     executionBackend: defaults?.executionBackend || "job",
     executionLifecycle: defaults?.executionLifecycle || "one-shot",
+    borrowedTools: defaults?.borrowedTools || [],
   });
+  const celln = mode === "agent" && form.executionBackend === "celln";
+  const steps = stepsForMode(mode, celln);
+  const catalogue = useCellnTools();
+  const selectedRuntime = selectableRuntimes.find((runtime) => runtime.metadata.name === form.runtimeRef);
+  const compatibleRuntime = celln
+    ? selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1"
+    : !form.runtimeRef || !!selectedRuntime?.spec.image;
+  const staleTools = (form.borrowedTools || []).some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision && tool.spec.invocationABI === "celln.json-stdio/v1" && tool.spec.lane === "tool"));
   const [inferenceMode, setInferenceMode] = useState<"workload" | "node">(
     "workload",
   );
@@ -663,6 +666,10 @@ export function OnboardingWizard({
         return nameValid;
       case "provider":
         return !!form.provider;
+      case "plane":
+        return compatibleRuntime;
+      case "tools":
+        return !catalogue.isLoading && !catalogue.isError && !staleTools && (form.borrowedTools || []).length <= 16;
       case "apikey":
         if (
           form.provider === "ollama" ||
@@ -682,7 +689,7 @@ export function OnboardingWizard({
       case "model":
         return !!form.model;
       case "skills":
-        return true;
+        return celln ? form.skills.length === 0 : !form.runtimeRef || !form.skills.some((skill) => harnessIncompatibleSkills.includes(skill));
       case "channelAction":
         return true;
       default:
@@ -697,6 +704,7 @@ export function OnboardingWizard({
   const hasActionChannels = actionChannels.length > 0;
 
   function completeWithDefaults() {
+    if (mode === "agent" && (!compatibleRuntime || (celln && (form.skills.length > 0 || catalogue.isLoading || catalogue.isError || staleTools)))) return;
     // Apply default baseURL for local providers if the user left it empty.
     const result = { ...form };
     if (!result.baseURL) {
@@ -730,7 +738,7 @@ export function OnboardingWizard({
     let nextIdx = stepIdx + 1;
     while (
       nextIdx < steps.length &&
-      usingLocalModel &&
+      !celln && usingLocalModel &&
       (steps[nextIdx] === "apikey" || steps[nextIdx] === "model")
     ) {
       nextIdx++;
@@ -746,7 +754,7 @@ export function OnboardingWizard({
     let prevIdx = stepIdx - 1;
     while (
       prevIdx >= 0 &&
-      usingLocalModel &&
+      !celln && usingLocalModel &&
       (steps[prevIdx] === "apikey" || steps[prevIdx] === "model")
     ) {
       prevIdx--;
@@ -789,6 +797,7 @@ export function OnboardingWizard({
       policyRef: d.policyRef || "",
       executionBackend: d.executionBackend || "job",
       executionLifecycle: d.executionLifecycle || "one-shot",
+      borrowedTools: d.borrowedTools || [],
     });
     setStep(steps[0]);
     setChannelActionIdx(0);
@@ -846,7 +855,7 @@ export function OnboardingWizard({
             {mode === "canary"
               ? "Choose a provider and model for the system health canary."
               : mode === "agent"
-                ? "Configure a new Agent with provider, model, and skills."
+                ? "Choose Harness or Run, execution plane, SkillPacks, and borrowed tools for Celln."
                 : "Configure provider, model, skills, and channels to activate this ensemble."}
           </DialogDescription>
         </DialogHeader>
@@ -883,7 +892,7 @@ export function OnboardingWizard({
         {step === "runtime" && (
           <div className="space-y-4">
             <div>
-              <Label>How will this Agent execute?</Label>
+              <Label>Harness / Run</Label>
               <p className="mt-1 text-xs text-muted-foreground">
                 Choose the Agent's default execution runtime. Normal AgentRuns inherit this choice; a run may make a one-off override later.
               </p>
@@ -897,18 +906,15 @@ export function OnboardingWizard({
                   ...form,
                   runtimeRef,
                   policyRef: runtimeRef && isDefaultCatalog ? "harness-examples" : runtimeRef ? form.policyRef : "",
-                  skills: runtimeRef
-                    ? form.skills.filter((skill) => !harnessIncompatibleSkills.includes(skill))
-                    : form.skills,
                 });
               }}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="builtin">Built-in Agent runner — recommended default</SelectItem>
+                <SelectItem value="builtin">Run — built-in Kubernetes agent runner</SelectItem>
                 {selectableRuntimes.map((runtime) => (
                   <SelectItem key={runtime.metadata.name} value={runtime.metadata.name}>
-                    {runtime.metadata.name}{runtime.spec.session?.protocol === "openai-chat" ? " — persistent chat" : " — one-shot"}{runtime.spec.supportOwner ? ` · ${runtime.spec.supportOwner}` : ""}
+                    {runtime.metadata.name}{runtime.spec.celln ? " — native Celln" : runtime.spec.session?.protocol === "openai-chat" ? " — Kubernetes persistent chat" : " — Kubernetes one-shot"}{runtime.spec.supportOwner ? ` · ${runtime.spec.supportOwner}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -916,7 +922,7 @@ export function OnboardingWizard({
             {form.runtimeRef ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">Harness selected: {form.runtimeRef}.</span>{" "}
-                This external adapter becomes the primary process for this Agent's runs. Your provider, model, endpoint, and credential selected in the next steps remain the Agent configuration passed to it. Sympozium still enforces identity, policy, mounts, NATS permissions, and lifecycle.
+                The execution plane in the next step must support this harness. Kubernetes adapters use the Agent’s configured provider; native Celln uses host-held model credentials and explicitly borrowed tools.
               </div>
             ) : (
               <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
@@ -926,8 +932,13 @@ export function OnboardingWizard({
             {form.runtimeRef && !availablePolicies.some((policy) => policy.metadata.name === form.policyRef) && (
               <p className="text-xs text-amber-500">The selected harness needs an approving policy. Install the default harnesses for this namespace, or ask an administrator to provide one.</p>
             )}
+
+          </div>
+        )}
+
+        {step === "plane" && <div className="space-y-3">
             <div className="space-y-2" data-testid="create-agent-execution-environment">
-              <Label>Default execution environment</Label>
+              <Label>Execution plane</Label>
               <p className="text-xs text-muted-foreground">Kubernetes remains the product default. Celln is a privileged opt-in. Harness selection alone does not choose Celln or grant tools.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {([["job", "Kubernetes", "Default · containers and OCI"], ["celln", "Celln", "Opt-in · hardware-isolated"]] as const).map(([value, title, description]) => (
@@ -939,9 +950,15 @@ export function OnboardingWizard({
                       ...form,
                       executionBackend: value,
                       executionLifecycle: value === "celln" ? form.executionLifecycle || "one-shot" : "one-shot",
-                      skills: value === "celln" ? [] : form.skills,
                       provider: value === "celln" ? "deepseek" : form.provider,
-                      model: value === "celln" && !form.model ? "deepseek-chat" : form.model,
+                      model: value === "celln" ? "deepseek-chat" : form.model,
+                      apiKey: value === "celln" ? "" : form.apiKey,
+                      secretName: value === "celln" ? "" : form.secretName,
+                      baseURL: value === "celln" ? "" : form.baseURL,
+                      modelRef: value === "celln" ? undefined : form.modelRef,
+                      agentSandboxEnabled: value === "celln" ? false : form.agentSandboxEnabled,
+                      channels: value === "celln" ? [] : form.channels,
+                      heartbeatInterval: value === "celln" ? "" : form.heartbeatInterval,
                     })}
                   >
                     <p className="text-sm font-medium">{title}</p>
@@ -961,13 +978,39 @@ export function OnboardingWizard({
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Approved tools can be set after creation on the Agent harness tab (with starter suggestions and an effective-permissions preview). An explicit empty tool list is distinct from inheritance. {capabilities?.celln?.available ? (capabilities.celln.oneShot?.reason || capabilities.celln.reason) : `Celln readiness: ${capabilities?.celln?.state || "unknown"} — ${capabilities?.celln?.reason || "not confirmed"}.`}
+                    You will choose borrowed tools before creating this Agent. An empty selection explicitly lends no tools. Model credentials stay on the host; this flow does not create a model-key Secret or configure channels/heartbeats. {capabilities?.celln?.available ? capabilities.celln.reason : `Celln readiness: ${capabilities?.celln?.state || "unknown"} — ${capabilities?.celln?.reason || "not confirmed"}.`}
                   </p>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          {!compatibleRuntime && <p role="alert" className="text-sm text-red-400">{celln ? "Choose a native Celln harness in the previous step. The built-in Kubernetes runner and OCI-only harnesses cannot run in Celln." : "This harness has no Kubernetes image. Go back to select a Kubernetes-compatible harness, or choose Celln."}</p>}
+        </div>}
+
+        {step === "tools" && <div className="space-y-3" data-testid="create-agent-borrowed-tools">
+          <h3 className="font-medium">Borrow tools for Celln</h3>
+          <p className="text-sm text-muted-foreground">Select installed, reviewed revisions to request for this Agent’s runs. This saves defaults, not permission grants. Effective operator/runtime/Agent permissions can be previewed on the Harness tab after the Agent exists and are checked again before execution.</p>
+          {catalogue.isLoading && <p>Loading tool catalogue…</p>}
+          {catalogue.isError && <p role="alert">Cannot load the tool catalogue. Retry before creating this Agent.</p>}
+          {catalogue.isError && <Button type="button" onClick={() => catalogue.refetch()}>Retry catalogue</Button>}
+          {!catalogue.isLoading && !catalogue.isError && catalogue.data?.length === 0 && <p>No tools installed in this namespace. An empty selection lends no tools.</p>}
+          {(catalogue.data || []).map((tool) => {
+            const selected = (form.borrowedTools || []).some((ref) => ref.name === tool.metadata.name && ref.revision === tool.spec.revision);
+            const supported = tool.spec.invocationABI === "celln.json-stdio/v1" && tool.spec.lane === "tool";
+            const suggested = ["workspace-read", "workspace-write", "https-fetch"].includes(tool.metadata.name);
+            return <label key={tool.metadata.name} className="block rounded border p-3 text-sm">
+              <span className="flex items-center gap-2">
+                <input type="checkbox" disabled={!supported || (!selected && (form.borrowedTools || []).length >= 16)} checked={selected}
+                  onChange={() => setForm({ ...form, borrowedTools: selected ? (form.borrowedTools || []).filter((ref) => ref.name !== tool.metadata.name) : [...(form.borrowedTools || []), { name: tool.metadata.name, revision: tool.spec.revision }] })} />
+                {tool.metadata.name}@{tool.spec.revision}{suggested ? " — starter suggestion" : ""}{!supported ? " — unsupported ABI/lane" : ""}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">{tool.spec.description}</span>
+              <span className="block text-xs text-muted-foreground">Limit: {tool.spec.limits.timeoutMillis} ms · workspace: {tool.spec.limits.workspace} · effects: {tool.spec.limits.effects}</span>
+            </label>;
+          })}
+          <p className="text-xs">{(form.borrowedTools || []).length}/16 selected. No shell, Python, host mounts or unrestricted network access is included.</p>
+          {staleTools && <p role="alert">The catalogue changed. Clear the selection and choose current revisions.</p>}
+          {!!form.borrowedTools?.length && <Button type="button" variant="outline" onClick={() => setForm({ ...form, borrowedTools: [] })}>Lend no tools</Button>}
+        </div>}
 
         {/* ── Provider step ─────────────────────────────────────────── */}
         {step === "provider" && (
@@ -1324,7 +1367,11 @@ export function OnboardingWizard({
         {/* ── Model step ────────────────────────────────────────────── */}
         {step === "model" && (
           <div className="space-y-2">
-            <ModelSelector
+            {celln ? <>
+              <Label htmlFor="native-model">Model (host-approved DeepSeek route)</Label>
+              <Input id="native-model" value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="deepseek-chat" />
+              <p className="text-xs text-muted-foreground">The owner must approve this model. Credentials remain on the host; no API key is requested here.</p>
+            </> : <ModelSelector
               provider={form.provider}
               apiKey={form.apiKey}
               baseURL={form.baseURL}
@@ -1340,7 +1387,7 @@ export function OnboardingWizard({
                     }
                   : undefined
               }
-            />
+            />}
             {mode === "persona" && agentConfigCount !== undefined && (
               <p className="text-xs text-muted-foreground">
                 Applied to all{" "}
@@ -1360,6 +1407,10 @@ export function OnboardingWizard({
               <p className="text-sm text-muted-foreground">
                 Select SkillPacks to attach.
               </p>
+              {celln && <div className="space-y-2 rounded border p-3 text-sm" data-testid="native-skill-compatibility">
+                <p>Native Celln does not support SkillPacks yet, including memory and Kubernetes administration sidecars. Borrowed tools are selected next. Existing Kubernetes SkillPacks remain available on the Kubernetes plane.</p>
+                {form.skills.length > 0 && <Button type="button" variant="outline" onClick={() => setForm({ ...form, skills: [] })}>Continue without SkillPacks</Button>}
+              </div>}
               {availableSkills.length === 0 ? (
                 <p className="rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                   No SkillPacks found in cluster.
@@ -1372,7 +1423,7 @@ export function OnboardingWizard({
                       .map((skill) => {
                         const selected = form.skills.includes(skill);
                         const locked = skill === "memory";
-                        const incompatible = !!form.runtimeRef && harnessIncompatibleSkills.includes(skill);
+                        const incompatible = celln || (!!form.runtimeRef && harnessIncompatibleSkills.includes(skill));
                         return (
                           <button
                             key={skill}
@@ -1752,6 +1803,14 @@ export function OnboardingWizard({
                   <span className="font-mono text-blue-400">{form.name}</span>
                 </div>
               )}
+              {mode === "agent" && <div className="space-y-2" data-testid="execution-confirmation">
+                <p>Execution plane: {celln ? "Celln" : "Kubernetes"}</p>
+                {celln && <>
+                  <p>Lifecycle: {form.executionLifecycle}</p>
+                  <p>Borrowed tools: {(form.borrowedTools || []).map((tool) => `${tool.name}@${tool.revision}`).join(", ") || "none (explicit empty selection)"}</p>
+                  <p className="text-xs text-muted-foreground">This saves requested defaults, not grants. {form.executionLifecycle === "enduring" ? "Parent defaults: 600-second lease, 8 turns, 24 model requests, 8192 output tokens. Context and files are lost with the parent." : "Each run uses a disposable cell."}</p>
+                </>}
+              </div>}
               {mode === "agent" && (
                 <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">Execution</span>

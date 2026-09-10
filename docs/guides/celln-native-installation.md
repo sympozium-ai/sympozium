@@ -14,6 +14,37 @@ model credentials, a kernel, or a tenant-ready signed package.
 Kubernetes remains the default. Selecting a Harness on an Agent does not switch
 its runs to Celln.
 
+### Create an Agent with saved execution defaults
+
+Use **Create Agent → Harness / Run → Execution plane → SkillPacks**. The
+execution-plane step is always shown, including when you start with a preselected
+Harness. Choose Kubernetes for the built-in Run path or an OCI-compatible
+Harness; choose Celln with a compatible native Harness.
+
+For Celln, explicitly continue without SkillPacks (native SkillPacks are not
+supported yet), then choose **Borrow tools**. Workspace read/write and HTTPS
+fetch are marked as starter suggestions when installed. Select the exact
+catalogue revisions you need, or leave the list empty to request no tools.
+The wizard does not silently remove SkillPacks or automatically grant suggested
+tools. Native model credentials remain on the host, so this flow skips API-key,
+channel and heartbeat setup. Kubernetes retains those steps and its SkillPacks.
+
+The confirmation and YAML preview include the plane, runtime, lifecycle and
+tool revisions. Creation stores these in `Agent.spec.execution`; a subsequent
+run can inherit them without repeating the choices. Enduring defaults are a
+600-second lease, 8 turns, 24 model requests and 8192 output tokens. Review or
+edit limits on the Agent Harness tab before starting work.
+
+**Creating an Agent is not operator approval.** The Agent's new identity and
+specification must be covered by current grants and host registration. The
+effective-permission preview on its Harness tab is available after creation.
+Existing approvals for another Agent are not transferable. An unapproved run
+must remain unapproved rather than acquiring authority from wizard defaults.
+
+See [the paired Agent/AgentRun YAML example](../../config/samples/agent-native-execution-defaults.yaml).
+
+### Start a run or override its defaults
+
 1. Open **Runs → New Run**. You can also follow the run-creation link from an
    Agent’s **Harness** tab or the feed’s quick-task input; these carry the Agent
    selection into the form.
@@ -27,7 +58,9 @@ its runs to Celln.
 5. Review the permission preview and submit. The operator preparation below is
    still required; a catalogue entry or suggested toolbox is not a grant.
 
-The feed’s quick-send path still uses Kubernetes. Use New Run for Celln settings.
+The feed’s quick-send path inherits saved Agent execution defaults. Agents with
+no execution defaults still use Kubernetes. Use New Run for explicit overrides;
+incompatible overrides are rejected rather than silently dropping tools.
 The **Concepts** guide explains these choices first, with implementation and
 YAML terminology in an expandable glossary.
 
