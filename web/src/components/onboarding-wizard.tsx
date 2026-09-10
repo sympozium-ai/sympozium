@@ -705,9 +705,16 @@ export function OnboardingWizard({
   // execution plane can actually reach.
   const providerChoices = useMemo(() => {
     if (celln) {
-      // Same providers as the run/agent flow. Native Celln needs an HTTPS
-      // endpoint, which is validated when the connection is saved.
-      return PROVIDERS;
+      // The native Celln host transport only reaches public HTTPS endpoints.
+      // HTTP-only local providers and Bedrock are not offered because they can
+      // never satisfy the host egress contract.
+      return PROVIDERS.filter(
+        (p) =>
+          p.value === "openai" ||
+          p.value === "anthropic" ||
+          p.value === "azure-openai" ||
+          p.value === "custom",
+      );
     }
     if (mode === "agent" && creationKind === "agent" && form.runtimeRef) {
       // Persistent Kubernetes harnesses speak OpenAI-compatible chat.
@@ -1151,7 +1158,11 @@ export function OnboardingWizard({
                         executionLifecycle: value === "celln" ? "enduring" : "one-shot",
                         modelConnectionRef: value === form.executionBackend ? form.modelConnectionRef : undefined,
                         credentialProfile: "",
-                        provider: form.provider || "openai",
+                        provider:
+                          value === "celln" &&
+                          !["openai", "anthropic", "azure-openai", "custom"].includes(form.provider)
+                            ? "openai"
+                            : form.provider || "openai",
                         model: form.model || "gpt-4o",
                         apiKey: value === "celln" ? "" : form.apiKey,
                         secretName: value === "celln" ? "" : form.secretName,
@@ -1259,7 +1270,7 @@ export function OnboardingWizard({
                   <SelectValue placeholder="Select a provider…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {readyModels.length > 0 && (
+                  {!celln && readyModels.length > 0 && (
                     <>
                       {readyModels.map((m) => (
                         <SelectItem
@@ -1288,6 +1299,12 @@ export function OnboardingWizard({
                 </SelectContent>
               </Select>
             </div>
+            {celln && (
+              <p className="text-xs text-muted-foreground">
+                Native Celln connects to public HTTPS endpoints only. Local
+                models are available on the Kubernetes execution plane.
+              </p>
+            )}
             {/* Inference mode toggle for local providers */}
             {isLocalProvider && (
               <div className="space-y-2">
