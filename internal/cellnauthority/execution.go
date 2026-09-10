@@ -76,7 +76,7 @@ func (l ModelLoader) BuildExecution(ctx context.Context, frozen FrozenSelection,
 	if borrowed == nil {
 		borrowed = []api.CellnBorrowedTool{}
 	}
-	origin, err := api.ModelEndpointOrigin(approval.Policy.URL)
+	origin, err := api.ModelEndpointOriginInsecure(approval.Policy.URL, approval.Policy.AllowInsecure)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (l ModelLoader) BuildExecution(ctx context.Context, frozen FrozenSelection,
 		"invocation": api.CellnInvocation{Alias: frozen.Prepared.RuntimeEntryPoint},
 		"harness": map[string]any{"contractVersion": "celln.json-tools/v1", "modelGrant": api.CellnImmutableRef{Hash: "blake3:" + strings.Repeat("0", 64)}, "model": approval.Policy.Model, "task": task, "borrowedTools": borrowed,
 			"json": map[string]any{"system": s.SystemPrompt, "maxTurns": frozen.Prepared.JSON.MaxTurns, "maxCalls": frozen.Prepared.JSON.MaxCalls}},
-		"capabilities": map[string]any{"workspace": "none", "egress": []string{origin}, "timeoutMs": timeout, "memoryBytes": limits.MemoryBytes, "outputBytes": limits.OutputBytes},
+		"capabilities": map[string]any{"workspace": "none", "egress": []string{origin}, "allowInsecure": approval.Policy.AllowInsecure, "timeoutMs": timeout, "memoryBytes": limits.MemoryBytes, "outputBytes": limits.OutputBytes},
 		"execution":    map[string]any{"lane": "agent", "requireHardwareIsolation": true},
 	}
 	raw, err := json.Marshal(request)

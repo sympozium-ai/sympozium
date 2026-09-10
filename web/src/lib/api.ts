@@ -985,7 +985,7 @@ export interface CapabilitiesResponse {
 
 export interface ModelConnection {
   metadata: ObjectMeta;
-  spec: { provider: string; protocol: "openai-chat" | "anthropic-messages"; endpoint: string; credentialProfile?: string; secretRef?: string; models: string[]; disabled?: boolean };
+  spec: { provider: string; protocol: "openai-chat" | "anthropic-messages"; endpoint: string; credentialProfile?: string; secretRef?: string; models: string[]; disabled?: boolean; allowInsecure?: boolean };
 }
 
 export interface AgentExecutionDefaults {

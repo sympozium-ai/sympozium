@@ -224,6 +224,8 @@ export interface WizardResult {
   modelConnectionRef?: string;
   /** Opaque host credential mapping for a native Celln model connection. */
   credentialProfile?: string;
+  /** Explicit opt-in for an HTTP or self-signed private native model endpoint. */
+  allowInsecure?: boolean;
   executionBackend?: "job" | "celln";
   /** Default Celln lifecycle when executionBackend is celln. */
   executionLifecycle?: "one-shot" | "enduring";
@@ -600,6 +602,7 @@ function modelConnectionSpec(
     endpoint,
     models: [result.model],
     ...auth,
+    ...(celln && result.allowInsecure ? { allowInsecure: true } : {}),
   };
 }
 
@@ -705,9 +708,12 @@ export function OnboardingWizard({
   // execution plane can actually reach.
   const providerChoices = useMemo(() => {
     if (celln) {
-      // The native Celln host transport only reaches public HTTPS endpoints.
-      // HTTP-only local providers and Bedrock are not offered because they can
-      // never satisfy the host egress contract.
+      // The native Celln host transport only reaches public HTTPS endpoints by
+      // default. The explicit insecure opt-in also allows HTTP/self-signed
+      // local providers; Bedrock has no compatible protocol either way.
+      if (form.allowInsecure) {
+        return PROVIDERS.filter((p) => p.value !== "bedrock");
+      }
       return PROVIDERS.filter(
         (p) =>
           p.value === "openai" ||
@@ -723,7 +729,7 @@ export function OnboardingWizard({
       );
     }
     return PROVIDERS;
-  }, [celln, mode, creationKind, form.runtimeRef]);
+  }, [celln, mode, creationKind, form.runtimeRef, form.allowInsecure]);
   const staleTools = (form.borrowedTools || []).some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision && tool.spec.invocationABI === "celln.json-stdio/v1" && tool.spec.lane === "tool"));
   const [inferenceMode, setInferenceMode] = useState<"workload" | "node">(
     "workload",
@@ -869,7 +875,7 @@ export function OnboardingWizard({
       compatibleRuntime;
     if (persistentHarness || celln) {
       const spec = modelConnectionSpec(result, celln);
-      if (celln && !spec.endpoint.startsWith("https://")) {
+      if (celln && !result.allowInsecure && !spec.endpoint.startsWith("https://")) {
         setConnectionError(
           "Native Celln needs an HTTPS model endpoint. Configure an HTTPS gateway or choose OpenAI, Anthropic, Azure, or a custom HTTPS endpoint.",
         );
@@ -1300,10 +1306,21 @@ export function OnboardingWizard({
               </Select>
             </div>
             {celln && (
-              <p className="text-xs text-muted-foreground">
-                Native Celln connects to public HTTPS endpoints only. Local
-                models are available on the Kubernetes execution plane.
-              </p>
+              <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={!!form.allowInsecure}
+                  onChange={(e) =>
+                    setForm({ ...form, allowInsecure: e.target.checked })
+                  }
+                />
+                <span>
+                  Allow an insecure model endpoint (HTTP or self-signed HTTPS)
+                  on a private address. This is an explicit operator opt-in;
+                  without it native Celln reaches public HTTPS endpoints only.
+                </span>
+              </label>
             )}
             {/* Inference mode toggle for local providers */}
             {isLocalProvider && (

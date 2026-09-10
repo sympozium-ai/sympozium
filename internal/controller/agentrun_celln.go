@@ -134,11 +134,12 @@ type executionForge struct {
 }
 
 type executionCapability struct {
-	Workspace   string   `json:"workspace"`
-	Egress      []string `json:"egress,omitempty"`
-	TimeoutMs   uint64   `json:"timeoutMs"`
-	MemoryBytes uint64   `json:"memoryBytes"`
-	OutputBytes uint64   `json:"outputBytes"`
+	Workspace     string   `json:"workspace"`
+	Egress        []string `json:"egress,omitempty"`
+	AllowInsecure bool     `json:"allowInsecure,omitempty"`
+	TimeoutMs     uint64   `json:"timeoutMs"`
+	MemoryBytes   uint64   `json:"memoryBytes"`
+	OutputBytes   uint64   `json:"outputBytes"`
 }
 
 type executionPolicy struct {
@@ -215,10 +216,11 @@ func (r *AgentRunReconciler) reconcilePendingCelln(
 		},
 		Forge: &executionForge{Task: task},
 		Capabilities: executionCapability{
-			Workspace:   "none",
-			TimeoutMs:   uint64(cellnEffectiveTimeout(agentRun).Milliseconds()),
-			MemoryBytes: cellnMemoryBytes,
-			OutputBytes: cellnOutputBytes,
+			Workspace:     "none",
+			AllowInsecure: agentRun.Spec.Model.AllowInsecure,
+			TimeoutMs:     uint64(cellnEffectiveTimeout(agentRun).Milliseconds()),
+			MemoryBytes:   cellnMemoryBytes,
+			OutputBytes:   cellnOutputBytes,
 		},
 		Execution: executionPolicy{
 			Lane:                     "agent",
@@ -248,11 +250,12 @@ func (r *AgentRunReconciler) reconcilePendingCelln(
 			origin := "https://api.deepseek.com"
 			if agentRun.Spec.Model.Protocol != "" {
 				var err error
-				origin, err = sympoziumv1alpha1.ModelEndpointOrigin(agentRun.Spec.Model.BaseURL)
+				origin, err = sympoziumv1alpha1.ModelEndpointOriginInsecure(agentRun.Spec.Model.BaseURL, agentRun.Spec.Model.AllowInsecure)
 				if err != nil {
 					return ctrl.Result{}, r.failRun(ctx, agentRun, err.Error())
 				}
 			}
+			request.Capabilities.AllowInsecure = agentRun.Spec.Model.AllowInsecure
 			if len(request.Capabilities.Egress) != 1 || request.Capabilities.Egress[0] != origin {
 				return ctrl.Result{}, r.failRun(ctx, agentRun, "Celln model endpoint differs from granted network origin")
 			}

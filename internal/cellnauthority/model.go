@@ -27,6 +27,7 @@ type ModelPolicyDocument struct {
 	Runtime              Subject `json:"runtime"`
 	Provider             string  `json:"provider"`
 	Protocol             string  `json:"protocol,omitempty"`
+	AllowInsecure        bool    `json:"allowInsecure,omitempty"`
 	Model                string  `json:"model"`
 	URL                  string  `json:"url"`
 	CredentialProfile    string  `json:"credentialProfile"`
@@ -57,14 +58,14 @@ func validModelPolicyRoute(doc ModelPolicyDocument) bool {
 	if doc.Protocol == "" {
 		return doc.Provider == "deepseek" && doc.URL == "https://api.deepseek.com/chat/completions"
 	}
-	return (api.ModelConnectionSpec{Provider: doc.Provider, Protocol: doc.Protocol, Endpoint: doc.URL, CredentialProfile: doc.CredentialProfile, Models: []string{doc.Model}}).Validate() == nil
+	return (api.ModelConnectionSpec{Provider: doc.Provider, Protocol: doc.Protocol, Endpoint: doc.URL, CredentialProfile: doc.CredentialProfile, Models: []string{doc.Model}, AllowInsecure: doc.AllowInsecure}).Validate() == nil
 }
 
 func modelPolicyMatches(m api.ModelSpec, doc ModelPolicyDocument) bool {
 	if doc.Protocol == "" {
-		return m.Protocol == "" && m.CredentialProfile == "" && (m.BaseURL == "" || m.BaseURL == "https://api.deepseek.com")
+		return m.Protocol == "" && m.CredentialProfile == "" && !m.AllowInsecure && (m.BaseURL == "" || m.BaseURL == "https://api.deepseek.com")
 	}
-	return m.BaseURL == doc.URL && m.Protocol == doc.Protocol && m.CredentialProfile == doc.CredentialProfile
+	return m.BaseURL == doc.URL && m.Protocol == doc.Protocol && m.CredentialProfile == doc.CredentialProfile && m.AllowInsecure == doc.AllowInsecure
 }
 
 func (l ModelLoader) Resolve(ctx context.Context, frozen FrozenSelection) (*ModelApproval, error) {

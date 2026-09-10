@@ -40,6 +40,12 @@ spec:
             type: object
           spec:
             properties:
+              allowInsecure:
+                description: |-
+                  AllowInsecure permits an HTTP or self-signed HTTPS endpoint on a private
+                  address. This is an explicit operator opt-in that weakens the default
+                  public-HTTPS transport contract. It never bypasses host admission.
+                type: boolean
               credentialProfile:
                 description: CredentialProfile is an opaque host mapping name, never
                   an API key or file path.
