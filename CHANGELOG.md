@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.58](https://github.com/sympozium-ai/sympozium/compare/v0.10.57...v0.10.58) (2026-09-10)
+
+
+### Bug Fixes
+
+* **celln:** Agent execution defaults and accurate availability messaging ([#478](https://github.com/sympozium-ai/sympozium/issues/478)) ([eeee90a](https://github.com/sympozium-ai/sympozium/commit/eeee90acf7ae0478ed3fcfdd5461ad26a1353f54))
+* **web:** clarify Celln selection and topology ordering ([#473](https://github.com/sympozium-ai/sympozium/issues/473)) ([3c19e60](https://github.com/sympozium-ai/sympozium/commit/3c19e6032ac583b898fa01187299cce990a0e92c))
+* **web:** complete Agent execution-plane and borrowed-tool creation flow ([#479](https://github.com/sympozium-ai/sympozium/issues/479)) ([842ccec](https://github.com/sympozium-ai/sympozium/commit/842ccec79f84614d37b0184c50eaa6ff54662137))
+
 ## [0.10.57](https://github.com/sympozium-ai/sympozium/compare/v0.10.56...v0.10.57) (2026-09-09)
 
 
