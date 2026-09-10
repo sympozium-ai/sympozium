@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useModelList } from "@/hooks/use-model-list";
+import { useModelList, modelApiBaseURL } from "@/hooks/use-model-list";
 import { useProviderNodes } from "@/hooks/use-provider-nodes";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,10 +40,12 @@ import {
   Terminal,
   Settings,
   Wifi,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCapabilities, useModels, useCellnTools } from "@/hooks/use-api";
 import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
+import { modelConnectionName, modelConnectionEndpoint } from "@/lib/agent-execution";
 import { api } from "@/lib/api";
 import type { AgentRuntime, SympoziumPolicy, CellnSelection, ModelConnection } from "@/lib/api";
 import {
@@ -493,7 +495,7 @@ function CanaryConnectionTest({ baseURL }: { baseURL: string }) {
     try {
       // Use the same in-cluster proxy endpoint that model listing uses,
       // so the test exercises the real network path (pod → provider).
-      const res = await api.providers.models(baseURL);
+      const res = await api.providers.models(modelApiBaseURL(baseURL));
       setResult({
         reachable: true,
         models: res.models.length,
@@ -551,40 +553,15 @@ function CanaryConnectionTest({ baseURL }: { baseURL: string }) {
 // ── Model connection folding ─────────────────────────────────────────────────
 // Persistent Kubernetes harnesses and native Celln runs consume a reusable
 // ModelConnection instead of inline credentials. The wizard keeps the ordinary
-// Provider → Auth → Model steps and persists that selection as a connection,
-// so creating a route feels identical to creating a one-shot run.
-
-const CONNECTION_SUFFIX = "-connection";
-
-function modelConnectionName(agentName: string): string {
-  const max = 253 - CONNECTION_SUFFIX.length;
-  const base = agentName.length > max ? agentName.slice(0, max) : agentName;
-  return `${base.replace(/-+$/, "")}${CONNECTION_SUFFIX}`;
-}
-
-function defaultProviderEndpoint(provider: string): string {
-  switch (provider) {
-    case "openai":
-      return "https://api.openai.com/v1/chat/completions";
-    case "anthropic":
-      return "https://api.anthropic.com/v1/messages";
-    case "ollama":
-      return "http://ollama.default.svc:11434/v1";
-    case "lm-studio":
-      return "http://localhost:1234/v1";
-    case "llama-server":
-    case "unsloth":
-      return "http://localhost:8080/v1";
-    default:
-      return "";
-  }
-}
+// Provider → Auth → Model steps and persists that selection as a connection
+// named after the Agent, so creating a route feels identical to creating a
+// one-shot run.
 
 function modelConnectionSpec(
   result: WizardResult,
   celln: boolean,
 ): ModelConnection["spec"] {
-  const endpoint = result.baseURL || defaultProviderEndpoint(result.provider);
+  const endpoint = modelConnectionEndpoint(result.baseURL, result.provider);
   const protocol =
     celln && result.provider === "anthropic"
       ? "anthropic-messages"
@@ -628,6 +605,11 @@ export function OnboardingWizard({
   const defaultRuntimeRef = availableRuntimes.some(
     (runtime) => runtime.metadata.name === defaults?.runtimeRef,
   ) ? defaults?.runtimeRef || "" : "";
+  // Kubernetes (job) remains the default execution plane; Celln is an explicit
+  // opt-in in the plane step. Defaulting to Celln here surfaced a "no native
+  // runtime registered" warning in namespaces without a native runtime.
+  const defaultBackend = defaults?.executionBackend || "job";
+  const defaultLifecycle = defaults?.executionLifecycle || "one-shot";
   const [step, setStep] = useState<WizardStep>(mode === "agent" ? "name" : "provider");
   const [form, setForm] = useState<WizardResult>({
     name: defaults?.name || "",
@@ -660,8 +642,8 @@ export function OnboardingWizard({
     awsSessionToken: defaults?.awsSessionToken || "",
     runtimeRef: defaultRuntimeRef,
     policyRef: defaults?.policyRef || "",
-    executionBackend: defaults?.executionBackend || "job",
-    executionLifecycle: defaults?.executionLifecycle || "one-shot",
+    executionBackend: defaultBackend,
+    executionLifecycle: defaultLifecycle,
     borrowedTools: defaults?.borrowedTools || [],
   });
   // Skill compatibility can arrive after the form defaults or harness selection.
@@ -1366,7 +1348,15 @@ export function OnboardingWizard({
             {(form.provider === "azure-openai" ||
               (isLocalProvider && inferenceMode === "workload")) && (
               <div className="space-y-2">
-                <Label>Base URL</Label>
+                <Label className="flex items-center gap-1.5">
+                  Base URL
+                  <span
+                    className="inline-flex"
+                    title="API base URL. Sympozium assumes the OpenAI-compatible /v1/chat/completions path (Anthropic uses /v1/messages). A full request URL is accepted as-is."
+                  >
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  </span>
+                </Label>
                 <Input
                   value={form.baseURL}
                   onChange={(e) =>
@@ -1374,14 +1364,23 @@ export function OnboardingWizard({
                   }
                   placeholder={
                     form.provider === "ollama"
-                      ? "http://ollama.default.svc:11434/v1"
+                      ? "http://ollama.default.svc:11434"
                       : form.provider === "lm-studio"
                         ? "http://localhost:1234/v1"
                         : form.provider === "unsloth"
                           ? "http://localhost:8080/v1"
-                          : "https://your-endpoint.openai.azure.com/v1"
+                          : form.provider === "custom"
+                            ? "http://your-host:8080/v1"
+                            : "https://your-endpoint.openai.azure.com/v1"
                   }
                 />
+                {form.provider === "custom" && (
+                  <p className="text-xs text-muted-foreground">
+                    API base URL of your OpenAI-compatible provider. The
+                    <code className="mx-1 rounded bg-muted px-1">/v1/chat/completions</code>
+                    path is assumed.
+                  </p>
+                )}
               </div>
             )}
 

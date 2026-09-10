@@ -32,6 +32,17 @@ const BEDROCK_MODELS = [
 
 // ── Fetchers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Native Celln model endpoints are full request URLs (`…/v1/chat/completions`
+ * or `…/v1/messages`), while model discovery lives at the API root
+ * (`…/v1/models`). Drop the trailing completion path so both shapes list models.
+ */
+export function modelApiBaseURL(endpoint: string): string {
+  return endpoint
+    .replace(/\/+$/, "")
+    .replace(/\/(chat\/completions|completions|messages)$/, "");
+}
+
 async function fetchOpenAIModels(apiKey: string): Promise<string[]> {
   const res = await fetch("https://api.openai.com/v1/models", {
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -66,7 +77,7 @@ async function fetchAnthropicModels(apiKey: string): Promise<string[]> {
 async function fetchProviderModelsDirect(baseURL: string): Promise<string[]> {
   // Try fetching directly from the browser (works when the provider is on the
   // local network / same machine and CORS allows it or isn't enforced).
-  const modelsURL = baseURL.replace(/\/+$/, "") + "/models";
+  const modelsURL = modelApiBaseURL(baseURL) + "/models";
   const res = await fetch(modelsURL, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`Direct fetch failed: ${res.status}`);
   const data = await res.json();
@@ -96,12 +107,15 @@ async function fetchLocalProviderModels(
   baseURL: string,
   apiKey?: string,
 ): Promise<string[]> {
+  // Normalise a full request URL down to the API root before either path runs,
+  // so the proxy also builds `…/v1/models` rather than nesting another /v1.
+  const base = modelApiBaseURL(baseURL);
   // Try direct browser fetch first (works for LAN / localhost providers).
   // Falls back to in-cluster proxy if direct fails (CORS, network, etc.).
   try {
-    return await fetchProviderModelsDirect(baseURL);
+    return await fetchProviderModelsDirect(base);
   } catch {
-    return fetchProviderModelsViaProxy(baseURL, apiKey);
+    return fetchProviderModelsViaProxy(base, apiKey);
   }
 }
 

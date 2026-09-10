@@ -12,6 +12,7 @@ import {
   useRuns,
 } from "@/hooks/use-api";
 import { HarnessSessionChatDialog } from "@/components/harness-session-dialog";
+import { CellnAgentConversation } from "@/components/celln-agent-conversation";
 import { CellnStarterTools } from "@/components/celln-starter-tools";
 import { CellnPermissionPreview } from "@/components/celln-permission-preview";
 import { StatusBadge } from "@/components/status-badge";
@@ -142,6 +143,23 @@ export function AgentDetailPage() {
   const selectedRuntime = runtimes?.find((runtime) => runtime.metadata.name === inst.spec.runtimeRef);
   const agentName = inst.metadata.name;
   const persistentHarness = selectedRuntime?.spec.contractVersion === "v1alpha2" && selectedRuntime.spec.session?.protocol === "openai-chat";
+  // Native Celln conversations are enduring AgentRuns, not HarnessSessions.
+  const nativeCellnEnduring =
+    selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1" &&
+    inst.spec.execution?.backend === "celln" &&
+    inst.spec.execution?.executionLifecycle === "enduring";
+  const enduringParent = (allRuns || [])
+    .filter(
+      (run) =>
+        run.spec.agentRef === agentName &&
+        run.spec.executionLifecycle === "enduring" &&
+        !run.metadata.deletionTimestamp,
+    )
+    .sort((a, b) =>
+      (b.metadata.creationTimestamp || "").localeCompare(
+        a.metadata.creationTimestamp || "",
+      ),
+    )[0];
   const chatSession = harnessSessions?.find((session) => session.spec.agentRef === agentName && session.spec.runtimeRef === selectedRuntime?.metadata.name);
   function startChat() {
     if (!selectedRuntime) return;
@@ -272,6 +290,9 @@ export function AgentDetailPage() {
               </CardContent>
             </Card>
             <AgentRuntimeCard inst={inst} runtimes={runtimes || []} />
+            {nativeCellnEnduring && (
+              <CellnAgentConversation agent={inst} parent={enduringParent} />
+            )}
           </div>
         </TabsContent>
 
@@ -503,7 +524,8 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
   const selectedRuntime = runtimes.find((runtime) => runtime.metadata.name === (inst.spec.runtimeRef || ""));
   const execution = inst.spec.execution;
   const backend = execution?.backend || "job";
-  const lifecycle = execution?.executionLifecycle || "one-shot";
+  const lifecycle =
+    execution?.executionLifecycle || (backend === "celln" ? "enduring" : "one-shot");
   const tools = execution?.cellnSelection?.toolRefs || [];
   const compatibleHarness = selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1";
   const hasSkills = !!inst.spec.skills?.length;
@@ -540,14 +562,17 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
                     saveExecution({ backend: "job", executionLifecycle: "one-shot" });
                     return;
                   }
+                  // Switching to Celln defaults to the enduring native parent;
+                  // an explicit lifecycle already chosen for Celln is preserved.
+                  const nextLifecycle = backend === "celln" ? lifecycle : "enduring";
                   saveExecution({
                     backend: "celln",
-                    executionLifecycle: lifecycle === "enduring" ? "enduring" : "one-shot",
+                    executionLifecycle: nextLifecycle,
                     provider: execution?.modelConnectionRef ? undefined : execution?.provider || "deepseek",
                     modelConnectionRef: execution?.modelConnectionRef,
                     model: execution?.model || "deepseek-chat",
                     cellnSelection: { toolRefs: tools },
-                    enduring: lifecycle === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
+                    enduring: nextLifecycle === "enduring" ? (execution?.enduring || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 }) : undefined,
                   });
                 }}
               >

@@ -10,7 +10,7 @@ import { FileCode, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toYaml, type YamlValue } from "@/lib/yaml";
 import type { WizardResult } from "@/components/onboarding-wizard";
-import { executionFromWizard } from "@/lib/agent-execution";
+import { executionFromWizard, modelConnectionName, modelConnectionEndpoint } from "@/lib/agent-execution";
 import type { Agent, Ensemble } from "@/lib/api";
 
 // ── YAML builders ─────────────────────────────────────────────────────────────
@@ -43,7 +43,11 @@ export function instanceYamlFromWizard(result: WizardResult): string {
   });
 
   const agentConfig: Record<string, YamlValue> = { model: result.model };
-  if (result.baseURL) agentConfig.baseURL = result.baseURL;
+  // Native Celln routes the model through a namespaced ModelConnection; the
+  // Agent references it by name instead of carrying an inline endpoint.
+  const usesConnection = result.executionBackend === "celln";
+  const connectionName = modelConnectionName(result.name || "agent");
+  if (!usesConnection && result.baseURL) agentConfig.baseURL = result.baseURL;
   if (result.nodeSelector && Object.keys(result.nodeSelector).length > 0)
     agentConfig.nodeSelector = result.nodeSelector;
   if (result.agentSandboxEnabled)
@@ -57,6 +61,18 @@ export function instanceYamlFromWizard(result: WizardResult): string {
     authRefs.push({ provider: result.provider, secret: result.secretName });
   }
 
+  const execution = usesConnection
+    ? executionFromWizard({
+        executionBackend: result.executionBackend,
+        executionLifecycle: result.executionLifecycle,
+        borrowedTools: result.borrowedTools,
+        runtimeRef: result.runtimeRef,
+        model: result.model,
+        provider: result.provider,
+        modelConnectionRef: connectionName,
+      })
+    : executionFromWizard(result);
+
   const obj: Record<string, YamlValue> = {
     apiVersion: "sympozium.ai/v1alpha1",
     kind: "Agent",
@@ -66,14 +82,32 @@ export function instanceYamlFromWizard(result: WizardResult): string {
       skills,
       ...(result.runtimeRef ? { runtimeRef: result.runtimeRef } : {}),
       ...(result.policyRef ? { policyRef: result.policyRef } : {}),
-      execution: executionFromWizard(result) as unknown as YamlValue,
+      execution: execution as unknown as YamlValue,
       ...(channels.length > 0 ? { channels } : {}),
       ...(authRefs.length > 0 ? { authRefs } : {}),
       memory: { enabled: result.executionBackend !== "celln" },
     },
   };
 
-  return toYaml(obj);
+  const agentYaml = toYaml(obj);
+  if (!usesConnection) return agentYaml;
+
+  const connection: Record<string, YamlValue> = {
+    apiVersion: "sympozium.ai/v1alpha1",
+    kind: "ModelConnection",
+    metadata: { name: connectionName },
+    spec: {
+      provider: result.provider,
+      protocol:
+        result.provider === "anthropic" ? "anthropic-messages" : "openai-chat",
+      endpoint: modelConnectionEndpoint(result.baseURL, result.provider),
+      credentialProfile: result.credentialProfile || result.provider,
+      models: [result.model],
+      ...(result.allowInsecure ? { allowInsecure: true } : {}),
+    },
+  };
+
+  return `${toYaml(connection)}\n---\n${agentYaml}`;
 }
 
 /** Build a Ensemble activation YAML (the full Ensemble CR is already in the cluster;
