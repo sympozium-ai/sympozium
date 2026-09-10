@@ -749,6 +749,11 @@ spec:
               model:
                 description: Model specifies the LLM configuration for this run.
                 properties:
+                  allowInsecure:
+                    description: |-
+                      AllowInsecure is the operator opt-in for an HTTP or self-signed private
+                      model endpoint, carried from the selected connection.
+                    type: boolean
                   authSecretRef:
                     description: AuthSecretRef references the secret containing the
                       API key.

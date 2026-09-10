@@ -44,6 +44,11 @@ type ModelConnectionSpec struct {
 	// Disabled prevents new connection resolution. Host profile withdrawal stops live use.
 	// +optional
 	Disabled bool `json:"disabled,omitempty"`
+	// AllowInsecure permits an HTTP or self-signed HTTPS endpoint on a private
+	// address. This is an explicit operator opt-in that weakens the default
+	// public-HTTPS transport contract. It never bypasses host admission.
+	// +optional
+	AllowInsecure bool `json:"allowInsecure,omitempty"`
 }
 
 var modelConnectionIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -66,7 +71,7 @@ func (s ModelConnectionSpec) Validate() error {
 		if s.SecretRef != "" {
 			return fmt.Errorf("choose a host credential profile or a Kubernetes Secret, not both")
 		}
-		if _, err := ModelEndpointOrigin(s.Endpoint); err != nil {
+		if _, err := ModelEndpointOriginInsecure(s.Endpoint, s.AllowInsecure); err != nil {
 			return err
 		}
 	}
@@ -86,11 +91,26 @@ func (s ModelConnectionSpec) Validate() error {
 // ModelEndpointOrigin matches the native host HTTPS transport: no userinfo,
 // query credentials, fragments, alternate ports or redirect-based endpoints.
 func ModelEndpointOrigin(endpoint string) (string, error) {
+	return ModelEndpointOriginInsecure(endpoint, false)
+}
+
+// ModelEndpointOriginInsecure returns the egress origin for a model endpoint.
+// The default keeps the public HTTPS transport contract; allowInsecure is an
+// explicit opt-in that also permits HTTP and an explicit port for a private or
+// self-signed endpoint.
+func ModelEndpointOriginInsecure(endpoint string, allowInsecure bool) (string, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || len(endpoint) > 2048 || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Port() != "" || u.Path == "" || strings.ContainsAny(endpoint, "\r\n\x00") {
+	if err != nil || len(endpoint) > 2048 || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Path == "" || strings.ContainsAny(endpoint, "\r\n\x00") {
+		return "", fmt.Errorf("model endpoint must be an HTTP(S) URL without credentials, query or fragment")
+	}
+	if allowInsecure {
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", fmt.Errorf("model endpoint must be an HTTP(S) URL")
+		}
+	} else if u.Scheme != "https" || u.Port() != "" {
 		return "", fmt.Errorf("model endpoint must be a complete HTTPS URL without credentials, query, fragment or port")
 	}
-	return "https://" + u.Host, nil
+	return u.Scheme + "://" + u.Host, nil
 }
 
 // +kubebuilder:object:root=true

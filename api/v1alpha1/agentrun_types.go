@@ -217,6 +217,10 @@ type ModelSpec struct {
 	// CredentialProfile is the independently approved opaque host mapping.
 	// +optional
 	CredentialProfile string `json:"credentialProfile,omitempty"`
+	// AllowInsecure is the operator opt-in for an HTTP or self-signed private
+	// model endpoint, carried from the selected connection.
+	// +optional
+	AllowInsecure bool `json:"allowInsecure,omitempty"`
 
 	// Provider is the AI provider (openai, anthropic, azure-openai, github-copilot, ollama, etc.).
 	// Omit when resolving a model connection.

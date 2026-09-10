@@ -95,6 +95,9 @@ func issue(ctx context.Context, l cellnauthority.ModelLoader, frozen cellnauthor
 	if p.Protocol != "" {
 		profile["protocol"] = p.Protocol
 	}
+	if p.AllowInsecure {
+		profile["allowInsecure"] = true
+	}
 	profileBytes, err := json.Marshal(profile)
 	if err != nil {
 		return nil, err

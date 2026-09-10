@@ -50,7 +50,11 @@ func Resolve(ctx context.Context, reader client.Reader, namespace string, model 
 	if (model.Provider != "" && model.Provider != s.Provider) || (model.BaseURL != "" && model.BaseURL != s.Endpoint) || (model.Protocol != "" && model.Protocol != s.Protocol) || (model.CredentialProfile != "" && model.CredentialProfile != s.CredentialProfile) {
 		return model, fmt.Errorf("inline model settings differ from the selected connection")
 	}
+	if model.AllowInsecure && !s.AllowInsecure {
+		return model, fmt.Errorf("inline insecure setting is not authorized by the connection")
+	}
 	model.Provider, model.BaseURL, model.Protocol, model.CredentialProfile = s.Provider, s.Endpoint, s.Protocol, s.CredentialProfile
+	model.AllowInsecure = s.AllowInsecure
 	model.ConnectionRevision = revision
 	return model, nil
 }
