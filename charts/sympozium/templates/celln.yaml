@@ -1,4 +1,32 @@
 {{- if .Values.celln.enabled }}
+{{- $bootstrap := .Values.celln.bootstrap | default dict }}
+{{- $clientSecret := $bootstrap.clientTokenSecret | default "celln-router-client" }}
+{{- $backendSecret := $bootstrap.backendTokenSecret | default "celln-dispatcher-backend" }}
+{{- $capabilitySecret := $bootstrap.capabilityTokenSecret | default "celln-discovery" }}
+{{- $ownershipClaim := $bootstrap.ownershipClaim | default "celln-router-ownership" }}
+{{- $routerImage := "" }}
+{{- if not .Values.celln.router.external }}
+{{- if .Values.celln.router.image.digest }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.celln.router.image.digest) }}
+{{- fail "celln.router.image.digest must be a sha256 digest when set" }}
+{{- end }}
+{{- $routerImage = printf "%s@%s" .Values.celln.router.image.repository .Values.celln.router.image.digest }}
+{{- else if .Values.celln.router.image.tag }}
+{{- $routerImage = printf "%s:%s" .Values.celln.router.image.repository .Values.celln.router.image.tag }}
+{{- else }}
+{{- fail "celln.router.image.digest (recommended) or celln.router.image.tag is required" }}
+{{- end }}
+{{- end }}
+{{- $dispatcher := .Values.celln.dispatcher | default dict }}
+{{- $dispatcherImage := $dispatcher.image | default dict }}
+{{- $dispatcherRepo := $dispatcherImage.repository | default .Values.celln.image.repository | default "ghcr.io/sympozium-ai/celln-installer" }}
+{{- $dispatcherTag := $dispatcherImage.tag | default .Values.celln.image.tag | default "v0.4.13" }}
+{{- $clientToken := randAlphaNum 32 }}
+{{- with lookup "v1" "Secret" .Release.Namespace $clientSecret }}{{ $clientToken = index .data "token" | b64dec }}{{ end }}
+{{- $backendToken := randAlphaNum 32 }}
+{{- with lookup "v1" "Secret" "celln-system" $backendSecret }}{{ $backendToken = index .data "token" | b64dec }}{{ end }}
+{{- $capabilityToken := randAlphaNum 32 }}
+{{- with lookup "v1" "Secret" .Release.Namespace $capabilitySecret }}{{ $capabilityToken = index .data "token" | b64dec }}{{ end }}
 {{- if and (not (hasPrefix "https://" .Values.celln.routerUrl)) (not .Values.celln.allowInsecureHttp) }}
 {{- fail "Celln requires an HTTPS routerUrl or explicit celln.allowInsecureHttp acknowledgement" }}
 {{- end }}
@@ -10,9 +38,6 @@
 {{- fail "external Celln router cannot enable the legacy host installer" }}
 {{- end }}
 {{- else }}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.celln.router.image.digest) }}
-{{- fail "celln.router.image.digest must pin a router supporting client auth and durable ownership" }}
-{{- end }}
 {{- if not .Values.celln.router.backends }}
 {{- fail "celln.router.backends must contain the complete stable dispatcher endpoint list" }}
 {{- end }}
@@ -46,6 +71,80 @@ metadata:
   name: celln-system
   labels:
     app.kubernetes.io/part-of: sympozium
+{{- if $bootstrap.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $clientSecret }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: sympozium
+type: Opaque
+stringData:
+  token: {{ $clientToken | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $clientSecret }}
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/part-of: sympozium
+type: Opaque
+stringData:
+  token: {{ $clientToken | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $backendSecret }}
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/part-of: sympozium
+type: Opaque
+stringData:
+  token: {{ $backendToken | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $capabilitySecret }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: sympozium
+type: Opaque
+stringData:
+  token: {{ $capabilityToken | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $capabilitySecret }}
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/part-of: sympozium
+type: Opaque
+stringData:
+  token: {{ $capabilityToken | quote }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $ownershipClaim }}
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/part-of: sympozium
+spec:
+  accessModes:
+  - {{ $bootstrap.ownershipAccessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ $bootstrap.ownershipStorage | default "1Gi" }}
+  {{- with $bootstrap.ownershipStorageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
 {{- if .Values.celln.installer.enabled }}
 ---
 apiVersion: v1
@@ -150,6 +249,121 @@ spec:
         operator: Exists
         effect: NoSchedule
 {{- end }}
+{{- if $dispatcher.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celln-dispatcher
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/name: celln-dispatcher
+    app.kubernetes.io/part-of: sympozium
+spec:
+  replicas: {{ $dispatcher.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celln-dispatcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celln-dispatcher
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        celln.dev/kvm: "true"
+      containers:
+      - name: dispatcher
+        image: {{ printf "%s:%s" $dispatcherRepo $dispatcherTag | quote }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/usr/local/bin/celln"]
+        args:
+        - dispatcher
+        - --listen
+        - 0.0.0.0:8787
+        - --unsafe-non-loopback
+        - --token-file
+        - /etc/celln/backend/token
+        - --root
+        - /var/lib/celln
+        - --mote-store
+        - /var/lib/celln/motes
+        - --tool-store
+        - /var/lib/celln/tools
+        - --node-name
+        - $(NODE_NAME)
+        {{- range $dispatcher.allowEgressHosts | default (list "api.deepseek.com") }}
+        - --allow-egress-host
+        - {{ . | quote }}
+        {{- end }}
+        - --egress-slots
+        - {{ $dispatcher.egressSlots | default 1 | quote }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: backend
+          mountPath: /etc/celln/backend
+          readOnly: true
+        - name: state
+          mountPath: /var/lib/celln
+        - name: kvm
+          mountPath: /dev/kvm
+        - name: boot
+          mountPath: /boot
+          readOnly: true
+        - name: modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: backend
+        secret:
+          secretName: {{ $backendSecret }}
+          defaultMode: 0440
+      - name: state
+        hostPath:
+          path: {{ $dispatcher.statePath | default "/var/lib/celln" }}
+          type: Directory
+      - name: kvm
+        hostPath:
+          path: /dev/kvm
+          type: CharDevice
+      - name: boot
+        hostPath:
+          path: /boot
+          type: Directory
+      - name: modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celln-dispatcher
+  namespace: celln-system
+  labels:
+    app.kubernetes.io/name: celln-dispatcher
+    app.kubernetes.io/part-of: sympozium
+spec:
+  selector:
+    app.kubernetes.io/name: celln-dispatcher
+  ports:
+  - name: http
+    port: 8787
+    targetPort: 8787
+    protocol: TCP
+{{- end }}
+{{- if not .Values.celln.router.external }}
 ---
 # Every replica sees the same backend identities and durable owner ledger.
 apiVersion: apps/v1
@@ -180,7 +394,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: router
-        image: {{ printf "%s@%s" .Values.celln.router.image.repository .Values.celln.router.image.digest | quote }}
+        image: {{ $routerImage | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/usr/local/bin/celln"]
         args:
@@ -260,5 +474,6 @@ spec:
     port: 8787
     targetPort: 8788
     protocol: TCP
+{{- end }}
 {{- end }}
 {{- end }}

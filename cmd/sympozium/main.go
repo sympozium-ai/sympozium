@@ -46,6 +46,7 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/agentedit"
+	"github.com/sympozium-ai/sympozium/internal/cellninstall"
 	"github.com/sympozium-ai/sympozium/internal/helmchart"
 )
 
@@ -1248,38 +1249,145 @@ func newInstallCmd() *cobra.Command {
 	var imageTag string
 	var setValues []string
 	var enableHermeticWorkloads bool
+	var noCelln bool
+	var cellnBackends []string
+	var cellnRouterImage string
+	var cellnInstallerImage string
+	var cellnRouterReplicas int
+	var cellnHostInstaller bool
+	var cellnNative bool
+	var cellnNativeApprove bool
+	var nativeOpts cellninstall.Options
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install Sympozium into the current Kubernetes cluster",
 		Long: `Installs Sympozium using the embedded Helm chart. This sets up CRDs,
 the controller manager, API server, admission webhook, RBAC rules,
-network policies, and default SkillPacks/Policies/Ensembles.
+network policies, default SkillPacks/Policies/Ensembles, and the Celln backend.
 
-Use --image-tag to override the container image tag, for example when
-you have sideloaded images into Kind with a custom tag.
+Celln is deployed by default: an in-cluster (pod-based) dispatcher, an
+unprivileged router, and generated router/backend/capability credentials plus
+the ownership PVC. The router reaches the dispatcher over the celln-dispatcher
+Service; override with --celln-backend for an external dispatcher. Pass
+--celln-host-installer to also run the privileged host-installer DaemonSet
+(bare-metal dispatcher), which mounts the host root filesystem and is a
+materially different trust boundary. Pass --no-celln to skip Celln entirely.
+See docs/concepts/celln-backend.md before relying on it.
+
+Use --image-tag to override the container image tag, for example when you have
+sideloaded images into Kind with a custom tag.
 
 Use --set to override arbitrary Helm values (e.g. --set controller.replicas=2).
 
-Use --enable-hermetic-workloads to opt into the Celln backend (spec.backend:
-"celln" on AgentRuns): hardware-isolated, single-task execution in a sealed
-KVM cell instead of a Kubernetes Job. This is off by default because it
-deploys a DaemonSet that installs a host-level dispatcher on KVM-capable
-nodes, running privileged with hostPID and a read-write mount of the host
-root filesystem — necessary to set up KVM on the host, but a materially
-different trust boundary than the rest of Sympozium's pods. See
-docs/concepts/celln-backend.md before enabling it.`,
+Use --celln-native to also install the native Celln starter catalogue and grant
+layers (enduring native parents); it requires the operator-reviewed
+--celln-native-* inputs and --celln-native-approve-starter-tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if enableHermeticWorkloads {
-				setValues = append(setValues, "celln.enabled=true")
+			if !noCelln {
+				cellnValues, err := cellnInstallSetValues(cmd.Context(), cellnRouterImage, cellnInstallerImage, cellnBackends, cellnRouterReplicas, cellnHostInstaller)
+				if err != nil {
+					return err
+				}
+				setValues = append(setValues, cellnValues...)
 			}
-			return runInstall(imageTag, setValues)
+			if err := runInstall(imageTag, setValues); err != nil {
+				return err
+			}
+			if cellnNative {
+				if !cellnNativeApprove {
+					return fmt.Errorf("--celln-native requires --celln-native-approve-starter-tools: grants include run-owned read/write and bounded example.com HTTPS")
+				}
+				nativeOpts.Namespace = namespace
+				if err := cellninstall.Install(cmd.Context(), k8sClient, nativeOpts); err != nil {
+					return err
+				}
+				fmt.Printf("  Installed native Celln catalogue and grants in %s; no run submitted, execution readiness remains unverified.\n", nativeOpts.Namespace)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "Override image tag (e.g. 'latest')")
 	cmd.Flags().StringArrayVar(&setValues, "set", nil, "Set Helm values (key=value, can be repeated)")
-	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false,
-		"Opt into the Celln backend: hardware-isolated execution via a privileged host-installer DaemonSet on KVM-capable nodes")
+	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false, "Deprecated: Celln is enabled by default; use --no-celln to skip it")
+	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Do not deploy the Celln backend (dispatcher, router, credentials, ownership PVC)")
+	cmd.Flags().BoolVar(&cellnHostInstaller, "celln-host-installer", false, "Also deploy the privileged host-installer DaemonSet (bare-metal dispatcher); requires --celln-backend pointing at the dispatcher/proxy")
+	cmd.Flags().StringArrayVar(&cellnBackends, "celln-backend", nil, "Celln router dispatcher origin(s) http://host:port (repeatable); defaults to the in-cluster celln-dispatcher Service")
+	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.8)")
+	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/celln-installer:v0.5.8)")
+	cmd.Flags().IntVar(&cellnRouterReplicas, "celln-router-replicas", 1, "Celln router replicas for the generated ReadWriteOnce ownership PVC")
+	cmd.Flags().BoolVar(&cellnNative, "celln-native", false, "Also install the native Celln starter catalogue and grant layers (requires the operator --celln-native-* inputs)")
+	cmd.Flags().BoolVar(&cellnNativeApprove, "celln-native-approve-starter-tools", false, "Explicitly approve the three bounded starter tool grants for --celln-native")
+	cmd.Flags().StringVar(&nativeOpts.ConfigurationDir, "celln-native-configuration-dir", "", "Absolute operator configuration produced by 'celln starter-configure'")
+	cmd.Flags().StringVar(&nativeOpts.OutputDir, "celln-native-output-dir", "", "New absolute private output directory")
+	cmd.Flags().StringVar(&nativeOpts.StatePath, "celln-native-state-path", "", "Existing dedicated host state path")
+	cmd.Flags().StringVar(&nativeOpts.OwnerTarget, "celln-native-owner-target", "", "Stable verified HTTPS owner origin")
+	cmd.Flags().StringVar(&nativeOpts.Scope, "celln-native-scope", "", "Stable installation identity; never change to renew consumed authority")
+	cmd.Flags().StringVar(&nativeOpts.PackageHash, "celln-native-package-hash", "", "Exact operator-approved package BLAKE3 identity")
 	return cmd
+}
+
+// cellnInstallSetValues builds the Helm --set values that deploy the one-shot
+// Celln stack: generated credentials, ownership PVC, router and installer.
+func cellnInstallSetValues(ctx context.Context, routerImage, installerImage string, backends []string, replicas int, hostInstaller bool) ([]string, error) {
+	if replicas <= 0 {
+		replicas = 1
+	}
+	routerRepo, routerRef, routerIsDigest := splitImageRef(routerImage, "ghcr.io/sympozium-ai/celln", "v0.5.8")
+	installerRepo, installerTag, _ := splitImageRef(installerImage, "ghcr.io/sympozium-ai/celln-installer", "v0.5.8")
+
+	// Default execution path is the in-cluster (pod-based) dispatcher, reached
+	// by the router over the celln-dispatcher Service. `--celln-backend`
+	// overrides the backend origins (e.g. an external/host-installed dispatcher).
+	vals := []string{
+		"celln.enabled=true",
+		"celln.allowInsecureHttp=true",
+		"celln.bootstrap.enabled=true",
+		"celln.dispatcher.enabled=true",
+		"celln.tokenSecret=celln-router-client",
+		"celln.capabilityTokenSecret=celln-discovery",
+		"celln.router.external=false",
+		"celln.router.replicas=" + strconv.Itoa(replicas),
+		"celln.router.clientTokenSecret=celln-router-client",
+		"celln.router.backendTokenSecret=celln-dispatcher-backend",
+		"celln.router.capabilityTokenSecret=celln-discovery",
+		"celln.router.allowInsecureBackends=true",
+		"celln.router.ownershipClaim=celln-router-ownership",
+		"celln.router.image.repository=" + routerRepo,
+		// The full image (celln binary + runtime assets + Rust) serves both the
+		// in-cluster dispatcher and, optionally, the host installer DaemonSet.
+		"celln.image.repository=" + installerRepo,
+		"celln.image.tag=" + installerTag,
+	}
+	if len(backends) == 0 {
+		backends = []string{"http://celln-dispatcher.celln-system.svc.cluster.local:8787"}
+	}
+	vals = append(vals, "celln.router.backends={"+strings.Join(backends, ",")+"}")
+	if hostInstaller {
+		vals = append(vals, "celln.installer.enabled=true")
+	}
+	if routerIsDigest {
+		vals = append(vals, "celln.router.image.digest="+routerRef)
+	} else {
+		vals = append(vals, "celln.router.image.tag="+routerRef)
+	}
+	return vals, nil
+}
+
+// splitImageRef splits "repo:tag" or "repo@sha256:..." and reports whether the
+// reference is a digest. A bare repository falls back to defaultTag.
+func splitImageRef(ref, defaultRepo, defaultTag string) (repo, reference string, isDigest bool) {
+	if ref == "" {
+		return defaultRepo, defaultTag, false
+	}
+	if at := strings.LastIndex(ref, "@"); at != -1 {
+		return ref[:at], ref[at+1:], true
+	}
+	slash := strings.LastIndex(ref, "/")
+	colon := strings.LastIndex(ref, ":")
+	if colon > slash {
+		return ref[:colon], ref[colon+1:], false
+	}
+	return ref, defaultTag, false
 }
 
 func newUninstallCmd() *cobra.Command {

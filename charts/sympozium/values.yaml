@@ -482,6 +482,37 @@ celln:
     # -- Legacy privileged host mutation is a separate, deliberate opt-in.
     # Disabling/removing this DaemonSet does NOT undo host installation.
     enabled: false
+  # -- In-cluster dispatcher (pod-based). Runs the celln dispatcher as a
+  # privileged pod with /dev/kvm, reachable by the router over a ClusterIP
+  # Service. This is the reachable-by-default execution path; the host installer
+  # DaemonSet (above) is the bare-metal alternative that stays loopback-only.
+  dispatcher:
+    enabled: false
+    replicas: 1
+    # -- Image carrying the celln binary + runtime assets (and Rust for the
+    # forge compile step). Defaults to celln.image when empty.
+    image:
+      repository: ""
+      tag: ""
+    # -- hostPath directory on the node for motes/tools/cells state.
+    statePath: /var/lib/celln
+    # -- Hosts the dispatcher permits for egress (model API and bounded fetch).
+    allowEgressHosts:
+      - api.deepseek.com
+    egressSlots: 1
+  # -- One-command bootstrap for a fresh Celln install. Generates the
+  # controller/router/backend/capability bearer Secrets and a router ownership
+  # PVC, then the CLI points celln.tokenSecret, celln.capabilityTokenSecret and
+  # celln.router.*Secret at them. Router backends (KVM node dispatcher
+  # endpoints) and ownership storage class remain operator inputs.
+  bootstrap:
+    enabled: false
+    clientTokenSecret: celln-router-client
+    backendTokenSecret: celln-dispatcher-backend
+    capabilityTokenSecret: celln-discovery
+    ownershipClaim: celln-router-ownership
+    ownershipStorageClass: ""
+    ownershipStorage: 1Gi
   # -- URL of the celln-router Service. The controller POSTs here.
   routerUrl: "http://celln-router.celln-system.svc.cluster.local:8787"
   # -- Existing Secret in the controller namespace, key `token`, containing
@@ -541,10 +572,11 @@ celln:
     # POSIX flock, atomic publication and directory fsync, not just an RWX label.
     ownershipClaim: ""
     image:
-      repository: "ghcr.io/sympozium-ai/celln-router"
-      # -- Digest of an image implementing client auth + durable ownership
-      # (Celln PRs #70 and #75). Old v0.4.13 images are incompatible.
+      repository: "ghcr.io/sympozium-ai/celln"
+      # -- Prefer a digest for a pinned router. `tag` is a fallback for the
+      # bootstrap path and is less tamper-resistant.
       digest: ""
+      tag: ""
 
 # -- Persona delegation behavior.
 delegation:
