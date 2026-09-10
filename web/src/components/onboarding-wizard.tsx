@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useCapabilities, useModels, useCellnTools } from "@/hooks/use-api";
 import { agentCreationSteps } from "@/lib/agent-execution";
+import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
 import { api } from "@/lib/api";
 import type { AgentRuntime, SympoziumPolicy, CellnSelection } from "@/lib/api";
 import {
@@ -271,12 +272,14 @@ type WizardStep =
 function stepsForMode(
   mode: "agent" | "persona" | "canary",
   celln = false,
+  runtimePreselected = false,
 ): WizardStep[] {
   if (mode === "canary") {
     return ["provider", "apikey", "model"];
   }
   if (mode === "agent") {
-    return [...agentCreationSteps(celln)] as WizardStep[];
+    if (celln) return [...agentCreationSteps(true)] as WizardStep[];
+    return ["name", ...(runtimePreselected ? [] : ["runtime"]), "provider", "apikey", "model", "skills", "heartbeat", "channels", "confirm", "channelAction"] as WizardStep[];
   }
   return [
     "provider",
@@ -301,7 +304,7 @@ function StepIndicator({
 }) {
   const labels: Record<WizardStep, string> = {
     name: "Name",
-    runtime: "Harness / Run",
+    runtime: "Harness",
     plane: "Execution plane",
     tools: "Borrow tools",
     provider: "Provider",
@@ -541,7 +544,7 @@ export function OnboardingWizard({
   onComplete,
   isPending,
 }: OnboardingWizardProps) {
-  const selectableRuntimes = availableRuntimes;
+  const selectableRuntimes = persistentHarnesses(availableRuntimes);
   const defaultRuntimeRef = selectableRuntimes.some(
     (runtime) => runtime.metadata.name === defaults?.runtimeRef,
   ) ? defaults?.runtimeRef || "" : "";
@@ -575,12 +578,12 @@ export function OnboardingWizard({
     awsSessionToken: defaults?.awsSessionToken || "",
     runtimeRef: defaultRuntimeRef,
     policyRef: defaults?.policyRef || "",
-    executionBackend: defaults?.executionBackend || "job",
+    executionBackend: mode === "agent" ? "job" : defaults?.executionBackend || "job",
     executionLifecycle: defaults?.executionLifecycle || "one-shot",
     borrowedTools: defaults?.borrowedTools || [],
   });
   const celln = mode === "agent" && form.executionBackend === "celln";
-  const steps = stepsForMode(mode, celln);
+  const steps = stepsForMode(mode, celln, !!defaultRuntimeRef);
   const catalogue = useCellnTools();
   const selectedRuntime = selectableRuntimes.find((runtime) => runtime.metadata.name === form.runtimeRef);
   const compatibleRuntime = celln
@@ -664,6 +667,8 @@ export function OnboardingWizard({
     switch (step) {
       case "name":
         return nameValid;
+      case "runtime":
+        return selectableRuntimes.some((runtime) => runtime.metadata.name === form.runtimeRef);
       case "provider":
         return !!form.provider;
       case "plane":
@@ -793,9 +798,9 @@ export function OnboardingWizard({
       awsAccessKeyId: d.awsAccessKeyId || "",
       awsSecretAccessKey: d.awsSecretAccessKey || "",
       awsSessionToken: d.awsSessionToken || "",
-      runtimeRef: d.runtimeRef || "",
+      runtimeRef: selectableRuntimes.some((runtime) => runtime.metadata.name === d.runtimeRef) ? d.runtimeRef : "",
       policyRef: d.policyRef || "",
-      executionBackend: d.executionBackend || "job",
+      executionBackend: mode === "agent" ? "job" : d.executionBackend || "job",
       executionLifecycle: d.executionLifecycle || "one-shot",
       borrowedTools: d.borrowedTools || [],
     });
@@ -809,7 +814,7 @@ export function OnboardingWizard({
     if (open) {
       resetWith(defaults || {});
     }
-  }, [open, defaultsKey]);
+  }, [open, defaultsKey, defaultRuntimeRef]);
 
   const titleIcon =
     mode === "agent" ? (
@@ -855,7 +860,7 @@ export function OnboardingWizard({
             {mode === "canary"
               ? "Choose a provider and model for the system health canary."
               : mode === "agent"
-                ? "Choose Harness or Run, execution plane, SkillPacks, and borrowed tools for Celln."
+                ? "Choose a persistent Pi or Hermes harness, provider, model, and skills."
                 : "Configure provider, model, skills, and channels to activate this ensemble."}
           </DialogDescription>
         </DialogHeader>
@@ -892,41 +897,41 @@ export function OnboardingWizard({
         {step === "runtime" && (
           <div className="space-y-4">
             <div>
-              <Label>Harness / Run</Label>
+              <Label>Choose a persistent harness</Label>
               <p className="mt-1 text-xs text-muted-foreground">
-                Choose the Agent's default execution runtime. Normal AgentRuns inherit this choice; a run may make a one-off override later.
+                Pi and Hermes keep a persistent conversation and workspace. Choose the harness for this Agent.
               </p>
             </div>
             <Select
-              value={form.runtimeRef || "builtin"}
+              value={form.runtimeRef || ""}
               onValueChange={(value) => {
-                const runtimeRef = value === "builtin" ? "" : value;
+                const runtimeRef = value;
                 const isDefaultCatalog = selectableRuntimes.some((runtime) => runtime.metadata.name === runtimeRef && runtime.metadata.labels?.["sympozium.ai/harness-example"] === "true");
                 setForm({
                   ...form,
                   runtimeRef,
+                  executionBackend: "job",
                   policyRef: runtimeRef && isDefaultCatalog ? "harness-examples" : runtimeRef ? form.policyRef : "",
                 });
               }}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Choose Pi or Hermes" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="builtin">Run — built-in Kubernetes agent runner</SelectItem>
                 {selectableRuntimes.map((runtime) => (
                   <SelectItem key={runtime.metadata.name} value={runtime.metadata.name}>
-                    {runtime.metadata.name}{runtime.spec.celln ? " — native Celln" : runtime.spec.session?.protocol === "openai-chat" ? " — Kubernetes persistent chat" : " — Kubernetes one-shot"}{runtime.spec.supportOwner ? ` · ${runtime.spec.supportOwner}` : ""}
+                    {persistentHarnessName(runtime)} — persistent chat
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {form.runtimeRef ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Harness selected: {form.runtimeRef}.</span>{" "}
-                The execution plane in the next step must support this harness. Kubernetes adapters use the Agent’s configured provider; native Celln uses host-held model credentials and explicitly borrowed tools.
+                <span className="font-medium text-foreground">Harness selected: {selectedRuntime ? persistentHarnessName(selectedRuntime) : form.runtimeRef}.</span>{" "}
+                Your conversation runs in a persistent Kubernetes session. Choose its provider and model in the next steps.
               </div>
             ) : (
               <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-                The built-in Agent runner will execute this Agent's runs.
+                Choose Pi or Hermes to continue. If neither is listed, install the default harnesses from Create → Harness.
               </div>
             )}
             {form.runtimeRef && !availablePolicies.some((policy) => policy.metadata.name === form.policyRef) && (

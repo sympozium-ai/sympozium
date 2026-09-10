@@ -13,6 +13,7 @@ import { Activity, LogOut, Wifi, WifiOff } from "lucide-react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useState } from "react";
 import { formatAge } from "@/lib/utils";
+import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -116,11 +117,11 @@ export function Header() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{choosingHarness ? "Choose a Harness" : "Create"}</DialogTitle>
-            <DialogDescription>{choosingHarness ? "Choose an approved runtime. Session-capable harnesses start a persistent session; one-shot harnesses configure a new Agent." : <>Choose what you want to create in namespace <span className="font-mono">{ns}</span>.</>}</DialogDescription>
+            <DialogDescription>{choosingHarness ? "Choose Pi or Hermes for a persistent conversation and workspace." : <>Choose what you want to create in namespace <span className="font-mono">{ns}</span>.</>}</DialogDescription>
           </DialogHeader>
           {choosingHarness ? (
             <div className="space-y-3">
-              {(runtimes || []).filter((runtime) => runtime.spec.contractVersion === "v1alpha2" && runtime.spec.session?.protocol === "openai-chat").length === 0 ? (
+              {persistentHarnesses(runtimes || []).length === 0 ? (
                 <div className="space-y-3 rounded-lg border border-border p-4">
                   <p className="text-sm">No approved harnesses are installed in this namespace.</p>
                   <p className="text-xs text-muted-foreground">Install the curated persistent runtimes plus their approving policy. This never accepts an arbitrary image.</p>
@@ -128,13 +129,13 @@ export function Header() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {(runtimes || []).filter((runtime) => runtime.spec.contractVersion === "v1alpha2" && runtime.spec.session?.protocol === "openai-chat").map((runtime) => {
+                  {persistentHarnesses(runtimes || []).map((runtime) => {
                     return <button key={runtime.metadata.name} className="w-full rounded-lg border border-border p-3 text-left transition-colors hover:border-amber-500/60 hover:bg-amber-500/5" onClick={() => {
                       setCreateOpen(false);
                       setChoosingHarness(false);
                       navigate(`/agents?create=1&runtime=${encodeURIComponent(runtime.metadata.name)}&policy=harness-examples`);
                     }}>
-                      <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-amber-500" /><span className="font-medium">{runtime.metadata.name}</span></div>
+                      <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-amber-500" /><span className="font-medium">{persistentHarnessName(runtime)}</span></div>
                       <p className="mt-1 text-xs text-muted-foreground">Create an Agent and automatically start its persistent chat.</p>
                     </button>;
                   })}
@@ -147,7 +148,7 @@ export function Header() {
             <button className="rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/60 hover:bg-primary/5" onClick={() => { setCreateOpen(false); navigate("/agents?create=1"); }}>
               <Bot className="mb-3 h-5 w-5 text-primary" />
               <p className="font-medium">Agent</p>
-              <p className="mt-1 text-xs text-muted-foreground">Create an Agent using Sympozium’s built-in runner.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Create an Agent with a persistent Pi or Hermes harness.</p>
             </button>
             <button className="rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/60 hover:bg-primary/5" onClick={() => setChoosingHarness(true)}>
               <Shield className="mb-3 h-5 w-5 text-amber-500" />

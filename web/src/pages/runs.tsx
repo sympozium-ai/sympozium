@@ -159,9 +159,9 @@ export function RunsPage() {
 
   const spend = sumEffectiveCosts(filtered);
 
-  const cellnUnavailable =
-    capabilities.data && !capabilities.data.celln.available;
-  const hasCellnRuns = sorted.some((r) => r.spec.backend === "celln");
+  const oneShotCapability = capabilities.data?.celln.oneShot || capabilities.data?.celln;
+  const cellnUnavailable = oneShotCapability && !oneShotCapability.available;
+  const hasCellnRuns = sorted.some((r) => r.spec.backend === "celln" && r.spec.executionLifecycle !== "enduring");
 
   const handleCreate = () => {
     if (blockedSelection || jobIncompatible || invalidParent || parentRequested) return;
@@ -421,27 +421,10 @@ export function RunsPage() {
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400" data-testid="celln-capability-banner">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">
-              {capabilities.data?.celln.state === "transport_invalid"
-                ? "Celln transport configuration needs attention"
-                : capabilities.data?.celln.state === "not_installed"
-                  ? "Celln one-shot capabilities are not installed on the configured router"
-                  : capabilities.data?.celln.state === "unreachable"
-                    ? "Celln one-shot router is unreachable"
-                    : capabilities.data?.celln.state === "disabled"
-                      ? "Celln is disabled in this API process"
-                      : "Celln readiness could not be confirmed"}
-            </p>
+            <p className="font-medium">Celln one-shot router needs attention</p>
             <p className="text-xs text-amber-400/80 mt-0.5">
-              {capabilities.data?.celln.reason ||
-                "One-shot router preflight did not succeed."}{" "}
-              This does not prove Celln is absent, and it does not rewrite the
-              observed status of existing runs. Native enduring readiness is
-              checked separately
-              {capabilities.data?.celln.enduring?.reason
-                ? ` (${capabilities.data.celln.enduring.reason})`
-                : ""}.
-              Per-run admission still applies.
+              {oneShotCapability?.reason || "One-shot router preflight did not succeed."}
+              {" "}Existing run statuses are unchanged. Native enduring runs use their own parent controller.
             </p>
           </div>
         </div>
