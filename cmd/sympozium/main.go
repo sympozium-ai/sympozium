@@ -1293,7 +1293,7 @@ layers (enduring native parents); it requires the operator-reviewed
 					return fmt.Errorf("--celln-native requires --celln-native-approve-starter-tools, --celln-native-node and --celln-native-owner-token-file")
 				}
 				if cellnRouterImage == "" || cellnInstallerImage == "" {
-					return fmt.Errorf("--celln-native requires --celln-router-image and --celln-installer-image built with parent routing and drain support (Celln v0.5.8 does not support them)")
+					return fmt.Errorf("--celln-native requires --celln-router-image and --celln-installer-image that provide parent routing and drain support (Celln v0.5.10 or later)")
 				}
 				if nativeOpts.ConfigurationDir == "" || nativeOpts.OutputDir == "" || nativeOpts.StatePath == "" || nativeOpts.Scope == "" || nativeOpts.PackageHash == "" {
 					return fmt.Errorf("--celln-native requires configuration-dir, output-dir, state-path, scope and package-hash inputs")
@@ -1345,7 +1345,7 @@ layers (enduring native parents); it requires the operator-reviewed
 	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Do not deploy the Celln backend (dispatcher, router, credentials, ownership PVC)")
 	cmd.Flags().BoolVar(&cellnHostInstaller, "celln-host-installer", false, "Deploy the privileged host-installer DaemonSet (bare-metal systemd dispatcher) instead of the in-cluster pod dispatcher; requires --celln-backend")
 	cmd.Flags().StringArrayVar(&cellnBackends, "celln-backend", nil, "Celln router dispatcher origin(s) http://host:port (repeatable); defaults to the in-cluster celln-dispatcher Service")
-	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.8)")
+	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.10)")
 	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/sympozium/celln-installer, tagged with this release)")
 	cmd.Flags().IntVar(&cellnRouterReplicas, "celln-router-replicas", 1, "Celln router replicas for the generated ReadWriteOnce ownership PVC")
 	cmd.Flags().BoolVar(&cellnNative, "celln-native", false, "Also install the native Celln starter catalogue and grant layers (requires the operator --celln-native-* inputs)")
@@ -1367,7 +1367,7 @@ func cellnInstallSetValues(ctx context.Context, routerImage, installerImage stri
 	if replicas <= 0 {
 		replicas = 1
 	}
-	routerRepo, routerRef, routerIsDigest := splitImageRef(routerImage, "ghcr.io/sympozium-ai/celln", "v0.5.8")
+	routerRepo, routerRef, routerIsDigest := splitImageRef(routerImage, "ghcr.io/sympozium-ai/celln", "v0.5.10")
 	installerTag := version
 	if installerTag == "" || installerTag == "dev" {
 		installerTag = "latest"

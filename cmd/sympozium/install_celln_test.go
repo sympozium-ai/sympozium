@@ -12,14 +12,14 @@ func TestSplitImageRef(t *testing.T) {
 		ref    string
 		digest bool
 	}{
-		{"", "ghcr.io/sympozium-ai/celln", "v0.5.8", false},
-		{"ghcr.io/sympozium-ai/celln:v0.5.8", "ghcr.io/sympozium-ai/celln", "v0.5.8", false},
+		{"", "ghcr.io/sympozium-ai/celln", "v0.5.10", false},
+		{"ghcr.io/sympozium-ai/celln:v0.5.10", "ghcr.io/sympozium-ai/celln", "v0.5.10", false},
 		{"ghcr.io/sympozium-ai/celln@sha256:abcdef", "ghcr.io/sympozium-ai/celln", "sha256:abcdef", true},
-		{"localhost:5000/celln", "localhost:5000/celln", "v0.5.8", false},
+		{"localhost:5000/celln", "localhost:5000/celln", "v0.5.10", false},
 		{"localhost:5000/celln:v1", "localhost:5000/celln", "v1", false},
 	}
 	for _, c := range cases {
-		repo, ref, digest := splitImageRef(c.in, "ghcr.io/sympozium-ai/celln", "v0.5.8")
+		repo, ref, digest := splitImageRef(c.in, "ghcr.io/sympozium-ai/celln", "v0.5.10")
 		if repo != c.repo || ref != c.ref || digest != c.digest {
 			t.Fatalf("splitImageRef(%q) = (%q,%q,%v), want (%q,%q,%v)", c.in, repo, ref, digest, c.repo, c.ref, c.digest)
 		}
@@ -29,7 +29,7 @@ func TestSplitImageRef(t *testing.T) {
 func TestCellnInstallSetValues(t *testing.T) {
 	vals, err := cellnInstallSetValues(
 		context.Background(),
-		"ghcr.io/sympozium-ai/celln:v0.5.8",
+		"ghcr.io/sympozium-ai/celln:v0.5.10",
 		"",
 		[]string{"http://10.0.0.1:8787"},
 		1,
@@ -68,8 +68,8 @@ func TestCellnInstallSetValues(t *testing.T) {
 	if router["external"] != false {
 		t.Fatalf("router.external = %v, want false", router["external"])
 	}
-	if router["image"].(map[string]interface{})["tag"] != "v0.5.8" {
-		t.Fatalf("router.image.tag = %v, want v0.5.8", router["image"])
+	if router["image"].(map[string]interface{})["tag"] != "v0.5.10" {
+		t.Fatalf("router.image.tag = %v, want v0.5.10", router["image"])
 	}
 	backends, ok := router["backends"].([]interface{})
 	if !ok || len(backends) != 1 || backends[0] != "http://10.0.0.1:8787" {
@@ -80,7 +80,7 @@ func TestCellnInstallSetValues(t *testing.T) {
 func TestCellnInstallSetValuesDefaultBackends(t *testing.T) {
 	vals, err := cellnInstallSetValues(
 		context.Background(),
-		"ghcr.io/sympozium-ai/celln:v0.5.8",
+		"ghcr.io/sympozium-ai/celln:v0.5.10",
 		"",
 		nil,
 		1,
@@ -110,7 +110,7 @@ func TestCellnInstallSetValuesDefaultBackends(t *testing.T) {
 func TestCellnInstallSetValuesHostInstallerRequiresBackend(t *testing.T) {
 	if _, err := cellnInstallSetValues(
 		context.Background(),
-		"ghcr.io/sympozium-ai/celln:v0.5.8",
+		"ghcr.io/sympozium-ai/celln:v0.5.10",
 		"",
 		nil,
 		1,

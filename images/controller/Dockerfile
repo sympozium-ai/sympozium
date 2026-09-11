@@ -6,7 +6,7 @@
 # See docs/design/celln-single-execution-plane.md.
 #
 # CELLN_IMAGE is the pinned Celln image from config/celln/release.json.
-ARG CELLN_IMAGE=ghcr.io/sympozium-ai/celln@sha256:d5d1d9890d21fb758bb402bced24eccec817722b3cacddc133b2103f0a9d2210
+ARG CELLN_IMAGE=ghcr.io/sympozium-ai/celln@sha256:a52d80fe8f492b456f6f47c49190935bff3939465c7189778eb3f3d18e767ef4
 FROM ${CELLN_IMAGE} AS celln
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder

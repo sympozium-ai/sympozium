@@ -192,7 +192,7 @@ rights. Apply the new CRDs before upgrading consumers.
 
 Sympozium v0.10.57 publishes `sympozium-celln-native-linux-amd64.tar.gz`, its
 SHA-256 sidecar and `celln-parent-controller.digest` as release assets. The host
-archive combines the checksum-pinned Celln v0.5.8 bundle, both TLS proxies,
+archive combines the checksum-pinned Celln v0.5.10 bundle, both TLS proxies,
 certificate renewal helper and example service units. `SHA256SUMS` checks the
 unpacked files and `share/sympozium/SOURCES.json` records the source pair.
 Verify checksums and extract into a **new staging directory**, then review the
