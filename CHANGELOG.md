@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.61](https://github.com/sympozium-ai/sympozium/compare/v0.10.60...v0.10.61) (2026-09-11)
+
+
+### Features
+
+* **celln:** single execution plane (unified client, chart, contract) ([#491](https://github.com/sympozium-ai/sympozium/issues/491)) ([7a4d993](https://github.com/sympozium-ai/sympozium/commit/7a4d993aca39769c11e79a1cc4376f63f2da4c62))
+* **web:** unify the Run/Harness × Kubernetes/Celln creation matrix ([#492](https://github.com/sympozium-ai/sympozium/issues/492)) ([1ff3e47](https://github.com/sympozium-ai/sympozium/commit/1ff3e471f801c815b33b43b04ec50ca66d3fad03))
+
+
+### Bug Fixes
+
+* **celln:** use Recreate strategy for the in-cluster dispatcher ([#488](https://github.com/sympozium-ai/sympozium/issues/488)) ([2bcc10e](https://github.com/sympozium-ai/sympozium/commit/2bcc10ecd85dc120cec7c833ced28bc4d6385bb0))
+* **controller:** gate the amd64-only Celln CLI in the multi-arch image ([#493](https://github.com/sympozium-ai/sympozium/issues/493)) ([94dd83a](https://github.com/sympozium-ai/sympozium/commit/94dd83ab3b13434871183ef873885cf78305bdb6))
+
 ## [0.10.60](https://github.com/sympozium-ai/sympozium/compare/v0.10.59...v0.10.60) (2026-09-11)
 
 
