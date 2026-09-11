@@ -1269,9 +1269,10 @@ Celln is deployed by default: an in-cluster (pod-based) dispatcher, an
 unprivileged router, and generated router/backend/capability credentials plus
 the ownership PVC. The router reaches the dispatcher over the celln-dispatcher
 Service; override with --celln-backend for an external dispatcher. Pass
---celln-host-installer to also run the privileged host-installer DaemonSet
-(bare-metal dispatcher), which mounts the host root filesystem and is a
-materially different trust boundary. Pass --no-celln to skip Celln entirely.
+--celln-host-installer to run the privileged host-installer DaemonSet (bare-metal
+systemd dispatcher) instead of the in-cluster pod dispatcher; it mounts the host
+root filesystem, is a materially different trust boundary, and requires
+--celln-backend. Pass --no-celln to skip Celln entirely.
 See docs/concepts/celln-backend.md before relying on it.
 
 Use --image-tag to override the container image tag, for example when you have
@@ -1310,7 +1311,7 @@ layers (enduring native parents); it requires the operator-reviewed
 	cmd.Flags().StringArrayVar(&setValues, "set", nil, "Set Helm values (key=value, can be repeated)")
 	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false, "Deprecated: Celln is enabled by default; use --no-celln to skip it")
 	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Do not deploy the Celln backend (dispatcher, router, credentials, ownership PVC)")
-	cmd.Flags().BoolVar(&cellnHostInstaller, "celln-host-installer", false, "Also deploy the privileged host-installer DaemonSet (bare-metal dispatcher); requires --celln-backend pointing at the dispatcher/proxy")
+	cmd.Flags().BoolVar(&cellnHostInstaller, "celln-host-installer", false, "Deploy the privileged host-installer DaemonSet (bare-metal systemd dispatcher) instead of the in-cluster pod dispatcher; requires --celln-backend")
 	cmd.Flags().StringArrayVar(&cellnBackends, "celln-backend", nil, "Celln router dispatcher origin(s) http://host:port (repeatable); defaults to the in-cluster celln-dispatcher Service")
 	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.8)")
 	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/sympozium/celln-installer, tagged with this release)")
@@ -1340,13 +1341,23 @@ func cellnInstallSetValues(ctx context.Context, routerImage, installerImage stri
 	installerRepo, installerTag, _ := splitImageRef(installerImage, "ghcr.io/sympozium-ai/sympozium/celln-installer", installerTag)
 
 	// Default execution path is the in-cluster (pod-based) dispatcher, reached
-	// by the router over the celln-dispatcher Service. `--celln-backend`
-	// overrides the backend origins (e.g. an external/host-installed dispatcher).
+	// by the router over the celln-dispatcher Service. `--celln-host-installer`
+	// swaps in the host systemd dispatcher instead: both are alternative
+	// deployments of the same binary and contend for the same state root, so
+	// exactly one is enabled. `--celln-backend` overrides the router's backend
+	// origins (e.g. the host dispatcher or its TLS proxy).
+	dispatcherEnabled := "true"
+	if hostInstaller {
+		dispatcherEnabled = "false"
+		if len(backends) == 0 {
+			return nil, fmt.Errorf("--celln-host-installer requires --celln-backend pointing at the host dispatcher or its proxy")
+		}
+	}
 	vals := []string{
 		"celln.enabled=true",
 		"celln.allowInsecureHttp=true",
 		"celln.bootstrap.enabled=true",
-		"celln.dispatcher.enabled=true",
+		"celln.dispatcher.enabled=" + dispatcherEnabled,
 		"celln.tokenSecret=celln-router-client",
 		"celln.capabilityTokenSecret=celln-discovery",
 		"celln.router.external=false",

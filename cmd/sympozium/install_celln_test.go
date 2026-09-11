@@ -61,8 +61,8 @@ func TestCellnInstallSetValues(t *testing.T) {
 		t.Fatalf("installer.enabled = %v, want true (hostInstaller=true)", installer["enabled"])
 	}
 	dispatcher, _ := celln["dispatcher"].(map[string]interface{})
-	if dispatcher["enabled"] != true {
-		t.Fatalf("dispatcher.enabled = %v, want true", dispatcher["enabled"])
+	if dispatcher["enabled"] != false {
+		t.Fatalf("dispatcher.enabled = %v, want false (hostInstaller=true replaces the in-cluster dispatcher)", dispatcher["enabled"])
 	}
 	router, _ := celln["router"].(map[string]interface{})
 	if router["external"] != false {
@@ -104,5 +104,18 @@ func TestCellnInstallSetValuesDefaultBackends(t *testing.T) {
 		if installer["enabled"] == true {
 			t.Fatalf("installer.enabled should be false when hostInstaller=false")
 		}
+	}
+}
+
+func TestCellnInstallSetValuesHostInstallerRequiresBackend(t *testing.T) {
+	if _, err := cellnInstallSetValues(
+		context.Background(),
+		"ghcr.io/sympozium-ai/celln:v0.5.8",
+		"",
+		nil,
+		1,
+		true,
+	); err == nil {
+		t.Fatal("hostInstaller without --celln-backend must fail; the host dispatcher is loopback-only")
 	}
 }
