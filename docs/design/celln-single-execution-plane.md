@@ -23,6 +23,30 @@ Today Celln is reachable through two independent stacks:
 
 This is packaging debt, not a hardware or capability difference.
 
+```mermaid
+flowchart TB
+  subgraph CP["Kubernetes control plane"]
+    CTRL["sympozium-controller<br/>(full manager)"]
+    PCTRL["celln-parent-controller<br/>(--celln-parent-only, separate manager)"]
+  end
+
+  subgraph K8S["celln-system (in-cluster)"]
+    ROUTER["celln-router<br/>(Deployment)"]
+    DISP["celln-dispatcher<br/>(Deployment, privileged, /dev/kvm)"]
+  end
+
+  subgraph HOST["KVM node (host, systemd)"]
+    OWNER["celln dispatcher owner<br/>(separate --root authority)"]
+  end
+
+  CTRL -->|"CELLN_ROUTER_URL · /v1/executions"| ROUTER
+  ROUTER -->|"round-robin"| DISP
+  DISP --> CELLS1["sealed one-shot cells"]
+
+  PCTRL -->|"CELLN_PARENT_CONFIG · per-run Target · /v1/parents"| OWNER
+  OWNER --> CELLS2["parent + child cells"]
+```
+
 ## 2. Key finding: the binary is already unified
 
 The Celln CLI runs **one subcommand** for both surfaces. `celln dispatcher`
@@ -80,23 +104,21 @@ A single gateway must therefore route `/v1/executions*` by **balancing** and
 
 ## 4. Target architecture
 
-```
-                          sympozium-controller (one manager)
-                                     │  one base URL + one bearer + one TLS policy
-                                     ▼
-                 ┌───────────────────────────────────────────┐
-                 │  celln-gateway  (celln route, extended)    │
-                 │   /v1/executions*  → balanced + idempotent │
-                 │   /v1/parents*     → owner-affine          │
-                 │   durable ownership + parent-affinity ledger│
-                 └───────────────────────────────────────────┘
-                          │                    │
-             ┌────────────┘                    └────────────┐
-             ▼                                              ▼
-   celln dispatcher (node A)                     celln dispatcher (node B)
-   privileged, /dev/kvm, hostPath state          privileged, /dev/kvm, hostPath state
-   serves /v1/executions + /v1/parents           serves /v1/executions + /v1/parents
-   --root /var/lib/celln (authority/journal/…)   …
+```mermaid
+flowchart TB
+  CTRL["sympozium-controller<br/>(one manager · one client · one URL + bearer + TLS policy)"]
+
+  subgraph K8S["Kubernetes (managed)"]
+    GW["celln-gateway — celln route, extended<br/>/v1/executions* → balanced + idempotent<br/>/v1/parents* → owner-affine<br/>durable ownership + parent-affinity ledger"]
+    D1["celln dispatcher (node A)<br/>privileged · /dev/kvm · hostPath state<br/>serves /v1/executions + /v1/parents"]
+    D2["celln dispatcher (node B)<br/>privileged · /dev/kvm · hostPath state<br/>serves /v1/executions + /v1/parents"]
+  end
+
+  CTRL -->|"/v1/executions* and /v1/parents*"| GW
+  GW -->|"balance"| D1
+  GW -->|"balance / affinity"| D2
+  D1 --> C1["sealed one-shot cells<br/>+ parent & child cells"]
+  D2 --> C2["sealed one-shot cells<br/>+ parent & child cells"]
 ```
 
 * One **dispatcher** Deployment-per-KVM-node (today's `celln-dispatcher` shape),
@@ -106,6 +128,44 @@ A single gateway must therefore route `/v1/executions*` by **balancing** and
 * One **controller**: both reconcilers in one manager, one client, one config.
 * One **install**: the chart renders the dispatcher + gateway; `--celln-native`
   flips on the enduring lifecycle instead of deploying a separate stack.
+
+### 4.1 Request flow through the unified plane
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Controller
+  participant G as celln-gateway
+  participant D as celln-dispatcher
+
+  rect rgb(30,40,60)
+  Note over C,D: One-shot (backend: celln, lifecycle: one-shot)
+  C->>G: POST /v1/executions {id, forge/mote/tools…}
+  G->>D: choose backend, forward, durably bind id → backend
+  D-->>G: execution receipt
+  G-->>C: receipt
+  C->>G: GET /v1/executions/{id}
+  G->>D: forward to the owning backend
+  D-->>G: status / receipt
+  G-->>C: status / receipt
+  end
+
+  rect rgb(40,55,40)
+  Note over C,D: Enduring (lifecycle: enduring, cellnSelection)
+  C->>G: POST /v1/parents {launchProfile}
+  G->>D: choose backend, forward, durably bind parent → backend
+  D-->>G: parent id
+  G-->>C: parent id
+  C->>G: POST /v1/parents/{id}/turns
+  G->>D: forward to the affine backend (parent → backend)
+  D-->>G: turn result
+  G-->>C: turn result
+  end
+```
+
+The gateway's durable ledger is what lets both flows share one URL while keeping
+their opposite routing properties: executions are balanced and replay-safe,
+parents are pinned to the dispatcher that created them.
 
 ---
 
