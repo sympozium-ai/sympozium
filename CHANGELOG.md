@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.60](https://github.com/sympozium-ai/sympozium/compare/v0.10.59...v0.10.60) (2026-09-11)
+
+
+### Features
+
+* **celln:** build the host-installer image and centralize the Celln release pin ([f92c8b0](https://github.com/sympozium-ai/sympozium/commit/f92c8b0214aa2be40e64268cc8a6022b0bbf01ae))
+* **celln:** build the host-installer image and pin the Celln release ([28e3273](https://github.com/sympozium-ai/sympozium/commit/28e3273503ba6c708aa3afb35757472a0e97f230))
+
+
+### Bug Fixes
+
+* **celln:** host installer and in-cluster dispatcher are mutually exclusive ([#487](https://github.com/sympozium-ai/sympozium/issues/487)) ([43ad9a2](https://github.com/sympozium-ai/sympozium/commit/43ad9a2228555348a5f05c224f1d82fc064f1580))
+
 ## [0.10.59](https://github.com/sympozium-ai/sympozium/compare/v0.10.58...v0.10.59) (2026-09-11)
 
 
