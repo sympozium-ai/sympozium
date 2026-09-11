@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
@@ -164,5 +165,34 @@ func TestSubagentBatch_SequentialChildrenSettle(t *testing.T) {
 	}
 	if res.Results[1].Response != "done-b" {
 		t.Errorf("results[1] = %+v, want done-b", res.Results[1])
+	}
+}
+
+func TestSubagentBatch_ChildrenTaggedWithBatchID(t *testing.T) {
+	sr, _ := subagentBatchFixture(t)
+	ctx := context.Background()
+
+	reqData, err := json.Marshal(ipc.SubagentSpawnRequest{
+		BatchID:  "batch-tag",
+		Strategy: "parallel",
+		Tasks:    []ipc.SubagentTask{{ID: "a", Task: "task a"}, {ID: "b", Task: "task b"}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	sr.handleSubagentRequest(ctx, subagentEvent("parent-run", string(reqData)))
+
+	children := batchChildren(t, sr, "batch-tag")
+	for _, childName := range children {
+		if childName == "" {
+			t.Fatalf("expected every child to be spawned, got %v", children)
+		}
+		var child sympoziumv1alpha1.AgentRun
+		if err := sr.Client.Get(ctx, types.NamespacedName{Name: childName, Namespace: "default"}, &child); err != nil {
+			t.Fatalf("get child %s: %v", childName, err)
+		}
+		if got := child.Labels["sympozium.ai/subagent-batch-id"]; got != "batch-tag" {
+			t.Fatalf("child %s batch label = %q, want %q", childName, got, "batch-tag")
+		}
 	}
 }
