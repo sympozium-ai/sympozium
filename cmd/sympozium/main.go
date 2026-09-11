@@ -1292,9 +1292,6 @@ layers (enduring native parents); it requires the operator-reviewed
 				if !cellnNativeApprove || nativePlane.NodeName == "" || nativePlane.OwnerTokenFile == "" {
 					return fmt.Errorf("--celln-native requires --celln-native-approve-starter-tools, --celln-native-node and --celln-native-owner-token-file")
 				}
-				if cellnRouterImage == "" || cellnInstallerImage == "" {
-					return fmt.Errorf("--celln-native requires --celln-router-image and --celln-installer-image that provide parent routing and drain support (Celln v0.5.10 or later)")
-				}
 				if nativeOpts.ConfigurationDir == "" || nativeOpts.OutputDir == "" || nativeOpts.StatePath == "" || nativeOpts.Scope == "" || nativeOpts.PackageHash == "" {
 					return fmt.Errorf("--celln-native requires configuration-dir, output-dir, state-path, scope and package-hash inputs")
 				}
