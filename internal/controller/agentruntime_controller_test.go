@@ -18,16 +18,17 @@ import (
 
 func TestAgentRuntime_CellnReadinessIsIndependent(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		image      string
-		profile    bool
-		wantOCI    bool
-		wantReason string
+		name          string
+		image         string
+		profile       bool
+		wantOCI       bool
+		wantOCIReason string
+		wantReason    string
 	}{
-		{"oci only", runtimeTestImage, false, true, "NotConfigured"},
-		{"dual profile", runtimeTestImage, true, true, "VerificationUnavailable"},
-		{"celln cannot rescue invalid OCI", "mutable:latest", true, false, "VerificationUnavailable"},
-		{"celln only remains unsupported", "", true, false, "VerificationUnavailable"},
+		{"oci only", runtimeTestImage, false, true, "Validated", "NotConfigured"},
+		{"dual profile", runtimeTestImage, true, true, "Validated", "VerificationUnavailable"},
+		{"celln cannot rescue invalid OCI", "mutable:latest", true, false, "Invalid", "VerificationUnavailable"},
+		{"celln only is accepted without an OCI adapter", "", true, false, "NotApplicable", "VerificationUnavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
@@ -54,6 +55,9 @@ func TestAgentRuntime_CellnReadinessIsIndependent(t *testing.T) {
 			}
 			if meta.IsStatusConditionTrue(got.Status.Conditions, "Ready") != tc.wantOCI {
 				t.Fatalf("OCI readiness changed: %+v", got.Status)
+			}
+			if oci := meta.FindStatusCondition(got.Status.Conditions, "Ready"); oci == nil || oci.Reason != tc.wantOCIReason {
+				t.Fatalf("OCI condition reason = %+v, want %q", oci, tc.wantOCIReason)
 			}
 			cond := meta.FindStatusCondition(got.Status.Conditions, "CellnReady")
 			if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != tc.wantReason || cond.ObservedGeneration != 7 {
@@ -91,6 +95,21 @@ func TestAgentRuntime_Validate_RejectsUnpinnedImage(t *testing.T) {
 		if _, reason := r.validate(runtimeSpec(image)); reason == "" {
 			t.Fatalf("validate(%q) accepted an unpinned image", image)
 		}
+	}
+}
+
+func TestAgentRuntime_Validate_AcceptsCellnNativeWithoutImage(t *testing.T) {
+	runtime := runtimeSpec("")
+	runtime.Spec.Celln = &sympoziumv1alpha1.AgentRuntimeCellnProfile{Revision: "v1"}
+	digest, reason := (&AgentRuntimeReconciler{}).validate(runtime)
+	if reason != "" || digest != "" {
+		t.Fatalf("validate(celln-native) = (%q, %q), want (\"\", \"\")", digest, reason)
+	}
+}
+
+func TestAgentRuntime_Validate_RejectsEmptyImageWithoutCelln(t *testing.T) {
+	if _, reason := (&AgentRuntimeReconciler{}).validate(runtimeSpec("")); reason == "" {
+		t.Fatal("validate(empty image without spec.celln) accepted; want rejection")
 	}
 }
 

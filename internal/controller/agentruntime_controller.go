@@ -54,9 +54,17 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // resolved digest on success, or a human-readable reason on failure.
 func (r *AgentRuntimeReconciler) validate(runtime *sympoziumv1alpha1.AgentRuntime) (string, string) {
 	image := runtime.Spec.Image
-	digest, ok := sympoziumv1alpha1.ParseImageDigest(image)
-	if !ok {
-		return "", fmt.Sprintf("spec.image must be a digest-pinned OCI reference (e.g. \"ghcr.io/acme/harness@sha256:<64-hex>\"); got %q", image)
+	digest := ""
+	if image == "" && runtime.Spec.Celln != nil {
+		// A Celln-native runtime has no OCI adapter: its admission is governed
+		// by the Celln profile (validated by the CRD), not by an image digest.
+		// Return no digest and no reason so OCI readiness stays unasserted.
+	} else {
+		var ok bool
+		digest, ok = sympoziumv1alpha1.ParseImageDigest(image)
+		if !ok {
+			return "", fmt.Sprintf("spec.image must be a digest-pinned OCI reference (e.g. \"ghcr.io/acme/harness@sha256:<64-hex>\"); got %q; set spec.celln for a Celln-native runtime", image)
+		}
 	}
 
 	for _, capability := range runtime.Spec.Capabilities {
@@ -110,12 +118,24 @@ func (r *AgentRuntimeReconciler) updateStatus(ctx context.Context, runtime *symp
 			ObservedGeneration: runtime.Generation,
 		})
 		runtime.Status.ResolvedImageDigest = digest
-	} else {
+	} else if reason != "" {
 		meta.SetStatusCondition(&runtime.Status.Conditions, metav1.Condition{
 			Type:               sympoziumv1alpha1.AgentRuntimeReadyCondition,
 			Status:             metav1.ConditionFalse,
 			Reason:             "Invalid",
 			Message:            reason,
+			ObservedGeneration: runtime.Generation,
+		})
+		runtime.Status.ResolvedImageDigest = ""
+	} else {
+		// The spec is a valid Celln-native runtime with no OCI adapter. Never
+		// assert OCI Ready for it; Celln admission remains governed by the
+		// CellnReady condition set above.
+		meta.SetStatusCondition(&runtime.Status.Conditions, metav1.Condition{
+			Type:               sympoziumv1alpha1.AgentRuntimeReadyCondition,
+			Status:             metav1.ConditionFalse,
+			Reason:             "NotApplicable",
+			Message:            "Celln-native runtime has no OCI adapter; OCI readiness does not apply",
 			ObservedGeneration: runtime.Generation,
 		})
 		runtime.Status.ResolvedImageDigest = ""

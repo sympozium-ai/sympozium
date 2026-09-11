@@ -41,14 +41,15 @@ type AgentRuntime struct {
 // AgentRuntimeSpec is the desired state of an AgentRuntime.
 type AgentRuntimeSpec struct {
 	// Celln declares an additional placement profile, not executable authority.
-	// Image remains required: Celln-only runtimes and catalogue-backed dispatch
-	// are not supported yet. OCI Ready never implies CellnReady.
+	// A Celln-native runtime (no OCI adapter) may set this with an empty image;
+	// OCI runtimes still require image. OCI Ready never implies CellnReady.
 	// +optional
 	Celln *AgentRuntimeCellnProfile `json:"celln,omitempty"`
 
 	// Image is the digest-pinned OCI reference that becomes the pod's primary
 	// process. A mutable tag is rejected: the digest is the trust anchor, and
-	// it is recorded on status.resolvedImageDigest for audit.
+	// it is recorded on status.resolvedImageDigest for audit. It is required
+	// for OCI runtimes and left empty for Celln-native runtimes.
 	Image string `json:"image"`
 
 	// ContractVersion is the adapter contract version this image implements
