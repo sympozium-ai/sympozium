@@ -133,6 +133,49 @@ func TestCellnDeployment(t *testing.T) {
 	}
 }
 
+// TestCellnDispatcherRecreateStrategy guards the in-cluster dispatcher against
+// RollingUpdate: the dispatcher takes an exclusive flock on its hostPath state
+// root, so a rolling update would overlap two pods contending for the lock.
+func TestCellnDispatcherRecreateStrategy(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm required for chart rendering")
+	}
+	out, err := exec.Command("helm", "template", "m0", "../../charts/sympozium",
+		"--set", cellnDeploymentTestSettings,
+		"--set", "celln.dispatcher.enabled=true").CombinedOutput()
+	if err != nil {
+		t.Fatalf("render: %v\n%s", err, out)
+	}
+	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(out), 4096)
+	var dispatcher appsv1.Deployment
+	for {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if len(bytes.TrimSpace(raw)) == 0 {
+			continue
+		}
+		var meta struct {
+			Kind     string
+			Metadata struct{ Name string }
+		}
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			t.Fatal(err)
+		}
+		if meta.Metadata.Name == "celln-dispatcher" && meta.Kind == "Deployment" {
+			if err := json.Unmarshal(raw, &dispatcher); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if dispatcher.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Fatalf("dispatcher strategy = %q, want Recreate", dispatcher.Spec.Strategy.Type)
+	}
+}
+
 func TestCellnDeploymentRefusesIncompleteConfiguration(t *testing.T) {
 	if _, err := exec.LookPath("helm"); err != nil {
 		t.Skip("helm required for chart rendering")

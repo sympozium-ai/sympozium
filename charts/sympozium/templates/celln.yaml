@@ -261,6 +261,12 @@ metadata:
     app.kubernetes.io/part-of: sympozium
 spec:
   replicas: {{ $dispatcher.replicas | default 1 }}
+  # The dispatcher takes an exclusive flock on its hostPath state root
+  # (/var/lib/celln). RollingUpdate would overlap the outgoing and incoming
+  # pods and they would contend for the lock, so the old pod must be fully
+  # terminated before a replacement starts.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: celln-dispatcher
