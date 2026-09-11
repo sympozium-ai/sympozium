@@ -12,6 +12,8 @@ import {
   useCellnTools,
 } from "@/hooks/use-api";
 import { StatusBadge } from "@/components/status-badge";
+import { PlanePicker } from "@/components/plane-picker";
+import type { ExecutionPlane } from "@/lib/creation";
 import {
   Table,
   TableHeader,
@@ -126,8 +128,12 @@ export function RunsPage() {
     }));
   const compatibleHarness = selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1";
   const staleTools = lentTools.some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision));
-  const incompatibleSkills = cellnHarness && !!selectedAgent?.spec.skills?.length;
-  const blockedSelection = cellnHarness && (incompatibleSkills || !compatibleHarness || !form.model.trim() || catalogue.isLoading || catalogue.isError || staleTools);
+  const incompatibleSkills = !!selectedAgent?.spec.skills?.length;
+  const incompatibleMcp = !!selectedAgent?.spec.mcpServers?.length;
+  // The backend refuses native Celln for any Agent that carries SkillPacks or
+  // MCP connections, one-shot or enduring. Match it here so the form fails fast.
+  const incompatibleAgent = form.backend === "celln" && (incompatibleSkills || incompatibleMcp);
+  const blockedSelection = incompatibleAgent || (cellnHarness && (!compatibleHarness || !form.model.trim() || catalogue.isLoading || catalogue.isError || staleTools));
   const jobIncompatible = form.backend === "job" && !!selectedRuntime?.spec.celln && !selectedRuntime.spec.image;
 
   useEffect(() => {
@@ -222,18 +228,14 @@ export function RunsPage() {
             <div className="space-y-4 pt-2">
               <fieldset className="space-y-2 rounded-md border p-3" data-testid="execution-environment">
                 <legend className="px-1 text-sm font-medium">Execution environment</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {[["job", "Kubernetes", "Default · containers and OCI harnesses"], ["celln", "Celln", "Opt-in · hardware-isolated cells"]].map(([value, title, description]) => (
-                    <label key={value} className={`cursor-pointer rounded-md border p-3 ${form.backend === value ? "border-primary bg-primary/5" : "border-border"}`}>
-                      <span className="flex items-center gap-2 font-medium">
-                        <input type="radio" name="execution-environment" value={value} checked={form.backend === value}
-                          onChange={() => { setForm({ ...form, backend: value, model: value === "celln" && !form.model ? "deepseek-chat" : form.model }); setLentTools([]); }} />
-                        {title}
-                      </span>
-                      <span className="mt-1 block text-xs text-muted-foreground">{description}</span>
-                    </label>
-                  ))}
-                </div>
+                <PlanePicker
+                  kind="run"
+                  value={form.backend as ExecutionPlane}
+                  onChange={(plane) => {
+                    setForm({ ...form, backend: plane, model: plane === "celln" && !form.model ? "deepseek-chat" : form.model });
+                    setLentTools([]);
+                  }}
+                />
                 <p className="text-xs text-muted-foreground">Harness selection does not change the execution environment.</p>
                 {form.backend === "celln" && <p className="text-xs text-muted-foreground" role="status">
                   {capabilities.isLoading ? "Checking Celln availability…" : capabilities.isError ? "Cannot check Celln availability. Operator setup and admission are required." : capabilities.data?.celln.available ? "Celln host eligibility detected. Your harness, tools and permissions still need approval." : `Celln needs operator setup: ${capabilities.data?.celln.reason || "no eligible host reported"}`}
@@ -314,7 +316,15 @@ export function RunsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  {cellnHarness && nativeConnection ? (
+                  {form.backend === "celln" && !cellnHarness ? (
+                    <>
+                      <Label>Model</Label>
+                      <p className="text-xs text-muted-foreground pt-2">
+                        The cell uses the model configured on the KVM host; this
+                        run&apos;s Model field does not apply.
+                      </p>
+                    </>
+                  ) : cellnHarness && nativeConnection ? (
                     <>
                       <Label>Model (from connection)</Label>
                       <Input
@@ -367,7 +377,7 @@ export function RunsPage() {
                     </p>}
                     {cellnHarness && <div className="space-y-3 rounded-md border p-3" data-testid="celln-harness-selection">
                       <p className="text-sm font-medium">Harness in Celln — {runtimeName}</p>
-                      {incompatibleSkills && <p role="alert" className="text-xs text-red-400">This Agent has SkillPacks ({selectedAgent?.spec.skills?.map((skill) => skill.skillPackRef || skill.configMapRef).join(", ")}) that native Celln cannot use. Choose a dedicated native Agent with borrowed tools, or a compatible backend. Skills will not be silently removed.</p>}
+                      {incompatibleAgent && <p role="alert" className="text-xs text-red-400">This Agent carries {incompatibleSkills ? `SkillPacks (${selectedAgent?.spec.skills?.map((skill) => skill.skillPackRef || skill.configMapRef).join(", ")})` : ""}{incompatibleSkills && incompatibleMcp ? " and " : ""}{incompatibleMcp ? "MCP connections" : ""} that native Celln cannot use. Choose a dedicated native Agent with borrowed tools, or a compatible backend. Nothing is silently removed.</p>}
                       <p className="text-xs text-muted-foreground">Skills are instructions; borrowed tools perform operations. Existing SkillPack sidecars and MCP connections are not automatically available in Celln.</p>
                       {!compatibleHarness && <p role="alert" className="text-xs text-red-400">This Harness does not declare the supported native JSON Celln contract. No backend fallback will be used.</p>}
                       <p className="text-xs text-muted-foreground">The model loop runs inside the cell. DeepSeek model access is independently approved by the host; Kubernetes model credentials are not used.</p>

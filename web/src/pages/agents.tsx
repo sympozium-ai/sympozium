@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { executionFromWizard } from "@/lib/agent-execution";
+import { skillRefsFromWizard } from "@/lib/create-fields";
 import {
   useAgents,
   useDeleteAgent,
@@ -75,22 +76,7 @@ export function AgentsPage() {
         runtimeRef: result.runtimeRef || undefined,
         policyRef: result.policyRef || undefined,
         execution: executionFromWizard(result),
-        skills: result.skills.map((skillPackRef) => {
-          if (skillPackRef === "web-endpoint") {
-            const params: Record<string, string> = {};
-            if (result.webEndpointRPM && result.webEndpointRPM !== "60") {
-              params.rate_limit_rpm = result.webEndpointRPM;
-            }
-            if (result.webEndpointHostname) {
-              params.hostname = result.webEndpointHostname;
-            }
-            return {
-              skillPackRef,
-              params: Object.keys(params).length > 0 ? params : undefined,
-            };
-          }
-          return { skillPackRef };
-        }),
+        skills: skillRefsFromWizard(result),
         channels: result.channels.map((type) => ({
           type,
           configRef: result.channelConfigs[type]
@@ -98,6 +84,10 @@ export function AgentsPage() {
             : undefined,
         })),
         heartbeatInterval: result.heartbeatInterval || undefined,
+        nodeSelector:
+          result.nodeSelector && Object.keys(result.nodeSelector).length > 0
+            ? result.nodeSelector
+            : undefined,
         agentSandbox: result.agentSandboxEnabled
           ? {
               enabled: true,

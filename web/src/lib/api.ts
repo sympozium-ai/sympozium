@@ -119,6 +119,8 @@ export interface AgentSpec {
   channels?: ChannelSpec[];
   agents: AgentsSpec;
   skills?: SkillRef[];
+  /** Remote MCP servers. Native Celln refuses an Agent that has any. */
+  mcpServers?: Array<{ name: string }>;
   policyRef?: string;
   authRefs?: SecretRef[];
   memory?: MemorySpec;

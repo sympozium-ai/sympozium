@@ -48,6 +48,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { formatAge } from "@/lib/utils";
+import { skillParamsFromWizard } from "@/lib/create-fields";
 import type { Ensemble } from "@/lib/api";
 import { GlobalEnsembleCanvas } from "@/components/ensemble-canvas";
 
@@ -145,13 +146,9 @@ export function EnsemblesPage() {
     if (!wizardPack) return;
 
     // Build skillParams from inline skill configs
-    let skillParams: Record<string, Record<string, string>> | undefined;
-    if (result.skills.includes("github-gitops") && result.githubRepo) {
-      skillParams = {
-        ...skillParams,
-        "github-gitops": { repo: result.githubRepo },
-      };
-    }
+    const skillParamsMap = skillParamsFromWizard(result);
+    const skillParams =
+      Object.keys(skillParamsMap).length > 0 ? skillParamsMap : undefined;
 
     activatePack.mutate(
       {

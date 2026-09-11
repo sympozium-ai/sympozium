@@ -11,24 +11,19 @@ import { cn } from "@/lib/utils";
 import { toYaml, type YamlValue } from "@/lib/yaml";
 import type { WizardResult } from "@/components/onboarding-wizard";
 import { executionFromWizard, modelConnectionName, modelConnectionEndpoint } from "@/lib/agent-execution";
+import { skillParamsFromWizard } from "@/lib/create-fields";
 import type { Agent, Ensemble } from "@/lib/api";
 
 // ── YAML builders ─────────────────────────────────────────────────────────────
 
 /** Build a Agent YAML manifest from wizard form state. */
 export function instanceYamlFromWizard(result: WizardResult): string {
+  const wizardSkillParams = skillParamsFromWizard(result);
   const skills = result.skills
     .filter((s) => s !== "memory")
     .map((s) => {
       const ref: Record<string, YamlValue> = { skillPackRef: s };
-      if (s === "web-endpoint") {
-        const params: Record<string, string> = {};
-        if (result.webEndpointRPM && result.webEndpointRPM !== "60")
-          params.rate_limit_rpm = result.webEndpointRPM;
-        if (result.webEndpointHostname)
-          params.hostname = result.webEndpointHostname;
-        if (Object.keys(params).length > 0) ref.params = params;
-      }
+      if (wizardSkillParams[s]) ref.params = wizardSkillParams[s];
       return ref;
     });
 
@@ -43,11 +38,13 @@ export function instanceYamlFromWizard(result: WizardResult): string {
   });
 
   const agentConfig: Record<string, YamlValue> = { model: result.model };
-  // Native Celln routes the model through a namespaced ModelConnection; the
-  // Agent references it by name instead of carrying an inline endpoint.
-  const usesConnection = result.executionBackend === "celln";
+  // Native Celln routes the model through a namespaced ModelConnection; a
+  // persistent Kubernetes harness does too. Both reference it by name instead
+  // of carrying an inline endpoint.
+  const usesConnection = result.executionBackend === "celln" || !!result.runtimeRef;
   const connectionName = modelConnectionName(result.name || "agent");
   if (!usesConnection && result.baseURL) agentConfig.baseURL = result.baseURL;
+  if (result.runTimeout) agentConfig.runTimeout = result.runTimeout;
   if (result.nodeSelector && Object.keys(result.nodeSelector).length > 0)
     agentConfig.nodeSelector = result.nodeSelector;
   if (result.agentSandboxEnabled)
@@ -127,10 +124,7 @@ export function ensembleYamlFromWizard(
     if (secret) channelConfigs[ch] = secret;
   }
 
-  const skillParams: Record<string, Record<string, string>> = {};
-  if (result.skills.includes("github-gitops") && result.githubRepo) {
-    skillParams["github-gitops"] = { repo: result.githubRepo };
-  }
+  const skillParams = skillParamsFromWizard(result);
 
   const spec: Record<string, YamlValue> = {
     enabled: true,

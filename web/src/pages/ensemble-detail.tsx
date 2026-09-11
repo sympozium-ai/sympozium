@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAge } from "@/lib/utils";
+import { skillParamsFromWizard } from "@/lib/create-fields";
 import type { InstalledAgentConfig, SharedMemoryEntry } from "@/lib/api";
 import { EnsembleCanvas } from "@/components/ensemble-canvas";
 import {
@@ -152,10 +153,9 @@ export function EnsembleDetailPage() {
 
   function handleProviderChange(result: WizardResult) {
     if (!name) return;
-    let skillParams: Record<string, Record<string, string>> | undefined;
-    if (result.skills.includes("github-gitops") && result.githubRepo) {
-      skillParams = { "github-gitops": { repo: result.githubRepo } };
-    }
+    const skillParamsMap = skillParamsFromWizard(result);
+    const skillParams =
+      Object.keys(skillParamsMap).length > 0 ? skillParamsMap : undefined;
     patchMutation.mutate(
       {
         name,

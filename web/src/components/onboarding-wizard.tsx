@@ -43,6 +43,8 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { providersForPlane } from "@/lib/creation";
+import { PlanePicker } from "@/components/plane-picker";
 import { useCapabilities, useModels, useCellnTools } from "@/hooks/use-api";
 import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
 import { modelConnectionName, modelConnectionEndpoint } from "@/lib/agent-execution";
@@ -686,32 +688,18 @@ export function OnboardingWizard({
   const compatibleRuntime = celln
     ? selectedRuntime?.spec.celln?.contractVersion === "celln.json-tools/v1"
     : !form.runtimeRef || !!selectedRuntime?.spec.image;
-  // Provider choices mirror the run flow, narrowed to what the selected
-  // execution plane can actually reach.
-  const providerChoices = useMemo(() => {
-    if (celln) {
-      // The native Celln host transport only reaches public HTTPS endpoints by
-      // default. The explicit insecure opt-in also allows HTTP/self-signed
-      // local providers; Bedrock has no compatible protocol either way.
-      if (form.allowInsecure) {
-        return PROVIDERS.filter((p) => p.value !== "bedrock");
-      }
-      return PROVIDERS.filter(
-        (p) =>
-          p.value === "openai" ||
-          p.value === "anthropic" ||
-          p.value === "azure-openai" ||
-          p.value === "custom",
-      );
-    }
-    if (mode === "agent" && creationKind === "agent" && form.runtimeRef) {
-      // Persistent Kubernetes harnesses speak OpenAI-compatible chat.
-      return PROVIDERS.filter(
-        (p) => p.value !== "anthropic" && p.value !== "bedrock",
-      );
-    }
-    return PROVIDERS;
-  }, [celln, mode, creationKind, form.runtimeRef, form.allowInsecure]);
+  // Provider choices come from the shared creation model so the Run dialog and
+  // this wizard can never drift into showing a provider the plane cannot reach.
+  const providerChoices = useMemo(
+    () =>
+      providersForPlane(PROVIDERS, {
+        plane: celln ? "celln" : "job",
+        persistentHarness:
+          mode === "agent" && creationKind === "agent" && !!form.runtimeRef,
+        allowInsecure: !!form.allowInsecure,
+      }),
+    [celln, mode, creationKind, form.runtimeRef, form.allowInsecure],
+  );
   const staleTools = (form.borrowedTools || []).some((ref) => !(catalogue.data || []).some((tool) => tool.metadata.name === ref.name && tool.spec.revision === ref.revision && tool.spec.invocationABI === "celln.json-stdio/v1" && tool.spec.lane === "tool"));
   const [inferenceMode, setInferenceMode] = useState<"workload" | "node">(
     "workload",
@@ -965,6 +953,10 @@ export function OnboardingWizard({
       githubToken: d.githubToken || "",
       githubTeamInstructions: d.githubTeamInstructions || "",
       nodeSelector: d.nodeSelector,
+      agentSandboxEnabled: d.agentSandboxEnabled ?? false,
+      agentSandboxRuntimeClass: d.agentSandboxRuntimeClass || "gvisor",
+      runTimeout: d.runTimeout || "",
+      requireApproval: d.requireApproval ?? false,
       awsRegion: d.awsRegion || "",
       awsAccessKeyId: d.awsAccessKeyId || "",
       awsSecretAccessKey: d.awsSecretAccessKey || "",
@@ -1113,7 +1105,7 @@ export function OnboardingWizard({
               </div>
             ) : (
               <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-                {celln ? "Select a native Celln runtime registered in this namespace. Native Celln runtimes are namespace-scoped: the Agent must live where the runtime was registered (for example celln-agents). The Celln host itself is cluster-wide." : "Choose Pi or Hermes to continue. Install the default persistent runtimes if none are listed."}
+                {celln ? "Pick a native Celln runtime for the enduring parent. Native runtimes are namespace-scoped: this Agent must live where the runtime is registered. For a single sealed computation, use New Run → Celln cell instead." : "Choose Pi or Hermes to continue. Install the default persistent runtimes if none are listed."}
               </div>
             )}
             {form.runtimeRef && !availablePolicies.some((policy) => policy.metadata.name === form.policyRef) && (
@@ -1126,52 +1118,46 @@ export function OnboardingWizard({
         {step === "plane" && <div className="space-y-3">
             <div className="space-y-2" data-testid="create-agent-execution-environment">
               <Label>Execution plane</Label>
-              <p className="text-xs text-muted-foreground">Celln uses a hardware-isolated native parent. Kubernetes runs a persistent Pi or Hermes session.</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {([["job", "Kubernetes", "Persistent Pi or Hermes"], ["celln", "Celln", "Persistent native parent"]] as const).map(([value, title, description]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`rounded-md border p-3 text-left ${form.executionBackend === value ? "border-primary bg-primary/5" : "border-border"}`}
-                    onClick={() => {
-                      toolsInitialized.current = false;
-                      const planeRuntimes = value === "celln" ? nativeRuntimes : persistentRuntimes;
-                      const keepRuntime = planeRuntimes.some((runtime) => runtime.metadata.name === form.runtimeRef);
-                      setForm({
-                        ...form,
-                        runtimeRef: keepRuntime ? form.runtimeRef : "",
-                        skills: value === "celln" ? [] : form.skills,
-                        borrowedTools: [],
-                        executionBackend: value,
-                        executionLifecycle: value === "celln" ? "enduring" : "one-shot",
-                        modelConnectionRef: value === form.executionBackend ? form.modelConnectionRef : undefined,
-                        credentialProfile: "",
-                        provider:
-                          value === "celln" &&
-                          !["openai", "anthropic", "azure-openai", "custom"].includes(form.provider)
-                            ? "openai"
-                            : form.provider || "openai",
-                        model: form.model || "gpt-4o",
-                        apiKey: value === "celln" ? "" : form.apiKey,
-                        secretName: value === "celln" ? "" : form.secretName,
-                        baseURL: value === "celln" ? "" : form.baseURL,
-                        modelRef: value === "celln" ? undefined : form.modelRef,
-                        agentSandboxEnabled: value === "celln" ? false : form.agentSandboxEnabled,
-                        channels: value === "celln" ? [] : form.channels,
-                        heartbeatInterval: value === "celln" ? "" : form.heartbeatInterval,
-                      });
-                    }}
-                  >
-                    <p className="text-sm font-medium">{title}</p>
-                    <p className="text-xs text-muted-foreground">{description}</p>
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs text-muted-foreground">Celln runs a persistent hardware-isolated native parent. Kubernetes runs a persistent Pi or Hermes session.</p>
+              <PlanePicker
+                kind="harness"
+                value={form.executionBackend || "job"}
+                disabledPlanes={nativeRuntimes.length === 0 ? ["celln"] : []}
+                disabledHint={{ celln: "Needs the native Celln install — not the one-shot router" }}
+                onChange={(plane) => {
+                  toolsInitialized.current = false;
+                  const planeRuntimes = plane === "celln" ? nativeRuntimes : persistentRuntimes;
+                  const keepRuntime = planeRuntimes.some((runtime) => runtime.metadata.name === form.runtimeRef);
+                  setForm({
+                    ...form,
+                    runtimeRef: keepRuntime ? form.runtimeRef : "",
+                    skills: plane === "celln" ? [] : form.skills,
+                    borrowedTools: [],
+                    executionBackend: plane,
+                    executionLifecycle: plane === "celln" ? "enduring" : "one-shot",
+                    modelConnectionRef: plane === form.executionBackend ? form.modelConnectionRef : undefined,
+                    credentialProfile: "",
+                    provider:
+                      plane === "celln" &&
+                      !["openai", "anthropic", "azure-openai", "custom"].includes(form.provider)
+                        ? "openai"
+                        : form.provider || "openai",
+                    model: form.model || "gpt-4o",
+                    apiKey: plane === "celln" ? "" : form.apiKey,
+                    secretName: plane === "celln" ? "" : form.secretName,
+                    baseURL: plane === "celln" ? "" : form.baseURL,
+                    modelRef: plane === "celln" ? undefined : form.modelRef,
+                    agentSandboxEnabled: plane === "celln" ? false : form.agentSandboxEnabled,
+                    channels: plane === "celln" ? [] : form.channels,
+                    heartbeatInterval: plane === "celln" ? "" : form.heartbeatInterval,
+                  });
+                }}
+              />
               {form.executionBackend === "job" && persistentRuntimes.length === 0 && (
-                <p role="status" className="text-xs text-amber-500">No persistent Pi or Hermes harness is installed in this namespace. Install the default harnesses, or choose Celln.</p>
+                <p role="status" className="text-xs text-amber-500">No persistent Pi or Hermes harness is installed in this namespace. Install the default harnesses{nativeRuntimes.length > 0 ? ", or choose Celln parent" : ""}.</p>
               )}
-              {form.executionBackend === "celln" && nativeRuntimes.length === 0 && (
-                <p role="status" className="text-xs text-amber-500">No native Celln runtime is registered in this namespace. Native Celln runtimes are namespace-scoped — create this Agent in the namespace that holds the runtime registration (for example celln-agents), or choose Kubernetes. The Celln host itself is cluster-wide.</p>
+              {nativeRuntimes.length === 0 && (
+                <p role="status" className="text-xs text-amber-500">The <strong>Celln parent</strong> plane runs an enduring AgentHarness and needs a <strong>native Celln runtime</strong> registered in <em>this</em> namespace. That is a <em>separate operator install</em> from the one-shot Celln router + dispatcher that powers Runs — a running router does not provide it. Install it with <code className="break-all">sympozium install --celln-native …</code>, or use <strong>New Run → Celln cell</strong> for a single sealed computation.</p>
               )}
               {form.executionBackend === "celln" && (
                 <div className="space-y-2 rounded-md border p-3">
