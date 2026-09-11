@@ -35,11 +35,14 @@ See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/b
 
 ### Celln (hermetic execution)
 
-Enabled by default (`celln.enabled: true`) so a standard installation includes
-the Celln router and controller configuration. The privileged installer and
-router schedule only on nodes explicitly labelled `celln.dev/kvm=true`; label
-KVM-capable hosts deliberately before they receive host setup. Disable all
-Celln resources with `--set celln.enabled=false`. See [Celln Backend](../concepts/celln-backend.md).
+Enabled by default (`celln.enabled: true`) so a standard installation deploys
+the in-cluster (pod-based) dispatcher, the router and controller/API wiring.
+The dispatcher and router schedule only on nodes explicitly labelled
+`celln.dev/kvm=true`; label KVM-capable hosts deliberately before they receive
+dispatcher pods. A bare-metal host dispatcher (systemd, via the `celln-installer`
+DaemonSet) is available with `celln.installer.enabled=true` but is loopback-only
+and mutually exclusive with the in-cluster dispatcher. Disable all Celln
+resources with `--set celln.enabled=false`. See [Celln Backend](../concepts/celln-backend.md).
 
 ### AgentHarness examples
 
