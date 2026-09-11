@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.59](https://github.com/sympozium-ai/sympozium/compare/v0.10.58...v0.10.59) (2026-09-11)
+
+
+### Features
+
+* add tolerations for agent pods ([#440](https://github.com/sympozium-ai/sympozium/issues/440)) ([df23b2f](https://github.com/sympozium-ai/sympozium/commit/df23b2fd9cc021c244ee22d17e48c29d3e9c7e68))
+* **celln:** reusable ModelConnection routes for persistent harnesses ([dc8bb97](https://github.com/sympozium-ai/sympozium/commit/dc8bb97477ad7214933cce38c0abd4705e3e8e3c))
+* **install:** deploy the Celln backend by default ([#483](https://github.com/sympozium-ai/sympozium/issues/483)) ([dbf6f15](https://github.com/sympozium-ai/sympozium/commit/dbf6f15aa83b40141efeb8a47a4882140c30cd51))
+* **web:** Celln insecure model routes and native conversation UX ([#482](https://github.com/sympozium-ai/sympozium/issues/482)) ([b79a7ca](https://github.com/sympozium-ai/sympozium/commit/b79a7ca4d44b544a985990f89979cfe67cdac312))
+
+
+### Bug Fixes
+
+* 468: Propagate traceparent on LLM provider calls ([#469](https://github.com/sympozium-ai/sympozium/issues/469)) ([5c906bd](https://github.com/sympozium-ai/sympozium/commit/5c906bddfeb8f42bf2c158689a57b221ec017822))
+* **web:** clarify execution plane vs runtime ([c7f3048](https://github.com/sympozium-ai/sympozium/commit/c7f30483ec41ccb0646fa7aaa151eafac2c9e4d2))
+* **web:** fold model connections into Provider -&gt; Auth -&gt; Model ([718b9d8](https://github.com/sympozium-ai/sympozium/commit/718b9d80d2adbfe5bdfe162304671cd8d48297cf))
+* **web:** give Celln the same provider list as the run/agent flow ([e6b80ab](https://github.com/sympozium-ai/sympozium/commit/e6b80ab3e088f0766d8a2240f2ec8d184492a740))
+* **web:** offer persistent Pi and Hermes harnesses ([#480](https://github.com/sympozium-ai/sympozium/issues/480)) ([d0d03d4](https://github.com/sympozium-ai/sympozium/commit/d0d03d4bcf0ca46a969a859bfc2d40255a6f8e9b))
+* **web:** restore Provider -&gt; Auth -&gt; Model for the Celln wizard flow ([1907b12](https://github.com/sympozium-ai/sympozium/commit/1907b125a30ca1fa43bb73a4dbee46968f6a8c7a))
+* **web:** split Create into Harness and Run flows ([0ab8bc1](https://github.com/sympozium-ai/sympozium/commit/0ab8bc1e23eafa3c6a6de9b6e658b38c346e3936))
+
 ## [0.10.58](https://github.com/sympozium-ai/sympozium/compare/v0.10.57...v0.10.58) (2026-09-10)
 
 
