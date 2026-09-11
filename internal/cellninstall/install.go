@@ -229,7 +229,11 @@ func Install(ctx context.Context, store client.Client, o Options) error {
 		return err
 	}
 	approvals, journal := filepath.Join(o.StatePath, "approvals"), filepath.Join(o.StatePath, "journal")
-	registration := cellnparent.RegistrationConfig{APIVersion: "sympozium.ai/celln-parent-registrations-v1", Journal: journal, Approvals: approvals, OperatorSource: ref("operator"), RuntimeSource: ref("runtime"), AgentSource: ref("agent"), LocalProvisioner: &cellnparent.LocalProvisioner{Binary: "/usr/local/bin/celln", Root: filepath.Join(o.StatePath, "authority"), Journal: journal, Approvals: approvals, Target: o.OwnerTarget, TokenFile: "/etc/sympozium/celln-parent/owner-token", CAFile: "/etc/sympozium/celln-parent/owner-ca.pem"}, HostTemplates: []cellnparent.HostProvisionTemplate{{APIVersion: "sympozium.ai/celln-parent-host-template-v1", SelectionSHA256: digest, Scope: o.Scope, Principal: configured.Principal, Model: configured.Model, HostLimits: configured.HostLimits, Native: native}}}
+	caFile := ""
+	if origin.Scheme == "https" {
+		caFile = "/etc/sympozium/celln-parent/owner-ca.pem"
+	}
+	registration := cellnparent.RegistrationConfig{APIVersion: "sympozium.ai/celln-parent-registrations-v1", Journal: journal, Approvals: approvals, OperatorSource: ref("operator"), RuntimeSource: ref("runtime"), AgentSource: ref("agent"), LocalProvisioner: &cellnparent.LocalProvisioner{Binary: "/usr/local/bin/celln", Root: filepath.Join(o.StatePath, "authority"), Journal: journal, Approvals: approvals, Target: o.OwnerTarget, TokenFile: "/etc/sympozium/celln-parent/owner-token", CAFile: caFile}, HostTemplates: []cellnparent.HostProvisionTemplate{{APIVersion: "sympozium.ai/celln-parent-host-template-v1", SelectionSHA256: digest, Scope: o.Scope, Principal: configured.Principal, Model: configured.Model, HostLimits: configured.HostLimits, Native: native}}}
 	if err := write("registrations.json", registration); err != nil {
 		return err
 	}

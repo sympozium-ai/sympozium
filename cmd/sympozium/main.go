@@ -1258,6 +1258,7 @@ func newInstallCmd() *cobra.Command {
 	var cellnNative bool
 	var cellnNativeApprove bool
 	var nativeOpts cellninstall.Options
+	var nativePlane cellninstall.PlaneOptions
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install Sympozium into the current Kubernetes cluster",
@@ -1284,6 +1285,27 @@ Use --celln-native to also install the native Celln starter catalogue and grant
 layers (enduring native parents); it requires the operator-reviewed
 --celln-native-* inputs and --celln-native-approve-starter-tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cellnNative {
+				if noCelln || cellnHostInstaller || len(cellnBackends) != 0 {
+					return fmt.Errorf("--celln-native requires the managed in-cluster dispatcher")
+				}
+				if !cellnNativeApprove || nativePlane.NodeName == "" || nativePlane.OwnerTokenFile == "" {
+					return fmt.Errorf("--celln-native requires --celln-native-approve-starter-tools, --celln-native-node and --celln-native-owner-token-file")
+				}
+				if cellnRouterImage == "" || cellnInstallerImage == "" {
+					return fmt.Errorf("--celln-native requires --celln-router-image and --celln-installer-image built with parent routing and drain support (Celln v0.5.8 does not support them)")
+				}
+				if nativeOpts.ConfigurationDir == "" || nativeOpts.OutputDir == "" || nativeOpts.StatePath == "" || nativeOpts.Scope == "" || nativeOpts.PackageHash == "" {
+					return fmt.Errorf("--celln-native requires configuration-dir, output-dir, state-path, scope and package-hash inputs")
+				}
+				if nativeOpts.OwnerTarget != "" && nativeOpts.OwnerTarget != cellninstall.ManagedRouterURL {
+					return fmt.Errorf("managed native runs must use the shared Celln router origin")
+				}
+				nativeOpts.ControllerNamespace = helmNamespace
+				if nativeOpts.OwnerTarget == "" {
+					nativeOpts.OwnerTarget = cellninstall.ManagedRouterURL
+				}
+			}
 			if !noCelln {
 				cellnValues, err := cellnInstallSetValues(cmd.Context(), cellnRouterImage, cellnInstallerImage, cellnBackends, cellnRouterReplicas, cellnHostInstaller)
 				if err != nil {
@@ -1295,6 +1317,9 @@ layers (enduring native parents); it requires the operator-reviewed
 				return err
 			}
 			if cellnNative {
+				if err := initClient(); err != nil {
+					return err
+				}
 				if !cellnNativeApprove {
 					return fmt.Errorf("--celln-native requires --celln-native-approve-starter-tools: grants include run-owned read/write and bounded example.com HTTPS")
 				}
@@ -1302,7 +1327,14 @@ layers (enduring native parents); it requires the operator-reviewed
 				if err := cellninstall.Install(cmd.Context(), k8sClient, nativeOpts); err != nil {
 					return err
 				}
-				fmt.Printf("  Installed native Celln catalogue and grants in %s; no run submitted, execution readiness remains unverified.\n", nativeOpts.Namespace)
+				planeValues, err := cellninstall.ConfigurePlane(cmd.Context(), k8sClient, nativeOpts, nativePlane)
+				if err != nil {
+					return err
+				}
+				if err := runInstall(imageTag, append(setValues, planeValues...)); err != nil {
+					return err
+				}
+				fmt.Printf("  Enabled enduring Celln runs on the managed execution plane in %s; no run submitted.\n", nativeOpts.Namespace)
 			}
 			return nil
 		},
@@ -1318,6 +1350,8 @@ layers (enduring native parents); it requires the operator-reviewed
 	cmd.Flags().IntVar(&cellnRouterReplicas, "celln-router-replicas", 1, "Celln router replicas for the generated ReadWriteOnce ownership PVC")
 	cmd.Flags().BoolVar(&cellnNative, "celln-native", false, "Also install the native Celln starter catalogue and grant layers (requires the operator --celln-native-* inputs)")
 	cmd.Flags().BoolVar(&cellnNativeApprove, "celln-native-approve-starter-tools", false, "Explicitly approve the three bounded starter tool grants for --celln-native")
+	cmd.Flags().StringVar(&nativePlane.NodeName, "celln-native-node", "", "KVM node holding the prepared shared state; pins controller and dispatcher")
+	cmd.Flags().StringVar(&nativePlane.OwnerTokenFile, "celln-native-owner-token-file", "", "Absolute owner credential matching the prepared parent principal; mounted into the router only")
 	cmd.Flags().StringVar(&nativeOpts.ConfigurationDir, "celln-native-configuration-dir", "", "Absolute operator configuration produced by 'celln starter-configure'")
 	cmd.Flags().StringVar(&nativeOpts.OutputDir, "celln-native-output-dir", "", "New absolute private output directory")
 	cmd.Flags().StringVar(&nativeOpts.StatePath, "celln-native-state-path", "", "Existing dedicated host state path")
@@ -1493,7 +1527,7 @@ func runInstall(imageTag string, setValues []string) error {
 	}
 	fmt.Printf("  Installing Sympozium %s...\n", ver)
 	for _, kv := range setValues {
-		if kv == "celln.enabled=true" {
+		if kv == "celln.installer.enabled=true" {
 			fmt.Println("  ⚠️  Hermetic workloads (Celln) enabled — this deploys a privileged,")
 			fmt.Println("      hostPID DaemonSet with a read-write mount of the host root")
 			fmt.Println("      filesystem on any node labeled celln.dev/kvm=true, to set up KVM")

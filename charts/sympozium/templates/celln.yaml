@@ -18,6 +18,30 @@
 {{- end }}
 {{- end }}
 {{- $dispatcher := .Values.celln.dispatcher | default dict }}
+{{- $parent := $dispatcher.enduring }}
+{{- if $parent.enabled }}
+{{- if or .Values.celln.router.external (ne (len .Values.celln.router.backends) 1) }}
+{{- fail "dispatcher.enduring currently requires one managed dispatcher backend; multi-node authority provisioning is unsupported" }}
+{{- end }}
+{{- if or (not $dispatcher.enabled) .Values.celln.installer.enabled .Values.celln.nativeParent.enabled }}
+{{- fail "dispatcher.enduring requires the in-cluster dispatcher and cannot use installer or nativeParent" }}
+{{- end }}
+{{- if lt (int $dispatcher.maxCells) 2 }}
+{{- fail "dispatcher.enduring requires maxCells >= 2 for a parent and child" }}
+{{- end }}
+{{- if or (ne (int $dispatcher.replicas) 1) (not $parent.nodeName) (not $parent.parentConfigSecret) }}
+{{- fail "dispatcher.enduring requires one dispatcher replica, nodeName and parentConfigSecret" }}
+{{- end }}
+{{- if or (le (int $parent.uid) 0) (le (int $parent.gid) 0) (not .Values.celln.router.parentTokenSecret) }}
+{{- fail "dispatcher.enduring requires non-root uid/gid and router.parentTokenSecret" }}
+{{- end }}
+{{- if not (regexMatch "^/var/lib/sympozium-celln/[a-z0-9][a-z0-9-]{0,62}$" $parent.statePath) }}
+{{- fail "dispatcher.enduring.statePath must be a dedicated /var/lib/sympozium-celln/<installation> directory" }}
+{{- end }}
+{{- if and (hasKey .Values.controller.nodeSelector "kubernetes.io/hostname") (ne (index .Values.controller.nodeSelector "kubernetes.io/hostname") $parent.nodeName) }}
+{{- fail "dispatcher.enduring.nodeName conflicts with controller.nodeSelector" }}
+{{- end }}
+{{- end }}
 {{- $dispatcherImage := $dispatcher.image | default dict }}
 {{- $dispatcherRepo := $dispatcherImage.repository | default .Values.celln.image.repository | default "ghcr.io/sympozium-ai/sympozium/celln-installer" }}
 {{- $dispatcherTag := $dispatcherImage.tag | default .Values.celln.image.tag | default .Chart.AppVersion }}
@@ -244,6 +268,9 @@ spec:
           type: CharDevice
       nodeSelector:
         celln.dev/kvm: "true"
+        {{- if $parent.enabled }}
+        kubernetes.io/hostname: {{ $parent.nodeName | quote }}
+        {{- end }}
       tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
@@ -276,10 +303,26 @@ spec:
         app.kubernetes.io/name: celln-dispatcher
     spec:
       automountServiceAccountToken: false
+      {{- if $parent.enabled }}
+      terminationGracePeriodSeconds: 60
+      {{- end }}
       nodeSelector:
         celln.dev/kvm: "true"
+        {{- if $parent.enabled }}
+        kubernetes.io/hostname: {{ $parent.nodeName | quote }}
+        {{- end }}
       containers:
       - name: dispatcher
+        {{- if $parent.enabled }}
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  printf 'Authorization: Bearer %s\n' "$(cat /etc/celln/backend/token)" | curl --fail --silent --show-error --max-time 50 --header @- --request POST http://127.0.0.1:8787/v1/drain
+        {{- end }}
         image: {{ printf "%s:%s" $dispatcherRepo $dispatcherTag | quote }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["/usr/local/bin/celln"]
@@ -291,17 +334,33 @@ spec:
         - --token-file
         - /etc/celln/backend/token
         - --root
+        {{- if $parent.enabled }}
+        - {{ printf "%s/authority" $parent.statePath | quote }}
+        {{- else }}
         - /var/lib/celln
+        {{- end }}
         - --mote-store
+        {{- if $parent.enabled }}
+        - {{ printf "%s/authority/motes" $parent.statePath | quote }}
+        {{- else }}
         - /var/lib/celln/motes
+        {{- end }}
         - --tool-store
+        {{- if $parent.enabled }}
+        - {{ printf "%s/authority/tools" $parent.statePath | quote }}
+        {{- else }}
         - /var/lib/celln/tools
+        {{- end }}
         - --node-name
         - $(NODE_NAME)
         {{- range $dispatcher.allowEgressHosts | default (list "api.deepseek.com") }}
         - --allow-egress-host
         - {{ . | quote }}
         {{- end }}
+        - --max-cells
+        - {{ $dispatcher.maxCells | int | quote }}
+        - --memory-bytes
+        - {{ $dispatcher.memoryBytes | int64 | quote }}
         - --egress-slots
         - {{ $dispatcher.egressSlots | default 1 | quote }}
         env:
@@ -309,6 +368,11 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        readinessProbe:
+          httpGet:
+            path: /v1/health
+            port: 8787
+          periodSeconds: 2
         securityContext:
           privileged: true
           readOnlyRootFilesystem: true
@@ -328,18 +392,15 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        {{- if and $dispatcher.enduring $dispatcher.enduring.enabled }}
-        {{- if not $dispatcher.enduring.authoritySecret }}
-        {{- fail "celln.dispatcher.enduring.authoritySecret is required when the enduring lifecycle is enabled" }}
-        {{- end }}
-        # The dispatcher serves /v1/parents from the same process. The parent
-        # handler authenticates against trusted-parent-clients.json under its
-        # root; mounting it here is what makes one dispatcher serve both
-        # lifecycles (docs/design/celln-single-execution-plane.md).
-        - name: parent-clients
-          mountPath: /var/lib/celln/trusted-parent-clients.json
-          subPath: trusted-parent-clients.json
+        {{- if $parent.enabled }}
+        # Preserve absolute artifact/model paths embedded in approved profiles.
+        - name: parent-state
+          mountPath: {{ $parent.statePath | quote }}
+        {{- range $i, $file := $parent.modelCredentialFiles }}
+        - name: parent-model-{{ $i }}
+          mountPath: {{ $file | quote }}
           readOnly: true
+        {{- end }}
         {{- end }}
       volumes:
       - name: backend
@@ -364,14 +425,20 @@ spec:
           type: Directory
       - name: tmp
         emptyDir: {}
-      {{- if and $dispatcher.enduring $dispatcher.enduring.enabled }}
-      - name: parent-clients
-        secret:
-          secretName: {{ $dispatcher.enduring.authoritySecret | quote }}
-          defaultMode: 0440
-          items:
-          - key: trusted-parent-clients.json
-            path: trusted-parent-clients.json
+      {{- if $parent.enabled }}
+      - name: parent-state
+        hostPath:
+          path: {{ $parent.statePath | quote }}
+          type: Directory
+      {{- range $i, $file := $parent.modelCredentialFiles }}
+      {{- if or (not (hasPrefix "/" $file)) (contains ".." $file) (eq $file "/") }}
+      {{- fail "dispatcher.enduring.modelCredentialFiles requires absolute file paths without traversal" }}
+      {{- end }}
+      - name: parent-model-{{ $i }}
+        hostPath:
+          path: {{ $file | quote }}
+          type: File
+      {{- end }}
       {{- end }}
 ---
 apiVersion: v1
@@ -437,6 +504,10 @@ spec:
         - /etc/celln/client/token
         - --capability-token-file
         - /etc/celln/capability/token
+        {{- if .Values.celln.router.parentTokenSecret }}
+        - --parent-token-file
+        - /etc/celln/parent/token
+        {{- end }}
         - --ownership-dir
         - /var/lib/celln/ownership
         - --mode
@@ -451,6 +522,11 @@ spec:
           containerPort: 8788
           protocol: TCP
         volumeMounts:
+        {{- if .Values.celln.router.parentTokenSecret }}
+        - name: parent-token
+          mountPath: /etc/celln/parent
+          readOnly: true
+        {{- end }}
         - name: client-token
           mountPath: /etc/celln/client
           readOnly: true
@@ -470,6 +546,12 @@ spec:
             memory: "64Mi"
             cpu: "200m"
       volumes:
+      {{- if .Values.celln.router.parentTokenSecret }}
+      - name: parent-token
+        secret:
+          secretName: {{ .Values.celln.router.parentTokenSecret | quote }}
+          defaultMode: 0440
+      {{- end }}
       - name: client-token
         secret:
           secretName: {{ .Values.celln.router.clientTokenSecret | quote }}

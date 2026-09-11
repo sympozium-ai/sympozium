@@ -30,8 +30,9 @@ const (
 // Discovery credentials have no execution authority. Never fall back to the
 // controller token or public health/TCP if authenticated discovery fails.
 func cellnCapabilityStatus() CapabilityStatus {
-	oneShot := cellnOneShotCapabilityStatus()
-	enduring := cellnEnduringCapabilityStatus()
+	var parentRouting bool
+	oneShot := probeCellnOneShot(&parentRouting)
+	enduring := cellnEnduringCapabilityStatus(oneShot, parentRouting)
 	status := CapabilityStatus{
 		Available: oneShot.Available || enduring.Available,
 		Reason:    combineCellnReasons(oneShot, enduring),
@@ -43,6 +44,10 @@ func cellnCapabilityStatus() CapabilityStatus {
 }
 
 func cellnOneShotCapabilityStatus() CapabilityStatus {
+	return probeCellnOneShot(nil)
+}
+
+func probeCellnOneShot(parentRouting *bool) CapabilityStatus {
 	refuse := func(state, reason string) CapabilityStatus {
 		return CapabilityStatus{Available: false, State: state, Reason: reason}
 	}
@@ -115,6 +120,9 @@ func cellnOneShotCapabilityStatus() CapabilityStatus {
 	if json.Unmarshal(body, &report) != nil || report.APIVersion != cellnCapabilityVersion || !report.PreflightOnly || report.ArtifactReadiness != "not_checked" || len(report.Nodes) > 32 {
 		return refuse(capabilityStateIncompatible, "Celln capability contract is incompatible")
 	}
+	if parentRouting != nil {
+		*parentRouting = report.ParentRouting
+	}
 	eligible := 0
 	for _, node := range report.Nodes {
 		if !node.PreflightEligible {
@@ -141,7 +149,7 @@ func cellnOneShotCapabilityStatus() CapabilityStatus {
 // Native enduring readiness is owned by the parent controller path and is not
 // inferred from the one-shot router probe. The API reports configuration signals
 // available to this process without claiming host admission.
-func cellnEnduringCapabilityStatus() CapabilityStatus {
+func cellnEnduringCapabilityStatus(plane CapabilityStatus, routed bool) CapabilityStatus {
 	if os.Getenv("CELLN_ENABLED") != "true" {
 		return CapabilityStatus{
 			Available: false,
@@ -149,13 +157,16 @@ func cellnEnduringCapabilityStatus() CapabilityStatus {
 			Reason:    "Celln is disabled; native enduring is not advertised",
 		}
 	}
-	// Parent controller config is mounted on the parent-only controller, not
-	// necessarily on this API process. Do not claim absence from a missing local file.
-	return CapabilityStatus{
-		Available: false,
-		State:     capabilityStateUnknown,
-		Reason:    "Native enduring readiness is distinct from one-shot router preflight; parent controller registration and launch approval are checked at run admission",
+	if os.Getenv("CELLN_ENDURING_ENABLED") != "true" {
+		return CapabilityStatus{State: capabilityStateDisabled, Reason: "Celln is installed; enduring lifecycle is not enabled on this plane"}
 	}
+	if !plane.Available {
+		return CapabilityStatus{State: plane.State, Reason: "Shared Celln plane unavailable: " + plane.Reason}
+	}
+	if !routed {
+		return CapabilityStatus{State: capabilityStateIncompatible, Reason: "Celln gateway does not advertise parent routing; install a compatible gateway image"}
+	}
+	return CapabilityStatus{Available: true, State: capabilityStateReady, Reason: "Enduring routing is enabled on the shared Celln plane; runtime, model, tool grants and parent launch approval are checked per run"}
 }
 
 func combineCellnReasons(oneShot, enduring CapabilityStatus) string {
@@ -199,6 +210,7 @@ func preferCellnState(oneShot, enduring CapabilityStatus) string {
 }
 
 type cellnRouterCapabilities struct {
+	ParentRouting     bool   `json:"parentRouting"`
 	APIVersion        string `json:"apiVersion"`
 	PreflightOnly     bool   `json:"preflightOnly"`
 	ArtifactReadiness string `json:"artifactReadiness"`

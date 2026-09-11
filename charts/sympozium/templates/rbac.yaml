@@ -36,6 +36,10 @@ metadata:
   labels:
     {{- include "sympozium.labels" . | nindent 4 }}
 rules:
+  # Catalogue authority is read-only; run requests cannot publish tool grants.
+  - apiGroups: ["sympozium.ai"]
+    resources: ["cellntools"]
+    verbs: ["get", "list", "watch"]
   # CRDs
   - apiGroups: ["sympozium.ai"]
     resources: ["agentrunturns"]

@@ -52,7 +52,7 @@ type ParentTurnEvidence struct {
 	OwnerStatus string `json:"ownerStatus"`
 }
 
-func (c *Client) doJSON(ctx context.Context, method, path string, body any, output any, respondAsync bool) (int, error) {
+func (c *Client) doJSON(ctx context.Context, method, path string, body any, output any, respondAsync bool, headers ...http.Header) (int, error) {
 	token, err := c.credential()
 	if err != nil {
 		return 0, err
@@ -75,6 +75,11 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, outp
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	for _, h := range headers {
+		for key, values := range h {
+			req.Header[key] = values
+		}
+	}
 	if respondAsync {
 		req.Header.Set("Prefer", "respond-async")
 	}
@@ -121,7 +126,8 @@ func (c *Client) CreateParent(ctx context.Context, profile, incarnation string) 
 		Retry       *bool  `json:"retryAuthorized"`
 	}
 	status, err := c.doJSON(ctx, http.MethodPost, "/v1/parents",
-		map[string]string{"apiVersion": "celln.parent-create/v1", "launchProfile": profile}, &result, false)
+		map[string]string{"apiVersion": "celln.parent-create/v1", "launchProfile": profile}, &result, false,
+		http.Header{"X-Celln-Parent-Incarnation": []string{incarnation}})
 	if err != nil {
 		return err
 	}

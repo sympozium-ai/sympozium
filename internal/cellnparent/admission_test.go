@@ -106,3 +106,20 @@ func TestDurableCreateClaimHasExactlyOneWinner(t *testing.T) {
 		t.Fatal("durable binding lost")
 	}
 }
+
+func TestParentAdmissionUsesPlaneTransportAcknowledgement(t *testing.T) {
+	const target = "http://celln-router.celln-system.svc.cluster.local:8787"
+	t.Setenv("CELLN_ALLOW_INSECURE_HTTP", "false")
+	if validateOwnerOrigin(target) == nil {
+		t.Fatal("unacknowledged plaintext admitted")
+	}
+	t.Setenv("CELLN_ALLOW_INSECURE_HTTP", "true")
+	if err := validateOwnerOrigin(target); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"/v1/parents", "?", "?token=x", "#fragment"} {
+		if validateOwnerOrigin(target+suffix) == nil {
+			t.Fatal("non-origin owner admitted")
+		}
+	}
+}

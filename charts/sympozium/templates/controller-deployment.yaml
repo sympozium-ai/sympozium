@@ -1,3 +1,5 @@
+{{- $enduring := and .Values.celln.enabled .Values.celln.dispatcher.enduring.enabled }}
+{{- $parent := .Values.celln.dispatcher.enduring }}
 {{- if and .Values.controller.watchNamespace .Values.controller.excludeWatchNamespaces }}
 {{- fail "choose either controller.watchNamespace or controller.excludeWatchNamespaces" }}
 {{- end }}
@@ -26,6 +28,10 @@ spec:
       terminationGracePeriodSeconds: 10
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
+        {{- if $enduring }}
+        runAsUser: {{ $parent.uid }}
+        runAsGroup: {{ $parent.gid }}
+        {{- end }}
       containers:
         - name: manager
           image: {{ include "sympozium.controllerImage" . }}
@@ -157,7 +163,7 @@ spec:
             # main controller reconciles parents directly against the dispatcher
             # Service — no separate celln-parent-controller Deployment.
             - name: CELLN_PARENT_CONFIG
-              value: /etc/sympozium/celln-parent
+              value: {{ printf "%s/approvals" $parent.statePath | quote }}
             - name: CELLN_PARENT_REGISTRATIONS
               value: /etc/sympozium/celln-parent/registrations.json
             {{- end }}
@@ -209,6 +215,8 @@ spec:
               readOnly: true
             {{- end }}
             {{- if and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret }}
+            - name: celln-parent-state
+              mountPath: {{ $parent.statePath | quote }}
             - name: celln-parent-config
               mountPath: /etc/sympozium/celln-parent
               readOnly: true
@@ -235,14 +243,26 @@ spec:
             secretName: {{ .Values.celln.catalogueConfigSecret | quote }}
         {{- end }}
         {{- if and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret }}
+        - name: celln-parent-state
+          hostPath:
+            path: {{ $parent.statePath | quote }}
+            type: Directory
         - name: celln-parent-config
           secret:
             secretName: {{ .Values.celln.dispatcher.enduring.parentConfigSecret | quote }}
         {{- end }}
       {{- end }}
+      {{- if $enduring }}
+      nodeSelector:
+        {{- with omit .Values.controller.nodeSelector "kubernetes.io/hostname" }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        kubernetes.io/hostname: {{ $parent.nodeName | quote }}
+      {{- else }}
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.controller.tolerations }}
       tolerations:

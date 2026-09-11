@@ -34,4 +34,28 @@ spec:
       ports:
         - protocol: TCP
           port: 8788
+{{- if .Values.celln.dispatcher.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: celln-dispatcher-ingress
+  namespace: celln-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: celln-dispatcher
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: celln-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: celln-router
+      ports:
+        - protocol: TCP
+          port: 8787
+{{- end }}
 {{- end }}

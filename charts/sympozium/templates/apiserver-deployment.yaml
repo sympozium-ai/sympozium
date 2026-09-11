@@ -68,6 +68,8 @@ spec:
           {{- if .Values.celln.enabled }}
             - name: CELLN_ENABLED
               value: "true"
+            - name: CELLN_ENDURING_ENABLED
+              value: {{ .Values.celln.dispatcher.enduring.enabled | quote }}
             {{- if .Values.celln.caConfigMap }}
             - name: SSL_CERT_FILE
               value: /etc/sympozium/celln-router-ca/ca-bundle.crt

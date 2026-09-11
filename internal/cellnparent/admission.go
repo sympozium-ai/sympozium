@@ -5,8 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
+	"os"
+
+	"github.com/sympozium-ai/sympozium/internal/celln"
 	"unicode"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -62,14 +63,14 @@ func ValidateAdmission(run *api.AgentRun, approval api.CellnParentBinding) error
 }
 
 func validateOwnerOrigin(target string) error {
-	u, err := url.Parse(target)
-	if err != nil || len(target) > 2048 || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+	if len(target) > 2048 {
 		return fmt.Errorf("parent approval requires an exact owner origin")
 	}
-	ip := net.ParseIP(u.Hostname())
-	if u.Scheme != "https" && !(u.Scheme == "http" && ip != nil && ip.IsLoopback()) {
-		return fmt.Errorf("parent owner requires protected transport")
+	c, err := celln.New(celln.Config{BaseURL: target, AllowInsecure: os.Getenv("CELLN_ALLOW_INSECURE_HTTP") == "true"})
+	if err != nil {
+		return fmt.Errorf("parent owner requires protected transport: %w", err)
 	}
+	c.Close()
 	return nil
 }
 

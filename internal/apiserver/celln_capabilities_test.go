@@ -13,6 +13,33 @@ import (
 const discoveryTestToken = "public-readonly-test-token-at-least-24"
 const eligibleCapabilityFixture = `{"apiVersion":"celln.dev/capabilities-v1alpha1","preflightOnly":true,"artifactReadiness":"not_checked","eligibleNodes":1,"nodes":[{"preflightEligible":true,"report":{"apiVersion":"celln.dev/capabilities-v1alpha1","preflightOnly":true,"artifactReadiness":"not_checked","requestVersions":["celln.dev/v1alpha1"],"node":{"kvm":true,"cpu_virtualization":true,"guest_kernel":true,"mote_store":true,"tool_store":true,"live_cells":0,"max_cells":1,"memory_bytes":268435456}}}]}`
 
+func TestEnduringCapabilityUsesSharedAuthenticatedPlane(t *testing.T) {
+	for _, tc := range []struct {
+		name, enabled, body, state string
+		available                  bool
+	}{
+		{"disabled", "false", eligibleCapabilityFixture, capabilityStateDisabled, false},
+		{"old-router", "true", eligibleCapabilityFixture, capabilityStateIncompatible, false},
+		{"enabled", "true", strings.Replace(eligibleCapabilityFixture, `"eligibleNodes":1`, `"parentRouting":true,"eligibleNodes":1`, 1), capabilityStateReady, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" || r.URL.Path != "/v1/capabilities" || r.Header.Get("Authorization") != "Bearer "+discoveryTestToken {
+					t.Error("readiness must only use read-only discovery")
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			configureCapabilityTest(t, server.URL)
+			t.Setenv("CELLN_ENDURING_ENABLED", tc.enabled)
+			result := cellnCapabilityStatus()
+			if result.Enduring.State != tc.state || result.Enduring.Available != tc.available {
+				t.Fatalf("%+v", result.Enduring)
+			}
+		})
+	}
+}
+
 func configureCapabilityTest(t *testing.T, origin string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "token")

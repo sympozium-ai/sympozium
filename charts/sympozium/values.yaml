@@ -500,6 +500,9 @@ celln:
     allowEgressHosts:
       - api.deepseek.com
     egressSlots: 1
+    # Shared admission budget for executions, parents and their child cells.
+    maxCells: 1
+    memoryBytes: 268435456
     # -- Enduring (native parent) lifecycle on the SAME in-cluster dispatcher.
     # When enabled the dispatcher serves both /v1/executions (one-shot) and
     # /v1/parents (enduring), and the main controller reconciles parents
@@ -508,14 +511,21 @@ celln:
     # docs/design/celln-single-execution-plane.md.
     enduring:
       enabled: false
-      # -- Existing Secret in celln-system holding the operator-provisioned
-      # parent authority (trusted-parent-clients.json), mounted read-only under
-      # the dispatcher root.
-      authoritySecret: ""
-      # -- Existing Secret holding the controller's per-run approvals and
-      # registrations.json; mounted read-only into the main controller. This
-      # replaces the separate celln-parent-controller Deployment.
+      # -- Fixed owner node; both controller and dispatcher mount the same
+      # operator-prepared directory. Parent relocation is unsupported.
+      nodeName: ""
+      # -- Contains authority/, journal/, approvals/ and admitted artifacts.
+      # Preserve this path inside both pods; never reset it on upgrade.
+      statePath: ""
+      # -- Existing Secret in the controller namespace: registrations.json and
+      # owner-token (plus owner-ca.pem for HTTPS). Model keys stay in host state.
       parentConfigSecret: ""
+      # Match the existing directory owner. Never recursively chown live state.
+      uid: 10001
+      gid: 10001
+      # Host credential files referenced by admitted model profiles. Mounted
+      # read-only into the dispatcher only, at their original absolute paths.
+      modelCredentialFiles: []
   # -- One-command bootstrap for a fresh Celln install. Generates the
   # controller/router/backend/capability bearer Secrets and a router ownership
   # PVC, then the CLI points celln.tokenSecret, celln.capabilityTokenSecret and
@@ -571,6 +581,8 @@ celln:
     repository: "ghcr.io/sympozium-ai/sympozium/celln-installer"
     tag: ""
   router:
+    # Parent principal used only behind the gateway; controller uses tokenSecret.
+    parentTokenSecret: ""
     # -- Use an independently managed router/TLS endpoint. The chart configures
     # clients only and creates no router/installer/ownership resources.
     external: false
