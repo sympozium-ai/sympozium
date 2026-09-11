@@ -45,7 +45,7 @@ func prepare(snapshot SelectionSnapshot, imageBytes int64, allowBroker bool) (*P
 	if p == nil {
 		return nil, fmt.Errorf("Celln runtime profile required")
 	}
-	if p.ContractVersion != "celln.json-tools/v1" || p.Platform != "linux/amd64" || p.Lane != "agent" || p.Lifecycle != "disposable-one-shot" || len(p.RuntimeData) != 0 || p.JSON == nil || p.JSON.MaxTurns < 1 || p.JSON.MaxTurns > 6 || p.JSON.MaxCalls < 0 || p.JSON.MaxCalls > 16 || !hashPattern.MatchString(p.Executable.Hash) || !hashPattern.MatchString(p.Closure.Hash) || !hashPattern.MatchString(p.Mote.Hash) || !publisherPattern.MatchString(p.PublisherKey) || !pathPattern.MatchString(p.EntryPoint) || len(p.EntryPoint) > 256 || p.EntryPoint == "/pilot-fetch" || len(p.Revision) < 1 || len(p.Revision) > 64 {
+	if p.ContractVersion != "celln.json-tools/v1" || p.Platform != "linux/amd64" || p.Lane != "agent" || (p.Lifecycle != "disposable-one-shot" && p.Lifecycle != "enduring") || len(p.RuntimeData) != 0 || p.JSON == nil || p.JSON.MaxTurns < 1 || p.JSON.MaxTurns > 6 || p.JSON.MaxCalls < 0 || p.JSON.MaxCalls > 16 || !hashPattern.MatchString(p.Executable.Hash) || !hashPattern.MatchString(p.Closure.Hash) || !hashPattern.MatchString(p.Mote.Hash) || !publisherPattern.MatchString(p.PublisherKey) || !pathPattern.MatchString(p.EntryPoint) || len(p.EntryPoint) > 256 || p.EntryPoint == "/pilot-fetch" || len(p.Revision) < 1 || len(p.Revision) > 64 {
 		return nil, fmt.Errorf("invalid or unsupported JSON runtime profile")
 	}
 	l := p.Limits

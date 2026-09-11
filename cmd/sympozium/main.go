@@ -1321,7 +1321,7 @@ layers (enduring native parents); it requires the operator-reviewed
 	cmd.Flags().StringVar(&nativeOpts.ConfigurationDir, "celln-native-configuration-dir", "", "Absolute operator configuration produced by 'celln starter-configure'")
 	cmd.Flags().StringVar(&nativeOpts.OutputDir, "celln-native-output-dir", "", "New absolute private output directory")
 	cmd.Flags().StringVar(&nativeOpts.StatePath, "celln-native-state-path", "", "Existing dedicated host state path")
-	cmd.Flags().StringVar(&nativeOpts.OwnerTarget, "celln-native-owner-target", "", "Stable verified HTTPS owner origin")
+	cmd.Flags().StringVar(&nativeOpts.OwnerTarget, "celln-native-owner-target", "", "Stable owner origin. HTTPS is required for external owners; a cluster-local owner may use http:// when the plane's insecure acknowledgement is set")
 	cmd.Flags().StringVar(&nativeOpts.Scope, "celln-native-scope", "", "Stable installation identity; never change to renew consumed authority")
 	cmd.Flags().StringVar(&nativeOpts.PackageHash, "celln-native-package-hash", "", "Exact operator-approved package BLAKE3 identity")
 	return cmd

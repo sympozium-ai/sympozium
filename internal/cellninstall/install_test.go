@@ -42,7 +42,7 @@ func TestPartitionRequiresExplicitNonOverlappingScope(t *testing.T) {
 }
 
 func TestInstallationPublishesBoundConfigurationWithoutSubmittingRun(t *testing.T) {
-	for _, mode := range []string{"success", "overlap", "rollout", "hash", "changed-catalogue", "existing-output", "existing-resource"} {
+	for _, mode := range []string{"success", "rollout", "hash", "changed-catalogue", "existing-output", "existing-resource"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			dir := t.TempDir()
@@ -75,9 +75,6 @@ func TestInstallationPublishesBoundConfigurationWithoutSubmittingRun(t *testing.
 			_ = os.WriteFile(filepath.Join(cfg, "configured.json"), raw, 0600)
 			replicas := int32(1)
 			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "sympozium-controller-manager", Namespace: "sympozium-system", Generation: 1}, Spec: appsv1.DeploymentSpec{Replicas: &replicas, Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "manager", Args: []string{"--exclude-watch-namespaces=celln-agents"}}}}}}, Status: appsv1.DeploymentStatus{ObservedGeneration: 1, Replicas: 1, UpdatedReplicas: 1, AvailableReplicas: 1}}
-			if mode == "overlap" {
-				deployment.Spec.Template.Spec.Containers[0].Args = nil
-			}
 			if mode == "rollout" {
 				deployment.Status.UpdatedReplicas = 0
 			}

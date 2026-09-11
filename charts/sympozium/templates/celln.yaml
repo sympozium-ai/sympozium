@@ -328,6 +328,19 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
+        {{- if and $dispatcher.enduring $dispatcher.enduring.enabled }}
+        {{- if not $dispatcher.enduring.authoritySecret }}
+        {{- fail "celln.dispatcher.enduring.authoritySecret is required when the enduring lifecycle is enabled" }}
+        {{- end }}
+        # The dispatcher serves /v1/parents from the same process. The parent
+        # handler authenticates against trusted-parent-clients.json under its
+        # root; mounting it here is what makes one dispatcher serve both
+        # lifecycles (docs/design/celln-single-execution-plane.md).
+        - name: parent-clients
+          mountPath: /var/lib/celln/trusted-parent-clients.json
+          subPath: trusted-parent-clients.json
+          readOnly: true
+        {{- end }}
       volumes:
       - name: backend
         secret:
@@ -351,6 +364,15 @@ spec:
           type: Directory
       - name: tmp
         emptyDir: {}
+      {{- if and $dispatcher.enduring $dispatcher.enduring.enabled }}
+      - name: parent-clients
+        secret:
+          secretName: {{ $dispatcher.enduring.authoritySecret | quote }}
+          defaultMode: 0440
+          items:
+          - key: trusted-parent-clients.json
+            path: trusted-parent-clients.json
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -274,9 +274,19 @@ The chart's `celln-dispatcher` container already runs `celln dispatcher
   (as the router already does with `--client-token-file`) and forwarding a
   backend token, with parent principals expressed as scoped entries in the same
   operator config.
-* **TLS**: terminate at the gateway (or mTLS controller↔gateway) and keep
-  gateway↔dispatcher on the cluster network under NetworkPolicy. Retain the
-  explicit `allowInsecure` acknowledgement for plaintext topologies.
+* **Transport posture — one rule for the whole plane (decision).** The plane
+  uses the posture the one-shot path already shipped: plaintext HTTP is allowed
+  for loopback and for any owner when the plane's explicit `allowInsecure`
+  acknowledgement is set (the in-cluster default); HTTPS is required for owners
+  that cross a boundary (external router, host owner, cross-node networks)
+  unless an operator deliberately acks insecure. **NetworkPolicy, not TLS, is
+  the in-cluster boundary.** The parent protocol previously demanded
+  HTTPS-unless-loopback — a leftover from its host-owner origin — which forced
+  a TLS edge (and a `celln-parent-proxy` binary that isn't shipped in the celln
+  repo or release) onto an otherwise same-cluster hop. That inconsistency is
+  removed: `internal/celln` applies one origin rule to both lifecycles, so the
+  parent client accepts a cluster-local plaintext owner under the same
+  acknowledgement the one-shot client uses.
 * **Approval/authority**: `RunApproval`/`CellnParentBinding` data moves from a
   host-only file to a mounted Secret consumed by the dispatcher; the operator
   flow (`celln parent-provision`, `starter-*`) is unchanged in intent but its
@@ -354,3 +364,41 @@ parents (enduring)      POST /v1/parents
 ```
 All are served by a single `celln dispatcher`; today only `/v1/executions*` is
 routed, and `/v1/parents*` is reached by a direct, per-run owner address.
+
+## 11. Implementation status (working tree)
+
+Implemented in this branch (build/vet/tests green; chart renders):
+
+- **Single client** — `internal/celln` now speaks both `/v1/executions*` and
+  `/v1/parents*` (credential, transport, origin policy, strict parent
+  protocol). `internal/cellnparent` is a thin wrapper over it, so there is one
+  HTTP/credential implementation.
+- **One dispatcher serves both** — when `celln.dispatcher.enduring.enabled` is
+  set, the dispatcher mounts the operator-provisioned
+  `trusted-parent-clients.json` authority (the file `/v1/parents` authenticates
+  against) at its root.
+- **One controller** — the main controller takes `CELLN_PARENT_CONFIG` /
+  `CELLN_PARENT_REGISTRATIONS` when the enduring lifecycle is enabled, so the
+  separate `celln-parent-controller` Deployment is no longer required for the
+  unified topology.
+- **Runtime contract** — `AgentRuntimeCellnProfile.lifecycle` accepts
+  `disposable-one-shot` and `enduring`; CRDs regenerated.
+
+To try it:
+
+```yaml
+celln:
+  enabled: true
+  dispatcher:
+    enabled: true
+    enduring:
+      enabled: true
+      authoritySecret: celln-parent-authority        # trusted-parent-clients.json
+      parentConfigSecret: celln-parent-config        # approvals + registrations.json
+```
+
+Still open (needs the Celln repo): gateway routing of `/v1/parents*` with the
+durable parent→backend affinity ledger, so a multi-node topology keeps one URL
+and owner affinity. Until then the controller reaches `/v1/parents` on the
+dispatcher Service directly (one dispatcher = one owner), which is the
+single-node form of the same plane.

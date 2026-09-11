@@ -126,6 +126,7 @@ spec:
                   lifecycle:
                     enum:
                     - disposable-one-shot
+                    - enduring
                     type: string
                   limits:
                     description: |-

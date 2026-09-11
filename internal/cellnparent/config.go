@@ -116,7 +116,7 @@ func loadBinding(path string, run *api.AgentRun, recovery bool) (api.CellnParent
 			return zero, nil, fmt.Errorf("invalid parent trust bundle")
 		}
 	}
-	transport, err := New(Options{URL: selected.Binding.Target, TokenFile: selected.TokenFile, Roots: roots})
+	transport, err := New(Options{URL: selected.Binding.Target, TokenFile: selected.TokenFile, Roots: roots, AllowInsecure: os.Getenv("CELLN_ALLOW_INSECURE_HTTP") == "true"})
 	if err != nil {
 		return zero, nil, err
 	}

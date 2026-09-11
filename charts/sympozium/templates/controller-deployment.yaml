@@ -152,6 +152,15 @@ spec:
             - name: CELLN_TOKEN_FILE
               value: /etc/sympozium/celln/token
             {{- end }}
+            {{- if and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret }}
+            # Enduring parent lifecycle on the same in-cluster dispatcher: the
+            # main controller reconciles parents directly against the dispatcher
+            # Service — no separate celln-parent-controller Deployment.
+            - name: CELLN_PARENT_CONFIG
+              value: /etc/sympozium/celln-parent
+            - name: CELLN_PARENT_REGISTRATIONS
+              value: /etc/sympozium/celln-parent/registrations.json
+            {{- end }}
             {{- end }}
             {{- if .Values.pricing.enabled }}
             - name: SYMPOZIUM_PRICING_CONFIGMAP
@@ -182,7 +191,7 @@ spec:
             {{- toYaml .Values.controller.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap) }}
+          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
           volumeMounts:
             {{- if .Values.celln.caConfigMap }}
             - name: celln-router-ca
@@ -199,8 +208,13 @@ spec:
               mountPath: /etc/sympozium/celln-catalogue
               readOnly: true
             {{- end }}
+            {{- if and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret }}
+            - name: celln-parent-config
+              mountPath: /etc/sympozium/celln-parent
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap) }}
+      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
       volumes:
         {{- if .Values.celln.caConfigMap }}
         - name: celln-router-ca
@@ -219,6 +233,11 @@ spec:
         - name: celln-catalogue-config
           secret:
             secretName: {{ .Values.celln.catalogueConfigSecret | quote }}
+        {{- end }}
+        {{- if and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret }}
+        - name: celln-parent-config
+          secret:
+            secretName: {{ .Values.celln.dispatcher.enduring.parentConfigSecret | quote }}
         {{- end }}
       {{- end }}
       {{- with .Values.controller.nodeSelector }}

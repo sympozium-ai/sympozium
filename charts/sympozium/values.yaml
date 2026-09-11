@@ -500,6 +500,22 @@ celln:
     allowEgressHosts:
       - api.deepseek.com
     egressSlots: 1
+    # -- Enduring (native parent) lifecycle on the SAME in-cluster dispatcher.
+    # When enabled the dispatcher serves both /v1/executions (one-shot) and
+    # /v1/parents (enduring), and the main controller reconciles parents
+    # directly — no separate celln-parent-controller Deployment. The operator
+    # provisions the parent authority into `authoritySecret`; see
+    # docs/design/celln-single-execution-plane.md.
+    enduring:
+      enabled: false
+      # -- Existing Secret in celln-system holding the operator-provisioned
+      # parent authority (trusted-parent-clients.json), mounted read-only under
+      # the dispatcher root.
+      authoritySecret: ""
+      # -- Existing Secret holding the controller's per-run approvals and
+      # registrations.json; mounted read-only into the main controller. This
+      # replaces the separate celln-parent-controller Deployment.
+      parentConfigSecret: ""
   # -- One-command bootstrap for a fresh Celln install. Generates the
   # controller/router/backend/capability bearer Secrets and a router ownership
   # PVC, then the CLI points celln.tokenSecret, celln.capabilityTokenSecret and

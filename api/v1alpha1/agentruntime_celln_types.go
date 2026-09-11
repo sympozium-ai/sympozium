@@ -23,7 +23,7 @@ type AgentRuntimeCellnProfile struct {
 	Platform string `json:"platform"`
 	// +kubebuilder:validation:Enum=agent
 	Lane string `json:"lane"`
-	// +kubebuilder:validation:Enum=disposable-one-shot
+	// +kubebuilder:validation:Enum=disposable-one-shot;enduring
 	Lifecycle string `json:"lifecycle"`
 	// Immutable data delivery has no supported contract in this profile.
 	// +optional
