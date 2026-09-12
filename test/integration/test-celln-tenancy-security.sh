@@ -23,6 +23,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
 [[ -z "$(git status --porcelain)" ]] || { echo 'Sympozium source tree must be clean' >&2; exit 64; }
 cmp test/fixtures/celln-authorisation/v1/bundle/BUNDLE.sha256 "$CELLN_TENANCY_CELLN_SOURCE/tests/fixtures/celln-authorisation/v1/bundle/BUNDLE.sha256" || { echo 'cross-repository fixture pin mismatch' >&2; exit 64; }
+cmp test/fixtures/celln-model-requests/v1.json "$CELLN_TENANCY_CELLN_SOURCE/tests/fixtures/celln-model-requests/v1.json" || { echo 'model-request fixture mismatch' >&2; exit 64; }
 kubectl get crd modelconnections.sympozium.ai >/dev/null
 out="$(mktemp -d "${TMPDIR:-/tmp}/celln-tenancy-components.XXXXXXXX")"
 : > "$out/cases.jsonl"
@@ -49,6 +50,7 @@ run_case() {
   [[ "$code" = 0 ]] || { echo "Failed component case: $name (see evidence log)" >&2; return "$code"; }
 }
 run_case shared-go go test -json -race ./cmd/celln-authorisation-fixture ./internal/cellncapability -count=1
+run_case model-request-go go test -json -race ./internal/modelgateway -run '^Test(SharedModelRequestCanonicalVectors|ModelRequestCanonicalBounds)$' -count=1
 run_case shared-rust cargo test --manifest-path "$CELLN_TENANCY_CELLN_SOURCE/Cargo.toml" -p celln-cli --lib --locked
 run_case durable-accounting go test -json -race ./internal/modelbudget -run Postgres -count=1 -v
 export CELLN_GATEWAY_LIVE_KUBERNETES=1

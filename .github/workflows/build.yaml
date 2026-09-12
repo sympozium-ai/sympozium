@@ -44,6 +44,8 @@ jobs:
 
   verify:
     name: Verify
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,82 +53,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Correct #496 secret source ownership and regenerate bundle
-        if: github.event_name == 'pull_request' && github.head_ref == 'contract/celln-namespace-authorisation-496'
-        run: |
-          git fetch origin "$GITHUB_HEAD_REF:$GITHUB_HEAD_REF"
-          git checkout "$GITHUB_HEAD_REF"
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('cmd/celln-authorisation-fixture/model_types.go')
-          s = p.read_text()
-          old = '''type CredentialSource struct {
-          \tKind       string `json:"kind"`
-          \tSecretUID  string `json:"secretUid"`
-          \tSecretName string `json:"secretName"`
-          \tSecretKey  string `json:"secretKey"`
-          }'''
-          new = '''type CredentialSource struct {
-          \tKind       string `json:"kind"`
-          \tSecretName string `json:"secretName"`
-          \tSecretKey  string `json:"secretKey"`
-          }'''
-          if old not in s:
-              raise SystemExit('model credential-source shape not found')
-          p.write_text(s.replace(old, new))
-
-          p = Path('cmd/celln-authorisation-fixture/fixture_cases.go')
-          s = p.read_text()
-          old = 'CredentialSource: &CredentialSource{Kind: "Secret", SecretUID: "secret-uid-1", SecretName: "model-key", SecretKey: "apiKey"}'
-          new = 'CredentialSource: &CredentialSource{Kind: "Secret", SecretName: "model-key", SecretKey: "apiKey"}'
-          if old not in s:
-              raise SystemExit('fixture secret UID source not found')
-          p.write_text(s.replace(old, new))
-
-          p = Path('cmd/celln-authorisation-fixture/fixture_schema.go')
-          s = p.read_text()
-          old = '\"credentialSource\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"kind\",\"secretUid\",\"secretName\",\"secretKey\"],\"properties\":{\"kind\":{\"const\":\"Secret\"},\"secretUid\":{\"$ref\":\"#/$defs/id\"},\"secretName\":{\"$ref\":\"#/$defs/id\"},\"secretKey\":{\"$ref\":\"#/$defs/id\"}}}'
-          new = '\"credentialSource\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"kind\",\"secretName\",\"secretKey\"],\"properties\":{\"kind\":{\"const\":\"Secret\"},\"secretName\":{\"$ref\":\"#/$defs/id\"},\"secretKey\":{\"$ref\":\"#/$defs/id\"}}}'
-          if old not in s:
-              raise SystemExit('schema secret UID shape not found')
-          p.write_text(s.replace(old, new))
-
-          p = Path('docs/design/celln-namespace-authorisation.md')
-          s = p.read_text()
-          s = s.replace('retarget an existing run to a different namespace UID, ModelConnection, Secret\nUID, parent incarnation, runtime or tool revision.', 'retarget an existing run to a different namespace UID, ModelConnection,\nparent incarnation, runtime or tool revision.')
-          old = '''A model route binds provider, protocol, model, endpoint origin, ModelConnection
-          UID/spec digest, auth mode and (for secret-backed routes) Secret UID/name/key.
-          The resolver does not read Secret contents.
-
-          The dedicated gateway pins and revalidates the actual source identity. Secret
-          data may rotate within the same Secret UID; deleting/recreating the Secret or
-          changing route identity does not retarget an active run.'''
-          new = '''A model route binds provider, protocol, model, endpoint origin, ModelConnection
-          UID/spec digest, auth mode and (for secret-backed routes) the Secret name/key
-          reference. The resolver does not read the Secret object or its contents.
-
-          During authenticated route/budget registration, the dedicated model gateway
-          resolves that reference, pins the actual Secret UID beside the immutable
-          decision/budget identity, and returns only non-secret binding metadata. Before
-          each provider admission it rechecks that live UID. Secret data may rotate within
-          the same Secret UID; deleting/recreating the same-name Secret or changing route
-          identity does not retarget an active run.'''
-          if old not in s:
-              raise SystemExit('model route doc section not found')
-          p.write_text(s.replace(old, new))
-          PY
-          gofmt -w cmd/celln-authorisation-fixture/model_types.go cmd/celln-authorisation-fixture/fixture_cases.go cmd/celln-authorisation-fixture/fixture_schema.go
-          go run ./cmd/celln-authorisation-fixture gen -fixtures test/fixtures/celln-authorisation/v1
-          go run ./cmd/celln-authorisation-fixture verify -fixtures test/fixtures/celln-authorisation/v1
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add cmd/celln-authorisation-fixture docs/design/celln-namespace-authorisation.md test/fixtures/celln-authorisation/v1
-          if ! git diff --cached --quiet; then
-            git commit -m 'contract(celln): make resolver secret-blind for #498'
-            git push origin HEAD:"$GITHUB_HEAD_REF"
-          fi
 
       - name: Check formatting
         run: |

@@ -108,6 +108,11 @@ func (v *Verifier) Verify(token Token, decisionRaw []byte, ctx VerifyContext) (V
 	if reason := validateDecision(decision); reason != "" {
 		return Verified{}, reasonError(reason, nil)
 	}
+	// Validate the submitted shape too: decoding into structs otherwise fills
+	// omitted required nullable/false fields and changes the signed input.
+	if !rawDecisionConformsToSchema(decisionRaw) {
+		return Verified{}, reasonError(ReasonMalformed, nil)
+	}
 	_, decisionDigest, err := CanonicalDecision(decision)
 	if err != nil {
 		return Verified{}, reasonError(ReasonMalformed, err)
@@ -269,6 +274,16 @@ func allowedByDecision(decision Decision, operation string) bool {
 }
 
 func validateDecision(decision Decision) string {
+	if reason := validateDecisionSemantics(decision); reason != "" {
+		return reason
+	}
+	if !decisionConformsToSchema(decision) {
+		return ReasonMalformed
+	}
+	return ""
+}
+
+func validateDecisionSemantics(decision Decision) string {
 	if decision.APIVersion != DecisionAPIVersion {
 		return ReasonVersionUnsupported
 	}

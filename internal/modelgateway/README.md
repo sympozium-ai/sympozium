@@ -24,8 +24,8 @@ Implemented so far:
   (the publication-boundary tests inject store failures, not OS process crashes).
 - Complete response protocol compatibility and usage/output ceiling failure
   injection across both supported providers.
-- Shared model-request canonicalisation review with Celln. The current body
-  digest must not be represented as reviewed cross-language protocol evidence.
+- Complete native host broker wiring to the shared model-request encoding;
+  cross-language byte agreement is implemented, but not a reviewed execution path.
 - KVM/installed proof and paired Celln #500/#501 protocol dependencies.
 
 ## Integrated accounting and recovery checks
@@ -47,6 +47,21 @@ keys, invalid usage, error envelopes, and exact credential echoes in decoded
 strings/keys refuse. Unknown usage remains SQL NULL, including lost responses;
 no failure is recorded as measured zero or refunded. Response headers are not
 relayed. These checks do not claim to detect arbitrary encodings of credentials.
+
+## Model request encoding
+
+Gateway reservation hashes now use integer-only JCS, not Go JSON re-encoding.
+The independent Rust host consumer shares 11 positive/negative golden vectors
+under `celln-model-requests/v1.json`: HTML/U+2028 escaping, UTF-16 key ordering,
+escaped equivalence, duplicate keys, invalid numbers/surrogates and trailing data.
+Both implementations limit the body to 262144 bytes and 64 container levels.
+Fractional sampling parameters, exponent notation and negative zero are explicitly
+unsupported in this v1 model-body profile; no silent numeric conversion is used.
+This does not change the existing legacy Celln provider path.
+
+The Go issuer/verifier now enforces the published decision schema, including the
+submitted raw shape. Gateway fixtures have full schema-valid identities rather
+than placeholder untyped budget/request hashes that a Rust receiver would reject.
 
 ## Credential custody
 
