@@ -248,15 +248,46 @@ func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation
 func (s *Store) MarkInFlight(ctx context.Context, budgetID, turnID, requestID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	result, err := s.pool.Exec(ctx, `UPDATE celln_model_reservations
-		SET state=CASE WHEN state='reserved' THEN 'in_flight' ELSE state END,
-		    provider_attempted=TRUE, updated_at=now()
-		WHERE budget_id=$1 AND turn_id=$2 AND request_id=$3 AND state IN ('reserved','in_flight')`, budgetID, turnID, requestID)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return reasonError(ReasonUnavailable, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	// Reservation is not permission to start after a closing fence. Lock in
+	// admission order and claim exactly once before contacting the provider.
+	var closed bool
+	var deadline time.Time
+	for _, query := range []struct {
+		sql  string
+		args []any
+	}{
+		{`SELECT closed, parent_deadline FROM celln_model_budgets WHERE budget_id=$1 FOR UPDATE`, []any{budgetID}},
+		{`SELECT closed, deadline FROM celln_model_turn_budgets WHERE budget_id=$1 AND turn_id=$2 FOR UPDATE`, []any{budgetID, turnID}},
+	} {
+		if err := tx.QueryRow(ctx, query.sql, query.args...).Scan(&closed, &deadline); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return reasonError(ReasonNotFound, nil)
+			}
+			return reasonError(ReasonUnavailable, err)
+		}
+		if closed {
+			return reasonError(ReasonClosed, nil)
+		}
+		if !s.clock().UTC().Before(deadline) {
+			return reasonError(ReasonDeadline, nil)
+		}
+	}
+	result, err := tx.Exec(ctx, `UPDATE celln_model_reservations
+		SET state='in_flight', provider_attempted=TRUE, updated_at=now()
+		WHERE budget_id=$1 AND turn_id=$2 AND request_id=$3 AND state='reserved'`, budgetID, turnID, requestID)
 	if err != nil {
 		return reasonError(ReasonUnavailable, err)
 	}
 	if result.RowsAffected() == 0 {
-		return reasonError(ReasonNotFound, nil)
+		return reasonError(ReasonRequestConflict, nil)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return reasonError(ReasonUnavailable, err)
 	}
 	return nil
 }
