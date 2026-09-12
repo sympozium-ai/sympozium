@@ -4,7 +4,14 @@ This runnable tier tests the shared Go/Rust credentials, durable PostgreSQL
 accounting, and gateway namespace/credential binding through a live Kubernetes
 API and a TLS recorder provider. It also builds and launches the real gateway
 binary, testing the TLS/file/JWKS startup path and durable duplicate suppression
-after process restart for both tenants. It does **not** qualify installed Celln,
+after process restart for both tenants. It now also builds Celln's test-only
+`tenancy-gateway-probe` and exercises the real Rust warden broker/TLS relay:
+correct tenant credential and result, durable budget refusal, untrusted-CA and
+redirect refusal, escaped credential-echo rejection and observed cancellation.
+All three Go gateway test roots must contain the exact A/B relay and negative
+subtests; omitting the probe cannot silently pass. Linux and `/usr/bin/curl`
+are prerequisites. Credentials enter the driver over stdin, never argv/files.
+It does **not** qualify installed Celln,
 tenant RBAC, enforcing CNI, KVM isolation, browser flows, or a real LLM provider.
 `--release` is deliberately refused. #509 remains incomplete.
 
@@ -53,7 +60,7 @@ compiler and image tools are required. KVM logs remain in the pinned Celln
 checkout's private `target/conformance-kvm.*` directory.
 
 The combined command does **not** claim a controller-created mediated run travels
-through Celln to the gateway. Receiver/broker wiring, multi-namespace mediated
+through Celln to the gateway. Receiver/native-worker wiring, multi-namespace mediated
 workloads, enforcing-CNI, browser and real-provider tests remain missing; the
 summary retains `installedAcceptance: false` even when local KVM succeeds.
 
