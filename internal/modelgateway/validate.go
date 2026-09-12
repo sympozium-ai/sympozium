@@ -2,8 +2,6 @@ package modelgateway
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,14 +24,6 @@ func decodeDecision(raw []byte) (cellncapability.Decision, error) {
 
 func decodeStrict(raw []byte, out any) error { return cellncapability.StrictDecode(raw, out) }
 
-func requireEOF(dec *json.Decoder) error {
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("request must contain one JSON value")
-	}
-	return nil
-}
-
 func digestJSON(value any) (string, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -44,22 +34,36 @@ func digestJSON(value any) (string, error) {
 }
 
 func requestDigest(raw []byte) (string, []byte, error) {
-	// StrictDecode above has already rejected duplicate keys and trailing data.
-	var value any
+	// Use the same v1 integer-only JCS profile as the host consumer. Go's JSON
+	// encoder alone HTML-escapes strings and orders keys by UTF-8, not UTF-16.
+	if len(raw) == 0 || len(raw) > 262144 {
+		return "", nil, fmt.Errorf("model request exceeds v1 canonical body bound")
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
-	if err := dec.Decode(&value); err != nil {
-		return "", nil, err
+	depth := 0
+	for {
+		token, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if delimiter, ok := token.(json.Delim); ok {
+			switch delimiter {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+			if depth > 64 {
+				return "", nil, fmt.Errorf("model request exceeds v1 nesting bound")
+			}
+		}
 	}
-	if err := requireEOF(dec); err != nil {
-		return "", nil, err
-	}
-	canonical, err := json.Marshal(value)
-	if err != nil {
-		return "", nil, err
-	}
-	sum := sha256.Sum256(canonical)
-	return "sha256:" + hex.EncodeToString(sum[:]), canonical, nil
+	canonical, digest, err := cellncapability.CanonicalRequest(raw)
+	return digest, canonical, err
 }
 
 func connectionDigest(spec api.ModelConnectionSpec) (string, error) { return digestJSON(spec) }
