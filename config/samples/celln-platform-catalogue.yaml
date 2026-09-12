@@ -1,0 +1,138 @@
+# Operator-owned shared Celln catalogue and namespace policy.
+# This sample publishes metadata/authority only; it does not claim dispatcher
+# artifact readiness, mint bearer credentials, or create namespace grant maps.
+apiVersion: sympozium.ai/v1alpha1
+kind: CellnRuntimeProfile
+metadata:
+  name: json-agent-v1
+spec:
+  revision: v1
+  contractVersion: celln.json-tools/v1
+  executable:
+    hash: blake3:1111111111111111111111111111111111111111111111111111111111111111
+  closure:
+    hash: blake3:2222222222222222222222222222222222222222222222222222222222222222
+  mote:
+    hash: blake3:3333333333333333333333333333333333333333333333333333333333333333
+  publisherKey: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  entryPoint: /bin/celln-json-agent
+  platform: linux/amd64
+  lane: agent
+  lifecycles: [disposable-one-shot, enduring]
+  limits:
+    timeoutMillis: 120000
+    memoryBytes: 134217728
+    taskBytes: 2048
+    outputBytes: 65536
+    workspace: none
+  json:
+    maxTurns: 6
+    maxCalls: 16
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: ClusterCellnTool
+metadata:
+  name: workspace-write-v1
+spec:
+  revision: v1
+  description: Write bounded files to the run-owned workspace store
+  supportOwner: platform
+  publisherKey: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  executable:
+    hash: blake3:4444444444444444444444444444444444444444444444444444444444444444
+  closure:
+    hash: blake3:5555555555555555555555555555555555555555555555555555555555555555
+  entryPoint: /bin/workspace-write
+  invocationABI: celln.json-stdio/v1
+  argumentsSchema:
+    hash: blake3:6666666666666666666666666666666666666666666666666666666666666666
+  resultSchema:
+    hash: blake3:7777777777777777777777777777777777777777777777777777777777777777
+  platform: linux/amd64
+  lane: tool
+  limits:
+    timeoutMillis: 30000
+    memoryBytes: 67108864
+    argumentBytes: 2048
+    outputBytes: 65536
+    workspace: none
+    effects: none
+    artifacts:
+      operation: write
+      maxOperations: 8
+      maxFiles: 16
+      maxFileBytes: 4096
+      maxTotalBytes: 32768
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: ClusterCellnTool
+metadata:
+  name: https-fetch-v1
+spec:
+  revision: v1
+  description: Bounded credential-free HTTPS GET through the host broker
+  supportOwner: platform
+  publisherKey: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  executable:
+    hash: blake3:8888888888888888888888888888888888888888888888888888888888888888
+  closure:
+    hash: blake3:9999999999999999999999999999999999999999999999999999999999999999
+  entryPoint: /bin/https-fetch
+  invocationABI: celln.json-stdio/v1
+  argumentsSchema:
+    hash: blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  resultSchema:
+    hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  platform: linux/amd64
+  lane: tool
+  limits:
+    timeoutMillis: 30000
+    memoryBytes: 67108864
+    argumentBytes: 2048
+    outputBytes: 65536
+    workspace: none
+    effects: external-side-effects
+    https:
+      allowHosts: [example.com]
+      maxRequests: 4
+      maxResponseBytes: 4096
+      timeoutMillis: 10000
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: CellnExecutionPolicy
+metadata:
+  name: example-tenants
+spec:
+  namespaceSelector:
+    matchLabels:
+      sympozium.ai/celln-tenant: "enabled"
+  runtimeProfiles:
+    - ref:
+        name: json-agent-v1
+        revision: v1
+      limits:
+        timeoutMillis: 120000
+        memoryBytes: 134217728
+        taskBytes: 2048
+        outputBytes: 65536
+        workspace: none
+  tools:
+    - ref:
+        name: workspace-write-v1
+        revision: v1
+    - ref:
+        name: https-fetch-v1
+        revision: v1
+  lifecycles: [direct-one-shot, harness-one-shot, enduring]
+  routes:
+    - provider: openai
+      protocol: openai-chat
+      models: [gpt-4o-mini]
+      endpointOrigins: [https://api.openai.com]
+      auth: secret
+  ceilings:
+    maxTurns: 8
+    maxModelRequests: 24
+    maxOutputTokens: 8192
+    maxParentLeaseSeconds: 600
+    maxTurnSeconds: 120

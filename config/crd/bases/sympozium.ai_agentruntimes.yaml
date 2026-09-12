@@ -58,7 +58,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentRuntimeSpec is the desired state of an AgentRuntime.
+            description: |-
+              AgentRuntimeSpec is the desired state of an AgentRuntime. Existing inline
+              Celln authority remains supported and namespaced. New shared-catalogue use is
+              explicit through cellnProfileRef and may only narrow the selected platform
+              profile through cellnLimits.
             properties:
               capabilities:
                 description: |-
@@ -217,6 +221,61 @@ spec:
                 - message: JSON loop ceilings must match the selected adapter contract
                   rule: 'self.contractVersion == ''celln.json-tools/v1'' ? has(self.json)
                     : !has(self.json)'
+              cellnLimits:
+                description: |-
+                  CellnLimits may only attenuate numeric ceilings from CellnProfileRef. The
+                  live resolver verifies it never raises a platform ceiling.
+                properties:
+                  memoryBytes:
+                    format: int64
+                    maximum: 268435456
+                    minimum: 1
+                    type: integer
+                  outputBytes:
+                    format: int64
+                    maximum: 65536
+                    minimum: 1
+                    type: integer
+                  taskBytes:
+                    format: int64
+                    maximum: 2048
+                    minimum: 1
+                    type: integer
+                  timeoutMillis:
+                    format: int64
+                    maximum: 300000
+                    minimum: 1
+                    type: integer
+                  workspace:
+                    enum:
+                    - none
+                    type: string
+                required:
+                - memoryBytes
+                - outputBytes
+                - taskBytes
+                - timeoutMillis
+                - workspace
+                type: object
+              cellnProfileRef:
+                description: |-
+                  CellnProfileRef explicitly selects one cluster-scoped immutable platform
+                  runtime revision. It never resolves through the namespaced AgentRuntime
+                  namespace and cannot be combined with inline Celln executable authority.
+                properties:
+                  name:
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                    type: string
+                  revision:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - revision
+                type: object
               conformance:
                 description: |-
                   Conformance records this runtime's conformance status against the
@@ -366,6 +425,11 @@ spec:
             required:
             - image
             type: object
+            x-kubernetes-validations:
+            - message: inline celln authority and cellnProfileRef are mutually exclusive
+              rule: '!(has(self.celln) && has(self.cellnProfileRef))'
+            - message: cellnLimits requires cellnProfileRef
+              rule: '!has(self.cellnLimits) || has(self.cellnProfileRef)'
           status:
             description: AgentRuntimeStatus is the observed state of an AgentRuntime.
             properties:
