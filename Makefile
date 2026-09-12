@@ -62,6 +62,10 @@ test: ## Run tests
 test-short: ## Run short tests
 	$(GOTEST) -short ./...
 
+test-celln-model-budget: ## Run real PostgreSQL accounting proof (database URL required)
+	@test -n "$$CELLN_MODEL_BUDGET_DATABASE_URL" || (echo "CELLN_MODEL_BUDGET_DATABASE_URL is required" >&2; exit 1)
+	go test -race ./internal/modelbudget -run Postgres -count=1 -v
+
 test-celln-authorisation-contract: ## Verify the v1 Celln namespace-authorisation fixtures (no cluster, no KVM)
 	go run ./cmd/celln-authorisation-fixture verify -fixtures test/fixtures/celln-authorisation/v1
 
