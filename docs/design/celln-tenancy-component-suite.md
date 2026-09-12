@@ -2,7 +2,9 @@
 
 This runnable tier tests the shared Go/Rust credentials, durable PostgreSQL
 accounting, and gateway namespace/credential binding through a live Kubernetes
-API and a TLS recorder provider. It does **not** qualify installed Celln,
+API and a TLS recorder provider. It also builds and launches the real gateway
+binary, testing the TLS/file/JWKS startup path and durable duplicate suppression
+after process restart for both tenants. It does **not** qualify installed Celln,
 tenant RBAC, enforcing CNI, KVM isolation, browser flows, or a real LLM provider.
 `--release` is deliberately refused. #509 remains incomplete.
 
@@ -35,7 +37,27 @@ contain passing tests and no skips; the live Kubernetes test must pass by exact
 name. A failing command fails the suite. Logs stay local; inspect before sharing.
 Early prerequisite refusal produces no acceptance summary.
 
-## Executed epoch
+## Combined local KVM prerequisite tier
+
+With the same explicit environment variables and a clean pinned Celln checkout:
+
+```sh
+make test-celln-tenancy-local
+```
+
+This runs the component/API/binary checks and Celln's strict `make conformance-kvm`
+runner. The latter builds its native parent and JSON Harness package, makes no
+external model calls, executes five real-KVM proofs in separate serial processes,
+and refuses printed skips/missing cases. `/dev/kvm`, the kernel, musl target,
+compiler and image tools are required. KVM logs remain in the pinned Celln
+checkout's private `target/conformance-kvm.*` directory.
+
+The combined command does **not** claim a controller-created mediated run travels
+through Celln to the gateway. Receiver/broker wiring, multi-namespace mediated
+workloads, enforcing-CNI, browser and real-provider tests remain missing; the
+summary retains `installedAcceptance: false` even when local KVM succeeds.
+
+## Executed epoch (historical component-only run)
 
 - Sympozium: `48db137`; Celln: `96b7755b89c81f68b82e15231c301de51d92951d`.
 - `make test-celln-tenancy-integration`: exit 0; all five evidence checks passed.
