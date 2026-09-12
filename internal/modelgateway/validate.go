@@ -65,7 +65,7 @@ func requestDigest(raw []byte) (string, []byte, error) {
 func connectionDigest(spec api.ModelConnectionSpec) (string, error) { return digestJSON(spec) }
 
 func turnID(decision cellncapability.Decision) string {
-	if decision.Parent != nil && decision.Parent.TurnID != nil {
+	if decision.Operation == "execution.turn" && decision.Parent != nil && decision.Parent.TurnID != nil {
 		return *decision.Parent.TurnID
 	}
 	return decision.Run.UID
@@ -153,7 +153,7 @@ func validateProviderRequest(protocol, expectedModel string, raw []byte, turnCap
 	default:
 		return 0, "", nil, fail(ReasonProtocol, 400, nil)
 	}
-	if requested < 1 || requested > turnCap {
+	if requested < 1 || requested > 512 || requested > turnCap {
 		return 0, "", nil, fail(ReasonForbidden, 403, nil)
 	}
 	digest, canonical, err := requestDigest(raw)

@@ -78,6 +78,7 @@ type AuthorityStore interface {
 // Authority is durable, secret-free route metadata. Credential data is always
 // re-read from Kubernetes after capability and registration checks.
 type Authority struct {
+	Decision       cellncapability.Decision     `json:"decision"`
 	BudgetID       string                       `json:"budgetId"`
 	TurnID         string                       `json:"turnId"`
 	DecisionDigest string                       `json:"decisionDigest"`

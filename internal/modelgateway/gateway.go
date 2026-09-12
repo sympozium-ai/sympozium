@@ -95,6 +95,19 @@ func (g *Gateway) Register(ctx context.Context, in RegistrationRequest) error {
 	if err != nil {
 		return err
 	}
+	original := decision
+	originalDigest := verified.DecisionDigest
+	if decision.Operation == "execution.turn" {
+		initial, err := g.authorities.Authority(ctx, decision.Budget.BudgetID, decision.Run.UID)
+		if err != nil {
+			return err
+		}
+		original = initial.Decision
+		if err := retainRunAuthority(original, decision); err != nil {
+			return err
+		}
+		originalDigest = initial.DecisionDigest
+	}
 	routeDigest, err := digestJSON(decision.Route)
 	if err != nil {
 		return fail(ReasonMalformed, 400, err)
@@ -105,8 +118,8 @@ func (g *Gateway) Register(ctx context.Context, in RegistrationRequest) error {
 	}
 	if err := g.budgets.RegisterRun(ctx, modelbudget.RunRegistration{
 		BudgetID: decision.Budget.BudgetID, ClusterID: decision.ClusterID, NamespaceUID: decision.Run.NamespaceUID,
-		RunUID: decision.Run.UID, DecisionDigest: verified.DecisionDigest, RouteDigest: routeDigest,
-		MaxRequests: decision.Budget.RunCap.Requests, MaxOutputTokens: decision.Budget.RunCap.OutputTokens,
+		RunUID: decision.Run.UID, DecisionDigest: originalDigest, RouteDigest: routeDigest,
+		MaxRequests: original.Budget.RunCap.Requests, MaxOutputTokens: original.Budget.RunCap.OutputTokens,
 		MaxTurns: decision.Budget.MaxTurns, ParentDeadline: parentDeadline,
 	}); err != nil {
 		return err
@@ -120,6 +133,7 @@ func (g *Gateway) Register(ctx context.Context, in RegistrationRequest) error {
 		return err
 	}
 	return g.authorities.RegisterAuthority(ctx, Authority{
+		Decision: decision,
 		BudgetID: decision.Budget.BudgetID, TurnID: tid, DecisionDigest: verified.DecisionDigest,
 		ClusterID: decision.ClusterID, Namespace: decision.Run.Namespace, NamespaceUID: decision.Run.NamespaceUID,
 		RunUID: decision.Run.UID, RunSpecSHA256: decision.Run.SpecSHA256, ConnectionName: in.ConnectionName,
@@ -218,7 +232,21 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "response-invalid")
 		return InvokeResponse{}, fail(ReasonResponseTooLarge, 502, err)
 	}
+	// Provider errors can echo request headers or keys. Never expose their body
+	// to a tenant, even when the provider labels it application/json.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "provider-error")
+		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
+	}
+	if !json.Valid(responseBody) || (len(credential) > 0 && bytes.Contains(responseBody, credential)) || bytes.Contains(responseBody, []byte(token.Bearer())) {
+		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "response-invalid")
+		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
+	}
 	observed := observedOutput(decision.Route.Protocol, responseBody)
+	if observed < 0 {
+		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "usage-invalid")
+		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
+	}
 	outcome := fmt.Sprintf("provider-http-%d", resp.StatusCode)
 	if err := g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, observed, "terminal", outcome); err != nil {
 		return InvokeResponse{}, err
@@ -240,8 +268,11 @@ func sameAuthorityDecision(a Authority, d cellncapability.Decision) bool {
 
 func (g *Gateway) liveRoute(ctx context.Context, decision cellncapability.Decision, connectionName string, readCredential bool) (api.ModelConnection, []byte, error) {
 	var namespace corev1.Namespace
-	if err := g.k8s.Get(ctx, types.NamespacedName{Name: decision.Run.Namespace}, &namespace); err != nil || string(namespace.UID) != decision.Run.NamespaceUID {
+	if err := g.k8s.Get(ctx, types.NamespacedName{Name: decision.Run.Namespace}, &namespace); err != nil {
 		return api.ModelConnection{}, nil, fail(ReasonRouteChanged, 503, err)
+	}
+	if string(namespace.UID) != decision.Run.NamespaceUID || namespace.DeletionTimestamp != nil {
+		return api.ModelConnection{}, nil, fail(ReasonRouteChanged, 403, nil)
 	}
 	var connection api.ModelConnection
 	if err := g.k8s.Get(ctx, types.NamespacedName{Namespace: decision.Run.Namespace, Name: connectionName}, &connection); err != nil {

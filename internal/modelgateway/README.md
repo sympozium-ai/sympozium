@@ -1,7 +1,7 @@
 # Model gateway — work in progress (#502)
 
-This package is not enabled in any binary, chart, or controller path. Do not
-use this draft to enable mediated execution or mark #502 complete.
+The dedicated `cmd/model-gateway` binary exists but is not enabled in any chart
+or controller path. Do not use this draft to mark #502 complete.
 
 Implemented so far:
 
@@ -18,17 +18,18 @@ Implemented so far:
 
 ## Remaining blockers (not acceptance evidence)
 
-- Dedicated TLS binary, protected operator configuration, key loading/reload,
-  readiness authority checks, build/image wiring and reviewed deployment boundary.
-- Complete initial/turn registration integration: a later decision must reuse
-  the original immutable run registration rather than register its new decision
-  digest as the original run digest. Partial registration recovery needs tests.
+- Readiness authority checks and reviewed deployment boundary.
+- Initial/turn registration now retains the original decision and checks immutable
+  run/route/parent/ceilings, but partial registration recovery and enduring
+  PostgreSQL integration still need tests.
 - Atomic registered identity checks at reservation, cancellation/fencing of
   locally active requests, and concurrency/deadline ordering review.
 - Provider response validation, usage uncertainty and output ceiling handling;
   never return raw provider failures containing credentials or unsafe headers.
-- Full A/B credential isolation, source rotation/recreation, missing authority,
-  registration authentication and real PostgreSQL concurrency/failure tests.
+- Extend the real PostgreSQL A/B recording-provider test (same-name connections,
+  distinct credentials, same-UID rotation, replacement refusal, wrong audience,
+  duplicate suppression) with authority outages, full HTTP authentication and
+  crash/concurrency tests.
 - Shared model-request canonicalisation review with Celln. The current body
   digest must not be represented as reviewed cross-language protocol evidence.
 - KVM/installed proof and paired Celln #500/#501 protocol dependencies.
@@ -50,5 +51,23 @@ go vet ./internal/modelgateway
 
 The tests include actual loopback HTTP connections and redirect refusal, plus
 injected DNS answers asserting the dial receives only the validated literal IP.
-They are portable transport tests, not syscall tracing, real PostgreSQL,
-installed TLS-provider, or KVM acceptance proof.
+They are portable transport tests, not syscall tracing, installed TLS-provider,
+or KVM acceptance proof. PostgreSQL tests require
+`CELLN_MODEL_BUDGET_DATABASE_URL`; without it they explicitly skip.
+
+## Dedicated process
+
+`make build-model-gateway` builds a TLS-only server. Pass `--config` with an
+operator-controlled JSON file containing `clusterId`, `issuer`, `listen`,
+`tlsCertificateFile`, `tlsKeyFile`, `verificationKeysFile`,
+`registrationTokenFile`, `databaseUrlFile`, and optional `privateOrigins`.
+No bearer value is accepted on the command line. Registration/database files
+must be owner-only regular files. The keyset is public Ed25519 JWKS only;
+private keys and remote key references refuse. SIGHUP atomically reloads a valid
+public keyset; invalid reloads retain the previous trusted set. Operators must
+retain old keys for all outstanding lifetimes plus skew. Emergency removal
+refuses future verification, not already admitted Celln execution.
+
+Apply migrations 002 and 003 before startup. There is no automatic migration or
+in-memory fallback. This process does not yet constitute reviewed installation
+(#506) or Celln/controller integration (#504/#505).
