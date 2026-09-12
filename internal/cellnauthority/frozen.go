@@ -27,6 +27,9 @@ func (l Loader) FreezeRun(ctx context.Context, runKey types.NamespacedName, sele
 	}
 	runtimeOverride := ""
 	if intent := run.Spec.CellnSelection; intent != nil {
+		if len(intent.ClusterToolRefs) != 0 {
+			return nil, fmt.Errorf("AUTH_PROTOCOL_UNSUPPORTED: shared catalogue selection requires mediated admission; legacy issuance cannot drop clusterToolRefs")
+		}
 		if run.Spec.Celln != nil || intent.ToolRefs == nil || len(intent.ToolRefs) > 16 || len(intent.ToolRefs) != len(selection) {
 			return nil, fmt.Errorf("catalogue selection cannot mix artifacts or change the explicit tool list")
 		}
