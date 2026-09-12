@@ -76,6 +76,10 @@ func requestFor(op, runUID string, parent *ParentBinding, text string) (string, 
 	return string(c), sha256Digest(c)
 }
 func baseDecision(op, lifecycle string, parent *ParentBinding, tools []ToolBinding, route RouteBinding, requestDigest string) Decision {
+	// An intentionally tool-free request is an empty array, never JSON null.
+	if tools == nil {
+		tools = []ToolBinding{}
+	}
 	b := BudgetBinding{BudgetID: sha("budget-run-1"), RunCap: Cap{Requests: 6, OutputTokens: 3072}, TurnCap: Cap{Requests: 2, OutputTokens: 512}, MaxTurns: 1, TurnDeadlineUnix: testNow + 120}
 	if lifecycle != "one-shot" {
 		b.MaxTurns = 4
