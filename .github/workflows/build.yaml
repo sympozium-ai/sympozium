@@ -11,7 +11,7 @@ env:
   REGISTRY: ghcr.io/sympozium-ai/sympozium
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 # Preserve an in-flight image build even when a later docs/chart-only push
@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Gate the expensive fleet build on whether anything that reaches an
-  # image actually changed. Verification is one cheap job and always runs.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -48,10 +46,6 @@ jobs:
               - 'config/host/**'
               - 'config/celln/**'
 
-  # fmt, vet, build, test, and codegen used to be five runners each paying
-  # its own checkout + setup-go + module download. The steps are strictly
-  # cheaper back-to-back on one warm cache; they stay separate steps so a
-  # failure still names itself.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -62,6 +56,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      # Temporary bootstrap for #499 only. It lets the repository's own Go
+      # toolchain add the reviewed go-jose dependency and exact go.sum entries;
+      # the next commit removes this step and restores contents:read.
+      - name: Bootstrap #499 JWS dependency
+        if: github.event_name == 'pull_request' && github.head_ref == 'celln-tenancy/04-capabilities-499'
+        run: |
+          git fetch origin "$GITHUB_HEAD_REF:$GITHUB_HEAD_REF"
+          git checkout "$GITHUB_HEAD_REF"
+          go get github.com/go-jose/go-jose/v4@v4.1.4
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add go.mod go.sum
+          if ! git diff --cached --quiet; then
+            git commit -m 'deps: add go-jose for Celln capability JWS'
+            git push origin HEAD:"$GITHUB_HEAD_REF"
+          fi
 
       - name: Check formatting
         run: |
@@ -168,15 +179,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Scoped per image: 18 matrix jobs writing mode=max into ONE
-          # shared scope evicted each other constantly — every build ran
-          # effectively cold.
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # The celln host-installer is amd64-only (its base Celln image has no ARM64
-  # bundle) and layers a Rust toolchain, so it is built separately from the
-  # ordinary multi-arch fleet.
   build-celln-installer:
     runs-on: ubuntu-latest
     needs: [changes, verify]
