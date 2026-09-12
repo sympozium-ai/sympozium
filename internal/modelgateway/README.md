@@ -48,6 +48,23 @@ strings/keys refuse. Unknown usage remains SQL NULL, including lost responses;
 no failure is recorded as measured zero or refunded. Response headers are not
 relayed. These checks do not claim to detect arbitrary encodings of credentials.
 
+## Actual Rust host relay integration
+
+With Celln PR #108's `tenancy-gateway-probe` example built, set
+`CELLN_GATEWAY_RELAY_PROBE` to its absolute executable path when running the
+PostgreSQL/live API/gateway-process tests. The driver receives scoped credentials
+only over stdin and exercises the real Rust warden broker and TLS relay. It is
+not a production admission API: its expected receiver context is supplied by the
+trusted test fixture, not a durable native owner.
+
+For both tenants, tests check the returned provider result, correct provider
+credential and exactly one durable reservation followed by budget refusal.
+Additional real TLS tests reject an unrelated CA, redirects (even to another
+trusted TLS endpoint), escaped bearer echoes hidden in duplicate JSON keys, and
+observe cancellation at the server without a retry. No VM/native parent or
+controller-created workload is claimed. Gateway fixture issuance now uses the
+published `sympozium-control-plane` issuer rather than a Go-only test alias.
+
 ## Model request encoding
 
 Gateway reservation hashes now use integer-only JCS, not Go JSON re-encoding.
