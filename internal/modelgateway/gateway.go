@@ -3,7 +3,6 @@ package modelgateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -185,9 +184,17 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	if err != nil {
 		return InvokeResponse{}, err
 	}
-	reservation, err := g.budgets.Reserve(ctx, modelbudget.ReservationRequest{
+	routeDigest, err := digestJSON(decision.Route)
+	if err != nil {
+		return InvokeResponse{}, fail(ReasonMalformed, 400, err)
+	}
+	reservation, err := g.budgets.ReserveBound(ctx, modelbudget.ReservationRequest{
 		BudgetID: decision.Budget.BudgetID, TurnID: tid, RequestID: in.RequestID,
 		RequestDigest: digest, ReservedOutputTokens: reservedOutput,
+	}, modelbudget.ReservationBinding{
+		ClusterID: decision.ClusterID, NamespaceUID: decision.Run.NamespaceUID,
+		RunUID: decision.Run.UID, RouteDigest: routeDigest,
+		TurnDecisionDigest: verified.DecisionDigest,
 	})
 	if err != nil {
 		return InvokeResponse{}, err
@@ -231,35 +238,38 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "uncertain", "provider-outcome-unknown")
+		_ = g.budgets.ReconcileUnknown(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, "uncertain", "provider-outcome-unknown")
 		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, err)
 	}
 	defer resp.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, g.config.MaxResponseBytes+1))
 	if err != nil || int64(len(responseBody)) > g.config.MaxResponseBytes {
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "response-invalid")
+		_ = g.budgets.ReconcileUnknown(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, "terminal", "response-invalid")
 		return InvokeResponse{}, fail(ReasonResponseTooLarge, 502, err)
 	}
 	// Provider errors can echo request headers or keys. Never expose their body
 	// to a tenant, even when the provider labels it application/json.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "provider-error")
+		_ = g.budgets.ReconcileUnknown(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, "terminal", "provider-error")
 		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
 	}
-	if !json.Valid(responseBody) || (len(credential) > 0 && bytes.Contains(responseBody, credential)) || bytes.Contains(responseBody, []byte(token.Bearer())) {
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "response-invalid")
-		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
-	}
-	observed := observedOutput(decision.Route.Protocol, responseBody)
-	if observed < 0 {
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "terminal", "usage-invalid")
+	observed, err := validateProviderResponse(decision.Route.Protocol, responseBody, credential, token.Bearer())
+	if err != nil {
+		_ = g.budgets.ReconcileUnknown(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, "terminal", "response-invalid")
 		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, nil)
 	}
 	outcome := fmt.Sprintf("provider-http-%d", resp.StatusCode)
-	if err := g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, observed, "terminal", outcome); err != nil {
+	if observed == nil {
+		err = g.budgets.ReconcileUnknown(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, "terminal", outcome)
+	} else {
+		err = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, *observed, "terminal", outcome)
+	}
+	if err != nil {
 		return InvokeResponse{}, err
 	}
-	return InvokeResponse{StatusCode: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: responseBody}, nil
+	// Do not relay provider-controlled headers, even Content-Type: they may
+	// echo credentials while the JSON body itself is safe.
+	return InvokeResponse{StatusCode: resp.StatusCode, ContentType: "application/json", Body: responseBody}, nil
 }
 
 func contextFor(decision cellncapability.Decision, operation string) cellncapability.VerifyContext {
@@ -305,20 +315,4 @@ func (g *Gateway) liveRoute(ctx context.Context, decision cellncapability.Decisi
 		return connection, nil, fail(ReasonCredentialChanged, 403, nil)
 	}
 	return connection, append([]byte(nil), credential...), nil
-}
-
-func observedOutput(protocol string, raw []byte) int64 {
-	var response struct {
-		Usage struct {
-			CompletionTokens int64 `json:"completion_tokens"`
-			OutputTokens     int64 `json:"output_tokens"`
-		} `json:"usage"`
-	}
-	if json.Unmarshal(raw, &response) != nil {
-		return 0
-	}
-	if protocol == "anthropic-messages" {
-		return response.Usage.OutputTokens
-	}
-	return response.Usage.CompletionTokens
 }
