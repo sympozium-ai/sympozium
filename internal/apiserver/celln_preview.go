@@ -87,8 +87,12 @@ func (s *Server) previewCellnSelection(w http.ResponseWriter, r *http.Request) {
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	d.DisallowUnknownFields()
-	if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || req.AgentRef == "" || (req.Lifecycle != "" && req.Lifecycle != "enduring") {
+	if d.Decode(&req) != nil || d.Decode(new(any)) != io.EOF || req.AgentRef == "" || (req.Lifecycle != "" && req.Lifecycle != "one-shot" && req.Lifecycle != "enduring") {
 		http.Error(w, "bounded explicit catalogue selection required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Selection.ClusterToolRefs) != 0 {
+		http.Error(w, "AUTH_PROTOCOL_UNSUPPORTED: shared catalogue preview is not available on the legacy endpoint; no execution authorized", http.StatusUnprocessableEntity)
 		return
 	}
 	l, ok := s.cellnPreview[types.NamespacedName{Namespace: ns, Name: req.AgentRef}]

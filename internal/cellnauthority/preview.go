@@ -26,8 +26,11 @@ func (l Loader) Preview(ctx context.Context, agent types.NamespacedName, intent 
 }
 
 func (l Loader) PreviewLifecycle(ctx context.Context, agent types.NamespacedName, intent api.CellnCatalogueSelection, lifecycle string) (*PermissionPreview, error) {
-	if lifecycle != "" && lifecycle != "enduring" {
+	if lifecycle != "" && lifecycle != "one-shot" && lifecycle != "enduring" {
 		return nil, fmt.Errorf("unsupported preview lifecycle")
+	}
+	if len(intent.ClusterToolRefs) != 0 {
+		return nil, fmt.Errorf("AUTH_PROTOCOL_UNSUPPORTED: legacy preview cannot evaluate shared catalogue permissions")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

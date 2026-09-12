@@ -21,6 +21,8 @@ func TestPreviewEndpointRefusesUnconfiguredOrCallerAuthority(t *testing.T) {
 	}{
 		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[]}}`, 503},
 		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[]},"executionLifecycle":"enduring"}`, 503},
+		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[]},"executionLifecycle":"one-shot"}`, 503},
+		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[],"clusterToolRefs":[{"name":"shared","revision":"v1"}]}}`, 422},
 		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[]},"executionLifecycle":"unknown"}`, 400},
 		{`{"agentRef":"agent","operatorSource":{"name":"mine"},"cellnSelection":{"toolRefs":[]}}`, 400},
 		{`{"agentRef":"agent","cellnSelection":{"toolRefs":[]}} {}`, 400},
