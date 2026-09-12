@@ -1,0 +1,4 @@
+{
+  "outcome": "reject",
+  "reason": "AUTH_CRED_SIG_INVALID"
+}

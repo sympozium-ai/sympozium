@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sympozium.ai/schemas/celln-authorisation/decision-v1.json",
+  "title": "CellnAuthorisationDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion", "kind", "run", "subject", "operation", "lifecycle",
+    "parent", "runtime", "agent", "policy", "tools", "route", "budget",
+    "windows", "requestBinding"
+  ],
+  "properties": {
+    "apiVersion": { "const": "celln.sympozium.ai/authorisation-decision-v1" },
+    "kind": { "const": "CellnAuthorisationDecision" },
+    "run": { "$ref": "#/$defs/run" },
+    "subject": { "$ref": "#/$defs/subject" },
+    "operation": {
+      "enum": [
+        "execution.start", "execution.turn", "execution.cancel", "execution.stop",
+        "execution.read", "execution.cleanup", "model.invoke"
+      ]
+    },
+    "lifecycle": { "enum": ["one-shot", "enduring-initial", "enduring-turn"] },
+    "parent": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/parent" }
+      ]
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "agent": { "$ref": "#/$defs/subject" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "tools": {
+      "type": "array", "maxItems": 16,
+      "items": { "$ref": "#/$defs/tool" }
+    },
+    "route": { "$ref": "#/$defs/route" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "windows": { "$ref": "#/$defs/windows" },
+    "requestBinding": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "blake3": { "type": "string", "pattern": "^blake3:[0-9a-f]{64}$" },
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 253 },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace", "namespaceUid", "name", "uid", "specSha256"],
+      "properties": {
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "namespaceUid": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "uid": { "$ref": "#/$defs/identifier" },
+        "specSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "namespace", "name", "uid", "specSha256"],
+      "properties": {
+        "kind": { "enum": ["Agent", "AgentRuntime", "AgentRun"] },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "uid": { "$ref": "#/$defs/identifier" },
+        "specSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "parent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["incarnation", "turnId"],
+      "properties": {
+        "incarnation": { "$ref": "#/$defs/blake3" },
+        "turnId": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" }
+          ]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "uid", "revision", "specSha256"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "uid": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/identifier" },
+        "specSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile", "revision", "digest"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/identifier" },
+        "digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["timeoutMillis", "memoryBytes", "taskBytes", "outputBytes", "workspace"],
+      "properties": {
+        "timeoutMillis": { "type": "integer", "minimum": 1, "maximum": 300000 },
+        "memoryBytes": { "type": "integer", "minimum": 1, "maximum": 268435456 },
+        "taskBytes": { "type": "integer", "minimum": 1, "maximum": 2048 },
+        "outputBytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
+        "workspace": { "const": "none" }
+      }
+    },
+    "tool": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "revision", "hash", "limits"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/identifier" },
+        "hash": { "$ref": "#/$defs/blake3" },
+        "limits": { "$ref": "#/$defs/limits" }
+      }
+    },
+    "credentialSource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "secretUid", "secretName", "secretKey"],
+      "properties": {
+        "kind": { "const": "ModelConnection" },
+        "secretUid": { "$ref": "#/$defs/identifier" },
+        "secretName": { "$ref": "#/$defs/identifier" },
+        "secretKey": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "route": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "modelConnectionUid", "modelConnectionSpecSha256", "provider", "protocol",
+        "model", "endpointOrigin", "streaming", "credentialSource"
+      ],
+      "properties": {
+        "modelConnectionUid": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/identifier" }
+          ]
+        },
+        "modelConnectionSpecSha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "const": "" },
+            { "$ref": "#/$defs/sha256" }
+          ]
+        },
+        "provider": { "$ref": "#/$defs/identifier" },
+        "protocol": { "enum": ["openai-chat", "anthropic-messages", "none"] },
+        "model": { "type": "string", "maxLength": 128 },
+        "endpointOrigin": { "type": "string", "maxLength": 2048 },
+        "streaming": { "const": false },
+        "credentialSource": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/credentialSource" }
+          ]
+        }
+      }
+    },
+    "cap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requests", "outputTokens"],
+      "properties": {
+        "requests": { "type": "integer", "minimum": 0, "maximum": 6144 },
+        "outputTokens": { "type": "integer", "minimum": 0, "maximum": 3145728 }
+      }
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["budgetId", "runCap", "turnCap", "deadlineUnix"],
+      "properties": {
+        "budgetId": { "$ref": "#/$defs/sha256" },
+        "runCap": { "$ref": "#/$defs/cap" },
+        "turnCap": { "$ref": "#/$defs/cap" },
+        "deadlineUnix": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "windows": {
+      "type": "object", "additionalProperties": false,
+      "required": ["issuedAt", "notBefore", "expiry", "admissionDeadline"],
+      "properties": {
+        "issuedAt": { "type": "integer", "minimum": 1 },
+        "notBefore": { "type": "integer", "minimum": 1 },
+        "expiry": { "type": "integer", "minimum": 1 },
+        "admissionDeadline": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

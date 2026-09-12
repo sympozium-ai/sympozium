@@ -1,0 +1,53 @@
+{
+  "now": 1790000000,
+  "namespace": "celln-tenant-a",
+  "namespaceUid": "ns-uid-aaaa",
+  "runUid": "run-uid-0001",
+  "runSpecSha256": "sha256:8ce77c849d5d81c35663e4b97d6178958cdff6392086b142d68192fa46a3c547",
+  "parent": {
+    "incarnation": "blake3:bd2ceedb65d8f3d242d3d2cce5cc36f13468047f6236456c23a0b8245b0972f1",
+    "turnId": "t2"
+  },
+  "policyPresent": true,
+  "policyDigest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+  "policyLimits": [
+    {
+      "timeoutMillis": 30000,
+      "memoryBytes": 67108864,
+      "taskBytes": 2048,
+      "outputBytes": 65536,
+      "workspace": "none"
+    }
+  ],
+  "toolOrder": [
+    {
+      "name": "k8s-read",
+      "revision": "rev-3",
+      "hash": "blake3:b5cab31f7a4bc123d66abfbed12008d07fc3f152a2faeccec5ff482fc2dc8d2d",
+      "limits": {
+        "timeoutMillis": 30000,
+        "memoryBytes": 67108864,
+        "taskBytes": 2048,
+        "outputBytes": 65536,
+        "workspace": "none"
+      }
+    }
+  ],
+  "route": {
+    "modelConnectionUid": "mc-uid-0001",
+    "modelConnectionSpecSha256": "sha256:5eec1874e9c1f5938a1a80891e7e1aa991490f7cb8d46fdd9017c7419b5841cb",
+    "provider": "openai",
+    "protocol": "openai-chat",
+    "model": "gpt-4o-mini",
+    "endpointOrigin": "https://api.openai.com",
+    "streaming": false,
+    "credentialSource": {
+      "kind": "ModelConnection",
+      "secretUid": "secret-uid-0001",
+      "secretName": "openai-key",
+      "secretKey": "apiKey"
+    }
+  },
+  "budgetId": "sha256:0af96a8ed622a394e8b2a239284ee46e9a7a7b0ec38191bbd08571b171118dd6",
+  "seenJti": false
+}

@@ -62,6 +62,12 @@ test: ## Run tests
 test-short: ## Run short tests
 	$(GOTEST) -short ./...
 
+test-celln-authorisation-contract: ## Verify the v1 Celln namespace-authorisation fixtures (no cluster, no KVM)
+	go run ./cmd/celln-authorisation-fixture verify -fixtures test/fixtures/celln-authorisation/v1
+
+celln-authorisation-fixtures-gen: ## Regenerate the v1 Celln namespace-authorisation fixtures (test keys only)
+	go run ./cmd/celln-authorisation-fixture gen -fixtures test/fixtures/celln-authorisation/v1
+
 test-hermes-model-connection: ## Test persistent Hermes with a real llama-server (LLAMA_SERVER_URL required)
 	./test/integration/test-hermes-model-connection.sh
 

@@ -1,0 +1,244 @@
+{
+  "apiVersion": "celln.sympozium.ai/conformance-manifest-v1",
+  "contract": "docs/design/celln-namespace-authorisation.md",
+  "bundleHash": "sha256:87703a8b4e6727e395918fef84d8e9509376b3316dadd5d3310e3e40c3441548",
+  "vectors": [
+    {
+      "name": "audience-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_AUD_MISMATCH"
+    },
+    {
+      "name": "budget-id-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_BUDGET_MISMATCH"
+    },
+    {
+      "name": "credential-source-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CREDENTIAL_SOURCE_MISMATCH"
+    },
+    {
+      "name": "duplicate-decision",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_DUPLICATE_DECISION"
+    },
+    {
+      "name": "duplicate-json-key",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_DUPLICATE_JSON_KEY"
+    },
+    {
+      "name": "enduring-initial-turn",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "enduring-subsequent-turn",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "expired-token",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_TIME_EXPIRED"
+    },
+    {
+      "name": "future-token",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_TIME_NOT_YET_VALID"
+    },
+    {
+      "name": "harness-one-shot",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "issuer-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_ISS_MISMATCH"
+    },
+    {
+      "name": "limit-missing",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_LIMIT_OUT_OF_RANGE"
+    },
+    {
+      "name": "limit-out-of-range",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_LIMIT_OUT_OF_RANGE"
+    },
+    {
+      "name": "limit-zero",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_LIMIT_OUT_OF_RANGE"
+    },
+    {
+      "name": "model-invoke",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "namespace-uid-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_NAMESPACE_UID_MISMATCH"
+    },
+    {
+      "name": "one-shot-direct-no-model",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "operation-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_OPERATION_MISMATCH"
+    },
+    {
+      "name": "oversized-credential",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_SIZE_EXCEEDED"
+    },
+    {
+      "name": "owner-cleanup",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "owner-read",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "parent-create",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "parent-incarnation-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_PARENT_TURN_MISMATCH"
+    },
+    {
+      "name": "policy-contracted",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_POLICY_CONTRACTED"
+    },
+    {
+      "name": "policy-removed",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_POLICY_WITHDRAWN"
+    },
+    {
+      "name": "protocol-unsupported",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_PROTOCOL_UNSUPPORTED"
+    },
+    {
+      "name": "request-binding-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_REQUEST_BINDING_MISMATCH"
+    },
+    {
+      "name": "rotation-key-2",
+      "category": "accept",
+      "outcome": "accept"
+    },
+    {
+      "name": "route-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_ROUTE_MISMATCH"
+    },
+    {
+      "name": "run-uid-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_RUN_UID_MISMATCH"
+    },
+    {
+      "name": "stale-decision-digest",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_DECISION_DIGEST_MISMATCH"
+    },
+    {
+      "name": "streaming-unsupported",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_STREAMING_UNSUPPORTED"
+    },
+    {
+      "name": "subject-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_SUBJECT_MISMATCH"
+    },
+    {
+      "name": "tampered-signature",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_SIG_INVALID"
+    },
+    {
+      "name": "tool-reordered",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_TOOL_ORDER_MISMATCH"
+    },
+    {
+      "name": "tool-revision-unknown",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_TOOL_UNKNOWN"
+    },
+    {
+      "name": "turn-id-mismatch",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_SUBJECT_MISMATCH"
+    },
+    {
+      "name": "unknown-algorithm",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_ALG_UNSUPPORTED"
+    },
+    {
+      "name": "unknown-kid",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_KID_UNKNOWN"
+    },
+    {
+      "name": "unknown-payload-field",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_CRED_UNKNOWN_FIELD"
+    },
+    {
+      "name": "unknown-version",
+      "category": "reject",
+      "outcome": "reject",
+      "reason": "AUTH_VERSION_UNSUPPORTED"
+    }
+  ]
+}

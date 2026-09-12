@@ -1,0 +1,4 @@
+{
+  "outcome": "reject",
+  "reason": "AUTH_REQUEST_BINDING_MISMATCH"
+}
