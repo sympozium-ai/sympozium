@@ -38,13 +38,29 @@ type AgentRuntime struct {
 	Status AgentRuntimeStatus `json:"status,omitempty"`
 }
 
-// AgentRuntimeSpec is the desired state of an AgentRuntime.
+// AgentRuntimeSpec is the desired state of an AgentRuntime. Existing inline
+// Celln authority remains supported and namespaced. New shared-catalogue use is
+// explicit through cellnProfileRef and may only narrow the selected platform
+// profile through cellnLimits.
+// +kubebuilder:validation:XValidation:rule="!(has(self.celln) && has(self.cellnProfileRef))",message="inline celln authority and cellnProfileRef are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.cellnLimits) || has(self.cellnProfileRef)",message="cellnLimits requires cellnProfileRef"
 type AgentRuntimeSpec struct {
 	// Celln declares an additional placement profile, not executable authority.
 	// A Celln-native runtime (no OCI adapter) may set this with an empty image;
 	// OCI runtimes still require image. OCI Ready never implies CellnReady.
 	// +optional
 	Celln *AgentRuntimeCellnProfile `json:"celln,omitempty"`
+
+	// CellnProfileRef explicitly selects one cluster-scoped immutable platform
+	// runtime revision. It never resolves through the namespaced AgentRuntime
+	// namespace and cannot be combined with inline Celln executable authority.
+	// +optional
+	CellnProfileRef *CellnRuntimeProfileRef `json:"cellnProfileRef,omitempty"`
+
+	// CellnLimits may only attenuate numeric ceilings from CellnProfileRef. The
+	// live resolver verifies it never raises a platform ceiling.
+	// +optional
+	CellnLimits *AgentRuntimeCellnLimits `json:"cellnLimits,omitempty"`
 
 	// Image is the digest-pinned OCI reference that becomes the pod's primary
 	// process. A mutable tag is rejected: the digest is the trust anchor, and

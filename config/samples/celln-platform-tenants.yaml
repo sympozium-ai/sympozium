@@ -1,0 +1,124 @@
+# Tenant declarations created after the platform catalogue. These contain only
+# namespaced intent: no executable hashes, grants, registration Secrets, bearer
+# credentials, or fabricated readiness/admission status.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: celln-tenant-a
+  labels:
+    sympozium.ai/celln-tenant: "enabled"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: celln-tenant-b
+  labels:
+    sympozium.ai/celln-tenant: "enabled"
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: shared-celln
+  namespace: celln-tenant-a
+spec:
+  image: ""
+  cellnProfileRef:
+    name: json-agent-v1
+    revision: v1
+  cellnLimits:
+    timeoutMillis: 60000
+    memoryBytes: 67108864
+    taskBytes: 2048
+    outputBytes: 32768
+    workspace: none
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: shared-celln
+  namespace: celln-tenant-b
+spec:
+  image: ""
+  cellnProfileRef:
+    name: json-agent-v1
+    revision: v1
+  cellnLimits:
+    timeoutMillis: 60000
+    memoryBytes: 67108864
+    taskBytes: 2048
+    outputBytes: 32768
+    workspace: none
+---
+# Harness one-shot intent in tenant A. The shared tool reference is explicitly
+# cluster-scoped; legacy toolRefs remains an empty namespaced list.
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRun
+metadata:
+  name: shared-catalogue-one-shot
+  namespace: celln-tenant-a
+spec:
+  agentRef: agent
+  task: Fetch the approved example page and summarize it.
+  backend: celln
+  model:
+    provider: openai
+    model: gpt-4o-mini
+  cellnSelection:
+    runtimeRef: shared-celln
+    toolRefs: []
+    clusterToolRefs:
+      - name: https-fetch-v1
+        revision: v1
+---
+# Enduring intent in tenant A.
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRun
+metadata:
+  name: shared-catalogue-enduring
+  namespace: celln-tenant-a
+spec:
+  agentRef: agent
+  task: Write a bounded note to the approved run workspace.
+  backend: celln
+  executionLifecycle: enduring
+  enduring:
+    requireToolCall: true
+    leaseSeconds: 300
+    maxTurns: 4
+    maxModelRequests: 12
+    maxOutputTokens: 4096
+  model:
+    provider: openai
+    model: gpt-4o-mini
+  cellnSelection:
+    runtimeRef: shared-celln
+    toolRefs: []
+    clusterToolRefs:
+      - name: workspace-write-v1
+        revision: v1
+---
+# Tenant B deliberately reuses the same friendly runtime/run/tool names. UID and
+# namespace binding at resolution time, not object name, separates authority.
+apiVersion: sympozium.ai/v1alpha1
+kind: AgentRun
+metadata:
+  name: shared-catalogue-enduring
+  namespace: celln-tenant-b
+spec:
+  agentRef: agent
+  task: Keep this tenant's context isolated.
+  backend: celln
+  executionLifecycle: enduring
+  enduring:
+    requireToolCall: false
+    leaseSeconds: 300
+    maxTurns: 4
+    maxModelRequests: 12
+    maxOutputTokens: 4096
+  model:
+    provider: openai
+    model: gpt-4o-mini
+  cellnSelection:
+    runtimeRef: shared-celln
+    toolRefs: []
+    clusterToolRefs: []
