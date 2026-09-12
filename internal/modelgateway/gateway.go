@@ -155,6 +155,14 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	if err != nil {
 		return InvokeResponse{}, fail(ReasonUnauthorized, 401, err)
 	}
+	// Do not hold credentials/reservations in an unbounded capacity queue.
+	// Authority is read only after obtaining a bounded local admission slot.
+	select {
+	case g.sem <- struct{}{}:
+		defer func() { <-g.sem }()
+	default:
+		return InvokeResponse{}, fail(ReasonUnavailable, 503, nil)
+	}
 	tid := turnID(decision)
 	authority, err := g.authorities.Authority(ctx, decision.Budget.BudgetID, tid)
 	if err != nil {
@@ -184,17 +192,6 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	if reservation.Existing {
 		return InvokeResponse{}, fail(ReasonRequestConflict, 409, nil)
 	}
-	if err := g.budgets.MarkInFlight(ctx, decision.Budget.BudgetID, tid, in.RequestID); err != nil {
-		return InvokeResponse{}, err
-	}
-
-	select {
-	case g.sem <- struct{}{}:
-		defer func() { <-g.sem }()
-	case <-ctx.Done():
-		_ = g.budgets.Reconcile(context.Background(), decision.Budget.BudgetID, tid, in.RequestID, 0, "uncertain", "local-cancel-before-send")
-		return InvokeResponse{}, fail(ReasonProviderUnavailable, 502, ctx.Err())
-	}
 	deadline := time.Unix(decision.Budget.TurnDeadlineUnix, 0)
 	providerCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
@@ -220,6 +217,9 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 		req.Header.Set("anthropic-version", "2023-06-01")
 	default:
 		return InvokeResponse{}, fail(ReasonProtocol, 400, nil)
+	}
+	if err := g.budgets.MarkInFlight(providerCtx, decision.Budget.BudgetID, tid, in.RequestID); err != nil {
+		return InvokeResponse{}, err
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
