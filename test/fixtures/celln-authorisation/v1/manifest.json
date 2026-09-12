@@ -1,0 +1,38 @@
+{
+  "apiVersion": "celln.sympozium.ai/conformance-manifest-v2",
+  "contract": "docs/design/celln-namespace-authorisation.md",
+  "vectorNames": [
+    "direct-one-shot",
+    "harness-one-shot",
+    "model-after-admission-window",
+    "issued-permit-after-policy-withdrawal",
+    "parent-create",
+    "enduring-turn",
+    "enduring-model-after-admission-window",
+    "cleanup-after-policy-withdrawal",
+    "request-content-changed",
+    "wrong-endpoint-audience",
+    "admission-expired",
+    "model-work-deadline-expired",
+    "model-token-beyond-work-deadline",
+    "budget-id-mismatch",
+    "namespace-uid-mismatch",
+    "parent-turn-mismatch",
+    "model-route-mismatch",
+    "admission-replay-recovers",
+    "invalid-admission-window",
+    "turn-cap-exceeds-run-cap",
+    "streaming-unsupported",
+    "rotation-key-2",
+    "unknown-kid",
+    "tampered-signature",
+    "resolver-policy-valid",
+    "resolver-policy-removed",
+    "resolver-artifact-contracted",
+    "resolver-https-host-contracted",
+    "resolver-tool-reordered"
+  ],
+  "sequenceNames": [
+    "model-budget-idempotency-across-turns"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "keys": [
+    {
+      "kid": "test-key-1",
+      "alg": "EdDSA",
+      "crv": "Ed25519",
+      "seedHex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "production": false,
+      "comment": "NON-PRODUCTION conformance fixture key; never trust in a cluster"
+    },
+    {
+      "kid": "test-key-2",
+      "alg": "EdDSA",
+      "crv": "Ed25519",
+      "seedHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "production": false,
+      "comment": "NON-PRODUCTION conformance fixture key; never trust in a cluster"
+    }
+  ]
+}
