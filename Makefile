@@ -62,6 +62,11 @@ test: ## Run tests
 test-short: ## Run short tests
 	$(GOTEST) -short ./...
 
+.PHONY: test-celln-tenancy-local test-celln-tenancy-integration
+
+test-celln-tenancy-local: ## Run pinned Go/Rust/database/live API/actual gateway process and real-KVM prerequisites (not release qualification)
+	bash ./test/integration/test-celln-tenancy-security.sh --local-kvm
+
 test-celln-tenancy-integration: ## Run explicit component-tier tenancy proof (isolated kubeconfig, PostgreSQL and pinned Celln source required)
 	bash ./test/integration/test-celln-tenancy-security.sh --components
 
