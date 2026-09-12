@@ -178,6 +178,10 @@ func sha256Digest(data []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+// StrictDecode validates duplicate keys, UTF-8, trailing data and unknown
+// fields before decoding a contract-adjacent boundary payload.
+func StrictDecode(raw []byte, target any) error { return strictDecode(raw, target) }
+
 func strictDecode(raw []byte, target any) error {
 	if err := checkStrictJSON(raw); err != nil {
 		return err
