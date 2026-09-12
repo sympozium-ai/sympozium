@@ -50,7 +50,7 @@ func startGatewayProcess(t *testing.T, server, provider *httptest.Server, pub ed
 	if err != nil {
 		t.Fatal(err)
 	}
-	config, err := json.Marshal(map[string]any{"clusterId": "cluster", "issuer": "test-issuer", "listen": server.Listener.Addr().String(), "tlsCertificateFile": certPath, "tlsKeyFile": keyPath, "verificationKeysFile": write("jwks.json", jwks), "registrationTokenFile": write("registration", []byte("issuer-transport-canary")), "databaseUrlFile": write("database", []byte(db)), "privateOrigins": []string{provider.URL}})
+	config, err := json.Marshal(map[string]any{"clusterId": "cluster", "issuer": "sympozium-control-plane", "listen": server.Listener.Addr().String(), "tlsCertificateFile": certPath, "tlsKeyFile": keyPath, "verificationKeysFile": write("jwks.json", jwks), "registrationTokenFile": write("registration", []byte("issuer-transport-canary")), "databaseUrlFile": write("database", []byte(db)), "privateOrigins": []string{provider.URL}})
 	if err != nil {
 		t.Fatal(err)
 	}
