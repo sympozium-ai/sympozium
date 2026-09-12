@@ -1,0 +1,61 @@
+{{- if .Values.rbac.create }}
+# Shared Celln catalogue metadata is readable without granting authority to
+# publish or mutate it. Bind this role to tenant identities only where desired.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sympozium.fullname" . }}-celln-catalogue-reader
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["sympozium.ai"]
+    resources: ["cellnruntimeprofiles", "clustercellntools"]
+    verbs: ["get", "list", "watch"]
+---
+# The controller/issuer must read live policy as well as catalogue identity.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sympozium.fullname" . }}-celln-authority-reader
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["sympozium.ai"]
+    resources: ["cellnruntimeprofiles", "clustercellntools", "cellnexecutionpolicies"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sympozium.fullname" . }}-celln-authority-reader
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sympozium.fullname" . }}-celln-authority-reader
+subjects:
+  - kind: ServiceAccount
+    name: sympozium-controller-manager
+    namespace: {{ include "sympozium.namespace" . }}
+  - kind: ServiceAccount
+    name: sympozium-apiserver
+    namespace: {{ include "sympozium.namespace" . }}
+---
+# This role is deliberately not bound by the chart. Platform administrators may
+# bind it to an operator identity; ordinary tenant/service-account roles must
+# never receive it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sympozium.fullname" . }}-celln-platform-operator
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["sympozium.ai"]
+    resources: ["cellnruntimeprofiles", "clustercellntools", "cellnexecutionpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["sympozium.ai"]
+    resources: ["cellnruntimeprofiles/status", "clustercellntools/status", "cellnexecutionpolicies/status"]
+    verbs: ["get", "update", "patch"]
+{{- end }}
