@@ -313,6 +313,16 @@ func (s *Store) MarkInFlight(ctx context.Context, budgetID, turnID, requestID st
 }
 
 func (s *Store) Reconcile(ctx context.Context, budgetID, turnID, requestID string, observedOutput int64, state, outcome string) error {
+	return s.reconcile(ctx, budgetID, turnID, requestID, observedOutput, true, state, outcome)
+}
+
+// ReconcileUnknown preserves SQL NULL for unavailable provider usage. It never
+// turns a missing usage report or lost response into a measured zero or refund.
+func (s *Store) ReconcileUnknown(ctx context.Context, budgetID, turnID, requestID, state, outcome string) error {
+	return s.reconcile(ctx, budgetID, turnID, requestID, 0, false, state, outcome)
+}
+
+func (s *Store) reconcile(ctx context.Context, budgetID, turnID, requestID string, observedOutput int64, known bool, state, outcome string) error {
 	if observedOutput < 0 || (state != "terminal" && state != "uncertain") {
 		return reasonError(ReasonRegisterConflict, nil)
 	}
@@ -348,15 +358,20 @@ func (s *Store) Reconcile(ctx context.Context, budgetID, turnID, requestID strin
 		return reasonError(ReasonNotFound, nil)
 	}
 	if reservation.State == "terminal" || reservation.State == "uncertain" {
-		if reservation.ObservedOutputTokens != nil && *reservation.ObservedOutputTokens == observedOutput && reservation.State == state && reservation.Outcome == outcome {
+		sameUsage := (!known && reservation.ObservedOutputTokens == nil) || (known && reservation.ObservedOutputTokens != nil && *reservation.ObservedOutputTokens == observedOutput)
+		if sameUsage && reservation.State == state && reservation.Outcome == outcome {
 			return tx.Commit(ctx)
 		}
 		return reasonError(ReasonRequestConflict, nil)
 	}
 
+	var observedValue *int64
+	if known {
+		observedValue = &observedOutput
+	}
 	_, err = tx.Exec(ctx, `UPDATE celln_model_reservations SET
 		observed_output_tokens=$4, state=$5, outcome=$6, updated_at=now()
-		WHERE budget_id=$1 AND turn_id=$2 AND request_id=$3`, budgetID, turnID, requestID, observedOutput, state, outcome)
+		WHERE budget_id=$1 AND turn_id=$2 AND request_id=$3`, budgetID, turnID, requestID, observedValue, state, outcome)
 	if err != nil {
 		return reasonError(ReasonUnavailable, err)
 	}
