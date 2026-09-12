@@ -142,7 +142,22 @@ func (s *Store) RegisterTurn(ctx context.Context, in TurnRegistration) error {
 	return nil
 }
 
+// Reserve is the accounting-only API for trusted callers. Credential-bearing
+// gateway admission must use ReserveBound instead.
 func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation, error) {
+	return s.reserve(ctx, in, nil)
+}
+
+// ReserveBound checks run ownership, route and exact turn decision under the
+// same row locks that charge allowance, before even returning an old request.
+func (s *Store) ReserveBound(ctx context.Context, in ReservationRequest, binding ReservationBinding) (Reservation, error) {
+	if binding.ClusterID == "" || binding.NamespaceUID == "" || binding.RunUID == "" || binding.RouteDigest == "" || binding.TurnDecisionDigest == "" {
+		return Reservation{}, reasonError(ReasonRegisterConflict, nil)
+	}
+	return s.reserve(ctx, in, &binding)
+}
+
+func (s *Store) reserve(ctx context.Context, in ReservationRequest, binding *ReservationBinding) (Reservation, error) {
 	if err := validateReservationRequest(in); err != nil {
 		return Reservation{}, err
 	}
@@ -154,14 +169,16 @@ func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	var registered ReservationBinding
 	var runMaxReq, runMaxOut, runReservedReq, runReservedOut int64
 	var parentDeadline time.Time
 	var runClosed bool
 	err = tx.QueryRow(ctx, `
 		SELECT max_requests, max_output_tokens, reserved_requests, reserved_output_tokens,
-		       parent_deadline, closed
+		       parent_deadline, closed, cluster_id, namespace_uid, run_uid, route_digest
 		FROM celln_model_budgets WHERE budget_id=$1 FOR UPDATE`, in.BudgetID).Scan(
-		&runMaxReq, &runMaxOut, &runReservedReq, &runReservedOut, &parentDeadline, &runClosed)
+		&runMaxReq, &runMaxOut, &runReservedReq, &runReservedOut, &parentDeadline, &runClosed,
+		&registered.ClusterID, &registered.NamespaceUID, &registered.RunUID, &registered.RouteDigest)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Reservation{}, reasonError(ReasonNotFound, err)
 	}
@@ -174,10 +191,10 @@ func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation
 	var turnClosed bool
 	err = tx.QueryRow(ctx, `
 		SELECT max_requests, max_output_tokens, reserved_requests, reserved_output_tokens,
-		       deadline, closed
+		       deadline, closed, decision_digest
 		FROM celln_model_turn_budgets
 		WHERE budget_id=$1 AND turn_id=$2 FOR UPDATE`, in.BudgetID, in.TurnID).Scan(
-		&turnMaxReq, &turnMaxOut, &turnReservedReq, &turnReservedOut, &turnDeadline, &turnClosed)
+		&turnMaxReq, &turnMaxOut, &turnReservedReq, &turnReservedOut, &turnDeadline, &turnClosed, &registered.TurnDecisionDigest)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Reservation{}, reasonError(ReasonNotFound, err)
 	}
@@ -185,6 +202,9 @@ func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation
 		return Reservation{}, reasonError(ReasonUnavailable, err)
 	}
 
+	if binding != nil && registered != *binding {
+		return Reservation{}, reasonError(ReasonRegisterConflict, nil)
+	}
 	existing, found, err := loadReservation(ctx, tx, in.BudgetID, in.TurnID, in.RequestID)
 	if err != nil {
 		return Reservation{}, reasonError(ReasonUnavailable, err)
