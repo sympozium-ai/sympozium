@@ -40,12 +40,16 @@ run_case() {
   name="$1"; shift
   code=0
   "$@" > "$out/$name.log" 2>&1 || code=$?
+  if [[ "$1" = go && "$code" = 0 ]]; then
+    jq -s -e 'any(.[]; .Action == "pass" and .Test != null) and all(.[]; .Action != "skip")' "$out/$name.log" >/dev/null || code=65
+  fi
   jq -n --arg name "$name" --argjson exitCode "$code" --arg log "$name.log" \
     '{name:$name,exitCode:$exitCode,log:$log}' >> "$out/cases.jsonl"
   [[ "$code" = 0 ]] || { echo "Failed component case: $name (see evidence log)" >&2; return "$code"; }
 }
-run_case shared-go go test -race ./cmd/celln-authorisation-fixture ./internal/cellncapability -count=1
+run_case shared-go go test -json -race ./cmd/celln-authorisation-fixture ./internal/cellncapability -count=1
 run_case shared-rust cargo test --manifest-path "$CELLN_TENANCY_CELLN_SOURCE/Cargo.toml" -p celln-cli --lib --locked
-run_case durable-accounting go test -race ./internal/modelbudget -run Postgres -count=1 -v
+run_case durable-accounting go test -json -race ./internal/modelbudget -run Postgres -count=1 -v
 export CELLN_GATEWAY_LIVE_KUBERNETES=1
-run_case gateway-live-api go test -race ./internal/modelgateway -run 'TestLiveKubernetesGateway|TestPostgres|TestBudgetWatcher|TestAuthorityReadiness' -count=1 -v
+run_case gateway-live-api go test -json -race ./internal/modelgateway -run 'TestLiveKubernetesGateway|TestPostgres|TestBudgetWatcher|TestAuthorityReadiness' -count=1 -v
+run_case required-live-case jq -s -e 'any(.[]; .Action == "pass" and .Test == "TestLiveKubernetesGatewayTenantCredentialIsolation")' "$out/gateway-live-api.log"
