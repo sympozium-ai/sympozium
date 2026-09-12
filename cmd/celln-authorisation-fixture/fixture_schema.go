@@ -1,4 +1,12 @@
-{
+package main
+
+import (
+	"os"
+	"path/filepath"
+)
+
+func writeSchemas(dir string) error {
+	decision := `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sympozium.ai/schemas/celln-authorisation/decision-v1.json",
   "title": "CellnAuthorisationDecision",
@@ -42,4 +50,31 @@
     "budget":{"type":"object","additionalProperties":false,"required":["budgetId","runCap","turnCap","maxTurns","parentDeadlineUnix","turnDeadlineUnix"],"properties":{"budgetId":{"$ref":"#/$defs/sha256"},"runCap":{"$ref":"#/$defs/cap"},"turnCap":{"$ref":"#/$defs/cap"},"maxTurns":{"type":"integer","minimum":1,"maximum":1024},"parentDeadlineUnix":{"type":"integer","minimum":0},"turnDeadlineUnix":{"type":"integer","minimum":1}}},
     "windows":{"type":"object","additionalProperties":false,"required":["issuedAt","notBefore","admissionDeadline"],"properties":{"issuedAt":{"type":"integer","minimum":1},"notBefore":{"type":"integer","minimum":1},"admissionDeadline":{"type":"integer","minimum":1}}}
   }
+}` + "\n"
+	credential := `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sympozium.ai/schemas/celln-authorisation/credential-v1.json",
+  "title": "CellnAuthorisationCredentialClaims",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion","iss","aud","iat","nbf","exp","jti","decisionDigest","budgetId","operation","subject"],
+  "properties": {
+    "apiVersion":{"const":"celln.sympozium.ai/authorisation-credential-v1"},
+    "iss":{"const":"sympozium-control-plane"},
+    "aud":{"enum":["celln-execution","sympozium-model-gateway"]},
+    "iat":{"type":"integer","minimum":1},"nbf":{"type":"integer","minimum":1},"exp":{"type":"integer","minimum":1},
+    "jti":{"type":"string","minLength":16,"maxLength":128},
+    "decisionDigest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "budgetId":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "operation":{"enum":["execution.start","execution.turn","execution.read","execution.cleanup","model.invoke"]},
+    "subject":{"type":"object","additionalProperties":false,"required":["runUid","turnId","parentIncarnation"],"properties":{"runUid":{"type":"string","minLength":1},"turnId":{"oneOf":[{"type":"null"},{"type":"string","minLength":1}]},"parentIncarnation":{"oneOf":[{"type":"null"},{"type":"string","pattern":"^blake3:[0-9a-f]{64}$"}]}}}
+  }
+}` + "\n"
+	if err := os.MkdirAll(filepath.Join(dir, "schema"), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "schema", "decision.schema.json"), []byte(decision), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "schema", "credential.schema.json"), []byte(credential), 0o644)
 }

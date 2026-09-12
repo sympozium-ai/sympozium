@@ -2,37 +2,30 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func main() {
-	var fixtures string
-	flag.StringVar(&fixtures, "fixtures", "test/fixtures/celln-authorisation/v1", "fixture directory")
-	flag.Parse()
-
-	args := flag.Args()
-	cmd := "verify"
-	if len(args) > 0 {
-		cmd = args[0]
-	}
-	var err error
-	switch cmd {
-	case "gen":
-		err = generateFixtures(fixtures)
-	case "verify":
-		err = verifyFixtures(fixtures)
-	default:
-		err = fmt.Errorf("unknown command %q (want gen|verify)", cmd)
+	cmd, fixtures, err := parseCLI(os.Args[1:])
+	if err == nil {
+		switch cmd {
+		case "gen":
+			err = generateFixtures(fixtures)
+		case "verify":
+			err = verifyFixtures(fixtures)
+		default:
+			err = fmt.Errorf("unknown command %q", cmd)
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "FAIL:", err)
@@ -40,221 +33,238 @@ func main() {
 	}
 }
 
-type resultRow struct {
-	name   string
-	expect Expect
-	got    string // "" means accepted
-	ok     bool
-	note   string
+func parseCLI(args []string) (string, string, error) {
+	cmd := "verify"
+	rest := args
+	if len(rest) > 0 && (rest[0] == "verify" || rest[0] == "gen") {
+		cmd = rest[0]
+		rest = rest[1:]
+	}
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fixtures := fs.String("fixtures", "test/fixtures/celln-authorisation/v1", "fixture directory")
+	if err := fs.Parse(rest); err != nil {
+		return "", "", err
+	}
+	if fs.NArg() > 0 {
+		if len(args) > 0 && (args[0] == "verify" || args[0] == "gen") {
+			return "", "", fmt.Errorf("unexpected arguments: %v", fs.Args())
+		}
+		cmd = fs.Arg(0)
+		if fs.NArg() > 1 {
+			return "", "", fmt.Errorf("unexpected arguments: %v", fs.Args()[1:])
+		}
+	}
+	return cmd, *fixtures, nil
+}
+
+func readStrict(path string, v any) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return strictDecode(b, v)
+}
+
+func readGzipStrict(path string, target any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	raw, err := io.ReadAll(io.LimitReader(zr, 1<<20))
+	if err != nil {
+		return err
+	}
+	return strictDecode(raw, target)
 }
 
 func verifyFixtures(dir string) error {
-	var manifest Manifest
-	if err := readJSON(filepath.Join(dir, "manifest.json"), &manifest); err != nil {
+	if err := verifyBundle(dir); err != nil {
+		return err
+	}
+	var m Manifest
+	if err := readStrict(filepath.Join(dir, "manifest.json"), &m); err != nil {
 		return fmt.Errorf("manifest: %w", err)
 	}
+	if m.APIVersion != "celln.sympozium.ai/conformance-manifest-v2" {
+		return fmt.Errorf("unsupported manifest version")
+	}
+	if err := verifyInventory("vectors", m.VectorNames, requiredVectorNames); err != nil {
+		return err
+	}
+	if err := verifyInventory("sequences", m.SequenceNames, requiredSequenceNames); err != nil {
+		return err
+	}
+	var c Cases
+	if err := readGzipStrict(filepath.Join(dir, "cases.json.gz"), &c); err != nil {
+		return fmt.Errorf("cases: %w", err)
+	}
+	if c.APIVersion != "celln.sympozium.ai/conformance-cases-v2" {
+		return fmt.Errorf("unsupported cases version")
+	}
+	actualV := make([]string, 0, len(c.Vectors))
+	for _, v := range c.Vectors {
+		actualV = append(actualV, v.Name)
+	}
+	if err := verifyInventory("case vectors", actualV, m.VectorNames); err != nil {
+		return err
+	}
+	actualS := make([]string, 0, len(c.Sequences))
+	for _, s := range c.Sequences {
+		actualS = append(actualS, s.Name)
+	}
+	if err := verifyInventory("case sequences", actualS, m.SequenceNames); err != nil {
+		return err
+	}
 	var jwks JWKS
-	if err := readJSON(filepath.Join(dir, "signing", "test-jwks.json"), &jwks); err != nil {
-		return fmt.Errorf("jwks: %w", err)
+	if err := readStrict(filepath.Join(dir, "signing", "test-jwks.json"), &jwks); err != nil {
+		return err
 	}
 	activeJWKS = jwks
-
-	decisionSchema, err := compileSchema(filepath.Join(dir, "schema", "decision.schema.json"))
-	if err != nil {
-		return fmt.Errorf("decision schema: %w", err)
-	}
-	credentialSchema, err := compileSchema(filepath.Join(dir, "schema", "credential.schema.json"))
-	if err != nil {
-		return fmt.Errorf("credential schema: %w", err)
-	}
-
-	// Verify the pinned bundle before trusting any expectation.
-	if err := verifyBundle(dir, manifest.BundleHash); err != nil {
-		return err
-	}
-
-	var rows []resultRow
-	for _, mv := range manifest.Vectors {
-		vdir := filepath.Join(dir, "vectors", mv.Name)
-		expectBytes, err := os.ReadFile(filepath.Join(vdir, "expect.json"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		var expect Expect
-		if err := json.Unmarshal(expectBytes, &expect); err != nil {
-			return fmt.Errorf("%s expect: %w", mv.Name, err)
-		}
-		if expect.Outcome != mv.Outcome || expect.Reason != mv.Reason {
-			return fmt.Errorf("%s: manifest expectation diverges from expect.json", mv.Name)
-		}
-
-		decisionRaw, err := os.ReadFile(filepath.Join(vdir, "decision.json"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		canonical, err := os.ReadFile(filepath.Join(vdir, "decision.canonical"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		declared, err := os.ReadFile(filepath.Join(vdir, "decision.digest"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		credRaw, err := os.ReadFile(filepath.Join(vdir, "credential.jws"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		observedRaw, err := os.ReadFile(filepath.Join(vdir, "observed.json"))
-		if err != nil {
-			return fmt.Errorf("%s: %w", mv.Name, err)
-		}
-		var observed Observed
-		if err := json.Unmarshal(observedRaw, &observed); err != nil {
-			return fmt.Errorf("%s observed: %w", mv.Name, err)
-		}
-		compact := strings.TrimSpace(string(credRaw))
-
-		got, err := Evaluate(compact, decisionRaw, canonical, bytes.TrimSpace(declared), observed)
-		if err != nil {
-			return fmt.Errorf("%s evaluate: %w", mv.Name, err)
-		}
-
-		row := resultRow{name: mv.Name, expect: expect, got: got}
-		if expect.Outcome == "accept" {
-			if got != "" {
-				row.note = "expected acceptance but got " + got
-			} else {
-				// Schema is a positive-only additional check.
-				if err := validateSchema(decisionSchema, decisionRaw); err != nil {
-					row.note = "decision schema: " + err.Error()
-				} else if err := validateCredentialSchema(credentialSchema, compact); err != nil {
-					row.note = "credential schema: " + err.Error()
-				} else {
-					row.ok = true
-				}
-			}
-		} else {
-			if got != expect.Reason {
-				row.note = fmt.Sprintf("expected reason %s but got %q", expect.Reason, got)
-			} else {
-				row.ok = true
-			}
-		}
-		rows = append(rows, row)
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].name < rows[j].name })
-
 	passed := 0
-	for _, r := range rows {
-		status := "ok"
-		if !r.ok {
-			status = "FAIL"
-		} else {
-			passed++
+	for _, v := range c.Vectors {
+		df, ok := c.Decisions[v.DecisionRef]
+		if !ok {
+			return fmt.Errorf("%s references missing decision %s", v.Name, v.DecisionRef)
 		}
-		detail := ""
-		if r.expect.Outcome == "reject" {
-			detail = "reject " + r.expect.Reason
-		} else {
-			detail = "accept"
+		var decision Decision
+		if err := strictDecode([]byte(df.Canonical), &decision); err != nil {
+			return fmt.Errorf("%s decision: %w", v.Name, err)
 		}
-		if r.note != "" {
-			detail += " (" + r.note + ")"
-		}
-		fmt.Printf("%-4s %-32s %s\n", status, r.name, detail)
-	}
-	fmt.Printf("\n%d/%d vectors passed; bundle %s\n", passed, len(rows), manifest.BundleHash)
-	if passed != len(rows) {
-		return fmt.Errorf("%d vector(s) failed", len(rows)-passed)
-	}
-	return nil
-}
-
-func readJSON(path string, v any) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, v)
-}
-
-func compileSchema(path string) (*jsonschema.Schema, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
-	if err != nil {
-		return nil, err
-	}
-	c := jsonschema.NewCompiler()
-	base := "file://" + filepath.ToSlash(path)
-	if err := c.AddResource(base, doc); err != nil {
-		return nil, err
-	}
-	return c.Compile(base)
-}
-
-func validateSchema(sch *jsonschema.Schema, raw []byte) error {
-	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		return err
-	}
-	return sch.Validate(inst)
-}
-
-func validateCredentialSchema(sch *jsonschema.Schema, compact string) error {
-	pj, err := parseCompact(compact)
-	if err != nil {
-		return err
-	}
-	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(pj.payloadRaw))
-	if err != nil {
-		return err
-	}
-	return sch.Validate(inst)
-}
-
-func verifyBundle(dir, declared string) error {
-	sumsPath := filepath.Join(dir, "bundle", "SHA256SUMS")
-	sumsRaw, err := os.ReadFile(sumsPath)
-	if err != nil {
-		return fmt.Errorf("bundle SHA256SUMS: %w", err)
-	}
-	bundleDeclared, err := os.ReadFile(filepath.Join(dir, "bundle", "BUNDLE.sha256"))
-	if err != nil {
-		return fmt.Errorf("bundle hash file: %w", err)
-	}
-	computed := "sha256:" + hex.EncodeToString(sha256Sum(sumsRaw))
-	if strings.TrimSpace(string(bundleDeclared)) != computed {
-		return fmt.Errorf("BUNDLE.sha256 does not match SHA256SUMS (want %s got %s)", declared, computed)
-	}
-	if declared != computed {
-		return fmt.Errorf("manifest bundleHash %s does not match computed %s", declared, computed)
-	}
-	// Verify every listed file exists and matches.
-	for _, line := range strings.Split(strings.TrimSpace(string(sumsRaw)), "\n") {
-		if line == "" {
-			continue
-		}
-		fields := strings.SplitN(line, "  ", 2)
-		if len(fields) != 2 {
-			return fmt.Errorf("malformed SHA256SUMS line %q", line)
-		}
-		path := filepath.Join(dir, fields[1])
-		b, err := os.ReadFile(path)
+		raw, _ := json.Marshal(decision)
+		canon, err := canonicalizeJSON(raw)
 		if err != nil {
-			return fmt.Errorf("bundle references missing file %s", fields[1])
+			return fmt.Errorf("%s canonical: %w", v.Name, err)
 		}
-		got := hex.EncodeToString(sha256Sum(b))
-		if got != fields[0] {
-			return fmt.Errorf("bundle mismatch for %s: want %s got %s", fields[1], fields[0], got)
+		if string(canon) != df.Canonical {
+			return fmt.Errorf("%s canonical bytes differ", v.Name)
+		}
+		if sha256Digest(canon) != v.DecisionRef {
+			return fmt.Errorf("%s digest differs", v.Name)
+		}
+		if df.RequestCanonical != "" {
+			rc, err := canonicalizeJSON([]byte(df.RequestCanonical))
+			if err != nil {
+				return fmt.Errorf("%s request: %w", v.Name, err)
+			}
+			if !bytes.Equal(rc, []byte(df.RequestCanonical)) {
+				return fmt.Errorf("%s request is not canonical", v.Name)
+			}
+			if sha256Digest(rc) != decision.RequestDigest {
+				return fmt.Errorf("%s decision requestDigest does not bind fixture request", v.Name)
+			}
+		}
+		var outcome, reason string
+		switch v.Evaluator {
+		case "verify":
+			if v.Verify == nil {
+				return fmt.Errorf("%s missing verify context", v.Name)
+			}
+			outcome, reason, err = Verify(v.Credential, raw, *v.Verify)
+		case "resolver":
+			if v.Resolver == nil {
+				return fmt.Errorf("%s missing resolver context", v.Name)
+			}
+			outcome, reason = ResolveCheck(decision, *v.Resolver)
+		default:
+			return fmt.Errorf("%s unknown evaluator %q", v.Name, v.Evaluator)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", v.Name, err)
+		}
+		if outcome != v.Expect.Outcome || reason != v.Expect.Reason {
+			return fmt.Errorf("%s expected %s/%s got %s/%s", v.Name, v.Expect.Outcome, v.Expect.Reason, outcome, reason)
+		}
+		fmt.Printf("ok   %-40s %s%s\n", v.Name, outcome, formatReason(reason))
+		passed++
+	}
+	for _, s := range c.Sequences {
+		l := newLedger(s.RunCap, s.TurnCap)
+		for i, a := range s.Actions {
+			got := l.reserve(a.TurnID, a.ID, a.Digest, a.ReserveOutput)
+			if got != a.Expect {
+				return fmt.Errorf("%s action %d expected %s got %s", s.Name, i, a.Expect, got)
+			}
+		}
+		fmt.Printf("ok   %-40s sequence\n", s.Name)
+		passed++
+	}
+	bundle, _ := os.ReadFile(filepath.Join(dir, "bundle", "BUNDLE.sha256"))
+	fmt.Printf("\n%d/%d conformance cases passed; bundle %s\n", passed, len(c.Vectors)+len(c.Sequences), strings.TrimSpace(string(bundle)))
+	return nil
+}
+func formatReason(r string) string {
+	if r == "" {
+		return ""
+	}
+	return " " + r
+}
+
+func verifyInventory(label string, actual, required []string) error {
+	if len(actual) == 0 {
+		return fmt.Errorf("%s inventory is empty", label)
+	}
+	seen := map[string]bool{}
+	for _, n := range actual {
+		if n == "" || seen[n] {
+			return fmt.Errorf("%s contains empty/duplicate %q", label, n)
+		}
+		seen[n] = true
+	}
+	if len(actual) != len(required) {
+		return fmt.Errorf("%s inventory count %d want %d", label, len(actual), len(required))
+	}
+	for _, n := range required {
+		if !seen[n] {
+			return fmt.Errorf("%s missing required %q", label, n)
 		}
 	}
 	return nil
 }
 
-func sha256Sum(b []byte) []byte {
-	sum := sha256.Sum256(b)
-	return sum[:]
+func verifyBundle(dir string) error {
+	sumsRaw, err := os.ReadFile(filepath.Join(dir, "bundle", "SHA256SUMS"))
+	if err != nil {
+		return err
+	}
+	pinRaw, err := os.ReadFile(filepath.Join(dir, "bundle", "BUNDLE.sha256"))
+	if err != nil {
+		return err
+	}
+	h := sha256.Sum256(sumsRaw)
+	pin := "sha256:" + hex.EncodeToString(h[:])
+	if strings.TrimSpace(string(pinRaw)) != pin {
+		return fmt.Errorf("bundle pin mismatch")
+	}
+	expected := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(sumsRaw)), "\n") {
+		parts := strings.SplitN(line, "  ", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("malformed SHA256SUMS line")
+		}
+		if _, ok := expected[parts[1]]; ok {
+			return fmt.Errorf("duplicate SHA256SUMS path %s", parts[1])
+		}
+		expected[parts[1]] = parts[0]
+	}
+	actual, err := computeSums(dir)
+	if err != nil {
+		return err
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf("bundle inventory mismatch: %d listed, %d actual", len(expected), len(actual))
+	}
+	for _, e := range actual {
+		if expected[e.rel] != e.hash {
+			return fmt.Errorf("bundle mismatch for %s", e.rel)
+		}
+	}
+	return nil
 }
+
+func sortedCopy(in []string) []string { o := append([]string{}, in...); sort.Strings(o); return o }
