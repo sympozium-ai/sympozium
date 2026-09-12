@@ -23,13 +23,13 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 BIN_DIR = bin
 
 # All binaries
-BINARIES = controller apiserver ipc-bridge webhook agent-runner sympozium web-proxy node-probe
+BINARIES = controller apiserver ipc-bridge webhook agent-runner sympozium web-proxy node-probe model-gateway
 
 # All channel binaries
 CHANNELS = telegram whatsapp discord slack
 
 # All images
-IMAGES = controller apiserver ipc-bridge webhook agent-runner web-proxy node-probe \
+IMAGES = controller apiserver ipc-bridge webhook agent-runner web-proxy node-probe model-gateway \
          channel-telegram channel-whatsapp channel-discord channel-slack \
 		 skill-k8s-ops skill-sre-observability skill-github-gitops skill-llmfit skill-memory \
 		 llmfit-daemon mcp-bridge harness-reference
@@ -61,6 +61,11 @@ test: ## Run tests
 
 test-short: ## Run short tests
 	$(GOTEST) -short ./...
+
+test-celln-model-gateway-live: ## Test gateway against configured Kubernetes API and PostgreSQL (creates temporary namespaces)
+	@test "$$CELLN_GATEWAY_LIVE_KUBERNETES" = 1 || (echo "CELLN_GATEWAY_LIVE_KUBERNETES=1 is required" >&2; exit 1)
+	@test -n "$$CELLN_MODEL_BUDGET_DATABASE_URL" || (echo "CELLN_MODEL_BUDGET_DATABASE_URL is required" >&2; exit 1)
+	go test -race ./internal/modelgateway -run TestLiveKubernetesGatewayTenantCredentialIsolation -count=1 -v
 
 test-celln-model-budget: ## Run real PostgreSQL accounting proof (database URL required)
 	@test -n "$$CELLN_MODEL_BUDGET_DATABASE_URL" || (echo "CELLN_MODEL_BUDGET_DATABASE_URL is required" >&2; exit 1)
