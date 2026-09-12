@@ -32,7 +32,7 @@ import (
 )
 
 func TestPostgresGatewayTenantCredentialIsolation(t *testing.T) {
-	testGatewayTenantCredentialIsolation(t, false)
+	testGatewayTenantCredentialIsolation(t, false, false)
 }
 
 func TestLiveKubernetesGatewayTenantCredentialIsolation(t *testing.T) {
@@ -42,10 +42,10 @@ func TestLiveKubernetesGatewayTenantCredentialIsolation(t *testing.T) {
 	if os.Getenv("CELLN_MODEL_BUDGET_DATABASE_URL") == "" {
 		t.Fatal("live proof requires CELLN_MODEL_BUDGET_DATABASE_URL")
 	}
-	testGatewayTenantCredentialIsolation(t, true)
+	testGatewayTenantCredentialIsolation(t, true, false)
 }
 
-func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
+func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 	db := os.Getenv("CELLN_MODEL_BUDGET_DATABASE_URL")
 	if db == "" {
 		t.Skip("explicit PostgreSQL test tier requires CELLN_MODEL_BUDGET_DATABASE_URL")
@@ -136,6 +136,10 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 	}
 	server := httptest.NewTLSServer(g.Handler())
 	defer server.Close()
+	var restartProcess func()
+	if process {
+		restartProcess = startGatewayProcess(t, server, provider, pub, db)
+	}
 	invoke := func(ctx context.Context, token cap.Token, in InvokeRequest) (InvokeResponse, error) {
 		body, err := json.Marshal(in)
 		if err != nil {
@@ -276,8 +280,11 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 			if got := <-received; got != "Bearer "+key {
 				t.Fatalf("wrong tenant credential %q", got)
 			}
+			if restartProcess != nil {
+				restartProcess()
+			}
 			if _, err = invoke(ctx, model, in); err == nil {
-				t.Fatal("duplicate replayed")
+				t.Fatal("duplicate replayed, including after process restart")
 			}
 			secret.Data["OPENAI_API_KEY"] = []byte(key + "-rotated")
 			if err = k8s.Update(ctx, secret); err != nil {

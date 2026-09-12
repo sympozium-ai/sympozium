@@ -98,6 +98,28 @@ usage, and live Kubernetes readiness/cleanup after Secret replacement. Run the
 opt-in live Make target documented in
 `docs/design/celln-gateway-live-epoch.md` for the Kubernetes/TLS tier.
 
+## Actual binary restart tier
+
+`TestLiveKubernetesGatewayProcessTenantCredentialIsolation` replaces the test HTTP
+listener with a separately built `cmd/model-gateway`. It exercises real startup,
+owner-only files, public JWKS, verified TLS, PostgreSQL and live Kubernetes reads.
+For both tenants, registration/invocation/rotation/cleanup use the child process;
+after the first provider request it stops and restarts that process with the same
+key material/database, then requires duplicate suppression and original allowance.
+No ambient provider credentials are passed to its environment. The publication
+fault and enduring helpers remain in-process checks, not simulated OS crashes.
+
+Build the binary, then explicitly set `CELLN_GATEWAY_PROCESS=1`,
+`CELLN_GATEWAY_TEST_BINARY=/absolute/path/to/model-gateway`,
+`CELLN_GATEWAY_LIVE_KUBERNETES=1`, `KUBECONFIG` and the disposable database URL:
+
+```
+go test -race ./internal/modelgateway -run '^TestLiveKubernetesGatewayProcessTenantCredentialIsolation$' -count=1 -v
+```
+
+This is a real gateway process/API test, not a deployed Celln/controller/browser
+journey or proof of least-privilege Kubernetes authorization.
+
 ## Dedicated process
 
 `make build-model-gateway` builds a TLS-only server. Pass `--config` with an
