@@ -5,6 +5,16 @@ image:
   # -- Override the image tag (defaults to .Chart.AppVersion)
   tag: ""
 
+# Dedicated gateway component only; does not enable mediated Celln admission.
+# Operator-provisioned claim holds gateway.json, public JWKS, TLS and static
+# registration/database credential files. No issuer private keys/provider keys.
+modelGateway:
+  enabled: false
+  image: "" # required immutable repository@sha256:digest
+  configurationClaim: "" # files readable by UID 65532; secret files mode 0600
+  # Explicit reviewed DNS, Kubernetes API and provider egress peers/ports.
+  egress: []
+
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""

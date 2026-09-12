@@ -1,0 +1,156 @@
+{{- if .Values.modelGateway.enabled }}
+{{- $image := required "modelGateway.image requires an immutable image digest" .Values.modelGateway.image }}
+{{- if not (regexMatch "^.+@sha256:[0-9a-f]{64}$" $image) }}
+{{- fail "modelGateway.image must be pinned by sha256 digest" }}
+{{- end }}
+{{- $claim := required "modelGateway.configurationClaim must contain reviewed TLS/JWKS/PostgreSQL configuration" .Values.modelGateway.configurationClaim }}
+{{- if not .Values.modelGateway.egress }}
+{{- fail "modelGateway.egress must explicitly declare reviewed DNS/API/PostgreSQL/provider paths" }}
+{{- end }}
+{{- $name := printf "%s-model-gateway" (include "sympozium.fullname" .) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "sympozium.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+rules:
+  # Application UID/reference checks do NOT narrow this cluster-wide get power.
+  - apiGroups: [""]
+    resources: [namespaces, secrets]
+    verbs: [get]
+  - apiGroups: [sympozium.ai]
+    resources: [modelconnections]
+    verbs: [get]
+  - apiGroups: [authorization.k8s.io]
+    resources: [selfsubjectaccessreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ include "sympozium.namespace" . }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "sympozium.namespace" . }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: model-gateway
+          image: {{ $image | quote }}
+          args: ["--config=/configuration/gateway.json"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              port: https
+              path: /readyz
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: configuration
+              mountPath: /configuration
+              readOnly: true
+      volumes:
+        - name: configuration
+          persistentVolumeClaim:
+            claimName: {{ $claim | quote }}
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "sympozium.namespace" . }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "sympozium.namespace" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "sympozium.namespace" . | quote }}
+          podSelector:
+            matchLabels:
+              control-plane: controller-manager
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: celln-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: celln-dispatcher
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: celln-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: celln-router
+      ports:
+        - protocol: TCP
+          port: 8443
+  egress:
+{{ toYaml .Values.modelGateway.egress | indent 4 }}
+{{- end }}
