@@ -15,9 +15,10 @@ func exerciseEnduringLedger(t *testing.T, g *Gateway, issuer *cap.Issuer, origin
 	ctx := context.Background()
 	d := original
 	d.Run.UID = fmt.Sprintf("enduring-%d", time.Now().UnixNano())
-	d.Budget.BudgetID = d.Run.UID
+	d.Budget.BudgetID = fixtureDigest("budget/" + d.Run.UID)
+	d.Subject.UID = d.Run.UID
 	d.Lifecycle = "enduring-initial"
-	d.Parent = &cap.ParentBinding{Incarnation: "original-parent"}
+	d.Parent = &cap.ParentBinding{Incarnation: fixtureIncarnation(d.Run.UID)}
 	d.Budget.MaxTurns = 2
 	d.Budget.RunCap = cap.Cap{Requests: 2, OutputTokens: 1024}
 	d.Budget.TurnCap = cap.Cap{Requests: 1, OutputTokens: 512}
@@ -80,7 +81,7 @@ func exerciseEnduringLedger(t *testing.T, g *Gateway, issuer *cap.Issuer, origin
 	next.Parent = &cap.ParentBinding{Incarnation: d.Parent.Incarnation, TurnID: &tid}
 	next.Operation = "execution.turn"
 	next.Lifecycle = "enduring-turn"
-	next.RequestDigest = "follow-up-input"
+	next.RequestDigest = fixtureDigest("follow-up-input")
 	if err := register(next); err != nil {
 		t.Fatal(err)
 	}

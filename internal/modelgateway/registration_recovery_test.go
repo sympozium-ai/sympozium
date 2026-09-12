@@ -34,7 +34,8 @@ func exerciseRegistrationRecovery(t *testing.T, g *Gateway, issuer *cap.Issuer, 
 		t.Run(stage, func(t *testing.T) {
 			d := original
 			d.Run.UID = fmt.Sprintf("recovery-%s-%d", stage, time.Now().UnixNano())
-			d.Budget.BudgetID = d.Run.UID
+			d.Budget.BudgetID = fixtureDigest("budget/" + d.Run.UID)
+			d.Subject.UID = d.Run.UID
 			raw, _, err := cap.CanonicalDecision(d)
 			if err != nil {
 				t.Fatal(err)

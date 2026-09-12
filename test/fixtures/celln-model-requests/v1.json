@@ -1,0 +1,16 @@
+{
+  "apiVersion": "celln.sympozium.ai/model-request-conformance-v1",
+  "vectors": [
+    {"name":"ordered-body","request":"{ \"model\":\"m\", \"messages\":[], \"max_tokens\":1 }","canonical":"{\"max_tokens\":1,\"messages\":[],\"model\":\"m\"}"},
+    {"name":"html-and-line-separator","request":"{\"model\":\"m\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"<&> café\u2028\"}]}","canonical":"{\"max_tokens\":1,\"messages\":[{\"content\":\"<&> café\u2028\",\"role\":\"user\"}],\"model\":\"m\"}"},
+    {"name":"utf16-key-order","request":"{\"model\":\"m\",\"messages\":[],\"max_tokens\":1,\"metadata\":{\"\ue000\":\"bmp\",\"\ud800\udc00\":\"supplementary\"}}","canonical":"{\"max_tokens\":1,\"messages\":[],\"metadata\":{\"\ud800\udc00\":\"supplementary\",\"\ue000\":\"bmp\"},\"model\":\"m\"}"},
+    {"name":"escaped-equivalence","request":"{\"model\":\"\\u006d\",\"messages\":[],\"max_tokens\":1}","canonical":"{\"max_tokens\":1,\"messages\":[],\"model\":\"m\"}"},
+    {"name":"duplicate","request":"{\"model\":\"m\",\"model\":\"other\"}","canonical":null},
+    {"name":"fraction","request":"{\"temperature\":0.5}","canonical":null},
+    {"name":"exponent","request":"{\"max_tokens\":1e2}","canonical":null},
+    {"name":"negative-zero","request":"{\"seed\":-0}","canonical":null},
+    {"name":"unsafe-integer","request":"{\"seed\":9007199254740992}","canonical":null},
+    {"name":"lone-surrogate","request":"{\"model\":\"\\ud800\"}","canonical":null},
+    {"name":"trailing","request":"{} {}","canonical":null}
+  ]
+}
