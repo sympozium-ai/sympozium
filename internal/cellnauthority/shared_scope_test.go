@@ -23,7 +23,7 @@ func TestLegacyOneShotCannotDiscardSharedToolIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan, err := loader.FreezeRun(ctx, key, []Selection{{Name: tool.Name, Revision: tool.Revision}}, 33554432)
-	if plan != nil || err == nil || !strings.Contains(err.Error(), "AUTH_CAPABILITY_UNSUPPORTED") {
+	if plan != nil || err == nil || !strings.Contains(err.Error(), "AUTH_PROTOCOL_UNSUPPORTED") {
 		t.Fatalf("shared intent silently used legacy authority: plan=%v err=%v", plan != nil, err)
 	}
 }

@@ -106,7 +106,7 @@ func Resolve(agent *api.Agent, in Input) (Result, error) {
 	}
 	if out.CellnSelection != nil {
 		if len(out.CellnSelection.ClusterToolRefs) != 0 {
-			return Result{}, fmt.Errorf("AUTH_CAPABILITY_UNSUPPORTED: shared catalogue selection requires mediated admission; refusing legacy fallback")
+			return Result{}, fmt.Errorf("AUTH_PROTOCOL_UNSUPPORTED: shared catalogue selection requires mediated admission; refusing legacy fallback")
 		}
 		if out.CellnSelection.ToolRefs == nil {
 			return Result{}, fmt.Errorf("cellnSelection.toolRefs must be present (use [] for an explicit empty tool set)")
