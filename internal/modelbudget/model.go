@@ -70,23 +70,23 @@ type TurnRegistration struct {
 
 type ReservationRequest struct {
 	BudgetID             string
-	TurnID                string
-	RequestID             string
-	RequestDigest         string
-	ReservedOutputTokens  int64
+	TurnID               string
+	RequestID            string
+	RequestDigest        string
+	ReservedOutputTokens int64
 }
 
 type Reservation struct {
 	BudgetID             string
-	TurnID                string
-	RequestID             string
-	RequestDigest         string
-	ReservedOutputTokens  int64
-	ObservedOutputTokens  *int64
-	State                  string
-	Outcome                string
-	ProviderAttempted      bool
-	Existing               bool
+	TurnID               string
+	RequestID            string
+	RequestDigest        string
+	ReservedOutputTokens int64
+	ObservedOutputTokens *int64
+	State                string
+	Outcome              string
+	ProviderAttempted    bool
+	Existing             bool
 }
 
 type Usage struct {
