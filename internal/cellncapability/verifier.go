@@ -148,6 +148,13 @@ func (v *Verifier) Verify(token Token, decisionRaw []byte, ctx VerifyContext) (V
 	if claims.Nbf > now+clockSkewSeconds || claims.Iat > now+clockSkewSeconds {
 		return Verified{}, reasonError(ReasonTimeNotYetValid, nil)
 	}
+	// For admitted model work, the immutable work deadline is the primary
+	// lifecycle fence. Report it before generic credential expiry when both are
+	// crossed so callers receive the stable contract disposition rather than an
+	// incidental token-time error.
+	if ctx.ExpectedOperation == "model.invoke" && now > decision.Budget.TurnDeadlineUnix+clockSkewSeconds {
+		return Verified{}, reasonError(ReasonDeadlineExpired, nil)
+	}
 	if claims.Exp <= now-clockSkewSeconds {
 		return Verified{}, reasonError(ReasonTimeExpired, nil)
 	}
@@ -185,9 +192,6 @@ func (v *Verifier) Verify(token Token, decisionRaw []byte, ctx VerifyContext) (V
 			result.Reason = ReasonAdmissionReplay
 		}
 	case "model.invoke":
-		if now > decision.Budget.TurnDeadlineUnix+clockSkewSeconds {
-			return Verified{}, reasonError(ReasonDeadlineExpired, nil)
-		}
 		if claims.Exp > decision.Budget.TurnDeadlineUnix+clockSkewSeconds {
 			return Verified{}, reasonError(ReasonWindowInvalid, nil)
 		}
