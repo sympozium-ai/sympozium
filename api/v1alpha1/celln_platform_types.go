@@ -55,7 +55,7 @@ type CellnRuntimeProfileSpec struct {
 	// +kubebuilder:validation:MaxItems=2
 	// +listType=atomic
 	// +kubebuilder:validation:items:Enum=disposable-one-shot;enduring
-	Lifecycles []string `json:"lifecycles"`
+	Lifecycles []string                `json:"lifecycles"`
 	Limits     AgentRuntimeCellnLimits `json:"limits"`
 	// +optional
 	JSON *CellnHarnessJSONLimits `json:"json,omitempty"`
@@ -191,7 +191,7 @@ type CellnExecutionPolicySpec struct {
 	Lifecycles []string `json:"lifecycles"`
 	// +kubebuilder:validation:MaxItems=32
 	// +listType=atomic
-	Routes   []CellnExecutionPolicyRoute `json:"routes"`
+	Routes   []CellnExecutionPolicyRoute  `json:"routes"`
 	Ceilings CellnExecutionPolicyCeilings `json:"ceilings"`
 }
 
