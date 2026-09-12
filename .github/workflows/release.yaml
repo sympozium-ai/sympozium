@@ -93,6 +93,7 @@ jobs:
           - skill-memory
           - mcp-bridge
           - web-proxy
+          - model-gateway
           - node-probe
           - llmfit-daemon
           - harness-reference

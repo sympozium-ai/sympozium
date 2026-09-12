@@ -97,22 +97,22 @@ jobs:
           s = p.read_text()
           s = s.replace('retarget an existing run to a different namespace UID, ModelConnection, Secret\nUID, parent incarnation, runtime or tool revision.', 'retarget an existing run to a different namespace UID, ModelConnection,\nparent incarnation, runtime or tool revision.')
           old = '''A model route binds provider, protocol, model, endpoint origin, ModelConnection
-UID/spec digest, auth mode and (for secret-backed routes) Secret UID/name/key.
-The resolver does not read Secret contents.
+          UID/spec digest, auth mode and (for secret-backed routes) Secret UID/name/key.
+          The resolver does not read Secret contents.
 
-The dedicated gateway pins and revalidates the actual source identity. Secret
-data may rotate within the same Secret UID; deleting/recreating the Secret or
-changing route identity does not retarget an active run.'''
+          The dedicated gateway pins and revalidates the actual source identity. Secret
+          data may rotate within the same Secret UID; deleting/recreating the Secret or
+          changing route identity does not retarget an active run.'''
           new = '''A model route binds provider, protocol, model, endpoint origin, ModelConnection
-UID/spec digest, auth mode and (for secret-backed routes) the Secret name/key
-reference. The resolver does not read the Secret object or its contents.
+          UID/spec digest, auth mode and (for secret-backed routes) the Secret name/key
+          reference. The resolver does not read the Secret object or its contents.
 
-During authenticated route/budget registration, the dedicated model gateway
-resolves that reference, pins the actual Secret UID beside the immutable
-decision/budget identity, and returns only non-secret binding metadata. Before
-each provider admission it rechecks that live UID. Secret data may rotate within
-the same Secret UID; deleting/recreating the same-name Secret or changing route
-identity does not retarget an active run.'''
+          During authenticated route/budget registration, the dedicated model gateway
+          resolves that reference, pins the actual Secret UID beside the immutable
+          decision/budget identity, and returns only non-secret binding metadata. Before
+          each provider admission it rechecks that live UID. Secret data may rotate within
+          the same Secret UID; deleting/recreating the same-name Secret or changing route
+          identity does not retarget an active run.'''
           if old not in s:
               raise SystemExit('model route doc section not found')
           p.write_text(s.replace(old, new))
@@ -174,7 +174,7 @@ identity does not retarget an active run.'''
       ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.code == 'true') || github.event_name == 'workflow_dispatch')
     strategy:
       matrix:
-        image: [agent-runner, controller, apiserver, ipc-bridge, webhook, web-proxy, channel-telegram, channel-whatsapp, channel-discord, channel-slack, skill-k8s-ops, skill-sre-observability, skill-github-gitops, skill-llmfit, skill-memory, mcp-bridge, node-probe, llmfit-daemon, harness-reference]
+        image: [agent-runner, controller, apiserver, ipc-bridge, webhook, web-proxy, model-gateway, channel-telegram, channel-whatsapp, channel-discord, channel-slack, skill-k8s-ops, skill-sre-observability, skill-github-gitops, skill-llmfit, skill-memory, mcp-bridge, node-probe, llmfit-daemon, harness-reference]
     steps:
       - uses: actions/checkout@v4
       - name: Log in to GHCR
