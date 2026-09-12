@@ -68,6 +68,16 @@ type TurnRegistration struct {
 	Deadline        time.Time
 }
 
+// ReservationBinding is independently verified invocation identity. Gateways
+// must use ReserveBound: a budget ID alone is not authority to spend or recover.
+type ReservationBinding struct {
+	ClusterID          string
+	NamespaceUID       string
+	RunUID             string
+	RouteDigest        string
+	TurnDecisionDigest string
+}
+
 type ReservationRequest struct {
 	BudgetID             string
 	TurnID               string

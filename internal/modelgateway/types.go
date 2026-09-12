@@ -63,12 +63,14 @@ func Reason(err error) string {
 type BudgetStore interface {
 	RegisterRun(context.Context, modelbudget.RunRegistration) error
 	RegisterTurn(context.Context, modelbudget.TurnRegistration) error
-	Reserve(context.Context, modelbudget.ReservationRequest) (modelbudget.Reservation, error)
+	ReserveBound(context.Context, modelbudget.ReservationRequest, modelbudget.ReservationBinding) (modelbudget.Reservation, error)
 	MarkInFlight(context.Context, string, string, string) error
 	Reconcile(context.Context, string, string, string, int64, string, string) error
+	ReconcileUnknown(context.Context, string, string, string, string, string) error
 	CheckReady(context.Context) error
 	Inspect(context.Context, string, string) (modelbudget.Usage, error)
 	FenceRun(context.Context, string) error
+	FenceTurn(context.Context, string, string) error
 }
 
 type AuthorityStore interface {

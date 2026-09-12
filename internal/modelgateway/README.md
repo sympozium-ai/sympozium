@@ -1,7 +1,8 @@
 # Model gateway — work in progress (#502)
 
-The dedicated `cmd/model-gateway` binary exists but is not enabled in any chart
-or controller path. Do not use this draft to mark #502 complete.
+The dedicated `cmd/model-gateway` binary has disabled-by-default component
+packaging in dependent PR #522, but no completed mediated controller/Celln path.
+Do not use this draft to mark #502 complete.
 
 Implemented so far:
 
@@ -19,20 +20,33 @@ Implemented so far:
 ## Remaining blockers (not acceptance evidence)
 
 - Reviewed deployment boundary and least-privilege installed evidence.
-- Initial/turn registration now retains the original decision and checks immutable
-  run/route/parent/ceilings, but partial registration recovery and enduring
-  PostgreSQL integration still need tests.
-- Atomic registered identity checks at reservation and broader concurrency/
-  deadline failure-injection review.
-- Provider response validation, usage uncertainty and output ceiling handling;
-  never return raw provider failures containing credentials or unsafe headers.
-- Extend the real PostgreSQL A/B recording-provider test (same-name connections,
-  distinct credentials, same-UID rotation, replacement refusal, wrong audience,
-  duplicate suppression, TLS invocation and owner-cleanup authentication) with
-  route-read outages, registration authentication and crash/concurrency tests.
+- Broader route-read outage/deadline failure injection and process-level recovery
+  (the publication-boundary tests inject store failures, not OS process crashes).
+- Complete response protocol compatibility and usage/output ceiling failure
+  injection across both supported providers.
 - Shared model-request canonicalisation review with Celln. The current body
   digest must not be represented as reviewed cross-language protocol evidence.
 - KVM/installed proof and paired Celln #500/#501 protocol dependencies.
+
+## Integrated accounting and recovery checks
+
+Gateway reservation now requires `ReserveBound`: cluster, namespace UID, run UID,
+route digest and exact turn decision are compared under the same PostgreSQL row
+locks used to charge allowance, before returning even a duplicate request.
+
+Both fake-client/PostgreSQL and live Kubernetes/TLS tests interrupt registration
+after run publication and after turn publication, recover through new pools,
+race eight identical registrations, and refuse a changed-cap retry. HTTP checks
+require both issuer transport and execution audience; model tokens cannot register.
+Enduring tests charge the initial task and a follow-up against the same run,
+retain reserved/observed totals, refuse maxTurns overflow and budget top-up, and
+prove child-scoped cleanup closes only its turn, not the parent budget.
+
+Provider envelopes are strict non-streaming JSON objects. Duplicate accounting
+keys, invalid usage, error envelopes, and exact credential echoes in decoded
+strings/keys refuse. Unknown usage remains SQL NULL, including lost responses;
+no failure is recorded as measured zero or refunded. Response headers are not
+relayed. These checks do not claim to detect arbitrary encodings of credentials.
 
 ## Credential custody
 

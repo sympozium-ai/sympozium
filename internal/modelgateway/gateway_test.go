@@ -92,7 +92,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 		}
 		received <- r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[],"usage":{"completion_tokens":1}}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"fixture result"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}`))
 	}))
 	defer provider.Close()
 	scheme := runtime.NewScheme()
@@ -231,9 +231,40 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			exerciseRegistrationRecovery(t, g, issuer, d)
+			exerciseEnduringLedger(t, g, issuer, d, received, key)
 			registration := RegistrationRequest{Decision: raw, ExecutionToken: execution, ConnectionName: "model"}
-			if err = g.Register(ctx, registration); err != nil {
+			registrationBody, err := json.Marshal(registration)
+			if err != nil {
 				t.Fatal(err)
+			}
+			for _, auth := range []struct {
+				transport string
+				permit    cap.Token
+				status    int
+			}{
+				{"", execution, 401},
+				{"wrong-issuer", execution, 401},
+				{"issuer-transport-canary", cap.Token{}, 401},
+				{"issuer-transport-canary", model, 401},
+				{"issuer-transport-canary", execution, 204},
+				{"issuer-transport-canary", execution, 204},
+			} {
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/internal/register", bytes.NewReader(registrationBody))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Authorization", "Bearer "+auth.transport)
+				req.Header.Set("X-Celln-Execution-Permit", auth.permit.Bearer())
+				resp, err := server.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode != auth.status {
+					t.Fatalf("registration status=%d want=%d", resp.StatusCode, auth.status)
+				}
 			}
 			in := InvokeRequest{Decision: raw, RequestID: "q1", Request: []byte(`{"model":"m","messages":[{"role":"user","content":"hello"}],"max_tokens":512}`)}
 			if _, err = invoke(ctx, execution, in); err == nil {
