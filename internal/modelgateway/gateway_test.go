@@ -77,11 +77,11 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	issuer, err := cap.NewIssuer("test-issuer", cap.SigningKey{KeyID: "test", PrivateKey: priv}, nil)
+	issuer, err := cap.NewIssuer(cap.ControlPlaneIssuer, cap.SigningKey{KeyID: "test", PrivateKey: priv}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := cap.NewVerifier("test-issuer", []cap.VerificationKey{{KeyID: "test", PublicKey: pub}}, nil)
+	verifier, err := cap.NewVerifier(cap.ControlPlaneIssuer, []cap.VerificationKey{{KeyID: "test", PublicKey: pub}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +236,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			exerciseCellnRelay(t, g, issuer, d, server, pub, received, key)
 			exerciseRegistrationRecovery(t, g, issuer, d)
 			exerciseEnduringLedger(t, g, issuer, d, received, key)
 			registration := RegistrationRequest{Decision: raw, ExecutionToken: execution, ConnectionName: "model"}
