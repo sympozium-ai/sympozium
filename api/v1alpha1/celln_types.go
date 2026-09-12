@@ -3,10 +3,17 @@ package v1alpha1
 // CellnCatalogueSelection keeps tenant intent separate from explicit artifacts
 // and operator grant/route configuration. Ordered tools are explicitly lent;
 // an empty list lends none, never all installed tools.
+//
+// toolRefs always means the legacy namespaced CellnTool API. clusterToolRefs
+// always means the shared ClusterCellnTool catalogue. The two scopes are never
+// inferred from object existence and a friendly name may not appear in both
+// lists in one selection.
 // +kubebuilder:validation:XValidation:rule="self.toolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size() == 1)",message="catalogue tool names must be unique"
+// +kubebuilder:validation:XValidation:rule="self.clusterToolRefs.all(t, self.clusterToolRefs.filter(x, x.name == t.name).size() == 1)",message="cluster catalogue tool names must be unique"
+// +kubebuilder:validation:XValidation:rule="self.clusterToolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size() == 0)",message="a tool name cannot resolve through both namespaced and cluster catalogues"
 type CellnCatalogueSelection struct {
-	// RuntimeRef overrides Agent.spec.runtimeRef for this run only. The
-	// independently trusted grants must approve this exact Agent/runtime pair.
+	// RuntimeRef preserves the legacy namespaced AgentRuntime reference. It is
+	// never reinterpreted as a CellnRuntimeProfile name.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern="^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
@@ -15,6 +22,12 @@ type CellnCatalogueSelection struct {
 	// +kubebuilder:validation:MaxItems=16
 	// +listType=atomic
 	ToolRefs []CellnCatalogueToolRef `json:"toolRefs"`
+	// ClusterToolRefs selects exact shared catalogue revisions. Empty means no
+	// shared tools, not every installed tool.
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	// +listType=atomic
+	ClusterToolRefs []ClusterCellnToolRef `json:"clusterToolRefs,omitempty"`
 }
 
 type CellnCatalogueToolRef struct {
