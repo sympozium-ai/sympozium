@@ -25,7 +25,7 @@ func TestLegacyParentCannotDropSharedCatalogueSelection(t *testing.T) {
 			t.Fatal(err)
 		}
 		frozen, err := loader.FreezeParentRun(context.Background(), client.ObjectKeyFromObject(run))
-		if frozen != nil || err == nil || !strings.Contains(err.Error(), "AUTH_CAPABILITY_UNSUPPORTED") {
+		if frozen != nil || err == nil || !strings.Contains(err.Error(), "AUTH_PROTOCOL_UNSUPPORTED") {
 			t.Fatalf("legacy parent discarded shared scope: returnedPlan=%v err=%v", frozen != nil, err)
 		}
 	}

@@ -46,7 +46,7 @@ func (l Loader) FreezeParentRun(ctx context.Context, key types.NamespacedName) (
 		return nil, err
 	}
 	if len(run.Spec.CellnSelection.ClusterToolRefs) != 0 {
-		return nil, fmt.Errorf("AUTH_CAPABILITY_UNSUPPORTED: shared catalogue selection requires mediated parent admission; legacy parent issuance cannot drop clusterToolRefs")
+		return nil, fmt.Errorf("AUTH_PROTOCOL_UNSUPPORTED: shared catalogue selection requires mediated parent admission; legacy parent issuance cannot drop clusterToolRefs")
 	}
 	refs := run.Spec.CellnSelection.ToolRefs
 	if refs == nil || len(refs) > 16 {
