@@ -223,6 +223,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 			now := time.Now().Unix()
 			run := fmt.Sprintf("run-%s-%d", tenant, time.Now().UnixNano())
 			d := cap.Decision{APIVersion: cap.DecisionAPIVersion, Kind: "CellnAuthorisationDecision", ClusterID: "cluster", Operation: "execution.start", Lifecycle: "one-shot", Run: cap.RunBinding{Namespace: ns, NamespaceUID: string(uid), UID: run, SpecSHA256: "spec"}, Route: cap.RouteBinding{ModelConnectionUID: &cuid, ModelConnectionSpecSHA256: digest, Provider: "openai", Protocol: "openai-chat", Model: "m", EndpointOrigin: provider.URL, Auth: "secret", CredentialSource: &cap.CredentialSource{Kind: "Secret", SecretUID: string(secretUID), SecretName: "key", SecretKey: "OPENAI_API_KEY"}}, Budget: cap.BudgetBinding{BudgetID: run, MaxTurns: 1, RunCap: cap.Cap{Requests: 3, OutputTokens: 1536}, TurnCap: cap.Cap{Requests: 3, OutputTokens: 1536}, TurnDeadlineUnix: now + 120}, Windows: cap.Windows{IssuedAt: now, NotBefore: now, AdmissionDeadline: now + 60}, RequestDigest: "request"}
+			completeGatewayDecision(&d)
 			raw, _, err := cap.CanonicalDecision(d)
 			if err != nil {
 				t.Fatal(err)
@@ -356,7 +357,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 					t.Fatalf("cleanup status=%d want=%d", resp.StatusCode, permission.want)
 				}
 			}
-			usage, err := budget.Inspect(ctx, run, run)
+			usage, err := budget.Inspect(ctx, d.Budget.BudgetID, run)
 			if err != nil {
 				t.Fatal(err)
 			}
