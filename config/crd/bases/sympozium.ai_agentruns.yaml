@@ -426,12 +426,12 @@ spec:
                   rule: self.toolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size()
                     == 1)
                 - message: cluster catalogue tool names must be unique
-                  rule: self.clusterToolRefs.all(t, self.clusterToolRefs.filter(x,
-                    x.name == t.name).size() == 1)
+                  rule: '!has(self.clusterToolRefs) || self.clusterToolRefs.all(t,
+                    self.clusterToolRefs.filter(x, x.name == t.name).size() == 1)'
                 - message: a tool name cannot resolve through both namespaced and
                     cluster catalogues
-                  rule: self.clusterToolRefs.all(t, self.toolRefs.filter(x, x.name
-                    == t.name).size() == 0)
+                  rule: '!has(self.clusterToolRefs) || self.clusterToolRefs.all(t,
+                    self.toolRefs.filter(x, x.name == t.name).size() == 0)'
               cleanup:
                 default: delete
                 description: 'Cleanup policy: "delete" to remove pod after completion,

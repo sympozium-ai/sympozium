@@ -2784,12 +2784,13 @@ spec:
                       rule: self.toolRefs.all(t, self.toolRefs.filter(x, x.name ==
                         t.name).size() == 1)
                     - message: cluster catalogue tool names must be unique
-                      rule: self.clusterToolRefs.all(t, self.clusterToolRefs.filter(x,
-                        x.name == t.name).size() == 1)
+                      rule: '!has(self.clusterToolRefs) || self.clusterToolRefs.all(t,
+                        self.clusterToolRefs.filter(x, x.name == t.name).size() ==
+                        1)'
                     - message: a tool name cannot resolve through both namespaced
                         and cluster catalogues
-                      rule: self.clusterToolRefs.all(t, self.toolRefs.filter(x, x.name
-                        == t.name).size() == 0)
+                      rule: '!has(self.clusterToolRefs) || self.clusterToolRefs.all(t,
+                        self.toolRefs.filter(x, x.name == t.name).size() == 0)'
                   enduring:
                     description: Enduring bounds inherited by enduring runs when the
                       request omits limits.

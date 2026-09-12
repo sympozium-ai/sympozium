@@ -9,8 +9,8 @@ package v1alpha1
 // inferred from object existence and a friendly name may not appear in both
 // lists in one selection.
 // +kubebuilder:validation:XValidation:rule="self.toolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size() == 1)",message="catalogue tool names must be unique"
-// +kubebuilder:validation:XValidation:rule="self.clusterToolRefs.all(t, self.clusterToolRefs.filter(x, x.name == t.name).size() == 1)",message="cluster catalogue tool names must be unique"
-// +kubebuilder:validation:XValidation:rule="self.clusterToolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size() == 0)",message="a tool name cannot resolve through both namespaced and cluster catalogues"
+// +kubebuilder:validation:XValidation:rule="!has(self.clusterToolRefs) || self.clusterToolRefs.all(t, self.clusterToolRefs.filter(x, x.name == t.name).size() == 1)",message="cluster catalogue tool names must be unique"
+// +kubebuilder:validation:XValidation:rule="!has(self.clusterToolRefs) || self.clusterToolRefs.all(t, self.toolRefs.filter(x, x.name == t.name).size() == 0)",message="a tool name cannot resolve through both namespaced and cluster catalogues"
 type CellnCatalogueSelection struct {
 	// RuntimeRef preserves the legacy namespaced AgentRuntime reference. It is
 	// never reinterpreted as a CellnRuntimeProfile name.
