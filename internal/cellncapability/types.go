@@ -234,7 +234,7 @@ func (e *Error) Error() string {
 	}
 	return e.Reason
 }
-func (e *Error) Unwrap() error { return e.cause }
+func (e *Error) Unwrap() error                     { return e.cause }
 func reasonError(reason string, cause error) error { return &Error{Reason: reason, cause: cause} }
 
 func Reason(err error) string {

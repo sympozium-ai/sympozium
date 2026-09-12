@@ -280,7 +280,7 @@ func TestIssuerRefusesAuthorityExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = issuer.Issue(decision, IssueRequest{
-		Audience: AudienceExecution,
+		Audience:  AudienceExecution,
 		Operation: "execution.start",
 		ExpiresAt: time.Unix(decision.Windows.AdmissionDeadline+30, 0),
 		JTI:       "issuer-test-too-long-0001",
