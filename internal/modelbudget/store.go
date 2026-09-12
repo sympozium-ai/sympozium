@@ -207,9 +207,9 @@ func (s *Store) Reserve(ctx context.Context, in ReservationRequest) (Reservation
 	if !now.Before(parentDeadline) || !now.Before(turnDeadline) {
 		return Reservation{}, reasonError(ReasonDeadline, nil)
 	}
-	if runReservedReq+1 > runMaxReq || turnReservedReq+1 > turnMaxReq ||
-		runReservedOut+in.ReservedOutputTokens > runMaxOut ||
-		turnReservedOut+in.ReservedOutputTokens > turnMaxOut {
+	if runReservedReq >= runMaxReq || turnReservedReq >= turnMaxReq ||
+		in.ReservedOutputTokens > runMaxOut-runReservedOut ||
+		in.ReservedOutputTokens > turnMaxOut-turnReservedOut {
 		return Reservation{}, reasonError(ReasonExhausted, nil)
 	}
 
@@ -273,6 +273,22 @@ func (s *Store) Reconcile(ctx context.Context, budgetID, turnID, requestID strin
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	// Use the same run -> turn -> reservation ordering as Reserve. Serializing
+	// reconciliation prevents duplicate delivery from counting observed usage
+	// twice and avoids a reservation/run lock inversion with admission.
+	var locked string
+	if err := tx.QueryRow(ctx, `SELECT budget_id FROM celln_model_budgets WHERE budget_id=$1 FOR UPDATE`, budgetID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return reasonError(ReasonNotFound, nil)
+		}
+		return reasonError(ReasonUnavailable, err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT turn_id FROM celln_model_turn_budgets WHERE budget_id=$1 AND turn_id=$2 FOR UPDATE`, budgetID, turnID).Scan(&locked); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return reasonError(ReasonNotFound, nil)
+		}
+		return reasonError(ReasonUnavailable, err)
+	}
 	reservation, found, err := loadReservation(ctx, tx, budgetID, turnID, requestID)
 	if err != nil {
 		return reasonError(ReasonUnavailable, err)
