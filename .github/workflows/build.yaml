@@ -100,7 +100,7 @@ jobs:
       ((github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.code == 'true') || github.event_name == 'workflow_dispatch')
     strategy:
       matrix:
-        image: [agent-runner, controller, apiserver, ipc-bridge, webhook, web-proxy, channel-telegram, channel-whatsapp, channel-discord, channel-slack, skill-k8s-ops, skill-sre-observability, skill-github-gitops, skill-llmfit, skill-memory, mcp-bridge, node-probe, llmfit-daemon, harness-reference]
+        image: [agent-runner, controller, apiserver, ipc-bridge, webhook, web-proxy, model-gateway, channel-telegram, channel-whatsapp, channel-discord, channel-slack, skill-k8s-ops, skill-sre-observability, skill-github-gitops, skill-llmfit, skill-memory, mcp-bridge, node-probe, llmfit-daemon, harness-reference]
     steps:
       - uses: actions/checkout@v4
       - name: Log in to GHCR
