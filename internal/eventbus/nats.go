@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -15,31 +16,74 @@ const (
 	streamName    = "sympozium"
 	consumerGroup = "sympozium-workers"
 
-	// reconnectBackoff is how long a Subscribe loop waits before recreating its
-	// consumer after a fetch error (e.g. the consumer or stream was lost because
-	// NATS was restarted/recreated).
+	// reconnectBackoff is how long a Subscribe loop waits before (re)creating its
+	// consumer — after a fetch error (the consumer or stream was lost because
+	// NATS was restarted/recreated) or while NATS is still unreachable on a lazy
+	// bus.
 	reconnectBackoff = 2 * time.Second
+
+	// consumerInactiveThreshold is how long the server keeps a subscription's
+	// ephemeral consumer alive with no client activity. The server default is a
+	// few seconds, so any fetch gap longer than that — a rolling NATS restart, a
+	// network blip, a handler that blocks on a full channel — reaps the consumer,
+	// and the DeliverNew recreate in Subscribe then silently drops every event
+	// published in between. A long threshold keeps the consumer and its cursor,
+	// so the backlog is delivered when fetching resumes. Consumers orphaned by a
+	// recreate are still reclaimed by the server once the threshold elapses.
+	consumerInactiveThreshold = time.Hour
+)
+
+// Provisioning knobs. Variables rather than constants so tests can shrink
+// them; the defaults are the production values.
+var (
+	// streamBootstrapAttempts and streamBootstrapBackoff bound how long a
+	// constructor waits for the stream to become creatable before it either
+	// fails (bounded mode) or hands back a bus that provisions lazily.
+	streamBootstrapAttempts = 10
+	streamBootstrapBackoff  = 2 * time.Second
+
+	// jetStreamOpTimeout bounds each stream/consumer management call.
+	jetStreamOpTimeout = 5 * time.Second
 )
 
 // NATSEventBus implements EventBus using NATS JetStream.
 type NATSEventBus struct {
 	conn *nats.Conn
 	js   jetstream.JetStream
+
+	// lazy marks a bus built by NewNATSEventBus: NATS being unreachable at
+	// startup or at Subscribe time is treated as transient and self-heals,
+	// rather than failing the caller.
+	lazy bool
 }
 
-// NewNATSEventBus creates a new NATS JetStream event bus.
+// NewNATSEventBus creates a NATS JetStream event bus for a long-lived process
+// such as the controller. It does not fail because NATS is merely unreachable:
+// the connection reconnects indefinitely, the stream is provisioned on first
+// use if it cannot be created at startup, and Subscribe hands back a live
+// channel whose consumer is created once NATS answers. A process whose NATS
+// peer is recreated alongside it (node drain, rolling upgrade) therefore comes
+// up with routing intact instead of running with the bus permanently
+// disabled. Configuration errors — a malformed URL, bad options — are still
+// returned.
 func NewNATSEventBus(url string) (*NATSEventBus, error) {
-	return NewNATSEventBusWithContext(context.Background(), url)
+	return newNATSEventBus(context.Background(), url, true)
 }
 
-// NewNATSEventBusWithContext bounds initial stream provisioning. Cancellation
-// closes the connection, including its background reconnect loop. A successfully
-// returned bus retains the existing lifetime/reconnect policy after ctx expires.
+// NewNATSEventBusWithContext bounds initial stream provisioning and fails fast
+// when NATS is not usable within ctx. Cancellation closes the connection,
+// including its background reconnect loop. A successfully returned bus retains
+// the existing lifetime/reconnect policy after ctx expires, and its Subscribe
+// keeps fail-fast semantics, which suits per-request subscribers.
 func NewNATSEventBusWithContext(ctx context.Context, url string) (*NATSEventBus, error) {
+	return newNATSEventBus(ctx, url, false)
+}
+
+func newNATSEventBus(ctx context.Context, url string, lazy bool) (*NATSEventBus, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	n := &NATSEventBus{}
+	n := &NATSEventBus{lazy: lazy}
 	initialized := make(chan struct{})
 
 	// MaxReconnects(-1) keeps the client reconnecting indefinitely. A bounded
@@ -93,14 +137,14 @@ func NewNATSEventBusWithContext(ctx context.Context, url string) (*NATSEventBus,
 
 	// Retry stream creation — NATS may not be fully ready yet.
 	var lastErr error
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := 0; attempt < streamBootstrapAttempts; attempt++ {
 		if _, lastErr = n.ensureStream(ctx); lastErr == nil {
 			break
 		}
-		if attempt == 9 {
+		if attempt == streamBootstrapAttempts-1 {
 			break
 		}
-		timer := time.NewTimer(2 * time.Second)
+		timer := time.NewTimer(streamBootstrapBackoff)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -110,8 +154,15 @@ func NewNATSEventBusWithContext(ctx context.Context, url string) (*NATSEventBus,
 		}
 	}
 	if lastErr != nil {
-		nc.Close()
-		return nil, fmt.Errorf("creating JetStream stream after retries: %w", lastErr)
+		if !lazy {
+			nc.Close()
+			return nil, fmt.Errorf("creating JetStream stream after retries: %w", lastErr)
+		}
+		// Lazy bus: keep the connection (it is reconnecting in the background)
+		// and let Publish/Subscribe provision the stream once NATS answers.
+		// Failing here would leave the caller without an event bus for the
+		// life of the process over what is usually a startup-ordering race.
+		log.Printf("eventbus: JetStream stream not provisioned at startup (%v); it will be created on first use once NATS is reachable", lastErr)
 	}
 
 	return n, nil
@@ -119,6 +170,11 @@ func NewNATSEventBusWithContext(ctx context.Context, url string) (*NATSEventBus,
 
 // Publish sends an event to the NATS JetStream stream.
 // Trace context from ctx is automatically injected into NATS message headers.
+//
+// If the stream is missing server-side — NATS was recreated with ephemeral
+// storage, the reconnect handler has not finished re-ensuring it, or this bus
+// was built lazily before NATS was reachable — Publish recreates the stream
+// and retries once instead of failing.
 func (n *NATSEventBus) Publish(ctx context.Context, topic string, event *Event) error {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -133,12 +189,35 @@ func (n *NATSEventBus) Publish(ctx context.Context, topic string, event *Event) 
 	}
 	InjectTraceContext(ctx, msg.Header)
 
-	_, err = n.js.PublishMsg(ctx, msg)
-	if err != nil {
-		return fmt.Errorf("publishing to %s: %w", subject, err)
+	if _, err := n.js.PublishMsg(ctx, msg); err != nil {
+		if !isStreamGoneErr(err) {
+			return fmt.Errorf("publishing to %s: %w", subject, err)
+		}
+		log.Printf("eventbus: publish to %s found no stream (%v); recreating and retrying", subject, err)
+		if _, serr := n.ensureStream(ctx); serr != nil {
+			return fmt.Errorf("publishing to %s: stream missing (%v) and recreate failed: %w", subject, err, serr)
+		}
+		if _, rerr := n.js.PublishMsg(ctx, msg); rerr != nil {
+			return fmt.Errorf("publishing to %s after recreating stream: %w", subject, rerr)
+		}
 	}
 
 	return nil
+}
+
+// isStreamGoneErr reports whether err means the server has no stream for us
+// to publish to or consume from, so the caller should recreate it and retry.
+// ErrNoResponders is included because a JetStream that has restarted without
+// our stream answers requests with no responders rather than a typed
+// not-found error. A missing consumer is deliberately not classified here:
+// the stream is fine in that case and only the consumer needs recreating.
+func isStreamGoneErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, jetstream.ErrStreamNotFound) ||
+		errors.Is(err, jetstream.ErrNoStreamResponse) ||
+		errors.Is(err, nats.ErrNoResponders)
 }
 
 // Subscribe returns a channel that receives events for the given topic.
@@ -147,12 +226,25 @@ func (n *NATSEventBus) Publish(ctx context.Context, topic string, event *Event) 
 // because the consumer or stream no longer exists, the loop recreates them
 // (re-creating the stream first if needed) and resumes, so the subscription
 // recovers without requiring the process to restart.
+//
+// On a bus built with NewNATSEventBus, NATS being unreachable at Subscribe
+// time is handled the same way: the channel is returned live and the consumer
+// is created once NATS answers. A bus built with NewNATSEventBusWithContext
+// returns the error instead, so per-request subscribers fail fast.
 func (n *NATSEventBus) Subscribe(ctx context.Context, topic string) (<-chan *Event, error) {
 	subject := topicToSubject(topic)
 
 	consumer, err := n.createConsumer(ctx, subject)
 	if err != nil {
-		return nil, fmt.Errorf("creating consumer for %s: %w", subject, err)
+		if !n.lazy {
+			return nil, fmt.Errorf("creating consumer for %s: %w", subject, err)
+		}
+		// A long-lived subscriber (the routers) returning this error from Start
+		// takes the whole controller-runtime manager down over a transient
+		// outage the fetch loop below would have ridden out. Hand back a live
+		// channel and let the loop create the consumer instead.
+		log.Printf("eventbus: consumer for %s not created yet (%v); will keep trying", subject, err)
+		consumer = nil
 	}
 
 	ch := make(chan *Event, 64)
@@ -162,6 +254,23 @@ func (n *NATSEventBus) Subscribe(ctx context.Context, topic string) (<-chan *Eve
 		for {
 			if ctx.Err() != nil {
 				return
+			}
+
+			// Lazy start: NATS was unreachable at Subscribe time. Keep trying
+			// to create the consumer, backing off between attempts.
+			if consumer == nil {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(reconnectBackoff):
+				}
+				created, cerr := n.createConsumer(ctx, subject)
+				if cerr != nil {
+					continue
+				}
+				log.Printf("eventbus: created consumer for %s", subject)
+				consumer = created
+				continue
 			}
 
 			msgs, err := consumer.Fetch(1, jetstream.FetchMaxWait(5*time.Second))
@@ -229,7 +338,7 @@ func (n *NATSEventBus) Close() error {
 // it. It is safe to call repeatedly — after a NATS recreate the stream no longer
 // exists, and calling this recreates it.
 func (n *NATSEventBus) ensureStream(ctx context.Context) (jetstream.Stream, error) {
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, jetStreamOpTimeout)
 	defer cancel()
 	return n.js.CreateOrUpdateStream(cctx, streamConfig())
 }
@@ -242,13 +351,21 @@ func (n *NATSEventBus) createConsumer(ctx context.Context, subject string) (jets
 		return nil, err
 	}
 
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, jetStreamOpTimeout)
 	defer cancel()
-	return stream.CreateOrUpdateConsumer(cctx, jetstream.ConsumerConfig{
-		FilterSubject: subject,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		DeliverPolicy: jetstream.DeliverNewPolicy,
-	})
+	return stream.CreateOrUpdateConsumer(cctx, consumerConfig(subject))
+}
+
+// consumerConfig returns the ephemeral pull-consumer configuration Subscribe
+// uses for a subject. See consumerInactiveThreshold for why the threshold is
+// set explicitly.
+func consumerConfig(subject string) jetstream.ConsumerConfig {
+	return jetstream.ConsumerConfig{
+		FilterSubject:     subject,
+		AckPolicy:         jetstream.AckExplicitPolicy,
+		DeliverPolicy:     jetstream.DeliverNewPolicy,
+		InactiveThreshold: consumerInactiveThreshold,
+	}
 }
 
 // streamConfig returns the JetStream stream configuration for Sympozium events.
