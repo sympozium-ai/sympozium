@@ -58,6 +58,23 @@ func (g *Gateway) Handler() http.Handler {
 		}
 		w.WriteHeader(204)
 	})
+	mux.HandleFunc("POST /internal/close", func(w http.ResponseWriter, r *http.Request) {
+		if !g.issuerAuthenticated(r) {
+			writeFailure(w, fail(ReasonUnauthorized, 401, nil))
+			return
+		}
+		var in CloseRequest
+		if err := g.readRequest(w, r, &in); err != nil {
+			writeFailure(w, err)
+			return
+		}
+		token := cellncapability.NewToken(r.Header.Get("X-Celln-Execution-Permit"))
+		if err := g.Close(r.Context(), token, in); err != nil {
+			writeFailure(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /v1/invoke", func(w http.ResponseWriter, r *http.Request) {
 		token := bearer(r)
 		if token.Empty() {

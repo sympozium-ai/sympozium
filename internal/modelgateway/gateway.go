@@ -41,6 +41,9 @@ func New(config Config, verifier *cellncapability.Verifier, k8s client.Reader, b
 }
 
 func (g *Gateway) Ready(ctx context.Context) error {
+	if err := g.config.AuthorityReady(ctx); err != nil {
+		return fail(ReasonUnavailable, 503, nil)
+	}
 	if err := g.budgets.CheckReady(ctx); err != nil {
 		return fail(ReasonUnavailable, 503, err)
 	}
@@ -195,6 +198,11 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	deadline := time.Unix(decision.Budget.TurnDeadlineUnix, 0)
 	providerCtx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
+	providerCtx, stopWatching, err := g.watchBudget(providerCtx, decision.Budget.BudgetID, tid)
+	if err != nil {
+		return InvokeResponse{}, err
+	}
+	defer stopWatching()
 	allowPrivate := authority.AllowInsecure && privateOriginAllowed(authority.Endpoint, g.config.AllowPrivateOrigins)
 	httpClient, err := g.newClient(authority.Endpoint, allowPrivate, g.config.MaxProviderDuration)
 	if err != nil {

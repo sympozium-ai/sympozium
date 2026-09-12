@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	authclient "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -97,6 +98,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 	scheme := runtime.NewScheme()
 	_ = core.AddToScheme(scheme)
 	_ = api.AddToScheme(scheme)
+	probe := func(context.Context) error { return nil } // Fake-client tier only.
 	var k8s client.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 	if live {
 		cfg, err := ctrl.GetConfig()
@@ -104,13 +106,18 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 			t.Fatal(err)
 		}
 		cfg.Timeout = 5 * time.Second
+		auth, err := authclient.NewForConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		probe = AuthorityReadiness(auth.SelfSubjectAccessReviews())
 		k8s, err = client.New(cfg, client.Options{Scheme: scheme})
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Log("live Kubernetes authority test: caller uses configured kubeconfig; this is not tenant RBAC isolation proof")
 	}
-	g, err := New(Config{ClusterID: "cluster", RegistrationToken: cap.NewToken("issuer-transport-canary"), AllowPrivateOrigins: map[string]bool{provider.URL: true}}, verifier, k8s, budget, authorities)
+	g, err := New(Config{AuthorityReady: probe, ClusterID: "cluster", RegistrationToken: cap.NewToken("issuer-transport-canary"), AllowPrivateOrigins: map[string]bool{provider.URL: true}}, verifier, k8s, budget, authorities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +276,54 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live bool) {
 			}
 			if len(received) != 0 {
 				t.Fatal("refused operation contacted provider")
+			}
+			// Cleanup remains possible even though the pinned Secret no longer
+			// exists. Model/start credentials cannot substitute for owner cleanup.
+			cleanupDecision := d
+			cleanupDecision.Operation = "execution.cleanup"
+			cleanupRaw, _, err := cap.CanonicalDecision(cleanupDecision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cleanupToken, err := issuer.Issue(cleanupDecision, cap.IssueRequest{Audience: cap.AudienceExecution, Operation: "execution.cleanup"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, permission := range []struct {
+				transport, permit string
+				want              int
+			}{
+				{"", cleanupToken.Bearer(), 401},
+				{"issuer-transport-canary", "", 401},
+				{"issuer-transport-canary", model.Bearer(), 401},
+				{"issuer-transport-canary", execution.Bearer(), 401},
+				{"issuer-transport-canary", cleanupToken.Bearer(), 204},
+			} {
+				body, err := json.Marshal(CloseRequest{Decision: cleanupRaw})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/internal/close", bytes.NewReader(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Authorization", "Bearer "+permission.transport)
+				req.Header.Set("X-Celln-Execution-Permit", permission.permit)
+				resp, err := server.Client().Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp.Body.Close()
+				if resp.StatusCode != permission.want {
+					t.Fatalf("cleanup status=%d want=%d", resp.StatusCode, permission.want)
+				}
+			}
+			usage, err := budget.Inspect(ctx, run, run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !usage.RunClosed || !usage.TurnClosed || usage.RunReservedRequests != 2 || usage.RunReservedOutputTokens != 1024 {
+				t.Fatalf("cleanup lost fence or refunded usage: %+v", usage)
 			}
 		})
 	}

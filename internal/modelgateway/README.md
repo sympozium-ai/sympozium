@@ -18,18 +18,18 @@ Implemented so far:
 
 ## Remaining blockers (not acceptance evidence)
 
-- Readiness authority checks and reviewed deployment boundary.
+- Reviewed deployment boundary and least-privilege installed evidence.
 - Initial/turn registration now retains the original decision and checks immutable
   run/route/parent/ceilings, but partial registration recovery and enduring
   PostgreSQL integration still need tests.
-- Atomic registered identity checks at reservation, cancellation/fencing of
-  locally active requests, and concurrency/deadline ordering review.
+- Atomic registered identity checks at reservation and broader concurrency/
+  deadline failure-injection review.
 - Provider response validation, usage uncertainty and output ceiling handling;
   never return raw provider failures containing credentials or unsafe headers.
 - Extend the real PostgreSQL A/B recording-provider test (same-name connections,
   distinct credentials, same-UID rotation, replacement refusal, wrong audience,
-  duplicate suppression) with authority outages, full HTTP authentication and
-  crash/concurrency tests.
+  duplicate suppression, TLS invocation and owner-cleanup authentication) with
+  route-read outages, registration authentication and crash/concurrency tests.
 - Shared model-request canonicalisation review with Celln. The current body
   digest must not be represented as reviewed cross-language protocol evidence.
 - KVM/installed proof and paired Celln #500/#501 protocol dependencies.
@@ -54,6 +54,35 @@ injected DNS answers asserting the dial receives only the validated literal IP.
 They are portable transport tests, not syscall tracing, installed TLS-provider,
 or KVM acceptance proof. PostgreSQL tests require
 `CELLN_MODEL_BUDGET_DATABASE_URL`; without it they explicitly skip.
+
+## Active cancellation and live readiness
+
+`POST /internal/close` requires both issuer transport authentication and a
+separately signed `execution.cleanup` permit in `X-Celln-Execution-Permit`.
+It checks durable original run/namespace/parent ownership, then fences the run.
+It does not read live policy or Secrets, so withdrawn execution authority or a
+deleted credential source cannot strand cleanup. This is gateway budget closure,
+not confirmation that a native Celln parent has been torn down.
+
+Each admitted provider request polls its durable run/turn fence every 250 ms
+with a one-second query timeout. A fence or accounting read failure cancels its
+local HTTP context. Replicas observe the same database fence. This is bounded
+best-effort cancellation, not immediate remote revocation or a spending refund;
+already-sent requests may still be processed by the provider. Original work
+and HTTP deadlines remain independent upper bounds. Watchers are joined and
+released when a request completes.
+
+Readiness now checks live SelfSubjectAccessReviews for cluster-wide `get` on
+namespaces, ModelConnections and Secrets, plus both database schemas. Denial,
+API failure or ambiguous evaluation fails closed. This reads no Secret data and
+does not add Secret list/watch permissions. It reports the real custody privilege
+rather than mislabelling it namespace-isolated RBAC.
+
+Tests exercise two independently connected stores, run and turn closure while
+an HTTP provider is active, cancellation on accounting outage, unchanged reserved
+usage, and live Kubernetes readiness/cleanup after Secret replacement. Run the
+opt-in live Make target documented in
+`docs/design/celln-gateway-live-epoch.md` for the Kubernetes/TLS tier.
 
 ## Dedicated process
 

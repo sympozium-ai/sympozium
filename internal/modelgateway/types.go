@@ -67,6 +67,8 @@ type BudgetStore interface {
 	MarkInFlight(context.Context, string, string, string) error
 	Reconcile(context.Context, string, string, string, int64, string, string) error
 	CheckReady(context.Context) error
+	Inspect(context.Context, string, string) (modelbudget.Usage, error)
+	FenceRun(context.Context, string) error
 }
 
 type AuthorityStore interface {
@@ -125,6 +127,7 @@ type InvokeResponse struct {
 }
 
 type Config struct {
+	AuthorityReady      func(context.Context) error
 	ClusterID           string
 	RegistrationToken   cellncapability.Token
 	MaxRequestBytes     int64
@@ -135,6 +138,9 @@ type Config struct {
 }
 
 func (c *Config) defaults() error {
+	if c.AuthorityReady == nil {
+		return fmt.Errorf("live authority readiness probe is required")
+	}
 	if c.ClusterID == "" {
 		return fmt.Errorf("cluster id is required")
 	}

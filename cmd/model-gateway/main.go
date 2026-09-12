@@ -23,6 +23,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/modelgateway"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	authclient "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -110,7 +111,11 @@ func run(path string) error {
 	for _, origin := range cfg.PrivateOrigins {
 		private[origin] = true
 	}
-	gateway, err := modelgateway.New(modelgateway.Config{ClusterID: cfg.ClusterID, RegistrationToken: cap.NewToken(registration), AllowPrivateOrigins: private}, verifier, reader, budgets, authorities)
+	auth, err := authclient.NewForConfig(rest)
+	if err != nil {
+		return err
+	}
+	gateway, err := modelgateway.New(modelgateway.Config{AuthorityReady: modelgateway.AuthorityReadiness(auth.SelfSubjectAccessReviews()), ClusterID: cfg.ClusterID, RegistrationToken: cap.NewToken(registration), AllowPrivateOrigins: private}, verifier, reader, budgets, authorities)
 	if err != nil {
 		return err
 	}
