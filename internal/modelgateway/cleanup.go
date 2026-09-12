@@ -35,5 +35,17 @@ func (g *Gateway) Close(ctx context.Context, token cap.Token, in CloseRequest) e
 	if (original.Parent == nil) != (decision.Parent == nil) || (original.Parent != nil && original.Parent.Incarnation != decision.Parent.Incarnation) {
 		return fail(ReasonForbidden, 403, nil)
 	}
+	if decision.Parent != nil && decision.Parent.TurnID != nil {
+		// A child-scoped cleanup permit must never widen into parent closure.
+		tid := *decision.Parent.TurnID
+		turn, err := g.authorities.Authority(ctx, decision.Budget.BudgetID, tid)
+		if err != nil {
+			return err
+		}
+		if turn.Decision.Run != original.Run || turn.Decision.ClusterID != original.ClusterID || turn.Decision.Parent == nil || turn.Decision.Parent.Incarnation != original.Parent.Incarnation || turn.TurnID != tid {
+			return fail(ReasonForbidden, 403, nil)
+		}
+		return g.budgets.FenceTurn(ctx, decision.Budget.BudgetID, tid)
+	}
 	return g.budgets.FenceRun(ctx, decision.Budget.BudgetID)
 }
