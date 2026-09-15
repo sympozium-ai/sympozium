@@ -37,11 +37,13 @@ See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/b
 
 Enabled by default (`celln.enabled: true`) so a standard installation deploys
 the in-cluster (pod-based) dispatcher, the router and controller/API wiring.
-The dispatcher and router schedule only on nodes explicitly labelled
-`celln.dev/kvm=true`; label KVM-capable hosts deliberately before they receive
-dispatcher pods. A bare-metal host dispatcher (systemd, via the `celln-installer`
+The dispatcher carries no node selector and may schedule on any node (it still
+mounts the node's `/dev/kvm`, so the node it lands on must provide KVM).
+A bare-metal host dispatcher (systemd, via the `celln-installer`
 DaemonSet) is available with `celln.installer.enabled=true` but is loopback-only
-and mutually exclusive with the in-cluster dispatcher. Disable all Celln
+and mutually exclusive with the in-cluster dispatcher; the installer schedules
+only on nodes explicitly labelled `celln.dev/kvm=true`, so label KVM-capable
+hosts deliberately before enabling it. Disable all Celln
 resources with `--set celln.enabled=false`. See [Celln Backend](../concepts/celln-backend.md).
 
 `celln.fleet.*` replaces the single dispatcher with one owner per labeled KVM

@@ -307,11 +307,10 @@ spec:
       {{- if $parent.enabled }}
       terminationGracePeriodSeconds: 60
       {{- end }}
+      {{- if $parent.enabled }}
       nodeSelector:
-        celln.dev/kvm: "true"
-        {{- if $parent.enabled }}
         kubernetes.io/hostname: {{ $parent.nodeName | quote }}
-        {{- end }}
+      {{- end }}
       containers:
       - name: dispatcher
         {{- if $parent.enabled }}
@@ -411,7 +410,7 @@ spec:
       - name: state
         hostPath:
           path: {{ $dispatcher.statePath | default "/var/lib/celln" }}
-          type: Directory
+          type: DirectoryOrCreate
       - name: kvm
         hostPath:
           path: /dev/kvm

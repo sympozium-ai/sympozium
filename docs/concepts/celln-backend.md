@@ -12,8 +12,9 @@ Sympozium optionally integrates with [Celln](https://github.com/sympozium-ai/cel
 
 Celln is deployed by default by `sympozium install`: an in-cluster (pod-based)
 dispatcher, an unprivileged router, and generated router/backend/capability
-credentials plus the ownership PVC. The dispatcher runs as a privileged pod on
-nodes labelled `celln.dev/kvm=true`. A bare-metal alternative — a host systemd
+credentials plus the ownership PVC. The dispatcher runs as a privileged pod
+with no node selector (it still mounts the node's `/dev/kvm`). A bare-metal
+alternative — a host systemd
 dispatcher installed by the `celln-installer` DaemonSet — is available via
 `sympozium install --celln-host-installer --celln-backend …`. The router is an
 unprivileged Deployment, not a per-node DaemonSet. Disable Celln with
@@ -76,7 +77,7 @@ AgentRun (backend: celln)
      a receipt plus bounded display output. status.cellnActionId tracks the poll.
 ```
 
-Both the in-cluster dispatcher and the host-installer only schedule onto nodes labeled `celln.dev/kvm: "true"` — Celln needs `/dev/kvm` and is not a container-level isolation mechanism, so it can't run on arbitrary nodes the way the `job` backend can.
+The host-installer only schedules onto nodes labeled `celln.dev/kvm: "true"` — Celln needs `/dev/kvm` and is not a container-level isolation mechanism, so the host path can't run on arbitrary nodes the way the `job` backend can. The in-cluster dispatcher carries no node selector; it still mounts the node's `/dev/kvm`, so the node it lands on must provide KVM.
 
 ## Trust model: task text never grants tool authority
 
@@ -209,7 +210,7 @@ dispatcher, not inside the installer container.
 |----------|----------|
 | `celln.enabled=false` | No `celln-system` namespace or resources. Runs with `backend: celln` fail at dispatch with a router-unreachable error, not at admission. |
 | `celln.enabled=true`, missing required router configuration | Helm render fails; no partially configured router is installed. |
-| `celln.enabled=true`, no eligible dispatcher reachable | Router replicas can run without KVM themselves, but cannot execute a request. The in-cluster dispatcher and the optional host-installer only schedule on labelled nodes. |
+| `celln.enabled=true`, no eligible dispatcher reachable | Router replicas can run without KVM themselves, but cannot execute a request. The optional host-installer only schedules on labelled nodes; the in-cluster dispatcher schedules anywhere but still needs `/dev/kvm` on the node it lands on. |
 | `celln.enabled=true`, KVM node(s) present, no AI provider reachable on the host | Router and dispatcher report healthy. The run reaches `Running`, then fails once the dispatcher's own provider check fails — see above. |
 | Everything configured | Run dispatches, executes in a real sealed cell, and returns a bounded result. |
 
