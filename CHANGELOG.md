@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.76](https://github.com/sympozium-ai/sympozium/compare/v0.10.75...v0.10.76) (2026-09-15)
+
+
+### Features
+
+* **install:** ergoz comes with sympozium install ([25a5d20](https://github.com/sympozium-ai/sympozium/commit/25a5d206a735c7e3b8c5137cd0816c53d3c81675))
+* **install:** ergoz comes with sympozium install ([088538c](https://github.com/sympozium-ai/sympozium/commit/088538c32a2b0579c85cf5a170a3c83014bef3d1))
+
 ## [0.10.75](https://github.com/sympozium-ai/sympozium/compare/v0.10.74...v0.10.75) (2026-09-15)
 
 
