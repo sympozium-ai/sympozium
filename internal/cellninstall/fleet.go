@@ -85,6 +85,9 @@ type FleetBackend struct {
 	Name           string
 	Model          FleetModel
 	CredentialFile string
+	// CredentialEnv names an environment variable holding the key instead of
+	// a file; the installer writes it to a private file before publishing.
+	CredentialEnv string
 }
 
 var backendNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)

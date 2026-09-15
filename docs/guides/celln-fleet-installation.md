@@ -18,6 +18,30 @@ What runs where:
 Nothing mounts a host path outside `/var/lib/sympozium-celln/<scope>`, the
 controller mounts no host state at all, and no node is ever named in values.
 
+## The default install
+
+A released `sympozium` binary pins a starter package the project built and
+signed for that release (`hack/build-celln-starter.sh` in the release
+workflow: the pinned Celln, its eight brokered tools, busybox and jq, signed
+with a key generated in CI and discarded; the identity is the
+`celln-starter.json` release asset). With that, the fleet is the default
+Celln plane and a bare install is enough:
+
+```sh
+export DEEPSEEK_API_KEY=...        # or OPENAI_API_KEY, ANTHROPIC_API_KEY, or
+                                   # SYMPOZIUM_CELLN_BACKEND=name=native,provider=llama-server,model=M,endpoint=http://H:8080/v1/chat/completions,allow-insecure=true
+sympozium install
+```
+
+In a terminal with none of those set, the install asks for a provider and a
+key; without a terminal it installs the one-shot router only and says what to
+set. The default picks scope `starter`, keeps its records under
+`~/.sympozium/celln-fleet/starter`, approves the starter tools (say so in the
+output), and the node probe labels every node that has `/dev/kvm` and a
+kernel under `/boot` with `celln.dev/kvm=true`; a label an operator set is
+never changed. Every flag below still works and overrides the corresponding
+default; `--celln-fleet` with your own package keeps the reviewed path.
+
 ## Trust and credentials
 
 - **Publisher.** The package is signed with an operator seed. Its publisher key
@@ -87,7 +111,7 @@ sympozium install -n celln-agents --celln-fleet \
   --celln-fleet-model-credential-file /path/to/model-token \
   --celln-fleet-output-dir /ABS/PRIVATE/fleet-starter \
   --celln-native-approve-starter-tools
-kubectl label node kvm-a kvm-b celln.dev/kvm=true
+kubectl label node kvm-a kvm-b celln.dev/kvm=true   # only for nodes the probe does not label
 ```
 
 Before it touches the cluster the installer sends each backend a one-token

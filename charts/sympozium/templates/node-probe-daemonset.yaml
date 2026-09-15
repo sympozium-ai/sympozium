@@ -72,6 +72,8 @@ spec:
                   fieldPath: spec.nodeName
             - name: CONFIG_PATH
               value: /etc/node-probe/config.yaml
+            - name: LABEL_KVM_NODES
+              value: {{ .Values.nodeProbe.labelKVMNodes | default false | quote }}
           ports:
             - name: health
               containerPort: 9473
@@ -97,8 +99,28 @@ spec:
             - name: config
               mountPath: /etc/node-probe
               readOnly: true
+            {{- if .Values.nodeProbe.labelKVMNodes }}
+            - name: host-dev
+              mountPath: /host/dev
+              readOnly: true
+            - name: host-boot
+              mountPath: /host/boot
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: sympozium-node-probe-config
+        {{- if .Values.nodeProbe.labelKVMNodes }}
+        # Read-only views to judge whether the node can run Celln cells; the
+        # probe never writes through them.
+        - name: host-dev
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: host-boot
+          hostPath:
+            path: /boot
+            type: DirectoryOrCreate
+        {{- end }}
 {{- end }}

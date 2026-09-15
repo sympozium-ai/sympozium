@@ -22,13 +22,15 @@ type cellnFleetFlags struct {
 	skipPreflight bool
 	outputDir     string
 	authorise     string
-	wait          time.Duration
+	// defaulted is set when a bare `sympozium install` chose the fleet.
+	defaulted bool
+	wait      time.Duration
 }
 
 func (f *cellnFleetFlags) register(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.enabled, "celln-fleet", false, "Run the native Celln plane as a per-node fleet: every node labeled celln.dev/kvm=true prepares the reviewed starter package and serves enduring parents (requires the --celln-fleet-* inputs and --celln-native-approve-starter-tools)")
-	cmd.Flags().StringVar(&f.options.Scope, "celln-fleet-scope", "", "Stable installation identity; node state lives at /var/lib/sympozium-celln/<scope>")
-	cmd.Flags().StringVar(&f.options.PackageImage, "celln-fleet-package-image", "", "Digest-pinned OCI image (repository@sha256:...) carrying the reviewed 'celln starter-package' output at /package")
+	cmd.Flags().StringVar(&f.options.Scope, "celln-fleet-scope", "", "Stable installation identity; node state lives at /var/lib/sympozium-celln/<scope> (default starter)")
+	cmd.Flags().StringVar(&f.options.PackageImage, "celln-fleet-package-image", "", "Digest-pinned OCI image (repository@sha256:...) carrying the reviewed 'celln starter-package' output at /package (default: the starter package this build pins)")
 	cmd.Flags().StringVar(&f.options.PackageHash, "celln-fleet-package-hash", "", "Exact operator-approved package BLAKE3 identity from 'celln starter-inspect'")
 	cmd.Flags().StringVar(&f.options.Publisher, "celln-fleet-publisher", "", "Explicitly approved publisher key of the package from 'celln starter-inspect'")
 	cmd.Flags().StringVar(&f.options.Principal, "celln-fleet-principal", "sympozium:celln", "Parent principal every fleet owner authenticates")
@@ -46,7 +48,7 @@ func (f *cellnFleetFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.backendSpecs, "celln-fleet-backend", nil, "A model backend of this fleet, repeatable: name=NAME,provider=PROVIDER,model=MODEL[,endpoint=URL][,protocol=openai-chat|anthropic-messages][,credential-file=/path][,allow-insecure=true]. Every node configures every backend and a namespace may run parents on any of them side by side. Without this flag the --celln-fleet-model-* flags define the single backend named native")
 	cmd.Flags().StringArrayVar(&f.options.HTTPSHosts, "celln-fleet-https-host", nil, "An exact host the https-fetch and https-post-json starter tools may reach, repeatable (lowercase DNS name; default example.com). Every backend's nodes configure the same list")
 	cmd.Flags().BoolVar(&f.skipPreflight, "celln-fleet-skip-preflight", false, "Skip the one-token chat probe of every backend with its key (use when only the nodes can reach the endpoint)")
-	cmd.Flags().StringVar(&f.outputDir, "celln-fleet-output-dir", "", "Absolute private directory for the materialized configuration and installation records")
+	cmd.Flags().StringVar(&f.outputDir, "celln-fleet-output-dir", "", "Absolute private directory for the materialized configuration and installation records (default ~/.sympozium/celln-fleet/<scope>)")
 	cmd.Flags().DurationVar(&f.wait, "celln-fleet-wait", 15*time.Minute, "How long to wait for the first labeled node to publish the starter configuration")
 }
 
@@ -55,14 +57,23 @@ func (f *cellnFleetFlags) register(cmd *cobra.Command) {
 // the configuration the nodes published. Every step refuses to replace state
 // left by an earlier attempt, so a rerun after labeling more nodes is safe.
 func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, setValues []string, approve bool) error {
-	if !approve {
-		return fmt.Errorf("--celln-fleet requires --celln-native-approve-starter-tools: grants include run-owned read/write/list/append/search/delete and bounded HTTPS GET and JSON POST to the --celln-fleet-https-host list (default example.com)")
+	if !approve && !f.defaulted {
+		return fmt.Errorf("--celln-fleet requires --celln-native-approve-starter-tools: grants include %s", starterToolGrants)
 	}
 	backends, err := parseFleetBackends(f.backendSpecs)
 	if err != nil {
 		return err
 	}
-	f.options.Backends = backends
+	f.options.Backends = append(f.options.Backends, backends...)
+	if err := f.applyStarterDefaults(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(f.outputDir, 0700); err != nil {
+		return err
+	}
+	if err := materializeCredentials(f.options.Backends, nil, f.outputDir); err != nil {
+		return err
+	}
 	fleetValues, err := cellninstall.FleetValues(f.options)
 	if err != nil {
 		return err
@@ -132,7 +143,7 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	if err := cellninstall.PrepareFleetTrust(ctx, k8sClient, f.options.Principal); err != nil {
 		return err
 	}
-	fmt.Println("  Fleet plane deployed. Join KVM nodes with: kubectl label node NODE celln.dev/kvm=true")
+	fmt.Println("  Fleet plane deployed. Nodes with /dev/kvm and a boot kernel are labelled celln.dev/kvm=true by the node probe; label others by hand.")
 	fmt.Printf("  Waiting up to %s for the first node to admit the package and publish the starter configuration...\n", f.wait)
 	configuration := filepath.Join(f.outputDir, "configuration")
 	deadline := time.Now().Add(f.wait)
@@ -234,10 +245,12 @@ func parseFleetBackends(specs []string) ([]cellninstall.FleetBackend, error) {
 				b.Model.Protocol = value
 			case "credential-file":
 				b.CredentialFile = value
+			case "credential-env":
+				b.CredentialEnv = value
 			case "allow-insecure":
 				b.Model.AllowInsecure = value == "true" || value == "1" || value == "yes"
 			default:
-				return nil, fmt.Errorf("--celln-fleet-backend %q: unknown key %q (name, provider, model, endpoint, protocol, credential-file, allow-insecure)", spec, key)
+				return nil, fmt.Errorf("--celln-fleet-backend %q: unknown key %q (name, provider, model, endpoint, protocol, credential-file, credential-env, allow-insecure)", spec, key)
 			}
 		}
 		if b.Name == "" {

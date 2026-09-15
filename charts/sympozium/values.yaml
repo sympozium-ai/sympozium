@@ -352,6 +352,10 @@ webProxy:
 nodeProbe:
   # -- Deploy the node-probe DaemonSet for discovering node-installed inference providers
   enabled: true
+  # -- Label nodes that have /dev/kvm and a kernel under /boot with
+  # celln.dev/kvm=true so the Celln fleet runs there without a manual label.
+  # A label an operator set (either value) is never changed.
+  labelKVMNodes: true
   image:
     repository: ""  # defaults to {{ .Values.image.registry }}/node-probe
     tag: ""

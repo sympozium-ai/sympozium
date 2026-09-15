@@ -378,6 +378,30 @@ request, which surfaced as `lent executable failed` on the first turn.
 The cluster tool names carry the scope prefix (`celln-ci-workspace-list`),
 which the journey's gates now use.
 
+## The one-liner: a bare `sympozium install` enables Celln parents
+
+Reported on v0.10.70: after a plain install, the Agent wizard greyed out
+**Celln parent** and pointed at a retired path. Now a release build pins a
+starter package the project built and signed (`hack/build-celln-starter.sh`:
+the pinned Celln, eight brokered tools, busybox and jq; an ephemeral CI
+signing key; `celln-starter.json` as the release asset), the fleet is the
+default Celln plane, the backend comes from the environment or a prompt, and
+the node probe labels the nodes. `test/integration/test-celln-oneliner.sh`
+on Kind (`oneliner`, two workers, no hand label, llama-server backend in
+`SYMPOZIUM_CELLN_BACKEND`):
+
+| Check | Result |
+| --- | --- |
+| Package | Built and published by the shared script, signed with a key generated for the run; identity `{image@sha256, packageHash, publisher}` pinned into a CLI build with the same linker flags the release uses. |
+| Install | `sympozium install` with only image tags and the private-registry setting: picked the pinned package, took the backend from the environment, probed it, installed scope `starter`, approved the starter tools (grants printed), waited for the nodes, installed catalogue and policy, wired the controller. |
+| Nodes | Both workers labelled `celln.dev/kvm=true` by the node probe (`/dev/kvm` and a `/boot` kernel present); the control plane, without a kernel, stayed unlabelled; two owners running. |
+| Namespace | A fresh namespace was offered `celln-native-starter` through the call the wizard makes to enable the Celln parent tile; wrappers created on first use. |
+| Run | A one-shot on the default fleet answered "Botswana is a landlocked country in southern Africa." |
+
+The first run's only failure was the journey's own port-forward opening into
+the API server pod as the final wiring upgrade replaced it; the journey now
+waits for that rollout.
+
 ## Environment caveats
 
 - Kind nodes have no kernel in `/boot`; the dispatcher's readiness gate

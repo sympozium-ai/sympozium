@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,6 +30,13 @@ import (
 )
 
 const (
+	// kvmLabel marks a node the Celln fleet may run cells on. The probe sets
+	// it when the node has /dev/kvm and a kernel under /boot (the dispatcher's
+	// readiness gate needs both) and never overrides a label an operator set.
+	kvmLabel          = "celln.dev/kvm"
+	hostDevKVM        = "/host/dev/kvm"
+	hostBootGlob      = "/host/boot/vmlinuz*"
+	labelKVMEnv       = "LABEL_KVM_NODES"
 	annotationPrefix  = "sympozium.ai/inference-"
 	annotationHealthy = "sympozium.ai/inference-healthy"
 	annotationLastPr  = "sympozium.ai/inference-last-probe"
@@ -208,6 +216,7 @@ func runProbeLoop(ctx context.Context, clientset kubernetes.Interface, nodeName 
 	if err := patchNodeAnnotations(ctx, clientset, nodeName, results); err != nil {
 		log.Error(err, "failed to patch node annotations")
 	}
+	labelKVMNode(ctx, clientset, nodeName)
 
 	for {
 		select {
@@ -219,8 +228,42 @@ func runProbeLoop(ctx context.Context, clientset kubernetes.Interface, nodeName 
 			if err := patchNodeAnnotations(ctx, clientset, nodeName, results); err != nil {
 				log.Error(err, "failed to patch node annotations")
 			}
+			labelKVMNode(ctx, clientset, nodeName)
 		}
 	}
+}
+
+// nodeCanRunCells reports whether the host has a KVM device and a boot
+// kernel, judged through the read-only host mounts.
+func nodeCanRunCells(devKVM, bootGlob string) bool {
+	info, err := os.Stat(devKVM)
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	kernels, err := filepath.Glob(bootGlob)
+	return err == nil && len(kernels) > 0
+}
+
+// labelKVMNode adds celln.dev/kvm=true to a node that can run cells, once,
+// and only when no operator has set the label either way.
+func labelKVMNode(ctx context.Context, clientset kubernetes.Interface, nodeName string) {
+	if os.Getenv(labelKVMEnv) != "true" || !nodeCanRunCells(hostDevKVM, hostBootGlob) {
+		return
+	}
+	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		log.Error(err, "failed to read node for the KVM label", "node", nodeName)
+		return
+	}
+	if _, set := node.Labels[kvmLabel]; set {
+		return
+	}
+	patch, _ := json.Marshal(map[string]interface{}{"metadata": map[string]interface{}{"labels": map[string]string{kvmLabel: "true"}}})
+	if _, err := clientset.CoreV1().Nodes().Patch(ctx, nodeName, k8stypes.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		log.Error(err, "failed to label node for the Celln fleet", "node", nodeName)
+		return
+	}
+	log.Info("labelled node for the Celln fleet: KVM device and boot kernel present", "node", nodeName, "label", kvmLabel)
 }
 
 func probeAll(targets []ProbeTarget) []ProbeResult {

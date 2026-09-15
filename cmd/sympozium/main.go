@@ -1286,6 +1286,16 @@ Use --celln-native to also install the native Celln starter catalogue and grant
 layers (enduring native parents); it requires the operator-reviewed
 --celln-native-* inputs and --celln-native-approve-starter-tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !fleet.enabled && !noCelln && !cellnHostInstaller && !cellnNative && len(cellnBackends) == 0 {
+				// A build that pins a starter package makes the fleet the
+				// default Celln plane: no package flags, backend from the
+				// environment or a prompt, KVM nodes labelled by the probe.
+				enabled, err := fleet.enableByDefault(bufio.NewReader(os.Stdin))
+				if err != nil {
+					return err
+				}
+				fleet.enabled = enabled
+			}
 			if fleet.enabled {
 				if noCelln || cellnHostInstaller || cellnNative || len(cellnBackends) != 0 {
 					return fmt.Errorf("--celln-fleet replaces the single dispatcher and cannot combine with --no-celln, --celln-host-installer, --celln-native or --celln-backend")
@@ -1328,8 +1338,9 @@ layers (enduring native parents); it requires the operator-reviewed
 				// The plain install deploys the one-shot router only; say so
 				// here rather than leaving "Celln parent" greyed out in the UI.
 				fmt.Println("\n  Celln: the one-shot router is installed (New Run → Celln cell). Enduring Celln parents")
-				fmt.Println("  need the fleet: rerun with --celln-fleet and a model backend, then label KVM nodes")
-				fmt.Println("  celln.dev/kvm=true. Guide: docs/guides/celln-fleet-installation.md")
+				fmt.Println("  need the fleet: rerun with a model backend (DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY")
+				fmt.Println("  or SYMPOZIUM_CELLN_BACKEND=name=native,provider=…,model=…,endpoint=…) or with --celln-fleet and")
+				fmt.Println("  its inputs. Nodes with KVM and a boot kernel join by themselves. Guide: docs/guides/celln-fleet-installation.md")
 			}
 			if cellnNative {
 				if err := initClient(); err != nil {

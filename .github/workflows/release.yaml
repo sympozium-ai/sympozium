@@ -26,7 +26,84 @@ jobs:
       publish: true
     secrets: inherit
 
+  # ── Default Celln starter package ─────────────────────────────────────────────
+  # Built once per release from the pinned Celln, signed with a key generated
+  # here and discarded, published as a digest-pinned image, and embedded into
+  # the CLI so `sympozium install` pins it. The trust is the publisher key and
+  # package hash the installer approves, recorded in the release assets.
+  release-starter-package:
+    runs-on: ubuntu-latest
+    outputs:
+      starter: ${{ steps.starter.outputs.json }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo e2fsprogs cpio gcc jq
+
+      - name: Read pinned Celln release
+        id: celln
+        run: |
+          pin=config/celln/release.json
+          jq -e '.version | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")' "$pin"
+          jq -e '.archiveSHA256 | test("^[a-f0-9]{64}$")' "$pin"
+          {
+            echo "version=$(jq -r .version "$pin")"
+            echo "sha256=$(jq -r .archiveSHA256 "$pin")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the pinned Celln bundle
+        env:
+          CELLN_VERSION: ${{ steps.celln.outputs.version }}
+          CELLN_SHA256: ${{ steps.celln.outputs.sha256 }}
+        run: |
+          mkdir -p starter/bundle
+          curl --fail --location --retry 3 \
+            "https://github.com/sympozium-ai/celln/releases/download/${CELLN_VERSION}/celln-x86_64-unknown-linux-musl.tar.gz" \
+            --output starter/celln.tar.gz
+          printf '%s  starter/celln.tar.gz\n' "$CELLN_SHA256" | sha256sum --check
+          tar -xzf starter/celln.tar.gz -C starter/bundle
+          # The guest kernel: the runner's own when it ships one, else a
+          # stock virtual kernel from the archive. Readable only by root.
+          kernel="$(ls /boot/vmlinuz-* 2>/dev/null | head -1 || true)"
+          if [ -z "$kernel" ]; then
+            sudo apt-get install -y --no-install-recommends linux-image-virtual
+            kernel="$(ls /boot/vmlinuz-* | head -1)"
+          fi
+          sudo cp "$kernel" starter/vmlinuz && sudo chown "$(id -u)" starter/vmlinuz
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, sign and publish the package
+        id: starter
+        env:
+          CELLN_VERSION: ${{ steps.celln.outputs.version }}
+        run: |
+          hack/build-celln-starter.sh --bundle starter/bundle --kernel starter/vmlinuz \
+            --image "${{ env.REGISTRY }}/celln-starter:${RELEASE_TAG}" --out starter/out --push
+          cp starter/out/starter.json celln-starter.json
+          echo "json=$(jq -c . celln-starter.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: celln-starter
+          path: celln-starter.json
+
+      - name: Upload the package identity to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: celln-starter.json
+
   release-cli:
+    needs: release-starter-package
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -47,14 +124,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Pin the default starter package
+        uses: actions/download-artifact@v4
+        with:
+          name: celln-starter
+          path: starter
+
       - name: Build CLI
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          starter=starter/celln-starter.json
+          jq -e '.image | test("@sha256:[a-f0-9]{64}$")' "$starter"
+          jq -e '.packageHash | test("^blake3:[a-f0-9]{64}$")' "$starter"
           VERSION="${RELEASE_TAG}"
-          go build -ldflags="-s -w -X main.version=${VERSION}" \
+          pin="-X main.cellnStarterImage=$(jq -r .image "$starter") -X main.cellnStarterHash=$(jq -r .packageHash "$starter") -X main.cellnStarterPublisher=$(jq -r .publisher "$starter") -X main.cellnStarterCellnVersion=$(jq -r .cellnVersion "$starter")"
+          go build -ldflags="-s -w -X main.version=${VERSION} ${pin}" \
             -o sympozium ./cmd/sympozium
 
       - name: Package
