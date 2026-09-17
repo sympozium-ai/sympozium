@@ -5979,6 +5979,62 @@ func (r *AgentRunReconciler) startPostRun(
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
+const (
+	// defaultPostRunHookTimeout is the budget a postRun hook gets when it
+	// declares no timeout of its own. It matches the documented default on
+	// LifecycleHookContainer.Timeout.
+	defaultPostRunHookTimeout = 5 * time.Minute
+
+	// postRunMinTimeout floors the postRun budget at what it was before hook
+	// timeouts were honoured, so specs that declare none keep exactly the
+	// budget they have always had rather than silently losing half of it.
+	postRunMinTimeout = 10 * time.Minute
+
+	// postRunTimeoutGrace holds the controller-side backstop slightly behind
+	// the Job's own deadline so that, for a Job that actually started, the
+	// Job's ActiveDeadlineSeconds fires first and the failure arrives through
+	// the ordinary Failed path instead of the controller racing it to a delete.
+	postRunTimeoutGrace = 30 * time.Second
+)
+
+// postRunBudget returns how long the postRun Job may take in total. It is
+// applied twice: as the Job's ActiveDeadlineSeconds, and as a controller-side
+// backstop in reconcilePostRunning. Both measure from the Job's clock, never
+// the agent run's, so a gate gets its full budget however long the agent took.
+//
+// PostRun hooks run sequentially as init containers, so the budget is the sum
+// of their declared timeouts. Kubernetes has no per-init-container timeout, so
+// this bounds the Job as a whole: a hook that overruns eats into what is left
+// for the hooks after it rather than being killed individually.
+func postRunBudget(lifecycle *sympoziumv1alpha1.LifecycleHooks) time.Duration {
+	var total time.Duration
+	if lifecycle != nil {
+		for _, hook := range lifecycle.PostRun {
+			if hook.Timeout != nil && hook.Timeout.Duration > 0 {
+				total += hook.Timeout.Duration
+				continue
+			}
+			total += defaultPostRunHookTimeout
+		}
+	}
+	if total < postRunMinTimeout {
+		return postRunMinTimeout
+	}
+	return total
+}
+
+// postRunJobStart returns the instant a postRun Job's timeout is measured from.
+// Status.StartTime is what the Job controller uses for ActiveDeadlineSeconds,
+// so matching it keeps the two bounds consistent. CreationTimestamp is the
+// fallback for a Job that never starts (stuck on quota, or no Job controller in
+// envtest), so it still times out rather than holding the run forever.
+func postRunJobStart(job *batchv1.Job) time.Time {
+	if job.Status.StartTime != nil {
+		return job.Status.StartTime.Time
+	}
+	return job.CreationTimestamp.Time
+}
+
 // buildPostRunJob constructs a Job that runs the postRun lifecycle hook containers.
 // Each hook runs as a sequential init container, followed by a no-op final container.
 func (r *AgentRunReconciler) buildPostRunJob(
@@ -6000,7 +6056,7 @@ func (r *AgentRunReconciler) buildPostRunJob(
 	}
 
 	ttl := int32(300)
-	deadline := int64(600) // 10 min default for postRun
+	deadline := int64(postRunBudget(agentRun.Spec.Lifecycle).Seconds())
 	backoffLimit := int32(0)
 
 	readOnly := true
@@ -6246,13 +6302,15 @@ func (r *AgentRunReconciler) reconcilePostRunning(ctx context.Context, log logr.
 		}
 	}
 
-	// PostRun Job still running -- check timeout.
-	if agentRun.Status.StartedAt != nil {
-		elapsed := time.Since(agentRun.Status.StartedAt.Time)
-		// PostRun gets 10 minutes by default.
-		postRunTimeout := 10 * time.Minute
-		if elapsed > postRunTimeout {
-			log.Info("PostRun Job timed out", "elapsed", elapsed)
+	// PostRun Job still running -- check timeout. The clock is the postRun Job's
+	// own: anchoring to Status.StartedAt spent the budget before postRun began,
+	// so any run longer than the budget had its hooks killed on the first
+	// PostRunning reconcile and could never receive a gate verdict.
+	if anchor := postRunJobStart(&job); !anchor.IsZero() {
+		elapsed := time.Since(anchor)
+		budget := postRunBudget(agentRun.Spec.Lifecycle)
+		if elapsed > budget+postRunTimeoutGrace {
+			log.Info("PostRun Job timed out", "elapsed", elapsed, "budget", budget)
 			_ = r.Delete(ctx, &job, client.PropagationPolicy(metav1.DeletePropagationForeground))
 			if gated {
 				return r.resolveGate(ctx, log, agentRun, agentSucceeded, true)
