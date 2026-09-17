@@ -151,11 +151,21 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	k8sClient = mgr.GetClient()
+	// Read straight from the apiserver rather than through the manager's
+	// cache. envtest runs a real apiserver, so an uncached client is both
+	// correct and fast — and it keeps the tests from racing the informer,
+	// which otherwise makes any create-then-read assertion a coin flip.
+	// The controllers above keep their cached clients.
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build uncached client: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Build the API server HTTP handler (no auth).
+	// Build the API server HTTP handler. A nil token reader is what the
+	// server treats as "no auth" — every call site guards expected != nil.
 	srv := apiserver.NewServer(k8sClient, nil, clientset, log)
-	mux = srv.Handler("")
+	mux = srv.Handler(nil)
 
 	// Ensure required namespaces exist (envtest doesn't create them).
 	for _, nsName := range []string{"default", "sympozium-system"} {

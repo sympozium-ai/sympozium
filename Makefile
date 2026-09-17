@@ -7,6 +7,7 @@ TAG ?= latest
 
 # Tool versions
 CONTROLLER_GEN_VERSION ?= v0.17.2
+ENVTEST_VERSION ?= v0.25.1
 
 # Go parameters
 GOCMD = go
@@ -175,7 +176,7 @@ ENVTEST_K8S_VERSION ?= 1.31.0
 envtest: $(ENVTEST) ## Install setup-envtest locally
 $(ENVTEST):
 	@mkdir -p $(LOCALBIN)
-	GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 
 test-system: envtest ## Run system tests (envtest — no cluster needed, fast)
 	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
