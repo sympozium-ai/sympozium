@@ -449,19 +449,11 @@ func (r *SympoziumScheduleReconciler) nextScheduledRunNumber(ctx context.Context
 //     works. An orchestrator can sit here for tens of minutes.
 //   - "": the AgentRun controller has not observed the run yet.
 //
-// Omitting a phase here makes a Forbid schedule stack a second run on top of
-// a live one, so keep this in sync with the AgentRunPhase constants.
+// Treating a live phase as finished makes a Forbid schedule stack a second run
+// on top of a live one, so the phase set lives in AgentRunPhase.IsTerminal()
+// rather than being spelled out again here.
 func isAgentRunActive(phase sympoziumv1alpha1.AgentRunPhase) bool {
-	switch phase {
-	case sympoziumv1alpha1.AgentRunPhasePending,
-		sympoziumv1alpha1.AgentRunPhaseRunning,
-		sympoziumv1alpha1.AgentRunPhaseServing,
-		sympoziumv1alpha1.AgentRunPhasePostRunning,
-		sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate,
-		"":
-		return true
-	}
-	return false
+	return !phase.IsTerminal()
 }
 
 // pipelineInFlight reports whether any AgentRun belonging to the given ensemble

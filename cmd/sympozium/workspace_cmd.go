@@ -376,7 +376,7 @@ func liveRunsForWorkspace(ctx context.Context, ws *sympoziumv1alpha1.WorkspaceSe
 		}
 		out := make([]sympoziumv1alpha1.AgentRun, 0)
 		for _, r := range runs.Items {
-			if r.Spec.SessionKey == ws.Spec.SessionKey && !isTerminalRunPhase(r.Status.Phase) {
+			if r.Spec.SessionKey == ws.Spec.SessionKey && !r.Status.Phase.IsTerminal() {
 				out = append(out, r)
 			}
 		}
@@ -395,16 +395,11 @@ func liveRunsForWorkspace(ctx context.Context, ws *sympoziumv1alpha1.WorkspaceSe
 	}
 	out := make([]sympoziumv1alpha1.AgentRun, 0, len(runs.Items))
 	for _, r := range runs.Items {
-		if !isTerminalRunPhase(r.Status.Phase) {
+		if !r.Status.Phase.IsTerminal() {
 			out = append(out, r)
 		}
 	}
 	return out, nil
-}
-
-func isTerminalRunPhase(p sympoziumv1alpha1.AgentRunPhase) bool {
-	return p == sympoziumv1alpha1.AgentRunPhaseSucceeded ||
-		p == sympoziumv1alpha1.AgentRunPhaseFailed
 }
 
 // waitForPodReady polls until the pod reports Ready=True or the deadline

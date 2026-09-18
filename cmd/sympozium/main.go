@@ -6175,7 +6175,7 @@ func fetchRunSuggestions(ns, prefix string, activeOnly bool) []suggestion {
 		if phase == "" {
 			phase = "Pending"
 		}
-		if activeOnly && (phase == "Completed" || phase == "Failed" || phase == "Skipped") {
+		if activeOnly && run.Status.Phase.IsTerminal() {
 			continue
 		}
 		if prefix == "" || strings.HasPrefix(strings.ToLower(run.Name), prefix) {
@@ -9042,7 +9042,7 @@ func tuiAbortRun(ns, name string) (string, error) {
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &run); err != nil {
 		return "", fmt.Errorf("run %q not found: %w", name, err)
 	}
-	if run.Status.Phase == "Completed" || run.Status.Phase == "Failed" || run.Status.Phase == "Skipped" {
+	if run.Status.Phase.IsTerminal() {
 		return tuiDimStyle.Render(fmt.Sprintf("Run %s already %s", name, run.Status.Phase)), nil
 	}
 	if err := k8sClient.Delete(ctx, &run); err != nil {

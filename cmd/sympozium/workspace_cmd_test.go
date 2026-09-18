@@ -154,23 +154,6 @@ func pvc(name, size string) *corev1.PersistentVolumeClaim {
 
 // --- helper unit tests ------------------------------------------------------
 
-func TestIsTerminalRunPhase(t *testing.T) {
-	cases := map[sympoziumv1alpha1.AgentRunPhase]bool{
-		sympoziumv1alpha1.AgentRunPhasePending:          false,
-		sympoziumv1alpha1.AgentRunPhaseRunning:          false,
-		sympoziumv1alpha1.AgentRunPhaseServing:          false,
-		sympoziumv1alpha1.AgentRunPhasePostRunning:      false,
-		sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate: false,
-		sympoziumv1alpha1.AgentRunPhaseSucceeded:        true,
-		sympoziumv1alpha1.AgentRunPhaseFailed:           true,
-	}
-	for phase, want := range cases {
-		if got := isTerminalRunPhase(phase); got != want {
-			t.Errorf("isTerminalRunPhase(%q)=%v want %v", phase, got, want)
-		}
-	}
-}
-
 func TestFormatHelpers(t *testing.T) {
 	if got := orDash(""); got != "-" {
 		t.Errorf("orDash(empty)=%q want -", got)

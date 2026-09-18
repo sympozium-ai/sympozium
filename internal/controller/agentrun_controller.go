@@ -335,9 +335,7 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// their finalizer removed in reconcileCompleted; we must not re-add it or
 	// we create an infinite remove→add→remove loop.
 	// Serving-mode runs are long-lived and also need a finalizer.
-	isTerminal := agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseSucceeded ||
-		agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed ||
-		agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseSkipped
+	isTerminal := agentRun.Status.Phase.IsTerminal()
 	// Persist this boundary only for untouched new runs, before adding our
 	// finalizer or creating any resources. Never infer it from mutable backend
 	// intent on an existing run. Requeue to confirm the API retains the field.
@@ -374,12 +372,12 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if !scopedCatalogueSelected(agentRun) && !isTerminal {
 			return ctrl.Result{}, r.failRun(ctx, agentRun, "Scoped Celln run selection or lifecycle changed; create a new run")
 		}
-		switch agentRun.Status.Phase {
-		case "", sympoziumv1alpha1.AgentRunPhasePending:
+		switch phase := agentRun.Status.Phase; {
+		case phase == "" || phase == sympoziumv1alpha1.AgentRunPhasePending:
 			return r.reconcilePendingScoped(ctx, log, agentRun)
-		case sympoziumv1alpha1.AgentRunPhaseRunning:
+		case phase == sympoziumv1alpha1.AgentRunPhaseRunning:
 			return r.reconcileRunningScoped(ctx, log, agentRun)
-		case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed, sympoziumv1alpha1.AgentRunPhaseSkipped:
+		case phase.IsTerminal():
 			return r.reconcileCompleted(ctx, log, agentRun)
 		default:
 			return ctrl.Result{}, r.failRun(ctx, agentRun, "Scoped Celln run entered an unsupported controller phase")
@@ -412,18 +410,18 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Reconcile based on current phase
 	var result ctrl.Result
 	var err error
-	switch agentRun.Status.Phase {
-	case "", sympoziumv1alpha1.AgentRunPhasePending:
+	switch phase := agentRun.Status.Phase; {
+	case phase == "" || phase == sympoziumv1alpha1.AgentRunPhasePending:
 		result, err = r.reconcilePending(ctx, log, agentRun)
-	case sympoziumv1alpha1.AgentRunPhaseRunning:
+	case phase == sympoziumv1alpha1.AgentRunPhaseRunning:
 		result, err = r.reconcileRunning(ctx, log, agentRun)
-	case sympoziumv1alpha1.AgentRunPhasePostRunning:
+	case phase == sympoziumv1alpha1.AgentRunPhasePostRunning:
 		result, err = r.reconcilePostRunning(ctx, log, agentRun)
-	case sympoziumv1alpha1.AgentRunPhaseServing:
+	case phase == sympoziumv1alpha1.AgentRunPhaseServing:
 		result, err = r.reconcileServing(ctx, log, agentRun)
-	case sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate:
+	case phase == sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate:
 		result, err = r.reconcileAwaitingDelegate(ctx, log, agentRun)
-	case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed, sympoziumv1alpha1.AgentRunPhaseSkipped:
+	case phase.IsTerminal():
 		result, err = r.reconcileCompleted(ctx, log, agentRun)
 	default:
 		log.Info("Unknown phase", "phase", agentRun.Status.Phase)
@@ -1158,13 +1156,11 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 				reader = r.Client
 			}
 			if getErr := reader.Get(ctx, client.ObjectKeyFromObject(agentRun), fresh); getErr == nil {
-				switch fresh.Status.Phase {
-				case sympoziumv1alpha1.AgentRunPhaseSucceeded,
-					sympoziumv1alpha1.AgentRunPhaseFailed,
-					sympoziumv1alpha1.AgentRunPhaseSkipped:
+				switch phase := fresh.Status.Phase; {
+				case phase.IsTerminal():
 					// Already terminal — don't override.
 					return ctrl.Result{}, nil
-				case sympoziumv1alpha1.AgentRunPhasePostRunning:
+				case phase == sympoziumv1alpha1.AgentRunPhasePostRunning:
 					// PostRun container is still executing — let the
 					// PostRunning reconcile path handle it.
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
@@ -1451,10 +1447,7 @@ func (r *AgentRunReconciler) reconcileAwaitingDelegate(ctx context.Context, log 
 			}
 			// Sync delegate status from the actual child.
 			agentRun.Status.Delegates[i].Phase = childRun.Status.Phase
-			switch childRun.Status.Phase {
-			case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed, sympoziumv1alpha1.AgentRunPhaseSkipped:
-				// Terminal.
-			default:
+			if !childRun.Status.Phase.IsTerminal() {
 				allTerminal = false
 			}
 			if childRun.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed {

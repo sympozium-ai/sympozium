@@ -400,21 +400,11 @@ func (r *WorkspaceSessionReconciler) hasLiveAgentRun(ctx context.Context, ws *sy
 		return false, err
 	}
 	for _, run := range runs.Items {
-		if !isTerminalPhase(run.Status.Phase) {
+		if !run.Status.Phase.IsTerminal() {
 			return true, nil
 		}
 	}
 	return false, nil
-}
-
-// isTerminalPhase reports whether an AgentRun phase is final and frees
-// the workspace lock.
-func isTerminalPhase(p sympoziumv1alpha1.AgentRunPhase) bool {
-	switch p {
-	case sympoziumv1alpha1.AgentRunPhaseSucceeded, sympoziumv1alpha1.AgentRunPhaseFailed:
-		return true
-	}
-	return false
 }
 
 // hasOwner reports whether OwnerReferences already contain an entry with
@@ -649,7 +639,7 @@ func touchWorkspaceSession(
 // first, name as a deterministic tie-break. This gives waiters a strict
 // FIFO order, so two Pending runs can never block each other forever.
 func peerBlocksAdmission(self, peer *sympoziumv1alpha1.AgentRun) bool {
-	if isTerminalPhase(peer.Status.Phase) {
+	if peer.Status.Phase.IsTerminal() {
 		return false
 	}
 	switch peer.Status.Phase {

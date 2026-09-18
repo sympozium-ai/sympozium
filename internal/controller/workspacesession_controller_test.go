@@ -562,24 +562,7 @@ func TestReconcilePVCResize_ClearsStaleBlockedConditionWhenInSync(t *testing.T) 
 	}
 }
 
-// --- helpers: isTerminalPhase + condition --------------------------------
-
-func TestIsTerminalPhase(t *testing.T) {
-	cases := map[sympoziumv1alpha1.AgentRunPhase]bool{
-		sympoziumv1alpha1.AgentRunPhasePending:          false,
-		sympoziumv1alpha1.AgentRunPhaseRunning:          false,
-		sympoziumv1alpha1.AgentRunPhaseServing:          false,
-		sympoziumv1alpha1.AgentRunPhasePostRunning:      false,
-		sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate: false,
-		sympoziumv1alpha1.AgentRunPhaseSucceeded:        true,
-		sympoziumv1alpha1.AgentRunPhaseFailed:           true,
-	}
-	for p, want := range cases {
-		if got := isTerminalPhase(p); got != want {
-			t.Errorf("phase %q: want terminal=%v, got %v", p, want, got)
-		}
-	}
-}
+// --- helpers: condition --------------------------------------------------
 
 func TestSetCondition_UpsertsAndPreservesLastTransitionTime(t *testing.T) {
 	earlier := metav1.NewTime(time.Now().Add(-time.Hour))

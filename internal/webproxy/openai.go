@@ -442,10 +442,7 @@ func (p *Proxy) findRecentWebRun(ctx context.Context, namespace, instanceName, r
 		}
 		// Skip terminal runs — subscribing to events for a completed run
 		// would hang because the event already fired.
-		phase := run.Status.Phase
-		if phase == sympoziumv1alpha1.AgentRunPhaseSucceeded ||
-			phase == sympoziumv1alpha1.AgentRunPhaseFailed ||
-			phase == sympoziumv1alpha1.AgentRunPhaseSkipped {
+		if run.Status.Phase.IsTerminal() {
 			continue
 		}
 		candidates = append(candidates, run)

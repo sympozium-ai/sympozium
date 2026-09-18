@@ -942,9 +942,7 @@ func (sr *SpawnRouter) updateParentDelegateStatus(ctx context.Context, parentRun
 		// Check if all delegates are now terminal.
 		allDone := true
 		for _, d := range parent.Status.Delegates {
-			if d.Phase != sympoziumv1alpha1.AgentRunPhaseSucceeded &&
-				d.Phase != sympoziumv1alpha1.AgentRunPhaseFailed &&
-				d.Phase != sympoziumv1alpha1.AgentRunPhaseSkipped {
+			if !d.Phase.IsTerminal() {
 				allDone = false
 				break
 			}
