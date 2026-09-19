@@ -52,6 +52,12 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 		return fmt.Errorf("subscribing to %s: %w", eventbus.TopicAgentRunCompleted, err)
 	}
 
+	// Subscribe to failed agent runs to notify channels of failures.
+	failedCh, err := cr.EventBus.Subscribe(ctx, eventbus.TopicAgentRunFailed)
+	if err != nil {
+		return fmt.Errorf("subscribing to %s: %w", eventbus.TopicAgentRunFailed, err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,6 +69,9 @@ func (cr *ChannelRouter) Start(ctx context.Context) error {
 
 		case event := <-completedCh:
 			cr.handleCompleted(ctx, event)
+
+		case event := <-failedCh:
+			cr.handleFailed(ctx, event)
 		}
 	}
 }
@@ -425,6 +434,15 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		return
 	}
 
+	// An error result means the runner failed internally (fatal() writes it
+	// and exits 1). The Job then fails and failRun publishes agent.run.failed,
+	// so handleFailed replies with the classified advice — replying here too
+	// would post two messages to the thread for one failure.
+	if result.Status == ipc.ResultStatusError {
+		cr.Log.Info("Error result — failure reply is routed by handleFailed", "run", run.Name)
+		return
+	}
+
 	responseText := result.Response
 	if responseText == "" && result.Error != "" {
 		responseText = fmt.Sprintf("Error: %s", result.Error)
@@ -468,6 +486,138 @@ func (cr *ChannelRouter) handleCompleted(ctx context.Context, event *eventbus.Ev
 		"channel", replyChannel,
 		"responseLen", len(responseText),
 	)
+}
+
+// handleFailed processes a failed AgentRun and sends an error notification
+// back through the originating channel so the user knows what happened.
+func (cr *ChannelRouter) handleFailed(ctx context.Context, event *eventbus.Event) {
+	if event.Ctx != nil {
+		ctx = event.Ctx
+	}
+
+	agentRunID := event.Metadata["agentRunID"]
+	instanceName := event.Metadata["instanceName"]
+
+	if agentRunID == "" {
+		return
+	}
+
+	ctx, span := routerTracer.Start(ctx, "channel_router.handle_failed",
+		trace.WithAttributes(
+			attribute.String("sympozium.agentrun.id", agentRunID),
+			attribute.String("sympozium.instance", instanceName),
+		),
+	)
+	defer span.End()
+
+	// Find the AgentRun to check if it originated from a channel.
+	var runs sympoziumv1alpha1.AgentRunList
+	if err := cr.Client.List(ctx, &runs, client.MatchingLabels{
+		"sympozium.ai/source": "channel",
+	}); err != nil {
+		cr.Log.Error(err, "failed to list channel-sourced AgentRuns")
+		return
+	}
+
+	var run *sympoziumv1alpha1.AgentRun
+	for i := range runs.Items {
+		if runs.Items[i].Name == agentRunID {
+			run = &runs.Items[i]
+			break
+		}
+	}
+	if run == nil {
+		for i := range runs.Items {
+			if runs.Items[i].Status.PodName != "" && strings.Contains(agentRunID, runs.Items[i].Name) {
+				run = &runs.Items[i]
+				break
+			}
+		}
+	}
+
+	if run == nil {
+		// Not a channel-sourced run — ignore.
+		return
+	}
+
+	replyChannel := run.Annotations["sympozium.ai/reply-channel"]
+	replyChatID := run.Annotations["sympozium.ai/reply-chat-id"]
+	replyThreadID := run.Annotations["sympozium.ai/reply-thread-id"]
+	replyMessageTS := run.Annotations["sympozium.ai/reply-message-ts"]
+
+	if replyChannel == "" {
+		return
+	}
+
+	// The event carries the classified bucket (classifyFailureReason) in
+	// metadata and the free-form error in data; the bucket picks the advice,
+	// the error is quoted so the user can relay it.
+	var failData map[string]string
+	if err := json.Unmarshal(event.Data, &failData); err != nil {
+		cr.Log.Error(err, "failed to unmarshal failure event data")
+		return
+	}
+	reason := event.Metadata["reason"]
+	responseText := buildFailureMessage(reason, failData["error"])
+
+	// Publish outbound message to the channel, attributed like a normal reply
+	// so a shared bot posts the failure under the same per-agent identity.
+	outMsg := channelpkg.OutboundMessage{
+		Channel:  replyChannel,
+		ChatID:   replyChatID,
+		ThreadID: replyThreadID,
+		Text:     responseText,
+		Username: displayNameForReply(run),
+	}
+	if replyMessageTS != "" {
+		outMsg.Metadata = map[string]string{"replyToTS": replyMessageTS}
+	}
+
+	outEvent, err := eventbus.NewEvent(eventbus.TopicChannelMessageSend, map[string]string{
+		"instanceName": instanceName,
+		"channel":      replyChannel,
+	}, outMsg)
+	if err != nil {
+		cr.Log.Error(err, "failed to create outbound failure event")
+		return
+	}
+
+	if err := cr.EventBus.Publish(ctx, eventbus.TopicChannelMessageSend, outEvent); err != nil {
+		cr.Log.Error(err, "failed to publish channel failure reply",
+			"channel", replyChannel, "chatId", replyChatID)
+		return
+	}
+
+	cr.Log.Info("Routed agent failure to channel",
+		"run", run.Name,
+		"channel", replyChannel,
+		"reason", reason,
+	)
+}
+
+// buildFailureMessage turns a failure into the reply a channel user sees.
+// bucket is the classified reason from the agent.run.failed event metadata
+// (see classifyFailureReason); detail is the underlying error string.
+func buildFailureMessage(bucket, detail string) string {
+	switch bucket {
+	case "timeout":
+		return "⏱ The agent run timed out before completing. Increase `spec.agents.default.runTimeout` on the Agent, or try a smaller request."
+	case "token_budget":
+		return "⚠️ The agent run stopped because its token budget was exhausted: " + detail
+	case "policy":
+		return "🚫 The agent run was blocked by policy: " + detail
+	case "oom":
+		return "⚠️ The agent run ran out of memory. Increase the agent's memory resources or try a smaller request."
+	case "model_unavailable":
+		return "⚠️ The agent's model is not available right now: " + detail
+	}
+	if detail == "" {
+		detail = bucket
+	}
+	if detail == "" {
+		detail = "unknown error"
+	}
+	return fmt.Sprintf("⚠️ The agent run failed: %s", detail)
 }
 
 func truncateForLog(s string, n int) string {

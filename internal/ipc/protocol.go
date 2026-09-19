@@ -17,6 +17,12 @@ const SkipMarkerPath = "/ipc/control/skip"
 // skipped via SkipMarkerPath, distinguishing it from "success" and "error".
 const ResultStatusSkipped = "skipped"
 
+// ResultStatusError is the AgentResult.Status value the agent-runner writes
+// when it fails internally (see fatal() in cmd/agent-runner). The runner then
+// exits non-zero, so the Job fails as well: consumers see this result on
+// agent.run.completed *and* a subsequent agent.run.failed for the same run.
+const ResultStatusError = "error"
+
 // TaskInput is written to /ipc/input/task.json by the orchestrator.
 type TaskInput struct {
 	Task         string          `json:"task"`
@@ -37,7 +43,7 @@ type ModelConfig struct {
 
 // AgentResult is written to /ipc/output/result.json by the agent on completion.
 type AgentResult struct {
-	Status   string `json:"status"` // "success", "error", or "skipped" (see ResultStatusSkipped)
+	Status   string `json:"status"` // "success", ResultStatusError, or ResultStatusSkipped
 	Response string `json:"response,omitempty"`
 	Error    string `json:"error,omitempty"`
 	Metrics  struct {

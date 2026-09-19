@@ -101,6 +101,44 @@ func (bc *BaseChannel) PublishHealth(ctx context.Context, status HealthStatus) e
 }
 
 // SubscribeOutbound subscribes to outbound messages destined for this channel.
-func (bc *BaseChannel) SubscribeOutbound(ctx context.Context) (<-chan *eventbus.Event, error) {
-	return bc.EventBus.Subscribe(ctx, eventbus.TopicChannelMessageSend)
+func (bc *BaseChannel) SubscribeOutbound(
+	ctx context.Context,
+) (<-chan *eventbus.Event, error) {
+	events, err := bc.EventBus.Subscribe(
+		ctx,
+		eventbus.TopicChannelMessageSend,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make(chan *eventbus.Event, 64)
+
+	go func() {
+		defer close(filtered)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+
+				if event.Metadata["instanceName"] != bc.InstanceName {
+					continue
+				}
+
+				select {
+				case filtered <- event:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return filtered, nil
 }
