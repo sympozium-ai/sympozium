@@ -685,8 +685,16 @@ spec:
                           type: string
                         timeout:
                           description: |-
-                            Timeout is the maximum duration for this hook container.
-                            Defaults to 5 minutes.
+                            Timeout is the budget for this hook container. Defaults to 5 minutes.
+
+                            PostRun hooks run sequentially in one Job, so their timeouts are summed
+                            into that Job's deadline; the total is never less than 10 minutes. Because
+                            Kubernetes has no per-init-container timeout, this bounds the Job as a
+                            whole rather than each container — use it to give a slow hook (or a
+                            human-in-the-loop gate) the room it needs, not to police a fast one.
+
+                            Not yet honoured on preRun hooks, which are bounded by the agent run's
+                            own spec.timeout.
                           type: string
                       required:
                       - image
@@ -784,8 +792,16 @@ spec:
                           type: string
                         timeout:
                           description: |-
-                            Timeout is the maximum duration for this hook container.
-                            Defaults to 5 minutes.
+                            Timeout is the budget for this hook container. Defaults to 5 minutes.
+
+                            PostRun hooks run sequentially in one Job, so their timeouts are summed
+                            into that Job's deadline; the total is never less than 10 minutes. Because
+                            Kubernetes has no per-init-container timeout, this bounds the Job as a
+                            whole rather than each container — use it to give a slow hook (or a
+                            human-in-the-loop gate) the room it needs, not to police a fast one.
+
+                            Not yet honoured on preRun hooks, which are bounded by the agent run's
+                            own spec.timeout.
                           type: string
                       required:
                       - image
