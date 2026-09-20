@@ -67,6 +67,56 @@ func (sr *SpawnRouter) storePending(childRunName string, pd *pendingDelegation) 
 	sr.pending.Store(childRunName, pd)
 }
 
+// claimPending claims the pending entry for a settling run, following the
+// retry chain when the run is a successor attempt.
+//
+// The entry is keyed by the name the delegation was created with. A gate-driven
+// retry retires that attempt and continues the work under a new name, so a
+// successor settling under its own name finds nothing. Its lineage names the
+// attempt before it (agentrun_retry.go), so walk backwards until an entry
+// matches. The matched key is returned because the batch bookkeeping
+// (childBatch, childToIndex) is keyed the same way.
+//
+// Every completing run in the cluster reaches here, so the walk is gated on the
+// name retryChainName produces; an ordinary run costs one map miss and no read.
+func (sr *SpawnRouter) claimPending(ctx context.Context, childRunName, namespace string) (*pendingDelegation, string, bool) {
+	name := childRunName
+	for i := 0; i < retryChainWalkLimit && name != ""; i++ {
+		if val, ok := sr.pending.LoadAndDelete(name); ok {
+			return val.(*pendingDelegation), name, true
+		}
+		if !retrySuffixPattern.MatchString(name) {
+			return nil, "", false
+		}
+		var run sympoziumv1alpha1.AgentRun
+		if err := sr.Client.Get(ctx, types.NamespacedName{
+			Name: name, Namespace: namespaceOrDefault(namespace),
+		}, &run); err != nil {
+			return nil, "", false
+		}
+		name = retryPredecessor(&run)
+	}
+	return nil, "", false
+}
+
+// liveAttempt follows a delegate child's retry chain forwards to the attempt
+// that is still running, which is the one the parent is pointed at. Retry
+// successor names are deterministic, so each attempt has at most one.
+func (sr *SpawnRouter) liveAttempt(ctx context.Context, namespace, childRunName string) string {
+	live := childRunName
+	for i := 0; i < retryChainWalkLimit; i++ {
+		var successors sympoziumv1alpha1.AgentRunList
+		if err := sr.Client.List(ctx, &successors,
+			client.InNamespace(namespaceOrDefault(namespace)),
+			client.MatchingLabels{retryOfLabel: live},
+		); err != nil || len(successors.Items) == 0 {
+			return live
+		}
+		live = successors.Items[0].Name
+	}
+	return live
+}
+
 // pendingBatch tracks the state of an in-flight subagent batch spawn.
 type pendingBatch struct {
 	batchID       string
@@ -275,11 +325,10 @@ func (sr *SpawnRouter) handleSpawnRequest(ctx context.Context, event *eventbus.E
 // delivers the result back to the parent agent.
 func (sr *SpawnRouter) handleChildCompleted(ctx context.Context, event *eventbus.Event) {
 	childRunID := event.Metadata["agentRunID"]
-	val, ok := sr.pending.LoadAndDelete(childRunID)
+	pd, originKey, ok := sr.claimPending(ctx, childRunID, event.Metadata["namespace"])
 	if !ok {
 		return // Not a delegation child.
 	}
-	pd := val.(*pendingDelegation)
 	if pd.timer != nil {
 		pd.timer.Stop()
 	}
@@ -315,18 +364,17 @@ func (sr *SpawnRouter) handleChildCompleted(ctx context.Context, event *eventbus
 	sr.resetCircuitBreaker(ctx, pd.ParentRunID, pd.ParentNamespace)
 
 	// Check if this child belongs to a subagent batch.
-	sr.handleBatchChildDone(ctx, childRunID, response, "")
+	sr.handleBatchChildDone(ctx, originKey, childRunID, response, "")
 }
 
 // handleChildFailed checks if a failed run is a delegation child and
 // delivers the error back to the parent agent.
 func (sr *SpawnRouter) handleChildFailed(ctx context.Context, event *eventbus.Event) {
 	childRunID := event.Metadata["agentRunID"]
-	val, ok := sr.pending.LoadAndDelete(childRunID)
+	pd, originKey, ok := sr.claimPending(ctx, childRunID, event.Metadata["namespace"])
 	if !ok {
 		return // Not a delegation child.
 	}
-	pd := val.(*pendingDelegation)
 	if pd.timer != nil {
 		pd.timer.Stop()
 	}
@@ -352,7 +400,7 @@ func (sr *SpawnRouter) handleChildFailed(ctx context.Context, event *eventbus.Ev
 	sr.incrementCircuitBreaker(ctx, pd.ParentRunID, pd.ParentNamespace)
 
 	// Check if this child belongs to a subagent batch.
-	sr.handleBatchChildDone(ctx, childRunID, "", errMsg)
+	sr.handleBatchChildDone(ctx, originKey, childRunID, "", errMsg)
 }
 
 // handleSubagentRequest creates child AgentRun CRs for an ad-hoc subagent
@@ -586,8 +634,13 @@ func (sr *SpawnRouter) handleSubagentRequest(ctx context.Context, event *eventbu
 // handleBatchChildDone checks if a completed/failed child belongs to a subagent
 // batch and updates the batch state. For sequential batches, it spawns the next
 // child. When all children are done, it publishes the aggregated result.
-func (sr *SpawnRouter) handleBatchChildDone(ctx context.Context, childRunID, response, errMsg string) {
-	batchIDVal, ok := sr.childBatch.LoadAndDelete(childRunID)
+//
+// originKey is the name the batch slot was registered under and childRunID the
+// attempt that actually settled. They differ once a gate-driven retry has
+// replaced the child, so the slot is found by the first and reported under the
+// second.
+func (sr *SpawnRouter) handleBatchChildDone(ctx context.Context, originKey, childRunID, response, errMsg string) {
+	batchIDVal, ok := sr.childBatch.LoadAndDelete(originKey)
 	if !ok {
 		return // Not a batch child.
 	}
@@ -603,10 +656,11 @@ func (sr *SpawnRouter) handleBatchChildDone(ctx context.Context, childRunID, res
 	batch.mu.Lock()
 	defer batch.mu.Unlock()
 
-	idx, ok := batch.childToIndex[childRunID]
+	idx, ok := batch.childToIndex[originKey]
 	if !ok {
 		return
 	}
+	batch.results[idx].RunName = childRunID
 
 	if errMsg != "" {
 		batch.results[idx].Status = "error"
@@ -1152,6 +1206,16 @@ func (sr *SpawnRouter) expireDelegation(ctx context.Context, childRunName, targe
 	}
 	pd := val.(*pendingDelegation)
 
+	// The edge timeout bounds the delegation, not one attempt of it. A
+	// gate-driven retry leaves this timer and the pending entry under the first
+	// attempt's name while the parent and the running pod have moved on to the
+	// successor, so expire the attempt that is live.
+	live := sr.liveAttempt(ctx, pd.ParentNamespace, childRunName)
+	if live != childRunName {
+		sr.Log.Info("Delegation edge timeout lands on a retried attempt",
+			"childRun", childRunName, "liveAttempt", live)
+	}
+
 	parent, err := sr.lookupParentRun(ctx, pd.ParentRunID, pd.ParentNamespace)
 	parentSettled := apierrors.IsNotFound(err) || (err == nil && !isAgentRunActive(parent.Status.Phase))
 
@@ -1172,7 +1236,7 @@ func (sr *SpawnRouter) expireDelegation(ctx context.Context, childRunName, targe
 		// Unblock the parent's delegate_to_persona call first; everything after
 		// this is cleanup the parent does not wait on.
 		sr.publishDelegateResult(ctx, pd.ParentRunID, pd.RequestID, "", errMsg)
-		sr.updateParentDelegateStatus(ctx, pd.ParentRunID, pd.ParentNamespace, childRunName,
+		sr.updateParentDelegateStatus(ctx, pd.ParentRunID, pd.ParentNamespace, live,
 			sympoziumv1alpha1.AgentRunPhaseFailed, "", errMsg)
 		sr.incrementCircuitBreaker(ctx, pd.ParentRunID, pd.ParentNamespace)
 	}
@@ -1180,9 +1244,9 @@ func (sr *SpawnRouter) expireDelegation(ctx context.Context, childRunName, targe
 	// Stop the child burning tokens on a result nobody will read. Its later
 	// failure event is a no-op: the pending entry is already gone.
 	child := &sympoziumv1alpha1.AgentRun{
-		ObjectMeta: metav1.ObjectMeta{Name: childRunName, Namespace: pd.ParentNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: live, Namespace: pd.ParentNamespace},
 	}
 	if err := sr.Client.Delete(ctx, child); err != nil && !apierrors.IsNotFound(err) {
-		sr.Log.Error(err, "failed to delete timed-out delegate child", "childRun", childRunName)
+		sr.Log.Error(err, "failed to delete timed-out delegate child", "childRun", live)
 	}
 }

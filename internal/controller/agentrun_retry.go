@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -151,6 +152,38 @@ func (r *AgentRunReconciler) retryChainTokens(ctx context.Context, agentRun *sym
 	return total
 }
 
+// RetryChainContains reports whether candidate is runName itself or a later
+// attempt in its gate-driven retry chain.
+//
+// A component waiting on a run it created — the web proxy on an HTTP request,
+// the MCP endpoint on a tool call — waits on a name a retry replaces: the
+// attempt it knows is retired without publishing anything, and the answer
+// arrives under the successor's name. Walking the lineage backwards from the
+// settling run is what lets that component recognise the answer as its own.
+//
+// Attempt names are deterministic (retryChainName), so a candidate that cannot
+// be a successor is rejected without a read — this is called for every event
+// on a shared topic.
+func RetryChainContains(ctx context.Context, reader client.Reader, namespace, runName, candidate string) bool {
+	if runName == "" || candidate == "" {
+		return false
+	}
+	if candidate == runName {
+		return true
+	}
+	for i := 0; i < retryChainWalkLimit && retrySuffixPattern.MatchString(candidate); i++ {
+		var attempt sympoziumv1alpha1.AgentRun
+		if err := reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: candidate}, &attempt); err != nil {
+			return false
+		}
+		candidate = retryPredecessor(&attempt)
+		if candidate == runName {
+			return true
+		}
+	}
+	return false
+}
+
 // tryCreateRetryRun creates the successor attempt for a "retry" verdict.
 //
 // An empty name means the current run must resolve terminally; exhausted
@@ -182,26 +215,98 @@ func (r *AgentRunReconciler) tryCreateRetryRun(
 		}
 	}
 
-	successor, err := r.createRetryRun(ctx, log, agentRun, verdict, spec, attempt+1)
+	successor, created, err := r.createRetryRun(ctx, log, agentRun, verdict, spec, attempt+1)
 	if err != nil {
 		// Reject is the safe failure: the user gets the gate's rejection rather
 		// than an approval it never gave.
 		log.Error(err, "Failed to create retry successor; treating verdict as reject")
 		return "", false
 	}
+
+	// A delegated attempt is only superseded once its parent points at the
+	// successor. If that write cannot be made, the successor would run with
+	// nothing waiting on it, so drop it and let the verdict resolve as reject.
+	if err := r.reassignDelegation(ctx, agentRun, successor); err != nil {
+		log.Error(err, "Failed to repoint the parent at the retry successor; treating verdict as reject",
+			"successor", successor)
+		if created {
+			r.discardRetryRun(ctx, log, agentRun.Namespace, successor)
+		}
+		return "", false
+	}
 	return successor, false
 }
 
+// reassignDelegation repoints a parent AgentRun at the successor attempt of a
+// delegated child.
+//
+// status.delegates[].childRunName is what a delegation is tracked by: the
+// SpawnRouter matches the completing child against it, and
+// reconcileAwaitingDelegate reads the phase behind it to recover a delegation
+// whose in-memory routing was lost. A retired attempt sits at Failed, so an
+// entry left on the predecessor makes the parent record the delegation as
+// failed while the successor is still running. Repointing happens before the
+// predecessor is retired, so no reconcile can observe the Failed predecessor
+// through the parent.
+//
+// A run with no parent, or a parent that does not list it — a sequential
+// successor, or a child whose parent has already been pruned — needs nothing.
+func (r *AgentRunReconciler) reassignDelegation(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, successorName string) error {
+	if agentRun.Spec.Parent == nil || agentRun.Spec.Parent.RunName == "" {
+		return nil
+	}
+	parentKey := client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.Parent.RunName}
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var parent sympoziumv1alpha1.AgentRun
+		// Uncached: the delegate entry may have been appended moments ago by
+		// the SpawnRouter, and a stale read would silently find no match.
+		if err := r.statusReader().Get(ctx, parentKey, &parent); err != nil {
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		for i := range parent.Status.Delegates {
+			if parent.Status.Delegates[i].ChildRunName != agentRun.Name {
+				continue
+			}
+			parent.Status.Delegates[i].ChildRunName = successorName
+			parent.Status.Delegates[i].Phase = sympoziumv1alpha1.AgentRunPhasePending
+			parent.Status.Delegates[i].Result = ""
+			parent.Status.Delegates[i].Error = ""
+			return r.Status().Update(ctx, &parent)
+		}
+		// Already repointed by an earlier pass, or never a tracked delegation.
+		return nil
+	})
+}
+
+// discardRetryRun removes a successor that cannot be wired to its parent.
+// Best effort: a successor left behind runs to completion with nothing reading
+// its result, which wastes tokens but harms nothing.
+func (r *AgentRunReconciler) discardRetryRun(ctx context.Context, log logr.Logger, namespace, name string) {
+	orphan := &sympoziumv1alpha1.AgentRun{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
+	if err := r.Delete(ctx, orphan); err != nil && !errors.IsNotFound(err) {
+		log.Error(err, "Failed to delete the unwired retry successor", "run", name)
+	}
+}
+
 // createRetryRun clones the run's spec onto a successor carrying the retry card.
+// created reports whether this call is the one that made it, which is what
+// tells a failed follow-up write apart from a duplicate reconcile it must not
+// clean up after.
 //
 // It shares no builder with triggerSequentialSuccessors: that assembles a spec
 // from the *target* Agent because the successor is a different persona. A retry
-// is the same run again, so the predecessor's spec is the source.
+// is the same run again, so the predecessor's spec is the source — including
+// spec.parent, which keeps a delegated attempt inside its parent's session.
 func (r *AgentRunReconciler) createRetryRun(
 	ctx context.Context, log logr.Logger,
 	agentRun *sympoziumv1alpha1.AgentRun, verdict *gateVerdict,
 	spec *sympoziumv1alpha1.RetrySpec, attempt int,
-) (string, error) {
+) (successorName string, created bool, err error) {
 	runName := retryChainName(agentRun.Name, attempt)
 
 	annotations := map[string]string{}
@@ -242,6 +347,17 @@ func (r *AgentRunReconciler) createRetryRun(
 		"sympozium.ai/dry-run",
 		"sympozium.ai/source",
 		"sympozium.ai/source-channel",
+		// These three are how another controller finds the work still in
+		// flight. A schedule with concurrencyPolicy: Forbid counts its own
+		// runs by sympozium.ai/schedule and an instance's stimulus run by
+		// sympozium.ai/stimulus; both read a retired attempt as finished, so
+		// without the label the next tick fires on top of a live chain. The
+		// web proxy dedupes a repeated request by sympozium.ai/request-hash
+		// and skips terminal runs, so without it a duplicate starts a second
+		// chain instead of joining this one.
+		"sympozium.ai/schedule",
+		"sympozium.ai/stimulus",
+		"sympozium.ai/request-hash",
 	} {
 		if v := agentRun.Labels[key]; v != "" {
 			labels[key] = v
@@ -264,12 +380,12 @@ func (r *AgentRunReconciler) createRetryRun(
 
 	if err := r.Create(ctx, successor); err != nil {
 		if !errors.IsAlreadyExists(err) {
-			return "", fmt.Errorf("creating retry successor %s: %w", runName, err)
+			return "", false, fmt.Errorf("creating retry successor %s: %w", runName, err)
 		}
 		// Deterministic naming: a duplicate reconcile lands here instead of
 		// creating a second attempt.
 		log.Info("Retry successor already exists", "run", runName)
-		return runName, nil
+		return runName, false, nil
 	}
 
 	// Status is a subresource, so lineage is written after Create — through the
@@ -287,7 +403,7 @@ func (r *AgentRunReconciler) createRetryRun(
 	}
 
 	log.Info("Created retry successor run", "run", runName, "attempt", attempt, "maxAttempts", spec.MaxAttempts)
-	return runName, nil
+	return runName, true, nil
 }
 
 // retireForRetry ends a superseded attempt.

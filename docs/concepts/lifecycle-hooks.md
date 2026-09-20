@@ -333,6 +333,38 @@ not finished. When the attempts or the token budget run out, the last attempt
 resolves as `retries-exhausted` and `gateDefault` decides whether its output is
 blocked or passed through.
 
+#### What a successor inherits
+
+A successor is the same run again, so it starts from the predecessor's spec and
+keeps the context that says where the work came from and who is waiting on it:
+the reply address of the channel that triggered it, the trace, `spec.parent`,
+and the labels other controllers find live work by — `sympozium.ai/schedule`,
+`sympozium.ai/stimulus`, `sympozium.ai/request-hash`, `sympozium.ai/ensemble`.
+A schedule with `concurrencyPolicy: Forbid` therefore waits for the whole chain,
+not the first attempt.
+
+A caller blocked on the run it created — an OpenAI-compatible request on
+`/v1/chat/completions`, or an MCP tool call — is answered by whichever attempt
+passes the gate. The retired attempts publish nothing, and the proxy follows
+`status.retryOf` to recognise the successor's completion as the answer to the
+request it is holding.
+
+The gate verdict annotation is deliberately *not* carried: a successor
+inheriting it would resolve against its predecessor's verdict before running.
+
+#### Retrying a delegated run
+
+An agent's lifecycle hooks are inherited by the children it delegates to, so a
+delegate child can be gated and retried like any other run. The parent stays
+blocked in its `delegate_to_persona` call throughout: when a child retries, the
+parent's `status.delegates[]` entry is repointed at the successor before the
+retired attempt is marked `Failed`, and the successor's result answers the
+original delegation. The parent never sees the intermediate attempts.
+
+An Ensemble `relationships[].timeout` bounds the delegation, not one attempt of
+it — a chain that outlives the edge timeout is expired at whichever attempt is
+running.
+
 #### Why this is safe
 
 **The retry decision is not agent-controlled.** The gate hook is an
