@@ -15,7 +15,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Resolve freezes a native connection served by an owner-installed host
+// credential profile. It refuses a Secret-backed or credential-free connection:
+// the paths behind it (legacy issuance, fleet provisioning) have no gateway to
+// hold the key, so such a connection must never be normalised for them.
 func Resolve(ctx context.Context, reader client.Reader, namespace string, model api.ModelSpec) (api.ModelSpec, error) {
+	return resolve(ctx, reader, namespace, model, false)
+}
+
+// ResolveMediated is Resolve for a run the scoped (gateway-mediated) path will
+// execute: besides a host credential profile it accepts a connection that names
+// its own Secret (spec.secretRef) or no credential at all. The Secret is
+// referenced by the connection only. Neither its name nor its bytes are copied
+// into the returned ModelSpec: AuthSecretRef stays empty, so no pod, guest or
+// legacy path that injects spec.model credentials as environment can receive
+// it. The model gateway pins and reads the Secret from the connection.
+func ResolveMediated(ctx context.Context, reader client.Reader, namespace string, model api.ModelSpec) (api.ModelSpec, error) {
+	return resolve(ctx, reader, namespace, model, true)
+}
+
+func resolve(ctx context.Context, reader client.Reader, namespace string, model api.ModelSpec, mediated bool) (api.ModelSpec, error) {
 	if model.ConnectionRef == "" {
 		return model, nil
 	}
@@ -40,8 +59,21 @@ func Resolve(ctx context.Context, reader client.Reader, namespace string, model 
 		return model, fmt.Errorf("native model connections cannot be combined with inline credentials, headers, placement or thinking settings")
 	}
 	s := connection.Spec
-	if s.CredentialProfile == "" || s.SecretRef != "" {
-		return model, fmt.Errorf("native connections require a host credential profile")
+	if s.CredentialProfile != "" && s.SecretRef != "" {
+		return model, fmt.Errorf("choose a host credential profile or a Kubernetes Secret, not both")
+	}
+	if s.CredentialProfile == "" {
+		if !mediated {
+			return model, fmt.Errorf("native connections require a host credential profile")
+		}
+		origin, err := api.ModelEndpointOriginInsecure(s.Endpoint, s.AllowInsecure)
+		if err != nil {
+			return model, err
+		}
+		// A cluster Secret never crosses plain HTTP, whatever the connection opts into.
+		if s.SecretRef != "" && !strings.HasPrefix(strings.ToLower(origin), "https://") {
+			return model, fmt.Errorf("a Secret-backed model connection requires an HTTPS endpoint")
+		}
 	}
 	if (model.Provider != "" && model.Provider != s.Provider) || (model.BaseURL != "" && model.BaseURL != s.Endpoint) || (model.Protocol != "" && model.Protocol != s.Protocol) || (model.CredentialProfile != "" && model.CredentialProfile != s.CredentialProfile) {
 		return model, fmt.Errorf("inline model settings differ from the selected connection")

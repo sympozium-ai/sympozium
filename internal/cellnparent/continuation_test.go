@@ -35,7 +35,7 @@ func TestTranscriptOrdersCommittedExchangesAndSkipsFailures(t *testing.T) {
 		&api.AgentRunTurn{ObjectMeta: metav1.ObjectMeta{Name: "t3", Namespace: "tenant", CreationTimestamp: metav1.NewTime(metav1.Now().Add(3e9))}, Spec: api.AgentRunTurnSpec{RunName: run.Name, RunUID: "uid-1", Message: "failed one"}, Status: api.AgentRunTurnStatus{Execution: &api.CellnParentTurnStatus{Result: &api.CellnParentTurnResult{Succeeded: false, Answer: "tool crashed"}}}},
 		&api.AgentRunTurn{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "tenant"}, Spec: api.AgentRunTurnSpec{RunName: "other-run", RunUID: "uid-9", Message: "not ours"}, Status: api.AgentRunTurnStatus{Execution: &api.CellnParentTurnStatus{Result: &api.CellnParentTurnResult{Succeeded: true, Answer: "x"}}}},
 	).Build()
-	got, err := Transcript(context.Background(), store, run)
+	got, err := Transcript(context.Background(), store, run, LegacySeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestTranscriptOrdersCommittedExchangesAndSkipsFailures(t *testing.T) {
 	}
 	// A continued run's own seed comes first.
 	run.Spec.Conversation = &api.ConversationSpec{ContinuesFrom: "earlier", Depth: 1, Seed: []api.ConversationExchange{{User: "first ever", Assistant: "hello"}}}
-	got, _ = Transcript(context.Background(), store, run)
+	got, _ = Transcript(context.Background(), store, run, LegacySeedBytes)
 	if len(got) != 4 || got[0].User != "first ever" {
 		t.Fatalf("seed must lead the transcript: %+v", got)
 	}
@@ -66,11 +66,11 @@ func TestTrimSeedKeepsTheNewestThatFit(t *testing.T) {
 		long = append(long, api.ConversationExchange{User: strings.Repeat("u", 100), Assistant: strings.Repeat("a", 100)})
 	}
 	long = append(long, api.ConversationExchange{User: "last", Assistant: "kept"})
-	trimmed := TrimSeed(long)
-	if !SeedFits(trimmed) || trimmed[len(trimmed)-1].User != "last" || len(trimmed) >= 16 {
+	trimmed := TrimSeed(long, LegacySeedBytes)
+	if !SeedFits(trimmed, LegacySeedBytes) || trimmed[len(trimmed)-1].User != "last" || len(trimmed) >= 16 {
 		t.Fatalf("trim must keep the newest within bounds: %d %+v", len(trimmed), trimmed[len(trimmed)-1])
 	}
-	if got := TrimSeed([]api.ConversationExchange{{User: " ", Assistant: "x"}, {User: "ok", Assistant: "y\x00"}, {User: "fine", Assistant: "z"}}); len(got) != 1 || got[0].User != "fine" {
+	if got := TrimSeed([]api.ConversationExchange{{User: " ", Assistant: "x"}, {User: "ok", Assistant: "y\x00"}, {User: "fine", Assistant: "z"}}, LegacySeedBytes); len(got) != 1 || got[0].User != "fine" {
 		t.Fatalf("blank or NUL exchanges are dropped: %+v", got)
 	}
 }
@@ -78,7 +78,7 @@ func TestTrimSeedKeepsTheNewestThatFit(t *testing.T) {
 func TestContinuationCarriesSpecSeedAndDepth(t *testing.T) {
 	previous := enduringRun()
 	seed := []api.ConversationExchange{{User: "Remember the word saffron.", Assistant: "Noted: saffron."}}
-	next, err := Continuation(previous, seed, ContinuationOriginAutomatic)
+	next, err := Continuation(previous, seed, ContinuationOriginAutomatic, LegacySeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestContinuationCarriesSpecSeedAndDepth(t *testing.T) {
 	// Depth accumulates and is bounded; a run told not to continue stays so.
 	next.Name = "celln-agent-def"
 	next.Spec.Conversation.Depth = api.MaxContinuationDepth
-	if _, err := Continuation(next, seed, ContinuationOriginAutomatic); err == nil {
+	if _, err := Continuation(next, seed, ContinuationOriginAutomatic, LegacySeedBytes); err == nil {
 		t.Fatal("depth bound must stop the chain")
 	}
 	previous.Spec.Conversation = &api.ConversationSpec{Continuation: "none"}
@@ -103,24 +103,24 @@ func TestContinuationCarriesSpecSeedAndDepth(t *testing.T) {
 	}
 	oneShot := enduringRun()
 	oneShot.Spec.ExecutionLifecycle = "one-shot"
-	if _, err := Continuation(oneShot, nil, ContinuationOriginAutomatic); err == nil {
+	if _, err := Continuation(oneShot, nil, ContinuationOriginAutomatic, LegacySeedBytes); err == nil {
 		t.Fatal("only enduring runs continue")
 	}
-	if _, err := Continuation(enduringRun(), []api.ConversationExchange{{User: strings.Repeat("u", 2000), Assistant: strings.Repeat("a", 2000)}}, ContinuationOriginAutomatic); err == nil {
+	if _, err := Continuation(enduringRun(), []api.ConversationExchange{{User: strings.Repeat("u", 2000), Assistant: strings.Repeat("a", 2000)}}, ContinuationOriginAutomatic, LegacySeedBytes); err == nil {
 		t.Fatal("an oversized seed is refused, not trimmed silently here")
 	}
-	if _, err := Continuation(enduringRun(), seed, ""); err == nil {
+	if _, err := Continuation(enduringRun(), seed, "", LegacySeedBytes); err == nil {
 		t.Fatal("a continuation must name its origin")
 	}
 }
 
 func TestContinuationRecordsOrigin(t *testing.T) {
 	seed := []api.ConversationExchange{{User: "Remember the word saffron.", Assistant: "Noted: saffron."}}
-	automatic, err := Continuation(enduringRun(), seed, ContinuationOriginAutomatic)
+	automatic, err := Continuation(enduringRun(), seed, ContinuationOriginAutomatic, LegacySeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requested, err := Continuation(enduringRun(), seed, ContinuationOriginRequested)
+	requested, err := Continuation(enduringRun(), seed, ContinuationOriginRequested, LegacySeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestAutomaticContinuationStalledOnlyWithoutFollowUp(t *testing.T) {
 	ctx := context.Background()
 	seed := []api.ConversationExchange{{User: "Remember the word saffron.", Assistant: "Noted: saffron."}}
 	continuation := func(origin string) *api.AgentRun {
-		next, err := Continuation(enduringRun(), seed, origin)
+		next, err := Continuation(enduringRun(), seed, origin, LegacySeedBytes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,6 +188,29 @@ func TestAutomaticContinuationStalledOnlyWithoutFollowUp(t *testing.T) {
 		objects []*api.AgentRunTurn
 		stalled bool
 	}{name: "accepted follow-up allows one more continuation", run: accepted, stalled: false})
+	// The seeded resume turn is never follow-up work, whatever its outcome: a
+	// continuation whose resume turn FAILED and was then lost added nothing,
+	// so it must not be re-created. It stays open to the user while its parent
+	// is Ready (TurnReadiness); the message they send is the progress.
+	failedResume := continuation(ContinuationOriginAutomatic)
+	failedResume.Status.CellnParent.InitialTurn.Result = &api.CellnParentTurnResult{Succeeded: false, Answer: "Turn failed; no result committed"}
+	failedResumeThenMessage := failedResume.DeepCopy()
+	failedResumeThenMessage.Status.CellnParent.AcceptedTurns = 1
+	for _, extra := range []struct {
+		name    string
+		run     *api.AgentRun
+		stalled bool
+	}{
+		{"failed resume turn is not follow-up work", failedResume, true},
+		{"message accepted after a failed resume turn is progress", failedResumeThenMessage, false},
+	} {
+		cases = append(cases, struct {
+			name    string
+			run     *api.AgentRun
+			objects []*api.AgentRunTurn
+			stalled bool
+		}{name: extra.name, run: extra.run, stalled: extra.stalled})
+	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			builder := fake.NewClientBuilder().WithScheme(scheme)

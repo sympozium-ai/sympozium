@@ -295,7 +295,7 @@ spec:
                   result:
                     properties:
                       answer:
-                        maxLength: 2048
+                        maxLength: 8192
                         minLength: 1
                         type: string
                       succeeded:

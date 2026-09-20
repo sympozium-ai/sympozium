@@ -125,6 +125,8 @@ func TestTurnObservationReportsExpiredLease(t *testing.T) {
 	run.Status.Phase = api.AgentRunPhaseRunning
 	run.Status.CellnParent = &api.CellnParentStatus{Binding: binding, CreateAttempted: true, AdmittedAt: &metav1.Time{Time: admittedAt},
 		InitialTurn: &api.CellnParentTurnStatus{ID: "initial", Message: "hello", Child: "blake3:" + strings.Repeat("d", 64), Attempted: true, Result: &api.CellnParentTurnResult{Succeeded: true, Answer: "ready"}}}
+	run.Generation = 1
+	run.Status.Conditions = []metav1.Condition{{Type: "CellnParentReady", Status: metav1.ConditionTrue, Reason: "Ready", ObservedGeneration: 1}}
 	next, err := cellnparent.NewTurn(run, "turn-one", "follow up")
 	if err != nil {
 		t.Fatal(err)

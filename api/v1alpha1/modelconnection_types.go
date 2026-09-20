@@ -1,12 +1,14 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"fmt"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"net/url"
 	"regexp"
 	"strings"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -49,6 +51,27 @@ type ModelConnectionSpec struct {
 	// public-HTTPS transport contract. It never bypasses host admission.
 	// +optional
 	AllowInsecure bool `json:"allowInsecure,omitempty"`
+	// Parameters is a bounded JSON object the model gateway merges into every
+	// provider request made through this connection, for example
+	// {"temperature":0.7} or {"chat_template_kwargs":{"enable_thinking":false}}.
+	// It is operator policy pinned on the host side: the guest never sees it, a
+	// guest request that carries one of its keys is refused, and request fields
+	// the gateway owns (ReservedModelParameters) cannot be set. At most 16
+	// top-level keys matching ^[a-z][a-z0-9_]{0,63}$, 3 levels deep and 2048
+	// bytes (ValidateModelParameters). Only gateway-mediated connections
+	// (secretRef or no credential) may set it.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	// +optional
+	Parameters *apiextensionsv1.JSON `json:"parameters,omitempty"`
+	// MaxOutputTokens bounds the output tokens one model request through this
+	// connection may ask for. Omitted means 512. The model gateway refuses a
+	// request above it; a turn's own output-token cap still applies. Only
+	// gateway-mediated connections (secretRef or no credential) may set it.
+	// +kubebuilder:validation:Minimum=256
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	MaxOutputTokens int64 `json:"maxOutputTokens,omitempty"`
 }
 
 var modelConnectionIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -75,6 +98,17 @@ func (s ModelConnectionSpec) Validate() error {
 			return err
 		}
 	}
+	if _, err := s.RequestParameters(); err != nil {
+		return err
+	}
+	if err := ValidateRequestOutputTokens(s.MaxOutputTokens); err != nil {
+		return err
+	}
+	if s.CredentialProfile != "" && (s.Parameters != nil || s.MaxOutputTokens != 0) {
+		// A host credential profile is served by the native host broker, which
+		// never reads these fields: refuse instead of silently ignoring policy.
+		return fmt.Errorf("parameters and maxOutputTokens are enforced by the model gateway and cannot be combined with a host credential profile")
+	}
 	if len(s.Models) == 0 || len(s.Models) > 128 {
 		return fmt.Errorf("connection requires 1–128 model identifiers")
 	}
@@ -86,6 +120,58 @@ func (s ModelConnectionSpec) Validate() error {
 		seen[model] = true
 	}
 	return nil
+}
+
+// RequestParameters is the validated parameters object, numbers in their
+// written form; nil when the connection sets none.
+func (s ModelConnectionSpec) RequestParameters() (map[string]any, error) {
+	if s.Parameters == nil {
+		return nil, nil
+	}
+	if len(s.Parameters.Raw) == 0 {
+		return nil, fmt.Errorf("model parameters: a JSON object is required")
+	}
+	return ParseModelParameters(s.Parameters.Raw)
+}
+
+// RequestOutputTokens is the output-token bound of one request through this
+// connection: maxOutputTokens, or the default when omitted.
+func (s ModelConnectionSpec) RequestOutputTokens() int64 {
+	return EffectiveRequestOutputTokens(s.MaxOutputTokens)
+}
+
+// DigestView is the value every authority digests as this connection's spec
+// (route.modelConnectionSpecSha256). Decision digests use an integer-only
+// canonical JSON profile, which cannot carry a fractional parameter such as
+// {"temperature":0.7}; parameters are therefore bound as one string, their
+// key-sorted compact JSON text with numbers as written. A spec without
+// parameters is returned unchanged, so its digest is what it always was.
+func (s ModelConnectionSpec) DigestView() (any, error) {
+	if s.Parameters == nil {
+		return s, nil
+	}
+	parameters, err := s.RequestParameters()
+	if err != nil {
+		return nil, err
+	}
+	text := []byte("{}")
+	if len(parameters) != 0 {
+		if text, err = json.Marshal(parameters); err != nil {
+			return nil, err
+		}
+	}
+	raw, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if fields["parameters"], err = json.Marshal(string(text)); err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
 // ModelEndpointOrigin matches the native host HTTPS transport: no userinfo,

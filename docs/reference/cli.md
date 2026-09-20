@@ -5,6 +5,8 @@
 ```bash
 sympozium install                        # CRDs, controllers, webhook, NATS, RBAC, network policies
 sympozium install --version v0.0.13      # specific version
+sympozium install --adopt-existing       # adopt leftover objects of an older install instead of refusing
+sympozium doctor                         # read-only checklist of what is in the way, with remedies (--json)
 sympozium uninstall                      # clean removal
 ```
 

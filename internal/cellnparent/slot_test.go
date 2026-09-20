@@ -12,6 +12,7 @@ import (
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,6 +30,8 @@ func TestTurnSlotSerializesClaimantsRetainsUncertaintyAndConsumesBudget(t *testi
 	binding.SpecSHA256 = digest
 	run.Status.Phase = api.AgentRunPhaseRunning
 	run.Status.CellnParent = &api.CellnParentStatus{Binding: binding, CreateAttempted: true, InitialTurn: &api.CellnParentTurnStatus{ID: "initial", Message: "hello", Child: testID, Attempted: true, Result: &api.CellnParentTurnResult{Succeeded: true, Answer: "ready"}}}
+	run.Generation = 1
+	run.Status.Conditions = []metav1.Condition{{Type: "CellnParentReady", Status: metav1.ConditionTrue, Reason: "Ready", ObservedGeneration: 1}}
 	scheme := runtime.NewScheme()
 	if err := api.AddToScheme(scheme); err != nil {
 		t.Fatal(err)

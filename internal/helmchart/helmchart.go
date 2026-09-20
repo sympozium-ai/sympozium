@@ -28,6 +28,19 @@ func Load() (*chart.Chart, error) {
 	return ch, nil
 }
 
+// AppVersion returns the embedded chart's appVersion: the most recent release
+// a binary built from source knows about.
+func AppVersion() (string, error) {
+	ch, err := Load()
+	if err != nil {
+		return "", err
+	}
+	if ch.Metadata == nil || ch.Metadata.AppVersion == "" {
+		return "", fmt.Errorf("embedded chart carries no appVersion")
+	}
+	return ch.Metadata.AppVersion, nil
+}
+
 // collectFiles walks the embedded filesystem and returns chart files relative
 // to the chart root.
 func collectFiles(root string) ([]*loader.BufferedFile, error) {

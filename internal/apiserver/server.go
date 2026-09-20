@@ -74,6 +74,11 @@ type Server struct {
 	densityCache *controller.DensityCache // optional: set when llmfit DaemonSet is enabled
 	powerClient  *collector.Client        // optional: nil when energy collection is disabled
 	authEnabled  bool                     // set by buildMux; gates pricing writes
+	version      string                   // build version, reported by /api/v1/cluster/identity
+	cellnCells   cellnCellsSource         // gateway `/v1/cells` client and its "unsupported" verdict
+	// completeCellnBackend finishes an added fleet backend in the background;
+	// nil runs completeCellnFleetBackend (tests replace it).
+	completeCellnBackend func(name string, facts cellninstall.FleetFacts, cellnHint string)
 }
 
 // NewServer creates a new API server.
@@ -193,6 +198,8 @@ func (s *Server) buildMux(frontendFS fs.FS, expected *tokenReader) http.Handler 
 	mux.HandleFunc("GET /api/v1/cluster-celln-tools", s.listClusterCellnTools)
 	mux.HandleFunc("GET /api/v1/celln-platform/profiles", s.listCellnPlatformProfiles)
 	mux.HandleFunc("POST /api/v1/celln-platform/wrappers", s.ensureCellnPlatformWrappers)
+	mux.HandleFunc("GET /api/v1/celln-platform/mediation", s.getCellnMediation)
+	mux.HandleFunc("GET /api/v1/celln-platform/key-secrets", s.listCellnKeySecrets)
 	mux.HandleFunc("GET /api/v1/celln-platform/backends", s.listCellnFleetBackends)
 	mux.HandleFunc("GET /api/v1/celln-platform/cells", s.listCellnFleetCells)
 	mux.HandleFunc("POST /api/v1/celln-platform/backends", s.addCellnFleetBackend)
@@ -311,6 +318,7 @@ func (s *Server) buildMux(frontendFS fs.FS, expected *tokenReader) http.Handler 
 
 	// Cluster info & capabilities
 	mux.HandleFunc("GET /api/v1/cluster", s.getClusterInfo)
+	mux.HandleFunc("GET /api/v1/cluster/identity", s.getClusterIdentity)
 	mux.HandleFunc("GET /api/v1/capabilities", s.getCapabilities)
 
 	// Agent Sandbox CRD management
@@ -587,26 +595,38 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 		for _, t := range a.Policy.Spec.Tools {
 			tools = append(tools, t.Ref)
 		}
-		out = append(out, CellnPlatformProfile{Name: a.Profile.Name, Revision: a.Profile.Spec.Revision, Policy: a.Policy.Name, Model: connection.Spec.Models[0], Provider: connection.Spec.Provider, Endpoint: connection.Spec.Endpoint, CredentialProfile: connection.Spec.CredentialProfile, SystemPrompt: a.Profile.Spec.Native.SystemPrompt, Backend: names.Backend, Wrapper: names.Runtime, Agent: names.Agent, Tools: tools, Ceilings: ceilings, SessionDefaults: *cellninstall.SessionDefaults(ceilings)})
+		out = append(out, CellnPlatformProfile{Name: a.Profile.Name, Revision: a.Profile.Spec.Revision, Policy: a.Policy.Name, Model: connection.Spec.Models[0], Provider: connection.Spec.Provider, Endpoint: connection.Spec.Endpoint, CredentialProfile: connection.Spec.CredentialProfile, SystemPrompt: a.Profile.Spec.Native.SystemPrompt, Backend: names.Backend, Wrapper: names.Runtime, Agent: names.Agent, Tools: tools, Ceilings: ceilings, SessionDefaults: *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)})
 	}
 	writeJSON(w, out)
 }
 
 // ensureCellnPlatformWrappers creates the namespace's wrapper objects for an
-// authorised profile on first use. Existing objects are never modified.
+// authorised profile on first use. Existing objects are never modified. With
+// runtimeOnly it creates the AgentRuntime alone: all an Agent with its own
+// Secret-backed ModelConnection needs, leaving the backend's shared Agent and
+// host-profile connection out of the namespace.
 func (s *Server) ensureCellnPlatformWrappers(w http.ResponseWriter, r *http.Request) {
 	ns := r.URL.Query().Get("namespace")
 	if ns == "" {
 		ns = "default"
 	}
 	var req struct {
-		Profile string `json:"profile"`
+		Profile     string `json:"profile"`
+		RuntimeOnly bool   `json:"runtimeOnly,omitempty"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.Profile == "" {
 		http.Error(w, "profile is required", http.StatusBadRequest)
 		return
 	}
-	wrappers, err := cellnplatform.EnsureWrappers(r.Context(), s.client, ns, req.Profile)
+	var wrappers cellnplatform.Wrappers
+	var err error
+	if req.RuntimeOnly {
+		// The same authorisation as the full set: only a profile one of the
+		// namespace's policies admits gets a wrapper.
+		wrappers, err = s.ensureCellnRuntimeWrapper(r.Context(), ns, req.Profile)
+	} else {
+		wrappers, err = cellnplatform.EnsureWrappers(r.Context(), s.client, ns, req.Profile)
+	}
 	if err != nil {
 		if k8serrors.IsNotFound(err) || strings.Contains(err.Error(), "no execution policy admits") {
 			http.Error(w, err.Error(), http.StatusForbidden)
@@ -616,6 +636,28 @@ func (s *Server) ensureCellnPlatformWrappers(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, wrappers)
+}
+
+// ensureCellnRuntimeWrapper is EnsureRuntimeWrapper answered in the shape of
+// the full set: the agent and connection stay empty because none is created.
+func (s *Server) ensureCellnRuntimeWrapper(ctx context.Context, namespace, profileName string) (cellnplatform.Wrappers, error) {
+	var profile sympoziumv1alpha1.CellnRuntimeProfile
+	if err := s.client.Get(ctx, types.NamespacedName{Name: profileName}, &profile); err != nil {
+		return cellnplatform.Wrappers{}, err
+	}
+	names := cellnplatform.WrapperNames(cellnplatform.Backend(&profile))
+	out := cellnplatform.Wrappers{Backend: names.Backend, Runtime: names.Runtime, Created: []string{}}
+	var existing sympoziumv1alpha1.AgentRuntime
+	missing := k8serrors.IsNotFound(s.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: names.Runtime}, &existing))
+	runtime, err := cellnplatform.EnsureRuntimeWrapper(ctx, s.client, namespace, profileName)
+	if err != nil {
+		return cellnplatform.Wrappers{}, err
+	}
+	out.Runtime = runtime
+	if missing {
+		out.Created = append(out.Created, runtime)
+	}
+	return out, nil
 }
 
 // InstallDefaultRuntimesResponse records an idempotent installation of the
@@ -818,6 +860,18 @@ func (s *Server) patchAgent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			inst.Spec.Execution = req.Execution.DeepCopy()
+			if req.Execution.Backend == "celln" && req.Execution.ModelConnectionRef != "" {
+				// Keep the Agent's grant on the Secret its own connection names
+				// now (a replaced key may live in another Secret), as creation does.
+				secretRef, err := s.cellnConnectionSecret(r.Context(), ns, req.Execution.ModelConnectionRef)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if secretRef != nil {
+					inst.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{*secretRef}
+				}
+			}
 		}
 		if err := s.client.Update(r.Context(), &inst); err != nil {
 			http.Error(w, "updating execution defaults: "+err.Error(), http.StatusInternalServerError)
@@ -1000,12 +1054,25 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.Execution.Backend == "celln" {
-			resolvedModel, err := modelconnection.Resolve(r.Context(), s.client, ns, sympoziumv1alpha1.ModelSpec{ConnectionRef: req.Execution.ModelConnectionRef, Model: req.Model})
+			// Only the provider is read here. An Agent may own a Secret-backed
+			// connection; which path may execute it is decided per run.
+			resolvedModel, err := modelconnection.ResolveMediated(r.Context(), s.client, ns, sympoziumv1alpha1.ModelSpec{ConnectionRef: req.Execution.ModelConnectionRef, Model: req.Model})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			req.Provider = resolvedModel.Provider
+			// An Agent's own key: grant the connection's Secret in authRefs so
+			// the grant survives a later change of the execution defaults. The
+			// name comes from the connection, never from the request.
+			secretRef, err := s.cellnConnectionSecret(r.Context(), ns, req.Execution.ModelConnectionRef)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if secretRef != nil {
+				req.SecretName = secretRef.Secret
+			}
 		} else {
 			model, _, err := modelconnection.ResolveHarness(r.Context(), s.client, ns, req.Execution.ModelConnectionRef, req.Model)
 			if err != nil {
@@ -1108,7 +1175,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	// explicitly keyless Agents a scoped compatibility value; the built-in
 	// runner and genuinely authenticated providers retain their existing
 	// credential behavior.
-	if req.RuntimeRef != "" && req.APIKey == "" && req.SecretName == "" && inst.Spec.Agents.Default.BaseURL != "" {
+	if req.RuntimeRef != "" && (req.Execution == nil || req.Execution.Backend != "celln") && req.APIKey == "" && req.SecretName == "" && inst.Spec.Agents.Default.BaseURL != "" {
 		secretAutoCreated = true
 		req.SecretName = defaultProviderSecretName(req.Name, "harness-local")
 		secret := &corev1.Secret{
@@ -1576,7 +1643,16 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	if req.CellnSelection != nil {
 		run.Spec.CellnSelection = req.CellnSelection.DeepCopy()
 		run.Spec.Model = sympoziumv1alpha1.ModelSpec{Provider: req.Provider, Model: req.Model, ConnectionRef: req.ModelConnectionRef}
-		run.Spec.Model, err = modelconnection.Resolve(r.Context(), s.client, ns, run.Spec.Model)
+		// A shared-catalogue selection (no namespaced toolRefs) is resolved by
+		// the platform resolver, whose route auth picks the path: a Secret-backed
+		// or credential-free connection runs gateway-mediated and is frozen
+		// without any credential reference. A legacy namespaced selection has no
+		// gateway and keeps requiring a host credential profile.
+		resolveConnection := modelconnection.Resolve
+		if len(req.CellnSelection.ToolRefs) == 0 {
+			resolveConnection = modelconnection.ResolveMediated
+		}
+		run.Spec.Model, err = resolveConnection(r.Context(), s.client, ns, run.Spec.Model)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

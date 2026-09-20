@@ -8,6 +8,22 @@ on:
       tag:
         required: true
         type: string
+      force_starter_rebuild:
+        description: Build a new Celln starter package even when its inputs are unchanged
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to publish (run this from that tag)
+        required: true
+        type: string
+      force_starter_rebuild:
+        description: Build a new Celln starter package even when its inputs are unchanged. Upgrading to the release then replaces the fleet's package and ends every live parent
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,10 +43,15 @@ jobs:
     secrets: inherit
 
   # ── Default Celln starter package ─────────────────────────────────────────────
-  # Built once per release from the pinned Celln, signed with a key generated
-  # here and discarded, published as a digest-pinned image, and embedded into
-  # the CLI so `sympozium install` pins it. The trust is the publisher key and
-  # package hash the installer approves, recorded in the release assets.
+  # Built from the pinned Celln, signed with a key generated here and
+  # discarded, published as a digest-pinned image, and embedded into the CLI so
+  # `sympozium install` pins it. The trust is the publisher key and package
+  # hash the installer approves, recorded in the release assets.
+  #
+  # A fleet scope carries one package, and moving it ends every live parent,
+  # so a release only builds a package when its inputs changed
+  # (hack/celln-starter-inputs.sh). Otherwise it republishes the previous
+  # release's identity unchanged and an upgrade keeps the fleet's package.
   release-starter-package:
     runs-on: ubuntu-latest
     outputs:
@@ -38,7 +59,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reuse the previous release's package when the inputs are unchanged
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_REBUILD: ${{ inputs.force_starter_rebuild || false }}
+        run: |
+          fingerprint="$(hack/celln-starter-inputs.sh)"
+          hack/celln-starter-inputs.sh --manifest
+          echo "package inputs: $fingerprint"
+          if [ "$FORCE_REBUILD" = true ]; then
+            echo "building: force_starter_rebuild was set"
+            exit 0
+          fi
+          # The newest published release that is not the one being made.
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 30 --json tagName \
+            --jq "[.[].tagName | select(. != \"${RELEASE_TAG}\")][0] // \"\"" || true)"
+          mkdir -p starter/previous
+          if [ -n "$previous" ]; then
+            gh release download "$previous" --repo "$GITHUB_REPOSITORY" --pattern celln-starter.json --dir starter/previous ||
+              echo "release $previous carries no celln-starter.json"
+          fi
+          if hack/celln-starter-reuse.sh --check-image starter/previous/celln-starter.json "$fingerprint" >celln-starter.json; then
+            echo "reusing starter package from $previous: inputs unchanged"
+            cat celln-starter.json
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            # The installer pins the digest; the release tag is a convenience.
+            docker buildx imagetools create --tag "${{ env.REGISTRY }}/celln-starter:${RELEASE_TAG}" "$(jq -r .image celln-starter.json)" ||
+              echo "::warning::could not tag the reused package image with ${RELEASE_TAG}; the digest is what the installer pins"
+          else
+            rm -f celln-starter.json
+          fi
+
       - name: Install packaging tools
+        if: steps.reuse.outputs.reuse != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends skopeo e2fsprogs cpio gcc jq
@@ -50,6 +111,7 @@ jobs:
 
       - name: Read pinned Celln release
         id: celln
+        if: steps.reuse.outputs.reuse != 'true'
         run: |
           pin=config/celln/release.json
           jq -e '.version | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")' "$pin"
@@ -60,6 +122,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Fetch the pinned Celln bundle
+        if: steps.reuse.outputs.reuse != 'true'
         env:
           CELLN_VERSION: ${{ steps.celln.outputs.version }}
           CELLN_SHA256: ${{ steps.celln.outputs.sha256 }}
@@ -79,21 +142,21 @@ jobs:
           fi
           sudo cp "$kernel" starter/vmlinuz && sudo chown "$(id -u)" starter/vmlinuz
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build, sign and publish the package
-        id: starter
+        if: steps.reuse.outputs.reuse != 'true'
         env:
           CELLN_VERSION: ${{ steps.celln.outputs.version }}
         run: |
           hack/build-celln-starter.sh --bundle starter/bundle --kernel starter/vmlinuz \
             --image "${{ env.REGISTRY }}/celln-starter:${RELEASE_TAG}" --out starter/out --push
           cp starter/out/starter.json celln-starter.json
+
+      - name: Record the package identity
+        id: starter
+        run: |
+          jq -e '.image | test("@sha256:[a-f0-9]{64}$")' celln-starter.json
+          jq -e '.packageHash | test("^blake3:[a-f0-9]{64}$")' celln-starter.json
+          jq -e '.inputs | test("^sha256:[a-f0-9]{64}$")' celln-starter.json
           echo "json=$(jq -c . celln-starter.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4

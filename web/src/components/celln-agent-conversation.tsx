@@ -131,7 +131,7 @@ export function CellnAgentConversation({
     return (
       <div className="space-y-3">
         {conversationList}
-        <CellnConversation run={current} />
+        <CellnConversation run={current} onContinued={(next) => { if (next?.metadata?.name) setSelected(next.metadata.name); setComposing(false); }} />
       </div>
     );
   }

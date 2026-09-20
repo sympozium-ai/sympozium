@@ -142,6 +142,7 @@ make build              # Build all binaries
 make test               # Run unit tests with race detector
 make test-short         # Run short tests only
 make test-integration   # Run all integration tests (requires Kind + API key)
+(cd web && npm run test:stubbed)  # Console Cypress specs that stub every API call (no cluster; needs `npx vite` running; CI runs these on web/** PRs)
 make vet                # go vet
 make fmt                # gofmt
 make tidy               # go mod tidy

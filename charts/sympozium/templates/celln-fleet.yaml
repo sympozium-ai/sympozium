@@ -34,13 +34,17 @@
 {{- end }}
 {{- if not $backends }}
 {{- $legacyModel := $fleet.model | default dict }}
-{{- $backends = list (dict "name" "native" "provider" ($legacyModel.provider | default "") "protocol" ($legacyModel.protocol | default "") "endpoint" ($legacyModel.endpoint | default "") "model" ($legacyModel.name | default "") "allowInsecure" ($legacyModel.allowInsecure | default false)) }}
+{{- $backends = list (dict "name" "native" "provider" ($legacyModel.provider | default "") "protocol" ($legacyModel.protocol | default "") "endpoint" ($legacyModel.endpoint | default "") "model" ($legacyModel.name | default "") "allowInsecure" ($legacyModel.allowInsecure | default false) "parameters" ($legacyModel.parameters | default dict) "maxOutputTokens" ($legacyModel.maxOutputTokens | default 0)) }}
 {{- end }}
 {{- if gt (len $backends) 32 }}
 {{- fail "celln.fleet.backends allows at most 32 model backends per scope" }}
 {{- end }}
 {{- $backendNames := dict }}
 {{- $backendExport := list }}
+{{- /* What one turn of the costliest backend reserves: 6 model requests of
+     its output cap (512 unless the backend sets maxOutputTokens). */}}
+{{- $costliestTurn := int64 3072 }}
+{{- $costliestBackend := "" }}
 {{- range $b := $backends }}
 {{- $name := $b.name | default "" }}
 {{- if or (not (regexMatch "^[a-z0-9][a-z0-9-]{0,31}$" $name)) (hasKey $backendNames $name) }}
@@ -58,12 +62,55 @@
 {{- if and $endpoint (hasPrefix "http://" $endpoint) (not $b.allowInsecure) }}
 {{- fail (printf "celln.fleet.backends[%s].endpoint is plain HTTP; set allowInsecure=true to approve it" $name) }}
 {{- end }}
-{{- $backendExport = append $backendExport (dict "name" $name "provider" ($b.provider | default "") "protocol" ($b.protocol | default "") "endpoint" $endpoint "model" ($b.model | default "") "allowInsecure" ($b.allowInsecure | default false) "credentialFile" $credential) }}
+{{- $export := dict "name" $name "provider" ($b.provider | default "") "protocol" ($b.protocol | default "") "endpoint" $endpoint "model" ($b.model | default "") "allowInsecure" ($b.allowInsecure | default false) "credentialFile" $credential }}
+{{- /* Model parameters: an object, or the same object as one JSON string (what
+     the installer sends, since --set values cannot carry an object). Only a
+     backend that has some exports the key, so every other backend's plan,
+     and this list's checksum, stay exactly as they were. Celln validates
+     the object when it configures the node. */}}
+{{- $parameters := $b.parameters | default dict }}
+{{- if kindIs "string" $parameters }}
+{{- $parameters = fromJson $parameters }}
+{{- if hasKey $parameters "Error" }}
+{{- fail (printf "celln.fleet.backends[%s].parameters is not a JSON object: %s" $name $parameters.Error) }}
+{{- end }}
+{{- end }}
+{{- if not (kindIs "map" $parameters) }}
+{{- fail (printf "celln.fleet.backends[%s].parameters must be an object" $name) }}
+{{- end }}
+{{- if $parameters }}
+{{- if not $endpoint }}
+{{- fail (printf "celln.fleet.backends[%s].parameters needs the backend's endpoint, provider, model and protocol" $name) }}
+{{- end }}
+{{- $_ := set $export "parameters" $parameters }}
+{{- end }}
+{{- /* Output tokens per model request: exported only when set and not
+     Celln's default of 512, for the same reason. A turn reserves 6 requests
+     of it, so the scope's lifetime ceiling must pay for at least one. */}}
+{{- $maxOutputTokens := int64 ($b.maxOutputTokens | default 0) }}
+{{- if and (ne $maxOutputTokens 0) (ne $maxOutputTokens 512) }}
+{{- if or (lt $maxOutputTokens 256) (gt $maxOutputTokens 4096) }}
+{{- fail (printf "celln.fleet.backends[%s].maxOutputTokens must be 256-4096 (omit it for the default 512)" $name) }}
+{{- end }}
+{{- if not $endpoint }}
+{{- fail (printf "celln.fleet.backends[%s].maxOutputTokens needs the backend's endpoint, provider, model and protocol" $name) }}
+{{- end }}
+{{- $_ := set $export "maxOutputTokens" $maxOutputTokens }}
+{{- if gt (mul 6 $maxOutputTokens) $costliestTurn }}
+{{- $costliestTurn = mul 6 $maxOutputTokens }}
+{{- $costliestBackend = $name }}
+{{- end }}
+{{- end }}
+{{- $backendExport = append $backendExport $export }}
 {{- end }}
 {{- $limits := $fleet.limits | default dict }}
 {{- $lease := int64 ($limits.leaseSeconds | default 0) }}
 {{- if and (ne $lease 0) (or (lt $lease 60) (gt $lease 86400)) }}
 {{- fail "celln.fleet.limits.leaseSeconds must be 60-86400" }}
+{{- end }}
+{{- $lifetimeTokens := int64 ($limits.maxOutputTokens | default 0) }}
+{{- if and $costliestBackend (ne $lifetimeTokens 0) (lt $lifetimeTokens $costliestTurn) }}
+{{- fail (printf "celln.fleet.limits.maxOutputTokens (%d) does not pay for one turn of backend %s, which reserves %d (6 requests x its maxOutputTokens); size it as turns x %d" $lifetimeTokens $costliestBackend $costliestTurn $costliestTurn) }}
 {{- end }}
 {{- $capacity := $fleet.capacity | default "auto" }}
 {{- if not (has $capacity (list "auto" "fixed")) }}
@@ -83,6 +130,16 @@
 {{- $image := printf "%s:%s" (.Values.celln.image.repository | default "ghcr.io/sympozium-ai/sympozium/celln-installer") (.Values.celln.image.tag | default .Chart.AppVersion) }}
 {{- $backendSecret := (.Values.celln.bootstrap | default dict).backendTokenSecret | default "celln-dispatcher-backend" }}
 {{- $journal := $fleet.journal | default dict }}
+{{- /* Mediated model access (celln.mediation): the owner's dispatcher also
+     serves the scoped receiver, verifying permits against the operator's
+     public JWKS and relaying model requests to the gateway. */}}
+{{- $mediated := include "sympozium.cellnMediation" . }}
+{{- $mediation := .Values.celln.mediation | default dict }}
+{{- $parentRequestDefault := printf "%s/configuration-%s-%s/scoped-parent-request.json" $state (trimPrefix "blake3:" $package.hash) (index $backends 0).name }}
+{{- $parentRequest := $mediation.parentRequestFile | default $parentRequestDefault }}
+{{- if and $mediated (or (not (hasPrefix (printf "%s/" $state) $parentRequest)) (contains "/../" $parentRequest) (regexMatch "[[:space:]]" $parentRequest)) }}
+{{- fail (printf "celln.mediation.parentRequestFile must be a file under the node state directory %s, the only host path the dispatcher mounts" $state) }}
+{{- end }}
 {{- if and $fleet.parentConfigSecret $journal.create }}
 ---
 apiVersion: v1
@@ -157,6 +214,8 @@ data:
 {{ .Files.Get "files/celln/fleet-prepare.sh" | indent 4 }}
   fleet-publish.py: |
 {{ .Files.Get "files/celln/fleet-publish.py" | indent 4 }}
+  fleet-plan.py: |
+{{ .Files.Get "files/celln/fleet-plan.py" | indent 4 }}
   fleet-cells.sh: |
 {{ .Files.Get "files/celln/fleet-cells.sh" | indent 4 }}
   fleet-cells.py: |
@@ -278,6 +337,10 @@ spec:
             - name: prepare
               mountPath: /etc/celln-fleet/fleet-publish.py
               subPath: fleet-publish.py
+              readOnly: true
+            - name: prepare
+              mountPath: /etc/celln-fleet/fleet-plan.py
+              subPath: fleet-plan.py
               readOnly: true
             - name: prepare
               mountPath: /etc/celln-fleet/fleet-cells.sh
@@ -411,15 +474,45 @@ spec:
             - /bin/sh
             - -ec
             - |
+              # "Not prepared yet" is worth waiting for; "cannot read the state
+              # directory" never resolves by waiting. This container is root
+              # without capabilities, so a directory an older install left to
+              # another uid (mode 0700) is closed to it. Listing "dir/." needs
+              # both read and search, which is what the tests below rely on.
+              for dir in "$FLEET_STATE" "$FLEET_STATE/authority"; do
+                if [ -d "$dir" ] && ! ls -A "$dir/." >/dev/null 2>&1; then
+                  echo "cannot read the Celln state directory $dir on node $NODE_NAME: owner $(stat -c '%u:%g mode %a' "$dir" 2>/dev/null || echo unknown), this container runs as uid $(id -u) without capabilities." >&2
+                  echo "It was probably left by an older install. celln-node-configure resets the owner on its next pass and this pod then starts by itself." >&2
+                  echo "If it does not, on the node either move it aside (sudo mv $FLEET_STATE $FLEET_STATE.old) or sudo chown 0:0 $dir && sudo chmod 0700 $dir; with SELinux enforcing also: sudo chcon -R -t container_file_t $FLEET_STATE" >&2
+                  exit 1
+                fi
+              done
               until [ -f "$FLEET_STATE/admitted-$FLEET_PACKAGE_HEX" ] && [ -f "$FLEET_STATE/authority/trusted-parent-clients.json" ]; do
                 echo "waiting for celln-node-configure to admit package $FLEET_PACKAGE_HEX on this node" >&2
                 sleep 5
               done
+              {{- if and $mediated (eq $parentRequest $parentRequestDefault) }}
+              # The dispatcher reads the scoped parent request once, at start:
+              # wait for the configuration that carries it rather than start
+              # one-shot-only because node configuration was still running.
+              until [ -f "$(dirname "$SCOPED_PARENT_REQUEST")/configured.json" ]; do
+                echo "waiting for celln-node-configure to configure $(dirname "$SCOPED_PARENT_REQUEST")" >&2
+                sleep 5
+              done
+              {{- end }}
           env:
+            {{- if $mediated }}
+            - name: SCOPED_PARENT_REQUEST
+              value: {{ $parentRequest | quote }}
+            {{- end }}
             - name: FLEET_STATE
               value: {{ $state | quote }}
             - name: FLEET_PACKAGE_HEX
               value: {{ trimPrefix "blake3:" $package.hash | quote }}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           securityContext:
             runAsNonRoot: false
             readOnlyRootFilesystem: true
@@ -462,7 +555,18 @@ spec:
                 exit 1
               fi
               echo "celln capacity: node=$node memory=$memory cells=$cells egressSlots=$cells" >&2
+              {{- if $mediated }}
+              {{- include "sympozium.cellnScopedParentRequestArg" . | nindent 14 }}
+              {{- end }}
               exec /usr/local/bin/celln "$@" --max-cells "$cells" --memory-bytes "$memory" --egress-slots "$cells"
+            - celln-dispatcher
+          {{- else if $mediated }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              {{- include "sympozium.cellnScopedParentRequestArg" . | nindent 14 }}
+              exec /usr/local/bin/celln "$@"
             - celln-dispatcher
           {{- else }}
           command: ["/usr/local/bin/celln"]
@@ -494,11 +598,30 @@ spec:
             - --egress-slots
             - {{ $fleet.egressSlots | default $fleet.maxCells | quote }}
             {{- end }}
+            {{- if $mediated }}
+            - --scoped-operator-token-file
+            - /etc/celln/scoped/operator-token
+            # Celln opens the JWKS without following a final symlink, and a
+            # projected key is one; the kubelet's ..data directory holds the
+            # regular file and still follows a rotated ConfigMap.
+            - --scoped-jwks-file
+            - /etc/celln/scoped-trust/..data/jwks.json
+            - --scoped-issuer
+            - {{ $mediation.issuer.name | quote }}
+            - --scoped-gateway-origin
+            - {{ include "sympozium.modelGatewayOrigin" . | quote }}
+            - --scoped-gateway-ca
+            - /etc/celln/scoped-trust/ca.crt
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            {{- if $mediated }}
+            - name: SCOPED_PARENT_REQUEST
+              value: {{ $parentRequest | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8787
@@ -538,7 +661,84 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            {{- if $mediated }}
+            - name: scoped-operator
+              mountPath: /etc/celln/scoped
+              readOnly: true
+            - name: scoped-trust
+              mountPath: /etc/celln/scoped-trust
+              readOnly: true
+            {{- end }}
+        {{- if $mediated }}
+        # The dispatcher speaks plaintext HTTP and the controller only talks to
+        # an HTTPS receiver with a pinned CA. This unprivileged edge terminates
+        # TLS and forwards nothing but POST /v1/scoped/* to the dispatcher on
+        # loopback; the operator bearer and signed permits remain the authority.
+        - name: scoped-receiver
+          image: {{ include "sympozium.controllerImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/celln-parent-proxy"]
+          args:
+            - --scoped-receiver
+            - --listen
+            - {{ printf "0.0.0.0:%d" (int (($mediation.receiver | default dict).port | default 9443)) | quote }}
+            - --backend
+            - http://127.0.0.1:8787
+            - --tls-cert
+            - /etc/celln/receiver-tls/tls.crt
+            - --tls-key
+            - /etc/celln/receiver-tls/tls.key
+          ports:
+            - name: scoped-https
+              containerPort: {{ int (($mediation.receiver | default dict).port | default 9443) }}
+              protocol: TCP
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: scoped-receiver-tls
+              mountPath: /etc/celln/receiver-tls
+              readOnly: true
+        {{- end }}
       volumes:
+        {{- if $mediated }}
+        - name: scoped-operator
+          secret:
+            secretName: {{ $mediation.nodeSecret | quote }}
+            defaultMode: 0400
+            items:
+              - key: operator-token
+                path: operator-token
+        # Public: the issuer's JWKS and the CA that signed the gateway.
+        - name: scoped-trust
+          configMap:
+            name: {{ $mediation.trustConfigMap | quote }}
+        # Readable by the non-root edge (UID 65532), which alone mounts it; a
+        # Secret volume cannot be owned by that user.
+        - name: scoped-receiver-tls
+          secret:
+            secretName: {{ $mediation.nodeSecret | quote }}
+            defaultMode: 0444
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        {{- end }}
         - name: backend
           secret:
             secretName: {{ $backendSecret | quote }}

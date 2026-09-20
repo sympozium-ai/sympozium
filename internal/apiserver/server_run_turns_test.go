@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -149,7 +150,16 @@ func TestRunTurnAPIIsBoundedIdempotentAndScoped(t *testing.T) {
 	if res := send(http.MethodGet, "/api/v1/runs/parent/turns?namespace=missing", ""); res.Code != 404 {
 		t.Fatal("parent namespace ignored")
 	}
-	for _, change := range []string{"stale-condition", "changed-intent", "not-ready", "active-turn", "initial-failed", "exhausted"} {
+	for change, reason := range map[string]string{
+		"stale-condition": "parent readiness does not match current run intent",
+		"changed-intent":  "parent readiness does not match current run intent",
+		"not-ready":       "parent not ready (ReconciliationRequired)",
+		"active-turn":     "parent already owns a different turn",
+		"initial-pending": "initial turn still running",
+		"parent-lost":     "parent lost (ContextLost)",
+		"lease-expired":   "parent lease expired",
+		"exhausted":       "turn limit reached (3 of 3 turns used",
+	} {
 		changed := run.DeepCopy()
 		changed.ResourceVersion = ""
 		if err := store.Get(t.Context(), client.ObjectKeyFromObject(run), changed); err != nil {
@@ -166,10 +176,15 @@ func TestRunTurnAPIIsBoundedIdempotentAndScoped(t *testing.T) {
 			changed.Status.Conditions[0].ObservedGeneration = changed.Generation
 		case "not-ready":
 			changed.Status.Conditions[0].Status = "False"
+			changed.Status.Conditions[0].Reason = "ReconciliationRequired"
 		case "active-turn":
 			changed.Status.CellnParent.ActiveTurn = &api.CellnActiveTurn{Name: "another-turn", UID: "another-uid"}
-		case "initial-failed":
-			changed.Status.CellnParent.InitialTurn.Result.Succeeded = false
+		case "initial-pending":
+			changed.Status.CellnParent.InitialTurn.Result = nil
+		case "parent-lost":
+			changed.Status.CellnParent.OwnerOutcome = &api.CellnParentOwnerOutcome{Status: "ContextLost", ReachedReady: true}
+		case "lease-expired":
+			changed.Status.CellnParent.AdmittedAt = &metav1.Time{Time: time.Now().Add(-time.Hour)}
 		case "exhausted":
 			changed.Status.CellnParent.AcceptedTurns = changed.Spec.Enduring.MaxTurns - 1
 		}
@@ -177,8 +192,8 @@ func TestRunTurnAPIIsBoundedIdempotentAndScoped(t *testing.T) {
 			t.Fatal(err)
 		}
 		newBody := strings.Replace(body, "request-one", "new-"+change, 1)
-		if res := send("POST", "/api/v1/runs/parent/turns", newBody); res.Code != 409 {
-			t.Fatalf("%s admitted: %d", change, res.Code)
+		if res := send("POST", "/api/v1/runs/parent/turns", newBody); res.Code != 409 || !strings.Contains(res.Body.String(), reason) || res.Header().Get("X-Sympozium-Turn-Refusal") == "" {
+			t.Fatalf("%s: status %d body %q, want 409 explaining %q", change, res.Code, res.Body.String(), reason)
 		}
 		if res := send("POST", "/api/v1/runs/parent/turns", body); res.Code != 200 {
 			t.Fatalf("%s prevented observation of original request: %d", change, res.Code)
@@ -186,6 +201,64 @@ func TestRunTurnAPIIsBoundedIdempotentAndScoped(t *testing.T) {
 		if err := json.Unmarshal(send("GET", "/api/v1/runs/parent/turns", "").Body.Bytes(), &result); err != nil || len(result.Items) != 1 {
 			t.Fatalf("%s created a refused turn: %v", change, err)
 		}
+	}
+}
+
+// A committed initial turn that FAILED leaves the parent's context intact: the
+// owner still reports Ready, so the conversation takes the next message exactly
+// as it would after a failed later turn. It stays refused whenever the owner's
+// state is not known to be ready, each time saying why.
+func TestRunTurnAPIAcceptsFollowUpAfterFailedInitialTurn(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	hash := "blake3:" + strings.Repeat("a", 64)
+	for name, test := range map[string]struct {
+		change func(*api.AgentRun)
+		code   int
+		reason string
+	}{
+		"ready":            {func(*api.AgentRun) {}, 202, ""},
+		"ready-turn-spent": {func(run *api.AgentRun) { run.Status.CellnParent.AcceptedTurns = 1 }, 202, ""},
+		"turn-limit":       {func(run *api.AgentRun) { run.Status.CellnParent.AcceptedTurns = 2 }, 409, "turn limit reached (3 of 3 turns used"},
+		"context-lost": {func(run *api.AgentRun) {
+			run.Status.CellnParent.OwnerOutcome = &api.CellnParentOwnerOutcome{Status: "ContextLost", ReachedReady: true}
+			run.Status.Conditions[0].Status, run.Status.Conditions[0].Reason = "False", "ContextLost"
+		}, 409, "parent lost (ContextLost)"},
+		"stopped": {func(run *api.AgentRun) {
+			run.Status.CellnParent.OwnerOutcome = &api.CellnParentOwnerOutcome{Status: "Stopped", ReachedReady: true}
+		}, 409, "parent lost (Stopped)"},
+		"reconciliation-required": {func(run *api.AgentRun) {
+			run.Status.Conditions[0].Status, run.Status.Conditions[0].Reason = "False", "ReconciliationRequired"
+		}, 409, "parent not ready (ReconciliationRequired)"},
+		"never-ready": {func(run *api.AgentRun) { run.Status.Conditions = nil }, 409, "parent not ready (no readiness reported)"},
+		"failed-run":  {func(run *api.AgentRun) { run.Status.Phase = api.AgentRunPhaseFailed }, 409, "run is Failed, not Running"},
+		"uncommitted": {func(run *api.AgentRun) { run.Status.CellnParent.InitialTurn.Result = nil }, 409, "initial turn still running"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run := &api.AgentRun{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "parent", UID: "parent-uid", Generation: 1}, Spec: api.AgentRunSpec{Backend: "celln", ExecutionLifecycle: "enduring", CellnSelection: &api.CellnCatalogueSelection{}, Enduring: &api.EnduringRunSpec{LeaseSeconds: 60, MaxTurns: 3, MaxModelRequests: 6, MaxOutputTokens: 3072}}, Status: api.AgentRunStatus{Phase: api.AgentRunPhaseRunning, CellnParent: &api.CellnParentStatus{CreateAttempted: true, InitialTurn: &api.CellnParentTurnStatus{Attempted: true, Result: &api.CellnParentTurnResult{Succeeded: false, Answer: "Turn failed; no result committed: child refused"}}}}}
+			run.Status.Conditions = []metav1.Condition{{Type: "CellnParentReady", Status: "True", Reason: "Ready", ObservedGeneration: 1}}
+			digest, err := cellnparent.SpecDigest(run.Spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run.Status.CellnParent.Binding = api.CellnParentBinding{RunUID: string(run.UID), SpecSHA256: digest, Target: "https://owner.example", Principal: "test", LaunchProfile: hash, Incarnation: hash}
+			test.change(run)
+			store := fake.NewClientBuilder().WithScheme(scheme).WithObjects(run).Build()
+			response := httptest.NewRecorder()
+			NewServer(store, nil, nil, logr.Discard()).Handler(nil).ServeHTTP(response, httptest.NewRequest("POST", "/api/v1/runs/parent/turns", strings.NewReader(`{"runUID":"parent-uid","requestId":"after-failure","message":"try again"}`)))
+			if response.Code != test.code || !strings.Contains(response.Body.String(), test.reason) {
+				t.Fatalf("status %d body %q, want %d explaining %q", response.Code, response.Body.String(), test.code, test.reason)
+			}
+			var turns api.AgentRunTurnList
+			if err := store.List(t.Context(), &turns); err != nil {
+				t.Fatal(err)
+			}
+			if want := map[int]int{202: 1, 409: 0}[test.code]; len(turns.Items) != want {
+				t.Fatalf("stored %d turns, want %d", len(turns.Items), want)
+			}
+		})
 	}
 }
 

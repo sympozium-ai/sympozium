@@ -41,6 +41,71 @@ The policy resides in `--grant-namespace`. Composition revalidates model
 approval after building artifacts. These commands print a `modelApproval`
 observation and keep `executionAuthorized: false`.
 
+## Per-connection request policy (model gateway)
+
+On the gateway-mediated path the request settings of an Agent belong to its own
+namespaced `ModelConnection`, not to a fleet-wide backend. Two optional fields
+of `spec` carry them, and the model gateway enforces both on every invocation
+from the live spec:
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: ModelConnection
+metadata: {name: team-model, namespace: team-a}
+spec:
+  provider: openai
+  protocol: openai-chat
+  endpoint: https://api.example.com/v1/chat/completions
+  secretRef: team-model-key
+  models: [example-model]
+  maxOutputTokens: 2048
+  parameters:
+    temperature: 0.7
+    chat_template_kwargs: {enable_thinking: false}
+```
+
+- `maxOutputTokens`: the output tokens one request may ask for, 256–4096;
+  omitted means 512. A request above it refuses (`MODEL_AUTH_FORBIDDEN`). The
+  turn's own output-token cap from the signed decision still applies, so a
+  raised bound is only usable when the turn is funded for it.
+- `parameters`: a JSON object merged into every provider request. The same
+  rules as fleet backend parameters apply (one implementation,
+  `api/v1alpha1.ValidateModelParameters`): at most 16 top-level keys matching
+  `^[a-z][a-z0-9_]{0,63}$`, 3 levels deep, 2048 bytes serialized, no `null`, and
+  none of the fields the host owns: `model`, `messages`, `system`, `stream`,
+  `stream_options`, `max_tokens`, `max_completion_tokens`, `n`, `tools`,
+  `tool_choice`, `functions`, `function_call`, `parallel_tool_calls`, `user`.
+  A connection that breaks a rule is invalid: nothing resolves or runs on it.
+
+Both are **host-pinned operator policy**. The guest never sees them and cannot
+set or override them: a guest body that carries any key of the connection's
+`parameters` is refused outright (even with an equal value) rather than merged,
+and top-level guest fields must use the exact provider field names, so a key
+cannot be aliased by letter case. Precedence therefore never arises: a
+forwarded body holds the guest's fields and the operator's parameters, and the
+two sets are disjoint.
+
+The guest body is validated, canonicalised and digested for the reservation
+exactly as before, and its integer-only number rule is unchanged (a guest
+`"temperature": 0.7` still refuses). Parameters are appended to the canonical
+guest body only afterwards and never pass through that canonicaliser, so
+fractional values such as `temperature: 0.7` are forwarded as the operator
+wrote them. The reservation's request digest covers the guest body alone.
+
+Both fields are covered by the decision's `route.modelConnectionSpecSha256`,
+which the issuer and the gateway compute from the same view of the spec
+(`ModelConnectionSpec.DigestView`). Because decision digests use integer-only
+canonical JSON, `parameters` enters that view as one string: its key-sorted
+compact JSON text. A connection without `parameters` digests exactly as it did
+before the fields existed. The gateway re-reads the spec on every invocation,
+so editing `parameters` or `maxOutputTokens` refuses every run pinned to the old
+spec (`MODEL_ROUTE_CHANGED`) instead of silently retargeting it; new runs pick
+up the new policy.
+
+The fields are only valid on gateway-mediated connections (`secretRef`, or no
+credential). A connection with a host `credentialProfile` is served by the
+native host broker, which does not read them, so combining them is refused.
+
 ## Remaining issuance boundary
 
 ### Catalogue-derived execution candidate

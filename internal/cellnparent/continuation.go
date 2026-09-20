@@ -39,18 +39,68 @@ const (
 // continuation whose parent was lost before it did any work of its own.
 const StalledContinuationMessage = "Celln parent lost again on its continuation; not continuing automatically — start a new conversation"
 
-// The parent carries history and the next message inside one bounded turn
-// (2048 bytes); a seed must leave room for that message. These mirror the
-// host's own bounds so a plan the controller builds is never refused there.
+// The parent carries history and the next message inside one bounded worker
+// task; a seed must leave room for that message. These mirror the host's own
+// bounds so a plan the controller builds is never refused there.
+//
+// The task bound depends on the starter package the fleet runs: a current
+// package takes 16384 bytes, an older one 2048, and an older guest refuses a
+// larger seed outright, failing parent creation. The host cannot tell a
+// guest's age before its first turn, so the only evidence is the runtime
+// profile the installer published from that package's catalogue
+// (limits.taskBytes). Anything else gets the old budget: a short memory is
+// recoverable, a parent that cannot be created is not.
 const (
-	maxSeedExchanges = 16
-	maxSeedBytes     = 2048 - 512
+	maxSeedExchanges  = 16
+	seedHeadroomBytes = 512
+	// LegacySeedBytes is the seed budget every starter package accepts.
+	LegacySeedBytes = 2048 - seedHeadroomBytes
 )
+
+// SeedBudget is the most bytes an encoded seed may take for a worker whose
+// runtime profile reports taskBytes. Only a profile that states the current
+// task bound (or more) widens it.
+func SeedBudget(taskBytes int64) int {
+	if taskBytes >= api.MaxWorkerTaskBytes {
+		return int(taskBytes) - seedHeadroomBytes
+	}
+	return LegacySeedBytes
+}
+
+// SeedBudgetFor resolves the seed budget for a run that continues run: the
+// taskBytes of the cluster runtime profile behind run's namespaced runtime
+// wrapper, at the revision the wrapper pins. A run without a shared-profile
+// wrapper, or any lookup that fails, gets LegacySeedBytes.
+func SeedBudgetFor(ctx context.Context, reader client.Reader, run *api.AgentRun) int {
+	name := ""
+	if run.Spec.CellnSelection != nil {
+		name = run.Spec.CellnSelection.RuntimeRef
+	}
+	if name == "" && run.Spec.AgentRef != "" {
+		var agent api.Agent
+		if reader.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.AgentRef}, &agent) == nil {
+			name = agent.Spec.RuntimeRef
+		}
+	}
+	if name == "" {
+		return LegacySeedBytes
+	}
+	var wrapper api.AgentRuntime
+	if reader.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: name}, &wrapper) != nil || wrapper.Spec.CellnProfileRef == nil {
+		return LegacySeedBytes
+	}
+	var profile api.CellnRuntimeProfile
+	if reader.Get(ctx, client.ObjectKey{Name: wrapper.Spec.CellnProfileRef.Name}, &profile) != nil || profile.Spec.Revision != wrapper.Spec.CellnProfileRef.Revision {
+		return LegacySeedBytes
+	}
+	return SeedBudget(profile.Spec.Limits.TaskBytes)
+}
 
 // Transcript gathers the committed exchanges of a run, oldest first: the
 // seed it started with, its initial turn, then every succeeded follow-up
-// turn. Failed turns are not part of the conversation's memory.
-func Transcript(ctx context.Context, reader client.Reader, run *api.AgentRun) ([]api.ConversationExchange, error) {
+// turn. Failed turns are not part of the conversation's memory. It is trimmed
+// to budget (see SeedBudget).
+func Transcript(ctx context.Context, reader client.Reader, run *api.AgentRun, budget int) ([]api.ConversationExchange, error) {
 	var exchanges []api.ConversationExchange
 	if run.Spec.Conversation != nil {
 		exchanges = append(exchanges, run.Spec.Conversation.Seed...)
@@ -77,12 +127,12 @@ func Transcript(ctx context.Context, reader client.Reader, run *api.AgentRun) ([
 	for _, turn := range turns {
 		exchanges = append(exchanges, api.ConversationExchange{User: turn.Spec.Message, Assistant: turn.Status.Execution.Result.Answer})
 	}
-	return TrimSeed(exchanges), nil
+	return TrimSeed(exchanges, budget), nil
 }
 
 // TrimSeed keeps the newest exchanges that fit the host's seed bounds. A
 // conversation longer than the bound keeps its recent memory, not its start.
-func TrimSeed(exchanges []api.ConversationExchange) []api.ConversationExchange {
+func TrimSeed(exchanges []api.ConversationExchange, budget int) []api.ConversationExchange {
 	kept := make([]api.ConversationExchange, 0, len(exchanges))
 	for _, exchange := range exchanges {
 		if strings.TrimSpace(exchange.User) == "" || strings.ContainsRune(exchange.User, 0) || strings.ContainsRune(exchange.Assistant, 0) {
@@ -90,19 +140,19 @@ func TrimSeed(exchanges []api.ConversationExchange) []api.ConversationExchange {
 		}
 		kept = append(kept, exchange)
 	}
-	for len(kept) > 0 && !SeedFits(kept) {
+	for len(kept) > 0 && !SeedFits(kept, budget) {
 		kept = kept[1:]
 	}
 	return kept
 }
 
-// SeedFits reports whether a seed is within the host's bounds.
-func SeedFits(exchanges []api.ConversationExchange) bool {
+// SeedFits reports whether a seed is within the host's bounds for budget.
+func SeedFits(exchanges []api.ConversationExchange, budget int) bool {
 	if len(exchanges) > maxSeedExchanges {
 		return false
 	}
 	raw, err := json.Marshal(map[string]any{"history": exchanges, "message": ""})
-	return err == nil && len(raw) <= maxSeedBytes
+	return err == nil && len(raw) <= budget
 }
 
 // IsAutomaticContinuation reports whether run was created by the controller
@@ -150,9 +200,9 @@ func AutomaticContinuationStalled(ctx context.Context, reader client.Reader, run
 // Continuation builds the run that carries a conversation on from previous:
 // the same Agent, model, selection and limits, the resume message as its
 // initial turn, and the transcript as its seed. origin (automatic or
-// requested) is recorded in ContinuationOriginAnnotation. It is not created
-// here.
-func Continuation(previous *api.AgentRun, seed []api.ConversationExchange, origin string) (*api.AgentRun, error) {
+// requested) is recorded in ContinuationOriginAnnotation. budget is the seed
+// budget of the fleet the new parent starts on. It is not created here.
+func Continuation(previous *api.AgentRun, seed []api.ConversationExchange, origin string, budget int) (*api.AgentRun, error) {
 	if origin != ContinuationOriginAutomatic && origin != ContinuationOriginRequested {
 		return nil, fmt.Errorf("unknown continuation origin %q", origin)
 	}
@@ -170,7 +220,7 @@ func Continuation(previous *api.AgentRun, seed []api.ConversationExchange, origi
 	if depth > api.MaxContinuationDepth {
 		return nil, fmt.Errorf("conversation continued %d times; not continuing again", depth-1)
 	}
-	if !SeedFits(seed) {
+	if !SeedFits(seed, budget) {
 		return nil, fmt.Errorf("seed exceeds the parent's context bound")
 	}
 	spec := previous.Spec.DeepCopy()

@@ -14,8 +14,31 @@ export interface WizardExecution {
   enduringDefaults?: EnduringLimits;
 }
 
+/**
+ * What one turn reserves from a parent's lifetime totals with the current
+ * Celln starter package (api/v1alpha1 TurnModelRequests, TurnOutputTokens).
+ * Totals are sized as turns × allowance; smaller totals end the conversation
+ * before its turn count is reached. A fleet backend that raises its max output
+ * tokens per request (512 by default, up to 4096) reserves 6 × that per turn;
+ * its platform profile's sessionDefaults already account for it.
+ */
+export const TURN_MODEL_REQUESTS = 6;
+export const TURN_OUTPUT_TOKENS = 3072;
+
+const LEGACY_TURNS = 8;
+
 /** Budget for a legacy namespaced native runtime, whose registration bounds it. */
-export const LEGACY_ENDURING_DEFAULTS: EnduringLimits = { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 };
+export const LEGACY_ENDURING_DEFAULTS: EnduringLimits = {
+  leaseSeconds: 600,
+  maxTurns: LEGACY_TURNS,
+  maxModelRequests: LEGACY_TURNS * TURN_MODEL_REQUESTS,
+  maxOutputTokens: LEGACY_TURNS * TURN_OUTPUT_TOKENS,
+};
+
+/** One sentence naming a budget, for review screens. */
+export function describeEnduringLimits(limits: EnduringLimits): string {
+  return `${limits.leaseSeconds}-second lease, ${limits.maxTurns} turns, ${limits.maxModelRequests} model requests, ${limits.maxOutputTokens} output tokens`;
+}
 
 // Shared by API creation and YAML preview: neither may silently lose tool refs.
 export function executionFromWizard(form: WizardExecution): AgentExecutionDefaults {
@@ -98,5 +121,7 @@ export function modelConnectionEndpoint(
 }
 
 export function agentCreationSteps(celln: boolean) {
-  return ["name", "plane", "runtime", ...(celln ? ["tools", "provider", "apikey", "model"] : ["skills", "provider", "apikey", "model", "heartbeat", "channels"]), "confirm", "channelAction"] as const;
+  // A Celln Agent owns its model backend (provider route, key, model); its
+  // runtime is the fleet's and the mediated path is chat only.
+  return ["name", "plane", ...(celln ? ["provider", "apikey", "model"] : ["runtime", "skills", "provider", "apikey", "model", "heartbeat", "channels"]), "confirm", "channelAction"] as const;
 }

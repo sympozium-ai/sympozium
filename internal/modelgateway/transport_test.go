@@ -36,11 +36,15 @@ func TestConnectTimeAddressValidation(t *testing.T) {
 		{"ipv6-private", []net.IP{net.ParseIP("fd00::1")}, false, false, true},
 		{"mapped-private", []net.IP{net.ParseIP("::ffff:10.0.0.1")}, false, false, true},
 		{"approved-private", []net.IP{net.ParseIP("10.0.0.1")}, true, false, false},
-		{"plaintext-private", []net.IP{net.ParseIP("10.0.0.1")}, true, true, true},
+		{"plaintext-private", []net.IP{net.ParseIP("10.0.0.1")}, true, true, false},
+		{"plaintext-ipv6-private", []net.IP{net.ParseIP("fd00::1")}, true, true, false},
+		{"plaintext-public", []net.IP{net.ParseIP("8.8.8.8")}, true, true, true},
+		{"plaintext-metadata", []net.IP{net.ParseIP("169.254.169.254")}, true, true, true},
+		{"plaintext-mixed", []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("8.8.8.8")}, true, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called := false
-			d := restrictedDialer{resolver: fixedResolver(tc.ips), allowPrivate: tc.allow, loopbackOnly: tc.loopback, dial: func(_ context.Context, _, address string) (net.Conn, error) {
+			d := restrictedDialer{resolver: fixedResolver(tc.ips), allowPrivate: tc.allow, privateOnly: tc.loopback, dial: func(_ context.Context, _, address string) (net.Conn, error) {
 				called = true
 				host, _, _ := net.SplitHostPort(address)
 				if host != tc.ips[0].String() {
@@ -110,12 +114,12 @@ func TestProviderRequestRefusals(t *testing.T) {
 		`{"model":"m","messages":[],"max_tokens":1,"endpoint":"https://evil.example"}`,
 		`{"model":"m","messages":[],"max_tokens":1,"max_completion_tokens":1}`,
 	} {
-		if _, _, _, err := validateProviderRequest("openai-chat", "m", []byte(raw), 512); err == nil {
+		if _, _, _, _, err := validateProviderRequest("openai-chat", "m", []byte(raw), 512, requestPolicy{}); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
 	for _, protocol := range []string{"openai-chat", "anthropic-messages"} {
-		if _, _, _, err := validateProviderRequest(protocol, "m", []byte(`{"model":"m","messages":[{"role":"user","content":"hello"}],"max_tokens":1}`), 512); err != nil {
+		if _, _, _, _, err := validateProviderRequest(protocol, "m", []byte(`{"model":"m","messages":[{"role":"user","content":"hello"}],"max_tokens":1}`), 512, requestPolicy{}); err != nil {
 			t.Fatal(err)
 		}
 	}

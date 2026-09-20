@@ -97,13 +97,9 @@ func TestEnsembleUpdatePropagatesBaseURL(t *testing.T) {
 	})
 
 	// Patch the ensemble baseURL.
-	if err := k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: name}, ensemble); err != nil {
-		t.Fatalf("get ensemble: %v", err)
-	}
-	ensemble.Spec.BaseURL = "http://new:5678/v1"
-	if err := k8sClient.Update(testCtx, ensemble); err != nil {
-		t.Fatalf("update ensemble: %v", err)
-	}
+	updateEnsemble(t, ns, name, func(e *sympoziumv1alpha1.Ensemble) {
+		e.Spec.BaseURL = "http://new:5678/v1"
+	})
 
 	// Wait for the agent to pick up the new baseURL.
 	pollUntil(t, 10*time.Second, 200*time.Millisecond, func() bool {
@@ -150,13 +146,9 @@ func TestEnsembleDisableDeletesAgents(t *testing.T) {
 	})
 
 	// Disable the ensemble.
-	if err := k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: name}, ensemble); err != nil {
-		t.Fatalf("get ensemble: %v", err)
-	}
-	ensemble.Spec.Enabled = false
-	if err := k8sClient.Update(testCtx, ensemble); err != nil {
-		t.Fatalf("update ensemble: %v", err)
-	}
+	updateEnsemble(t, ns, name, func(e *sympoziumv1alpha1.Ensemble) {
+		e.Spec.Enabled = false
+	})
 
 	// Wait for agents to be deleted.
 	pollUntil(t, 10*time.Second, 200*time.Millisecond, func() bool {
@@ -262,6 +254,11 @@ func TestEnsembleStimulusTriggerRejectsDisabled(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, ensemble) })
 
+	// triggerStimulus reads the Ensemble through the informer cache and answers
+	// 404 "ensemble not found" until it arrives — the same status this test
+	// expects for a different reason. Wait, so the 404 below is the real one.
+	waitForGET(t, fmt.Sprintf("/api/v1/ensembles/%s?%s", name, nsQuery(ns)))
+
 	// Trigger should fail because ensemble is disabled (agents not stamped out).
 	path := fmt.Sprintf("/api/v1/ensembles/%s/stimulus/trigger?%s", name, nsQuery(ns))
 	rec := httpDo(t, "POST", path, nil)
@@ -291,6 +288,9 @@ func TestEnsembleStimulusTriggerRejectsNoStimulus(t *testing.T) {
 		t.Fatalf("create ensemble: %v", err)
 	}
 	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, ensemble) })
+
+	// Until the informer delivers the Ensemble the handler answers 404, not 400.
+	waitForGET(t, fmt.Sprintf("/api/v1/ensembles/%s?%s", name, nsQuery(ns)))
 
 	path := fmt.Sprintf("/api/v1/ensembles/%s/stimulus/trigger?%s", name, nsQuery(ns))
 	rec := httpDo(t, "POST", path, nil)

@@ -175,7 +175,7 @@ type CellnExecutionPolicyTool struct {
 
 // CellnExecutionPolicyRoute is explicit model endpoint authority. A tenant
 // ModelConnection may choose only a route contained by one of these entries.
-// +kubebuilder:validation:XValidation:rule="self.endpointOrigins.all(x, x.startsWith('https://') || (self.auth == 'none' && (x.startsWith('http://127.0.0.1') || x.startsWith('http://localhost') || x.startsWith('http://[::1]'))) || (self.auth == 'host-profile' && has(self.allowInsecure) && self.allowInsecure))",message="credential-bearing routes require https; http is restricted to no-auth loopback origins or host-profile routes with allowInsecure"
+// +kubebuilder:validation:XValidation:rule="self.endpointOrigins.all(x, x.startsWith('https://') || (x.startsWith('http://') && self.auth in ['none', 'host-profile'] && has(self.allowInsecure) && self.allowInsecure))",message="Secret routes require https; http requires auth none or host-profile and explicit allowInsecure"
 type CellnExecutionPolicyRoute struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=64
@@ -193,8 +193,8 @@ type CellnExecutionPolicyRoute struct {
 	// +kubebuilder:validation:Enum=secret;none;host-profile
 	Auth string `json:"auth"`
 	// AllowInsecure approves plain-HTTP or private endpoint origins for a
-	// host-profile route (for example a LAN llama-server). The credential stays
-	// on the node; a cluster Secret route can never use plain HTTP.
+	// keyless or host-profile route (for example a LAN llama-server).
+	// A cluster Secret route can never use plain HTTP.
 	// +optional
 	AllowInsecure bool `json:"allowInsecure,omitempty"`
 }
@@ -207,7 +207,7 @@ type CellnExecutionPolicyCeilings struct {
 	// +kubebuilder:validation:Maximum=6144
 	MaxModelRequests int64 `json:"maxModelRequests"`
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=3145728
+	// +kubebuilder:validation:Maximum=25165824
 	MaxOutputTokens int64 `json:"maxOutputTokens"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=86400

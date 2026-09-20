@@ -46,10 +46,12 @@ func ParentLeaseExpired(parent *api.CellnParentStatus, leaseSeconds int64, now t
 }
 
 // ClaimTurnSlot serializes subsequent turns with one parent status CAS. It
-// admits no HTTP request. The initial turn must already have committed; budgets
-// are spent once when the slot is assigned, never refunded after uncertainty.
-// An expired original lease refuses new claims, but the already-owning turn
-// keeps its idempotent re-claim so in-flight reconciliation can finish.
+// admits no HTTP request. Whether the parent may take the turn is decided by
+// TurnReadiness, the same rule the API applies: the initial turn must have a
+// committed result, succeeded or failed. Budgets are spent once when the slot
+// is assigned, never refunded after uncertainty. An expired original lease
+// refuses new claims, but the already-owning turn keeps its idempotent
+// re-claim so in-flight reconciliation can finish.
 func ClaimTurnSlot(ctx context.Context, writer client.Client, reader client.Reader, key types.NamespacedName, config string, now time.Time) error {
 	run, turn, err := readTurnPair(ctx, reader, key)
 	if err != nil {
@@ -60,27 +62,18 @@ func ClaimTurnSlot(ctx context.Context, writer client.Client, reader client.Read
 		return err
 	}
 	transport.Close()
-	parent := run.Status.CellnParent
-	if run.Status.Phase != api.AgentRunPhaseRunning || parent.InitialTurn == nil || parent.InitialTurn.Result == nil || !parent.InitialTurn.Result.Succeeded {
-		return fmt.Errorf("subsequent turn requires a running parent and committed initial turn")
-	}
 	if turn.Status.Execution != nil && turn.Status.Execution.Result != nil {
 		return fmt.Errorf("completed turn cannot acquire another slot")
 	}
-	if active := parent.ActiveTurn; active != nil {
-		if active.Name == turn.Name && active.UID == string(turn.UID) {
-			return nil
-		}
-		return ErrTurnBusy
+	claimant := &api.CellnActiveTurn{Name: turn.Name, UID: string(turn.UID)}
+	if err := TurnReadiness(run, claimant, now); err != nil {
+		return err
 	}
-	if run.Spec.Enduring == nil {
-		return fmt.Errorf("a one-shot parent answers once; it accepts no further turns")
-	}
-	if ParentLeaseExpired(parent, int64(run.Spec.Enduring.LeaseSeconds), now) {
-		return fmt.Errorf("%w; original admission does not authorize new turns", ErrParentLeaseExpired)
-	}
-	if parent.AcceptedTurns < 0 || parent.AcceptedTurns >= run.Spec.Enduring.MaxTurns-1 {
-		return fmt.Errorf("parent turn budget exhausted")
+	parent := run.Status.CellnParent
+	if parent.ActiveTurn != nil {
+		// TurnReadiness admits an occupied slot only for its owner: an
+		// idempotent re-claim that spends no further budget.
+		return nil
 	}
 	parent.ActiveTurn = &api.CellnActiveTurn{Name: turn.Name, UID: string(turn.UID)}
 	parent.AcceptedTurns++

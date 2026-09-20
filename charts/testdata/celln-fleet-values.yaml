@@ -1,0 +1,30 @@
+# Render-only stand-in for what `sympozium install --celln-fleet` sets, so the
+# mediation sample beside it can be rendered on its own:
+#   helm template sympozium charts/sympozium \
+#     -f charts/testdata/celln-fleet-values.yaml -f charts/testdata/celln-mediation-values.yaml
+celln:
+  enabled: true
+  allowInsecureHttp: true
+  tokenSecret: celln-router-client
+  capabilityTokenSecret: celln-discovery
+  dispatcher:
+    enabled: false
+  router:
+    clientTokenSecret: celln-router-client
+    backendTokenSecret: celln-dispatcher-backend
+    capabilityTokenSecret: celln-discovery
+    parentTokenSecret: celln-router-parent
+    ownershipClaim: celln-router-ownership
+    allowInsecureBackends: true
+    image:
+      tag: render-only
+  fleet:
+    enabled: true
+    scope: starter
+    package:
+      image: registry.example/celln/starter@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      hash: blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    publisher: ed25519:operator
+    principal: sympozium:celln
+    parentClientsConfigMap: celln-fleet-parent-clients
+    parentConfigSecret: celln-fleet-registrations

@@ -33,7 +33,7 @@ for patch in \
   '{"lane":"tool"}' \
   '{"lifecycle":"persistent"}' \
   '{"runtimeData":[{"hash":"blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}' \
-  '{"limits":{"taskBytes":2049}}' \
+  '{"limits":{"taskBytes":16385}}' \
   '{"limits":{"memoryBytes":0}}' \
   '{"limits":{"workspace":"read-write"}}'; do
   refuse "$(jq --argjson patch "$patch" '.metadata.name="invalid-profile" | .spec.celln *= $patch' <<<"$body")"

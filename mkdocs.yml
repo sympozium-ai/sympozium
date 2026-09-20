@@ -107,6 +107,7 @@ nav:
     - AgentHarness UX: guides/agentharness-ux.md
     - Native Celln Installation: guides/celln-native-installation.md
     - Celln Fleet Installation: guides/celln-fleet-installation.md
+    - Celln Mediated Model Access: guides/celln-mediated-model-access.md
     - Using Ollama: guides/ollama.md
     - LM Studio & Local Inference: guides/lm-studio.md
     - Unsloth: guides/unsloth.md

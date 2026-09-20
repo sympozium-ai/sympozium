@@ -17,7 +17,7 @@ type EnduringRunSpec struct {
 	// +kubebuilder:validation:Maximum=6144
 	MaxModelRequests int32 `json:"maxModelRequests"`
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=3145728
+	// +kubebuilder:validation:Maximum=25165824
 	MaxOutputTokens int64 `json:"maxOutputTokens"`
 }
 
@@ -58,9 +58,43 @@ type ConversationExchange struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	User string `json:"user"`
-	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:MaxLength=8192
 	Assistant string `json:"assistant"`
 }
+
+// Bounds of one exchange in an enduring conversation, mirroring the Celln
+// host's parent protocol. The CRD MaxLength markers on messages and answers
+// state the same numbers; a marker cannot reference a constant, so
+// TestConversationBoundsMatchSchema keeps them together.
+const (
+	// MaxConversationMessageBytes bounds one user message.
+	MaxConversationMessageBytes = 2048
+	// MaxConversationAnswerBytes bounds one committed answer.
+	MaxConversationAnswerBytes = 8192
+	// MaxWorkerTaskBytes is the worker task (history plus message) a current
+	// starter package reports as its runtime profile's taskBytes.
+	MaxWorkerTaskBytes = 16384
+)
+
+// Per-turn model allowance of the current Celln starter package. Every turn
+// reserves the whole allowance from its parent's lifetime totals, so totals
+// are sized as turns × allowance.
+const (
+	TurnModelRequests = 6
+	TurnOutputTokens  = TurnModelRequests * DefaultRequestOutputTokens
+)
+
+// Output tokens one model request may produce. A fleet backend may set its own
+// cap within the range; a turn on it reserves TurnModelRequests requests of
+// that size, so the most a turn reserves is MaxTurnOutputTokens and the most a
+// parent's lifetime total can be is MaxLifetimeOutputTokens (1024 turns).
+const (
+	DefaultRequestOutputTokens = 512
+	MinRequestOutputTokens     = 256
+	MaxRequestOutputTokens     = 4096
+	MaxTurnOutputTokens        = TurnModelRequests * MaxRequestOutputTokens
+	MaxLifetimeOutputTokens    = 1024 * MaxTurnOutputTokens
+)
 
 // MaxContinuationDepth bounds automatic re-creation along one conversation.
 const MaxContinuationDepth = 16
@@ -105,7 +139,7 @@ func (s *AgentRunSpec) ValidateLifecycle() string {
 	if e.RequireToolCall && (len(s.CellnSelection.ToolRefs) == 0 || e.MaxModelRequests < 2 || e.MaxOutputTokens < 1) {
 		return "required tool execution needs selected tools and model request/output budgets"
 	}
-	if e.LeaseSeconds < 1 || e.LeaseSeconds > 86400 || e.MaxTurns < 1 || e.MaxTurns > 1024 || e.MaxModelRequests < 0 || e.MaxModelRequests > 6144 || e.MaxOutputTokens < 0 || e.MaxOutputTokens > 3145728 {
+	if e.LeaseSeconds < 1 || e.LeaseSeconds > 86400 || e.MaxTurns < 1 || e.MaxTurns > 1024 || e.MaxModelRequests < 0 || e.MaxModelRequests > 6144 || e.MaxOutputTokens < 0 || e.MaxOutputTokens > MaxLifetimeOutputTokens {
 		return "enduring lifecycle limits exceed supported bounds"
 	}
 	return ""

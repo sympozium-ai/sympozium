@@ -148,12 +148,42 @@ type FleetLimits struct {
 	MaxOutputTokens  int64
 }
 
-// DefaultFleetLimits favour long-running agents: a day-long parent with room
-// for a working session of turns (the starter profile spends up to 3 requests
-// and 1536 output tokens per turn).
-var DefaultFleetLimits = FleetLimits{LeaseSeconds: 86400, MaxTurns: 256, MaxModelRequests: 768, MaxOutputTokens: 393216}
+// defaultFleetTurns is how many turns the default ceilings afford one parent.
+const defaultFleetTurns = 256
 
-// Resolve fills zero fields from the defaults and applies the CRD bounds.
+// Bounds of the lifetime totals. The minima are one turn of the starter
+// profile's allowance (Celln refuses less when configuring a node); the
+// maxima are the CRD's: for output tokens, 1024 turns of the largest per-turn
+// allowance a backend may have (api.MaxLifetimeOutputTokens).
+const (
+	MinFleetModelRequests = api.TurnModelRequests
+	MaxFleetModelRequests = 6144
+	MinFleetOutputTokens  = api.TurnOutputTokens
+	MaxFleetOutputTokens  = api.MaxLifetimeOutputTokens
+)
+
+// DefaultFleetLimits favour long-running agents: a day-long parent with room
+// for a working session of turns. Every turn reserves the starter profile's
+// whole per-turn allowance (api.TurnModelRequests requests,
+// api.TurnOutputTokens output tokens) from these totals, so they are sized as
+// turns × allowance.
+var DefaultFleetLimits = FleetLimits{LeaseSeconds: 86400, MaxTurns: defaultFleetTurns, MaxModelRequests: defaultFleetTurns * api.TurnModelRequests, MaxOutputTokens: defaultFleetTurns * api.TurnOutputTokens}
+
+// CapFleetTotal bounds a suggested lifetime total by its maximum.
+func CapFleetTotal(total, maximum int64) int64 { return min(total, maximum) }
+
+// TurnsAfforded is how many turns lifetime totals pay for when every turn
+// reserves turnRequests model requests and turnTokens output tokens.
+func TurnsAfforded(maxModelRequests, maxOutputTokens, turnRequests, turnTokens int64) int64 {
+	if turnRequests < 1 || turnTokens < 1 {
+		return 0
+	}
+	return min(maxModelRequests/turnRequests, maxOutputTokens/turnTokens)
+}
+
+// Resolve fills zero fields from the defaults and applies the CRD bounds, for
+// backends with the default per-turn allowance; ResolveFor sizes and checks
+// them for the backends a scope is installed with.
 func (l FleetLimits) Resolve() (FleetLimits, error) {
 	d := DefaultFleetLimits
 	if l.LeaseSeconds == 0 {
@@ -168,8 +198,8 @@ func (l FleetLimits) Resolve() (FleetLimits, error) {
 	if l.MaxOutputTokens == 0 {
 		l.MaxOutputTokens = d.MaxOutputTokens
 	}
-	if l.LeaseSeconds < 60 || l.LeaseSeconds > 86400 || l.MaxTurns < 1 || l.MaxTurns > 1024 || l.MaxModelRequests < 3 || l.MaxModelRequests > 6144 || l.MaxOutputTokens < 1536 || l.MaxOutputTokens > 3145728 {
-		return l, fmt.Errorf("fleet limits out of range: lease 60–86400 s, turns 1–1024, model requests 3–6144, output tokens 1536–3145728")
+	if l.LeaseSeconds < 60 || l.LeaseSeconds > 86400 || l.MaxTurns < 1 || l.MaxTurns > 1024 || l.MaxModelRequests < MinFleetModelRequests || l.MaxModelRequests > MaxFleetModelRequests || l.MaxOutputTokens < MinFleetOutputTokens || l.MaxOutputTokens > MaxFleetOutputTokens {
+		return l, fmt.Errorf("fleet limits out of range: lease 60–86400 s, turns 1–1024, model requests %d–%d, output tokens %d–%d", MinFleetModelRequests, MaxFleetModelRequests, MinFleetOutputTokens, MaxFleetOutputTokens)
 	}
 	return l, nil
 }
@@ -182,6 +212,18 @@ type FleetModel struct {
 	Endpoint      string
 	Name          string
 	AllowInsecure bool
+	// Parameters are merged by the Celln host into every provider request of
+	// this backend (ValidateModelParameters); the guest never sees them. They
+	// need a Celln release newer than ModelParametersMinCelln on the nodes and
+	// cannot change once the backend is published.
+	Parameters map[string]any
+	// MaxOutputTokens is the most output tokens one model request of this
+	// backend may produce (ValidateModelMaxOutputTokens); 0 keeps Celln's
+	// default, DefaultModelMaxOutputTokens. A turn reserves
+	// api.TurnModelRequests requests of it. A non-default value needs a Celln
+	// newer than ModelMaxOutputTokensMinCelln on the nodes and a starter
+	// package built by it, and cannot change once the backend is published.
+	MaxOutputTokens int64
 }
 
 // Fleet model provider presets.
@@ -238,6 +280,16 @@ func (m FleetModel) Resolve(scope string) (FleetModel, error) {
 	if strings.ContainsAny(m.Endpoint+m.Name+m.Provider, ",= \t") {
 		return m, fmt.Errorf("model provider, endpoint and name must not contain commas, equals signs or spaces")
 	}
+	if err := ValidateModelParameters(m.Parameters); err != nil {
+		return m, err
+	}
+	if len(m.Parameters) == 0 {
+		m.Parameters = nil
+	}
+	if err := ValidateModelMaxOutputTokens(m.MaxOutputTokens); err != nil {
+		return m, err
+	}
+	m.MaxOutputTokens = NormalModelMaxOutputTokens(m.MaxOutputTokens)
 	return m, nil
 }
 
@@ -306,7 +358,7 @@ func FleetValues(o FleetOptions) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	limits, err := o.Limits.Resolve()
+	limits, _, err := o.Limits.ResolveFor(backends)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +376,19 @@ func FleetValues(o FleetOptions) ([]string, error) {
 			prefix+"model="+b.Model.Name,
 			fmt.Sprintf("%sallowInsecure=%t", prefix, b.Model.AllowInsecure),
 		)
+		// Only a backend that has parameters carries the key: a Celln up to
+		// ModelParametersMinCelln refuses a plan that names them. The object
+		// travels as one JSON string, escaped so strvals keeps it literally;
+		// the chart decodes it.
+		if parameters := ModelParametersJSON(b.Model.Parameters); parameters != "" {
+			values = append(values, prefix+"parameters="+strvalsEscape(parameters))
+		}
+		// Likewise the output cap: only a backend with a non-default one
+		// carries it (a Celln up to ModelMaxOutputTokensMinCelln refuses the
+		// plan field).
+		if b.Model.MaxOutputTokens != 0 {
+			values = append(values, fmt.Sprintf("%smaxOutputTokens=%d", prefix, b.Model.MaxOutputTokens))
+		}
 	}
 	return append(values,
 		fmt.Sprintf("celln.fleet.limits.leaseSeconds=%d", limits.LeaseSeconds),

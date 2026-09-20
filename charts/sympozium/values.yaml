@@ -5,7 +5,9 @@ image:
   # -- Override the image tag (defaults to .Chart.AppVersion)
   tag: ""
 
-# Dedicated gateway component only; does not enable mediated Celln admission.
+# Dedicated gateway component only; does not enable mediated Celln admission
+# (celln.mediation.enabled does, and then deploys this gateway itself, from
+# Secret/ConfigMap volumes, without `enabled` or `configurationClaim` here).
 # Operator-provisioned claim holds gateway.json, public JWKS, TLS and static
 # registration/database credential files. No issuer private keys/provider keys.
 modelGateway:
@@ -14,6 +16,23 @@ modelGateway:
   configurationClaim: "" # files readable by UID 65532; secret files mode 0600
   # Explicit reviewed DNS, Kubernetes API and provider egress peers/ports.
   egress: []
+  # -- Used with celln.mediation.enabled, which deploys this gateway from
+  # Secret/ConfigMap volumes instead of configurationClaim. Operator-provided
+  # Secret in the control-plane namespace holding the PostgreSQL connection URL
+  # (migrations 002 and 003 applied). The chart bundles no database.
+  database:
+    secretName: ""
+    key: database-url
+  # -- Tenant namespaces whose ModelConnections and provider Secrets the
+  # gateway may read. Empty keeps the cluster-wide `get` ClusterRole; a list
+  # replaces it with one Role/RoleBinding per namespace (least privilege).
+  # celln.mediation also sets the gateway's readinessNamespaces from it; with
+  # configurationClaim, put the same list in your gateway.json or readiness
+  # keeps probing cluster-wide access and fails.
+  namespaces: []
+  # -- Exact provider origins on private addresses the gateway may reach
+  # (gateway.json privateOrigins). Only honoured with celln.mediation.
+  privateOrigins: []
 
 imagePullSecrets: []
 nameOverride: ""
@@ -586,6 +605,23 @@ celln:
     # while the owner DaemonSet is untouched so running conversations keep
     # going. Names are DNS labels. Keys live in `modelCredentialsSecret`
     # under the backend's name.
+    # `parameters` (optional) is a JSON object the Celln host merges into
+    # every provider request of that backend; the guest never sees it. Give
+    # the object itself (or the same object as one JSON string, which is what
+    # the installer's `parameters-file=` sends). Celln validates it: at most
+    # 16 keys matching ^[a-z][a-z0-9_]{0,63}$, scalars, objects up to 3 levels
+    # and arrays of at most 8 scalars, 2048 bytes, and none of the request
+    # fields Celln owns (model, messages, max_tokens, tools, ...). It needs a
+    # Celln release newer than v0.5.22 on the nodes, and cannot change once
+    # the backend is published: add a backend under another name instead.
+    # `maxOutputTokens` (optional, 256-4096, default 512) is the most output
+    # tokens one model request of that backend may produce. 512 suits chat
+    # with thinking disabled; a reasoning model left thinking needs 2048-4096.
+    # A turn reserves 6 requests of it (6 x 512 = 3072 by default), so
+    # `limits.maxOutputTokens` must be at least 6 x the largest value here and
+    # is best sized as turns x that. A non-default value needs a Celln release
+    # newer than v0.5.23 on the nodes and a starter package built by it, and,
+    # like `parameters`, cannot change once the backend is published.
     backends: []
     # - name: native
     #   provider: deepseek
@@ -598,6 +634,22 @@ celln:
     #   protocol: anthropic-messages
     #   endpoint: https://api.anthropic.com/v1/messages
     #   model: claude-sonnet-5
+    # - name: qwen
+    #   provider: llama-server
+    #   protocol: openai-chat
+    #   endpoint: http://10.0.0.5:8080/v1/chat/completions
+    #   model: qwen.gguf
+    #   allowInsecure: true
+    #   parameters:
+    #     chat_template_kwargs:
+    #       enable_thinking: false
+    # - name: reasoner
+    #   provider: llama-server
+    #   protocol: openai-chat
+    #   endpoint: http://10.0.0.6:8080/v1/chat/completions
+    #   model: qwq.gguf
+    #   allowInsecure: true
+    #   maxOutputTokens: 2048
     # -- Secret in celln-system holding every backend's provider key under the
     # backend's name, mounted read-only into every dispatcher at
     # /etc/celln-native/credentials. Guests and the controller never see it;
@@ -615,9 +667,15 @@ celln:
       name: ""
       # -- Approve a plain-HTTP or private endpoint (e.g. a LAN llama-server).
       allowInsecure: false
+      # -- Output tokens per model request, 256-4096; 0 keeps Celln's 512
+      # (see `backends[].maxOutputTokens` above).
+      maxOutputTokens: 0
     # -- Ceilings for one parent over its whole life; every node configures
     # them and the scope's policy admits runs within them. Zero keeps Celln's
     # reviewed defaults (1 h, 12 turns). The installer sets day-long defaults.
+    # Every turn reserves 6 model requests and 6 x the backend's
+    # maxOutputTokens output tokens (3072 by default) from these totals;
+    # maxOutputTokens here may be up to 25165824 (1024 turns x 6 x 4096).
     limits:
       leaseSeconds: 0
       maxTurns: 0
@@ -658,6 +716,77 @@ celln:
       create: true
       storageClass: ""
       storage: 1Gi
+  # -- Mediated model access (default off): each native Celln Agent's model
+  # requests go through the model gateway, which injects that Agent's own
+  # provider key from its namespaced Secret; no provider key on Celln nodes.
+  # This one switch wires the controller's scoped dispatch
+  # (CELLN_SCOPED_CONFIG), the fleet dispatchers' scoped receiver and the model
+  # gateway to the same issuer, keys, tokens and CA. Requires celln.fleet, and
+  # modelGateway.image/egress/database. All key material is operator-provided
+  # by `sympozium celln-mediation bootstrap`; nothing is generated or rendered
+  # from values. Runs take the path of their model route: an Agent's own
+  # Secret-backed (or credential-free) connection goes down this path, while
+  # fleet backends (host-profile) keep starting fleet parents as before.
+  # See docs/guides/celln-mediated-model-access.md.
+  mediation:
+    enabled: false
+    # -- Operator-chosen cluster identity bound into every signed decision.
+    clusterId: ""
+    # -- Namespace holding the controller's immutable prepared-operation
+    # records; never a tenant namespace. Empty uses the control-plane namespace.
+    preparationNamespace: ""
+    issuer:
+      # -- Fixed by the credential contract; the controller, dispatchers and
+      # gateway all refuse another issuer.
+      name: sympozium-control-plane
+      # -- Key id of the signing key; must be a `kid` in the trust JWKS.
+      keyId: ""
+    # -- Control-plane Secret, controller only. Keys: issuer.key (one PKCS#8
+    # Ed25519 PRIVATE KEY PEM), receiver-token, gateway-token.
+    controllerSecret: celln-mediation-controller
+    # -- Control-plane Secret, gateway only. Keys: tls.crt, tls.key,
+    # registration-token (equal to the controller's gateway-token).
+    gatewaySecret: celln-mediation-gateway
+    # -- celln-system Secret. Keys: operator-token (equal to the controller's
+    # receiver-token), tls.crt, tls.key (the receiver's TLS edge).
+    nodeSecret: celln-mediation-node
+    # -- Public ConfigMap of the same name in the control-plane namespace AND
+    # celln-system. Keys: jwks.json (public Ed25519 JWKS), ca.crt (the CA that
+    # signed both TLS certificates). Public material only, so a ConfigMap.
+    trustConfigMap: celln-mediation-trust
+    receiver:
+      # -- HTTPS origin of the ONE scoped receiver the controller uses. Empty
+      # uses the chart's celln-scoped-receiver Service, which is correct only
+      # while a single celln-node pod exists: scoped state lives on the node
+      # that prepared it and the router does not forward /v1/scoped/*. With
+      # several nodes, set an origin that reaches exactly one of them (its
+      # host name must be in the receiver certificate).
+      url: ""
+      port: 9443
+    # -- Also offer every HTTPS fleet backend's provider, protocol, origin and
+    # model to an Agent's own key. Plain-HTTP and port-bearing backends are
+    # never offered: a cluster Secret does not cross them.
+    mediateBackends: false
+    # -- The providers an Agent may bring its own key for; none by default.
+    # Matching is EXACT on provider, protocol, model and origin (no wildcard),
+    # and only the operator declares routes: an endpoint a tenant wrote is not
+    # authorisation. Recorded in ConfigMap celln-system/celln-mediated-routes
+    # and appended to the scope's policy by the next `sympozium install
+    # --celln-fleet`, added backend, or `sympozium celln-mediation
+    # apply-routes`; removing an entry here never removes a published route.
+    # Requires `enabled`. Example:
+    #   - provider: anthropic
+    #     protocol: anthropic-messages        # or openai-chat
+    #     models: [claude-sonnet-5]           # 1-32 exact names
+    #     endpointOrigins: [https://api.anthropic.com]   # https://host, no port or path
+    # For keyless local models set auth: none and allowInsecure: true, and
+    # also list the exact HTTP origin (including port) in modelGateway.privateOrigins.
+    routes: []
+    # -- Parent request template for enduring scoped runs, read once when the
+    # dispatcher starts. Empty uses scoped-parent-request.json in the first
+    # backend's starter configuration on the node. When the file is absent the
+    # dispatcher starts with one-shot scoped dispatch only.
+    parentRequestFile: ""
   # -- One-command bootstrap for a fresh Celln install. Generates the
   # controller/router/backend/capability bearer Secrets and a router ownership
   # PVC, then the CLI points celln.tokenSecret, celln.capabilityTokenSecret and

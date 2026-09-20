@@ -22,7 +22,12 @@ func main() {
 	cert := flag.String("tls-cert", "", "Absolute operator certificate-chain file")
 	key := flag.String("tls-key", "", "Absolute operator private-key file")
 	executionRouter := flag.Bool("execution-router", false, "Expose only one-shot execution routes instead of parent routes")
+	scopedReceiver := flag.Bool("scoped-receiver", false, "Expose only the scoped receiver routes (/v1/scoped/*) instead of parent routes")
 	flag.Parse()
+	if *executionRouter && *scopedReceiver {
+		fmt.Fprintln(os.Stderr, "choose one of --execution-router or --scoped-receiver")
+		os.Exit(1)
+	}
 	if !filepath.IsAbs(*cert) || !filepath.IsAbs(*key) {
 		fmt.Fprintln(os.Stderr, "absolute TLS certificate and key required")
 		os.Exit(1)
@@ -30,6 +35,9 @@ func main() {
 	constructor := cellnparentproxy.New
 	if *executionRouter {
 		constructor = cellnparentproxy.NewExecution
+	}
+	if *scopedReceiver {
+		constructor = cellnparentproxy.NewScoped
 	}
 	handler, closeTransport, err := constructor(*backend)
 	if err != nil {

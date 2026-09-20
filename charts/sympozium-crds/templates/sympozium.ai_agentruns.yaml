@@ -481,7 +481,7 @@ spec:
                         and the answer it got.
                       properties:
                         assistant:
-                          maxLength: 2048
+                          maxLength: 8192
                           type: string
                         user:
                           maxLength: 2048
@@ -521,7 +521,7 @@ spec:
                     type: integer
                   maxOutputTokens:
                     format: int64
-                    maximum: 3145728
+                    maximum: 25165824
                     minimum: 0
                     type: integer
                   maxTurns:
@@ -3328,7 +3328,7 @@ spec:
                       result:
                         properties:
                           answer:
-                            maxLength: 2048
+                            maxLength: 8192
                             minLength: 1
                             type: string
                           succeeded:

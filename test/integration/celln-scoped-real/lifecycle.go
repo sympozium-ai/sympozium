@@ -317,7 +317,10 @@ func createAuthorityAndRuns(ctx context.Context, c client.Client, o options, pkg
 			profile = pkg.Enduring
 		}
 		runtimeWrapper := &api.AgentRuntime{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "runtime"}, Spec: api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: profile.Name, Revision: profile.Spec.Revision}}}
-		agent := &api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "agent"}, Spec: api.AgentSpec{RuntimeRef: "runtime", Agents: api.AgentsSpec{Default: api.AgentConfig{}}}}
+		agent := &api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "agent"}, Spec: api.AgentSpec{RuntimeRef: "runtime", Agents: api.AgentsSpec{Default: api.AgentConfig{}},
+			// The Agent owner grants the connection's Secret; a run cannot borrow
+			// a Secret-backed connection its Agent was not given.
+			AuthRefs: []api.SecretRef{{Provider: modelProvider, Secret: "model-credential"}}}}
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "model-credential"}, Type: corev1.SecretTypeOpaque, Data: map[string][]byte{"OPENAI_API_KEY": []byte(secretValue)}}
 		connection := &api.ModelConnection{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "model"}, Spec: api.ModelConnectionSpec{Provider: modelProvider, Protocol: modelProtocol, Endpoint: providerURL + "/v1/chat/completions", SecretRef: secret.Name, Models: []string{modelName}, AllowInsecure: true}}
 		for _, object := range []client.Object{runtimeWrapper, agent, secret, connection} {

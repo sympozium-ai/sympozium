@@ -33,6 +33,10 @@ func TestRunCreateDelete(t *testing.T) {
 		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns), nil)
 	})
 
+	// createRun looks the Agent up through the informer cache; wait until the
+	// API can see it, or the dispatch 404s.
+	waitForGET(t, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns))
+
 	// Dispatch a run and extract name from response.
 	type runResp struct {
 		Metadata struct {
@@ -108,6 +112,10 @@ func TestRunJobShape(t *testing.T) {
 		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns), nil)
 	})
 
+	// createRun looks the Agent up through the informer cache; wait until the
+	// API can see it, or the dispatch 404s.
+	waitForGET(t, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns))
+
 	// Create a run.
 	runBody := map[string]any{
 		"agentRef": agentName,
@@ -155,9 +163,10 @@ func TestRunJobShape(t *testing.T) {
 		t.Errorf("job instance label = %q, want %q", foundJob.Labels["sympozium.ai/instance"], agentName)
 	}
 
-	// Verify the input ConfigMap was created with the task text.
+	// Verify the input ConfigMap was created with the task text. Its informer
+	// is independent of the Job's, so seeing the Job says nothing about it.
 	var inputCM corev1.ConfigMap
-	assertExists(t, &inputCM, ns, fmt.Sprintf("%s-input", runName))
+	waitForObject(t, &inputCM, ns, fmt.Sprintf("%s-input", runName))
 	if inputCM.Data["task"] != "Verify job shape" {
 		t.Errorf("input ConfigMap task = %q, want %q", inputCM.Data["task"], "Verify job shape")
 	}

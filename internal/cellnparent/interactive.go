@@ -27,7 +27,7 @@ func NewTurn(run *api.AgentRun, name, message string) (*api.AgentRunTurn, error)
 }
 
 func validateTurnMessage(message string) error {
-	if strings.TrimSpace(message) == "" || len(message) > 2048 || strings.ContainsRune(message, 0) {
+	if strings.TrimSpace(message) == "" || len(message) > api.MaxConversationMessageBytes || strings.ContainsRune(message, 0) {
 		return fmt.Errorf("turn message exceeds bounded text contract")
 	}
 	return nil

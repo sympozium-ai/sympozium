@@ -39,6 +39,14 @@ func PreflightBackend(ctx context.Context, httpClient *http.Client, b FleetBacke
 		body = map[string]any{"model": b.Model.Name, "max_tokens": 1, "messages": []map[string]string{{"role": "user", "content": "ping"}}}
 		headers["Authorization"] = "Bearer " + credential
 	}
+	// The backend's parameters ride along exactly as the Celln host will send
+	// them, so one the provider refuses (HTTP 400) is reported here and not as
+	// lost turns. They never replace a field of the probe itself.
+	for key, value := range b.Model.Parameters {
+		if _, taken := body[key]; !taken {
+			body[key] = value
+		}
+	}
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -66,6 +74,9 @@ func PreflightBackend(ctx context.Context, httpClient *http.Client, b FleetBacke
 	case resp.StatusCode >= 500:
 		return fmt.Errorf("backend %s: %s is not serving completions (HTTP %d): %s (retry later, or skip the probe)", b.Name, b.Model.Endpoint, resp.StatusCode, strings.TrimSpace(string(snippet)))
 	default:
+		if len(b.Model.Parameters) != 0 {
+			return fmt.Errorf("backend %s: %s answered HTTP %d to a minimal chat request carrying the model parameters %s: %s (check the parameters, the model name and the protocol)", b.Name, b.Model.Endpoint, resp.StatusCode, ModelParametersJSON(b.Model.Parameters), strings.TrimSpace(string(snippet)))
+		}
 		return fmt.Errorf("backend %s: %s answered HTTP %d to a minimal chat request: %s (check the model name and protocol)", b.Name, b.Model.Endpoint, resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 }

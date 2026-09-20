@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CellnResult } from "@/components/celln-result";
 import { CellnConversation } from "@/components/celln-conversation";
+import { RunDiagnosis } from "@/components/run-diagnosis";
 import { CellnScopedExecution } from "@/components/celln-scoped-execution";
 import { ApiError } from "@/lib/api";
 import { useRun, useGateVerdict, useRuntimes } from "@/hooks/use-api";
@@ -98,6 +99,8 @@ export function RunDetailPage() {
           {formatAge(run.metadata.creationTimestamp)} ago
         </div>
       </div>
+
+      <RunDiagnosis key={run.metadata.uid} run={run} />
 
       {/* Stats row */}
       {(usage || est) && (
@@ -243,7 +246,7 @@ export function RunDetailPage() {
         </div>
       )}
 
-      {run.spec.executionLifecycle === "enduring" && <CellnConversation key={run.metadata.uid} run={run} observationUnavailable={Boolean(error)} />}
+      {run.spec.executionLifecycle === "enduring" && <CellnConversation key={run.metadata.uid} run={run} observationUnavailable={Boolean(error)} showDiagnosis={false} />}
       {run.status?.cellnScoped && run.spec.executionLifecycle !== "enduring" && <CellnScopedExecution
         status={run.status.cellnScoped}
         condition={scopedCondition}

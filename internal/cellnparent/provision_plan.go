@@ -106,7 +106,7 @@ func BuildHostProvisionPlan(ctx context.Context, loader cellnauthority.Loader, i
 	}
 	var history []api.ConversationExchange
 	if intent.Spec.Conversation != nil && len(intent.Spec.Conversation.Seed) != 0 {
-		if !SeedFits(intent.Spec.Conversation.Seed) {
+		if !SeedFits(intent.Spec.Conversation.Seed, LegacySeedBytes) {
 			return nil, fmt.Errorf("conversation seed exceeds the parent's context bound")
 		}
 		history = intent.Spec.Conversation.Seed

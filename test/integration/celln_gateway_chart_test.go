@@ -52,6 +52,7 @@ func TestGatewayChartRequiresExplicitTrustAndRestrictsIdentity(t *testing.T) {
 			}
 		case "NetworkPolicy":
 			ingress, _, _ := unstructured.NestedSlice(obj.Object, "spec", "ingress")
+			admitted := map[string]bool{}
 			for _, entry := range ingress {
 				peers, _, _ := unstructured.NestedSlice(entry.(map[string]interface{}), "from")
 				for _, peer := range peers {
@@ -59,7 +60,26 @@ func TestGatewayChartRequiresExplicitTrustAndRestrictsIdentity(t *testing.T) {
 					if p["namespaceSelector"] == nil || p["podSelector"] == nil {
 						t.Fatal("ingress does not conjoin namespace and pod identity")
 					}
+					namespace, _, _ := unstructured.NestedString(p, "namespaceSelector", "matchLabels", "kubernetes.io/metadata.name")
+					labels, _, _ := unstructured.NestedStringMap(p, "podSelector", "matchLabels")
+					if namespace == "" || len(labels) != 1 {
+						t.Fatalf("ingress peer is not one exact namespace and pod label: %v", p)
+					}
+					for key, value := range labels {
+						admitted[namespace+"/"+key+"="+value] = true
+					}
 				}
+			}
+			// Fleet dispatchers run in the celln-node DaemonSet pods
+			// (charts/sympozium/templates/celln-fleet.yaml).
+			want := []string{"sympozium-system/control-plane=controller-manager", "celln-system/app.kubernetes.io/name=celln-dispatcher", "celln-system/app.kubernetes.io/name=celln-router", "celln-system/app.kubernetes.io/name=celln-node"}
+			for _, peer := range want {
+				if !admitted[peer] {
+					t.Fatalf("gateway ingress does not admit %s: %v", peer, admitted)
+				}
+			}
+			if len(admitted) != len(want) {
+				t.Fatalf("gateway ingress admits unexpected peers: %v", admitted)
 			}
 		case "Deployment":
 			sa, _, _ := unstructured.NestedString(obj.Object, "spec", "template", "spec", "serviceAccountName")
@@ -79,5 +99,49 @@ func TestGatewayChartRequiresExplicitTrustAndRestrictsIdentity(t *testing.T) {
 	}
 	if len(kinds) != 6 {
 		t.Fatalf("unexpected component resources: %v", kinds)
+	}
+}
+
+// The documented celln.mediation sample must keep rendering, from Secret and
+// ConfigMap volumes alone: no configuration claim and no rendered credential.
+func TestGatewayChartMediationSampleRendersWithoutAClaim(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm required for render tests")
+	}
+	raw, err := exec.Command("helm", "template", "gateway-test", "../../charts/sympozium", "--show-only", "templates/model-gateway.yaml", "--show-only", "templates/celln-mediation.yaml",
+		"-f", "../../charts/testdata/celln-fleet-values.yaml", "-f", "../../charts/testdata/celln-mediation-values.yaml").CombinedOutput()
+	if err != nil {
+		t.Fatalf("render: %v %s", err, raw)
+	}
+	decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096)
+	kinds := map[string]int{}
+	for {
+		var obj unstructured.Unstructured
+		if err := decoder.Decode(&obj.Object); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		kinds[obj.GetKind()]++
+		if obj.GetKind() != "Deployment" {
+			continue
+		}
+		volumes, _, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "volumes")
+		for _, volume := range volumes {
+			if volume.(map[string]interface{})["persistentVolumeClaim"] != nil {
+				t.Fatal("mediated gateway still needs a configuration claim")
+			}
+		}
+		containers, _, _ := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
+		for _, c := range containers {
+			if c.(map[string]interface{})["envFrom"] != nil || c.(map[string]interface{})["env"] != nil {
+				t.Fatal("gateway credentials must arrive as files, never environment")
+			}
+		}
+	}
+	// ConfigMaps: the controller's scoped configuration, the gateway's
+	// configuration and the operator's declared mediated routes.
+	if kinds["Secret"] != 0 || kinds["PersistentVolumeClaim"] != 0 || kinds["Deployment"] != 1 || kinds["ConfigMap"] != 3 || kinds["Role"] != 1 || kinds["RoleBinding"] != 1 {
+		t.Fatalf("unexpected mediated resources: %v", kinds)
 	}
 }

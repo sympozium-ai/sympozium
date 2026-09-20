@@ -261,7 +261,7 @@ func BuildPlatformProvisionPlan(run api.AgentRun, resolution cellnauthority.Plat
 	// exchanges. The decision digest already binds the run's spec, seed
 	// included, so the plan carries it verbatim.
 	if enduring && run.Spec.Conversation != nil && len(run.Spec.Conversation.Seed) != 0 {
-		if !SeedFits(run.Spec.Conversation.Seed) {
+		if !SeedFits(run.Spec.Conversation.Seed, SeedBudget(m.ProfileSpec.Limits.TaskBytes)) {
 			return nil, "", fmt.Errorf("conversation seed exceeds the parent's context bound")
 		}
 		plan.History = run.Spec.Conversation.Seed

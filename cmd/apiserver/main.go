@@ -30,6 +30,10 @@ import (
 
 var scheme = runtime.NewScheme()
 
+// version is set via -ldflags at build time (images/apiserver/Dockerfile
+// passes the image tag).
+var version = "dev"
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(sympoziumv1alpha1.AddToScheme(scheme))
@@ -111,6 +115,7 @@ func main() {
 	}
 
 	server := apiserver.NewServer(k8sClient.GetClient(), bus, kubeClient, log.WithName("apiserver"))
+	server.SetVersion(version)
 	if path := os.Getenv("CELLN_PERMISSION_PREVIEW_CONFIG"); path != "" {
 		if err := server.LoadCellnPreview(path, k8sClient.GetAPIReader()); err != nil {
 			log.Error(err, "invalid Celln permission preview configuration")

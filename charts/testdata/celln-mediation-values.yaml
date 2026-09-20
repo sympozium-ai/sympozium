@@ -1,0 +1,48 @@
+# Sample values enabling mediated Celln model access on an installed fleet.
+# Layer it over the fleet's own values (what `sympozium install --celln-fleet`
+# set), e.g. `helm upgrade ... --reuse-values -f celln-mediation-values.yaml`.
+# `sympozium celln-mediation bootstrap` creates the named Secrets/ConfigMaps
+# and prints clusterId/issuer.keyId. Nothing here is a credential.
+celln:
+  mediation:
+    enabled: true
+    clusterId: evaluation-cluster
+    issuer:
+      keyId: mediation-2026-09
+    # The providers an Agent may bring its own key for; none unless declared.
+    # Exact provider, protocol, model and https://host origin, no wildcard.
+    routes:
+      - provider: anthropic
+        protocol: anthropic-messages
+        models: [claude-sonnet-5]
+        endpointOrigins: [https://api.anthropic.com]
+modelGateway:
+  # Build images/model-gateway and pin its digest.
+  image: ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  database:
+    secretName: model-gateway-database   # key database-url
+  # Tenant namespaces whose ModelConnections/Secrets the gateway may read.
+  namespaces: [team-a]
+  # Reviewed egress: DNS, the Kubernetes API, PostgreSQL and the providers.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock: { cidr: 10.96.0.1/32 }
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: databases
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16] }
+      ports:
+        - { protocol: TCP, port: 443 }

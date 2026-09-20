@@ -62,7 +62,7 @@ describe("Persistent Celln conversation", () => {
       cy.intercept("GET", "/api/v1/runs/conversation/turns*", { body: { runUID: "parent-uid", continue: "", items: [{
         ...turn, status: { execution: { attempted: true, result: { succeeded: false, answer: "Turn cancelled after child teardown." } } },
       }] } });
-      cy.contains("Turn failed: Turn cancelled after child teardown.").should("be.visible");
+      cy.contains("Turn failed: Turn cancelled after child teardown.").scrollIntoView().should("be.visible");
       cy.get('[data-testid="celln-turn-cancel-pending"]').should("not.exist");
       // Parent-slot evidence is still active; the answer alone cannot enable work.
       cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
@@ -130,7 +130,7 @@ describe("Persistent Celln conversation", () => {
 
   it("keeps historical answers visible but refuses sending after context loss", () => {
     open(false);
-    cy.contains("Agent: Remembered violet").should("be.visible");
+    cy.contains("Agent: Remembered violet").scrollIntoView().should("be.visible");
     cy.contains("Parent unavailable or starting").should("be.visible");
     cy.get('[data-testid="celln-turn-message"]').should("be.disabled");
     cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
@@ -141,7 +141,9 @@ describe("Persistent Celln conversation", () => {
     cy.intercept("GET", "/api/v1/runs/conversation/turns*", { body: { runUID: "replacement-uid", items: [], continue: "" } });
     cy.reload();
     cy.contains("Turn history unavailable").should("be.visible");
-    cy.get('[data-testid="celln-turn-message"]').type("What colour?");
+    // Since 4f2d7779 composing itself requires a verified, complete history, so
+    // a mismatched run UID blocks the draft as well as the send.
+    cy.get('[data-testid="celln-turn-message"]').should("be.disabled").and("have.value", "");
     cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
   });
 
@@ -154,7 +156,7 @@ describe("Persistent Celln conversation", () => {
     it(`explains ${reason} without treating history as live context`, () => {
       open(false, 1, { reason });
       cy.get('[data-testid="celln-parent-lifecycle-detail"]').should("contain", explanation);
-      cy.contains("Agent: Remembered violet").should("be.visible");
+      cy.contains("Agent: Remembered violet").scrollIntoView().should("be.visible");
       cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
     });
   }
@@ -174,10 +176,41 @@ describe("Persistent Celln conversation", () => {
     cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
   });
 
-  it("labels an initial failure and explains why sending is disabled", () => {
+  it("labels an initial failure and keeps the conversation open while the parent is Ready", () => {
     open(true, 1, { initialSucceeded: false });
-    cy.contains("Initial turn failed: Remembered violet").should("be.visible");
-    cy.get('[data-testid="celln-parent-lifecycle-detail"]').should("contain", "initial turn failed");
+    cy.contains("Initial turn failed: Remembered violet").scrollIntoView().should("be.visible");
+    cy.contains("Agent: Remembered violet").should("not.exist");
+    cy.contains("Parent initialized").scrollIntoView().should("be.visible");
+    cy.get('[data-testid="celln-parent-lifecycle-detail"]').should("contain", "The first turn failed; the conversation is still open — send another message");
+    cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
+    let submissions = 0;
+    cy.intercept("POST", "/api/v1/runs/conversation/turns*", (request) => {
+      submissions++;
+      expect(Object.keys(request.body).sort()).to.deep.eq(["message", "requestId", "runUID"]);
+      expect(request.body.runUID).to.eq("parent-uid");
+      expect(request.body.message).to.eq("Try again: what colour?");
+      request.reply({ statusCode: 202, body: {} });
+    }).as("submitAfterFailure");
+    cy.get('[data-testid="celln-turn-message"]').should("be.enabled").type("Try again: what colour?");
+    cy.get('[data-testid="celln-turn-send"]').should("be.enabled").click();
+    cy.wait("@submitAfterFailure").then(() => expect(submissions).to.eq(1));
+  });
+
+  it("labels an initial failure and explains why sending is disabled when the parent is not Ready", () => {
+    open(false, 1, { initialSucceeded: false, reason: "ContextLost" });
+    cy.contains("Initial turn failed: Remembered violet").scrollIntoView().should("be.visible");
+    cy.contains("Parent unavailable or starting — sending disabled").scrollIntoView().should("be.visible");
+    cy.get('[data-testid="celln-conversation"]').should("not.contain", "the conversation is still open");
+    let submissions = 0;
+    cy.intercept("POST", "/api/v1/runs/conversation/turns*", () => { submissions++; });
+    cy.get('[data-testid="celln-turn-message"]').should("be.disabled");
+    cy.get('[data-testid="celln-turn-send"]').should("be.disabled").then(() => expect(submissions).to.eq(0));
+  });
+
+  it("keeps a failed initial turn from reopening an exhausted or busy conversation", () => {
+    open(true, 1, { initialSucceeded: false, acceptedTurns: 3 });
+    cy.get('[data-testid="celln-parent-lifecycle-detail"]').should("contain", "turn ceiling is exhausted").and("not.contain", "still open");
+    cy.get('[data-testid="celln-turn-message"]').should("be.disabled");
     cy.get('[data-testid="celln-turn-send"]').should("be.disabled");
   });
 
@@ -194,7 +227,7 @@ describe("Persistent Celln conversation", () => {
       status: { execution: { attempted: true, result: { succeeded: false, answer: "context capacity exceeded" } } },
     }] } });
     cy.reload();
-    cy.contains("Turn failed: context capacity exceeded").should("be.visible");
+    cy.contains("Turn failed: context capacity exceeded").scrollIntoView().should("be.visible");
     cy.contains("Agent: context capacity exceeded").should("not.exist");
   });
 

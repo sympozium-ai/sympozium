@@ -45,7 +45,7 @@ type AgentRuntimeCellnLimits struct {
 	// +kubebuilder:validation:Maximum=268435456
 	MemoryBytes int64 `json:"memoryBytes"`
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=2048
+	// +kubebuilder:validation:Maximum=16384
 	TaskBytes int64 `json:"taskBytes"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65536

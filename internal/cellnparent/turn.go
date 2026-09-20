@@ -44,7 +44,7 @@ func reconcileInitialTurn(ctx context.Context, writer client.Client, reader clie
 		return false, fmt.Errorf("initial turn requires an admitted parent")
 	}
 	message := run.Spec.Task.GetPrompt()
-	if !run.Spec.Task.IsString() || strings.TrimSpace(message) == "" || len(message) > 2048 || strings.ContainsRune(message, 0) {
+	if !run.Spec.Task.IsString() || strings.TrimSpace(message) == "" || len(message) > api.MaxConversationMessageBytes || strings.ContainsRune(message, 0) {
 		return false, fmt.Errorf("initial parent task requires bounded text")
 	}
 	expected := api.CellnParentTurnStatus{ID: "initial", Message: message, Child: childIdentity(binding.Incarnation, "initial")}
@@ -95,7 +95,7 @@ func reconcileInitialTurn(ctx context.Context, writer client.Client, reader clie
 		Succeeded *bool  `json:"succeeded"`
 		Answer    string `json:"answer"`
 	}
-	if json.Unmarshal(evidence.Turn.Record, &record) != nil || record.Child != expected.Child || record.Succeeded == nil || strings.TrimSpace(record.Answer) == "" || len(record.Answer) > 2048 || strings.ContainsRune(record.Answer, 0) {
+	if json.Unmarshal(evidence.Turn.Record, &record) != nil || record.Child != expected.Child || record.Succeeded == nil || strings.TrimSpace(record.Answer) == "" || len(record.Answer) > api.MaxConversationAnswerBytes || strings.ContainsRune(record.Answer, 0) {
 		return false, ErrReconcile
 	}
 	return persistInitialResult(ctx, writer, reader, key, binding, expected, api.CellnParentTurnResult{Succeeded: *record.Succeeded, Answer: record.Answer})

@@ -13,7 +13,9 @@ Implemented so far:
 - Reservation-before-forwarding without automatic retry or redirect following.
 - Connect-time DNS answer validation and dialing of a validated literal IP;
   public/private mixed answers refuse unless the exact origin is approved.
-- Plain HTTP is confined to explicitly approved loopback destinations. HTTPS
+- Plain HTTP is confined to explicitly approved keyless destinations resolving
+  only to loopback or private IP addresses. Public, link-local and mixed DNS
+  answers are refused even for an approved origin. HTTPS
   always verifies certificates; tenant AllowInsecure does not disable TLS checks.
 - Bounded input/output, strict duplicate-key parsing, and reason-only HTTP errors.
 
@@ -75,6 +77,13 @@ Both implementations limit the body to 262144 bytes and 64 container levels.
 Fractional sampling parameters, exponent notation and negative zero are explicitly
 unsupported in this v1 model-body profile; no silent numeric conversion is used.
 This does not change the existing legacy Celln provider path.
+
+That profile is for the guest body only. A ModelConnection's `parameters`
+(operator policy, see `docs/guides/celln-model-authority.md`) are appended to
+the canonical guest body after it is digested and may hold fractional numbers;
+`maxOutputTokens` replaces the former fixed 512 bound per request. Top-level
+guest fields must be exact provider field names, and any key the connection
+pins refuses.
 
 The Go issuer/verifier now enforces the published decision schema, including the
 submitted raw shape. Gateway fixtures have full schema-valid identities rather

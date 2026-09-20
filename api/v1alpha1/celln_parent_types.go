@@ -116,6 +116,6 @@ type CellnParentTurnStatus struct {
 type CellnParentTurnResult struct {
 	Succeeded bool `json:"succeeded"`
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:MaxLength=8192
 	Answer string `json:"answer"`
 }

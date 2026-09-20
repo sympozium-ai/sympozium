@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -22,12 +23,31 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// SessionDefaults is the budget a new conversation asks for: a working
-// session that stays well inside the scope's ceilings — a four-hour parent
-// with 64 turns and the starter profile's per-turn allowance (3 requests,
-// 1536 output tokens) for each — capped by the ceilings themselves.
+// A new conversation's default session: a four-hour parent with 64 turns.
+const (
+	sessionLeaseSeconds = 14400
+	sessionTurns        = 64
+)
+
+// SessionDefaults is the budget a new conversation asks for on a profile
+// with the current starter package's per-turn allowance
+// (api.TurnModelRequests, api.TurnOutputTokens); SessionDefaultsFor takes the
+// allowance of one runtime profile.
 func SessionDefaults(ceilings api.EnduringRunSpec) *api.EnduringRunSpec {
-	return &api.EnduringRunSpec{LeaseSeconds: min(14400, ceilings.LeaseSeconds), MaxTurns: min(64, ceilings.MaxTurns), MaxModelRequests: min(192, ceilings.MaxModelRequests), MaxOutputTokens: min(98304, ceilings.MaxOutputTokens)}
+	return SessionDefaultsAt(ceilings, api.TurnModelRequests, api.TurnOutputTokens)
+}
+
+// SessionDefaultsAt is a working session that stays well inside the scope's
+// ceilings: a four-hour parent with the largest turn count up to 64 whose
+// model requests and output tokens the ceilings pay for, because every turn
+// reserves the whole per-turn allowance from the totals. Ceilings that pay for
+// less than one turn yield one turn capped by the ceilings themselves.
+func SessionDefaultsAt(ceilings api.EnduringRunSpec, turnRequests, turnTokens int64) *api.EnduringRunSpec {
+	if turnRequests < 1 || turnTokens < 1 {
+		turnRequests, turnTokens = api.TurnModelRequests, api.TurnOutputTokens
+	}
+	turns := max(1, min(int64(sessionTurns), int64(ceilings.MaxTurns), TurnsAfforded(int64(ceilings.MaxModelRequests), ceilings.MaxOutputTokens, turnRequests, turnTokens)))
+	return &api.EnduringRunSpec{LeaseSeconds: min(sessionLeaseSeconds, ceilings.LeaseSeconds), MaxTurns: int32(turns), MaxModelRequests: int32(min(turns*turnRequests, int64(ceilings.MaxModelRequests))), MaxOutputTokens: min(turns*turnTokens, ceilings.MaxOutputTokens)}
 }
 
 // ScopeLabel opts a namespace into a scope in strict ("labeled") mode; the
@@ -52,6 +72,107 @@ type PlatformOptions struct {
 	// catalogue objects are replaced or removed and every namespace's
 	// platform wrappers are rebound; zero means nothing is replaced.
 	Replacing FleetPublication
+	// MediateBackends additionally admits every HTTPS backend's provider,
+	// protocol, origin and model with a namespace's own key (auth "secret"), so
+	// an Agent may bring its own credential for a model the fleet already
+	// serves. A plain-HTTP backend is skipped: a cluster Secret never crosses it.
+	MediateBackends bool
+	// MediatedRoutes are further operator-declared routes an Agent's own
+	// Secret-backed ModelConnection may use through the model gateway; they
+	// need not match any fleet backend (for example anthropic,
+	// anthropic-messages, https://api.anthropic.com). They are the operator's
+	// allow-list, never derived from anything a tenant wrote, and are matched
+	// exactly: there is no wildcard model or origin.
+	MediatedRoutes []MediatedRoute
+}
+
+// MediatedRoute is one gateway-mediated model route the operator allows a
+// namespace's own Secret-backed or keyless ModelConnection to use.
+type MediatedRoute struct {
+	Provider        string   `json:"provider"`
+	Protocol        string   `json:"protocol"`
+	Models          []string `json:"models"`
+	EndpointOrigins []string `json:"endpointOrigins"`
+	// Auth defaults to secret; none explicitly declares a keyless endpoint.
+	Auth          string `json:"auth,omitempty"`
+	AllowInsecure bool   `json:"allowInsecure,omitempty"`
+}
+
+var mediatedProviderPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+
+// PolicyRoute validates exact models and origins. Secret routes require HTTPS;
+// keyless routes may explicitly approve HTTP and ports with AllowInsecure.
+func (r MediatedRoute) PolicyRoute() (api.CellnExecutionPolicyRoute, error) {
+	auth := r.Auth
+	if auth == "" {
+		auth = "secret"
+	}
+	if auth != "secret" && auth != "none" {
+		return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route: auth must be secret or none")
+	}
+	if r.AllowInsecure && auth != "none" {
+		return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route: allowInsecure requires auth none; a Secret never crosses plain HTTP")
+	}
+	if !mediatedProviderPattern.MatchString(r.Provider) {
+		return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route: provider %q must be 1-64 letters, digits, underscores or hyphens", r.Provider)
+	}
+	if r.Protocol != "openai-chat" && r.Protocol != "anthropic-messages" {
+		return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: protocol must be openai-chat or anthropic-messages", r.Provider)
+	}
+	if len(r.Models) == 0 || len(r.Models) > 32 || len(r.EndpointOrigins) == 0 || len(r.EndpointOrigins) > 16 {
+		return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: 1-32 models and 1-16 endpoint origins are required", r.Provider)
+	}
+	models, origins := slices.Clone(r.Models), slices.Clone(r.EndpointOrigins)
+	slices.Sort(models)
+	slices.Sort(origins)
+	for i, model := range models {
+		if model == "" || len(model) > 128 || strings.TrimSpace(model) != model || strings.ContainsAny(model, "*\x00\r\n") || (i > 0 && models[i-1] == model) {
+			return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: models must be unique exact identifiers of at most 128 bytes (no wildcard)", r.Provider)
+		}
+	}
+	for i, origin := range origins {
+		parsed, err := api.ModelEndpointOriginInsecure(origin+"/", r.AllowInsecure)
+		if err != nil || parsed != origin || (i > 0 && origins[i-1] == origin) {
+			if r.AllowInsecure {
+				return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: endpoint origin %q must be a unique HTTP(S) origin without path, query or credentials", r.Provider, origin)
+			}
+			return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: endpoint origin %q must be a unique https://host origin without port, path or credentials; a Secret never crosses plain HTTP", r.Provider, origin)
+		}
+	}
+	return api.CellnExecutionPolicyRoute{Provider: r.Provider, Protocol: r.Protocol, Models: models, EndpointOrigins: origins, Auth: auth, AllowInsecure: r.AllowInsecure}, nil
+}
+
+// mediatedPolicyRoutes are the auth "secret" routes a scope's policy carries
+// besides its backends' host-profile routes, without duplicates.
+func mediatedPolicyRoutes(o PlatformOptions, backends []backendConfiguration) ([]api.CellnExecutionPolicyRoute, error) {
+	var routes []api.CellnExecutionPolicyRoute
+	add := func(route api.CellnExecutionPolicyRoute) {
+		if !slices.ContainsFunc(routes, func(r api.CellnExecutionPolicyRoute) bool { return reflect.DeepEqual(r, route) }) {
+			routes = append(routes, route)
+		}
+	}
+	if o.MediateBackends {
+		for _, b := range backends {
+			if !strings.HasPrefix(b.origin, "https://") {
+				continue
+			}
+			route, err := MediatedRoute{Provider: b.configured.Model.Provider, Protocol: b.protocol, Models: []string{b.configured.Model.Model}, EndpointOrigins: []string{b.origin}}.PolicyRoute()
+			if err != nil {
+				// An HTTPS backend on a private port is a host-profile route the
+				// operator approved as insecure; it is not offered to Secrets.
+				continue
+			}
+			add(route)
+		}
+	}
+	for _, declared := range o.MediatedRoutes {
+		route, err := declared.PolicyRoute()
+		if err != nil {
+			return nil, err
+		}
+		add(route)
+	}
+	return routes, nil
 }
 
 // PlatformCatalogueNames are the cluster-scoped objects one scope publishes:
@@ -73,6 +194,36 @@ func PlatformProfileName(scope, backend string) string {
 func sameJSON(a, b []byte) bool {
 	var left, right any
 	return json.Unmarshal(a, &left) == nil && json.Unmarshal(b, &right) == nil && reflect.DeepEqual(left, right)
+}
+
+// workerTimeoutMs is the lifetime a native worker request gives one turn.
+func workerTimeoutMs(worker []byte) int64 {
+	var request struct {
+		Capabilities struct {
+			TimeoutMs int64 `json:"timeoutMs"`
+		} `json:"capabilities"`
+	}
+	if json.Unmarshal(worker, &request) != nil {
+		return 0
+	}
+	return request.Capabilities.TimeoutMs
+}
+
+// sameWorkerMaterial compares two native worker requests apart from the turn
+// lifetime, which follows each backend's output-token cap.
+func sameWorkerMaterial(a, b []byte) bool {
+	strip := func(raw []byte) any {
+		var request map[string]any
+		if json.Unmarshal(raw, &request) != nil {
+			return nil
+		}
+		if capabilities, ok := request["capabilities"].(map[string]any); ok {
+			delete(capabilities, "timeoutMs")
+		}
+		return request
+	}
+	left, right := strip(a), strip(b)
+	return left != nil && reflect.DeepEqual(left, right)
 }
 
 // backendConfiguration is one backend's reviewed starter configuration as a
@@ -161,18 +312,25 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		backends = append(backends, b)
 	}
 	first := backends[0]
-	var worker struct {
-		Capabilities struct {
-			TimeoutMs int64 `json:"timeoutMs"`
-		} `json:"capabilities"`
-	}
-	if json.Unmarshal(first.native.Worker, &worker) != nil || worker.Capabilities.TimeoutMs < 1000 {
-		return fmt.Errorf("native worker request lacks a bounded lifetime")
+	// The policy's turn ceiling admits the longest turn any backend grants;
+	// each profile still holds its own runs to its own lifetime.
+	var maxTurnMs int64
+	for _, b := range backends {
+		timeout := workerTimeoutMs(b.native.Worker)
+		if timeout < 1000 || timeout != b.cat.Worker.Limits.TimeoutMillis {
+			return fmt.Errorf("backend %s: native worker request lacks a bounded lifetime matching its catalogue", b.name)
+		}
+		maxTurnMs = max(maxTurnMs, timeout)
 	}
 	// One scope, one package: every backend must be the same reviewed
-	// material with only its model route and credential differing.
+	// material with only its model route, credential and the turn lifetime
+	// that follows its output-token cap differing.
+	firstWorker := first.cat.Worker
+	firstWorker.Limits.TimeoutMillis = 0
 	for _, b := range backends[1:] {
-		if !reflect.DeepEqual(b.cat.Tools, first.cat.Tools) || !reflect.DeepEqual(b.cat.Worker, first.cat.Worker) || b.cat.SystemPrompt != first.cat.SystemPrompt || b.configured.HostLimits != first.configured.HostLimits || !sameJSON(b.native.Parent, first.native.Parent) || !sameJSON(b.native.Worker, first.native.Worker) {
+		worker := b.cat.Worker
+		worker.Limits.TimeoutMillis = 0
+		if !reflect.DeepEqual(b.cat.Tools, first.cat.Tools) || !reflect.DeepEqual(worker, firstWorker) || b.cat.SystemPrompt != first.cat.SystemPrompt || b.configured.HostLimits != first.configured.HostLimits || !sameJSON(b.native.Parent, first.native.Parent) || !sameWorkerMaterial(b.native.Worker, first.native.Worker) {
 			return fmt.Errorf("backend %s differs from %s in reviewed package material; one scope carries one package", b.name, first.name)
 		}
 	}
@@ -207,6 +365,16 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		runtimeRefs = append(runtimeRefs, api.CellnExecutionPolicyRuntime{Ref: api.CellnRuntimeProfileRef{Name: profileName, Revision: cat.Worker.Revision}})
 		routes = append(routes, api.CellnExecutionPolicyRoute{Provider: b.configured.Model.Provider, Protocol: b.protocol, Models: []string{b.configured.Model.Model}, EndpointOrigins: []string{b.origin}, Auth: "host-profile", AllowInsecure: b.insecure})
 	}
+	// Operator-declared gateway-mediated routes follow the backends' own, so a
+	// scope installed without them carries exactly the policy it always did.
+	mediated, err := mediatedPolicyRoutes(o, backends)
+	if err != nil {
+		return err
+	}
+	routes = append(routes, mediated...)
+	if len(routes) > 32 {
+		return fmt.Errorf("a scope's policy carries at most 32 routes; %d backends and %d mediated routes were requested", len(backends), len(mediated))
+	}
 	policyTools := make([]api.CellnExecutionPolicyTool, 0, len(first.cat.Tools))
 	clusterRefs := make([]api.ClusterCellnToolRef, 0, len(first.cat.Tools))
 	for _, entry := range first.cat.Tools {
@@ -225,7 +393,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		Tools:             policyTools,
 		Lifecycles:        []string{"direct-one-shot", "harness-one-shot", "enduring"},
 		Routes:            routes,
-		Ceilings:          api.CellnExecutionPolicyCeilings{MaxTurns: int64(limits.MaxTurns), MaxModelRequests: int64(limits.MaxModelRequests), MaxOutputTokens: limits.MaxOutputTokens, MaxParentLeaseSeconds: int64(limits.LeaseSeconds), MaxTurnSeconds: worker.Capabilities.TimeoutMs / 1000},
+		Ceilings:          api.CellnExecutionPolicyCeilings{MaxTurns: int64(limits.MaxTurns), MaxModelRequests: int64(limits.MaxModelRequests), MaxOutputTokens: limits.MaxOutputTokens, MaxParentLeaseSeconds: int64(limits.LeaseSeconds), MaxTurnSeconds: maxTurnMs / 1000},
 	}}
 	// Reserve the private output before any cluster change; a rerun that adds
 	// a backend reuses the directory it made.
@@ -327,7 +495,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		AgentRef: wrapperNames.Agent, Backend: "celln", ExecutionLifecycle: "enduring", SystemPrompt: sample.cat.SystemPrompt, Cleanup: "delete",
 		Model:          api.ModelSpec{ConnectionRef: wrapperNames.Connection, Model: sample.configured.Model.Model},
 		CellnSelection: &api.CellnCatalogueSelection{RuntimeRef: wrapperNames.Runtime, ToolRefs: []api.CellnCatalogueToolRef{}, ClusterToolRefs: clusterRefs},
-		Enduring:       SessionDefaults(limits),
+		Enduring:       SessionDefaultsFor(limits, profiles[sample.name]),
 		Task:           api.NewStringTask("Write violet to notes.txt using workspace-write with revision 0. Make exactly that one tool call, then reply done."),
 	}}
 	if err := write("run.json", run); err != nil {
@@ -390,6 +558,12 @@ func ensurePlatformPolicy(ctx context.Context, store client.Client, policy *api.
 			existing.Spec.Routes = append(existing.Spec.Routes, route)
 			changed = true
 		}
+	}
+	// An added backend may grant a longer turn than any before it; the
+	// ceiling follows it up and is never lowered under running agents.
+	if policy.Spec.Ceilings.MaxTurnSeconds > existing.Spec.Ceilings.MaxTurnSeconds {
+		existing.Spec.Ceilings.MaxTurnSeconds = policy.Spec.Ceilings.MaxTurnSeconds
+		changed = true
 	}
 	if !changed {
 		return nil

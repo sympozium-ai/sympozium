@@ -10,7 +10,9 @@ covers only what's easy to get wrong.
 - `make test` runs `go test -race ./...` — the **race detector is the bar**; a
   change isn't done until `go test -race ./...`, `go vet ./...`, and `gofmt` are clean.
 - `make test-system` (envtest) runs controller tests against a real apiserver with
-  no cluster — use it for reconcile-logic changes.
+  no cluster — use it for reconcile-logic changes. CI runs it (`system-tests` job).
+- `go vet ./...` skips build-tagged files (`test/system` is `//go:build system`);
+  `make vet` / `make vet-tags` covers them — add a line there for any new build tag.
 - Integration tests (`test/integration/*.sh`) need a Kind cluster + a model. They
   work against any OpenAI-compatible provider — set `spec.model.provider` +
   `spec.model.baseURL` (e.g. a local `llama-server`/`ollama`/`lm-studio`), not just `openai`.

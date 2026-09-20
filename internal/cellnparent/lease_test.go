@@ -53,6 +53,8 @@ func leaseClaimFixture(t *testing.T, admittedAt *time.Time) (client.Client, type
 	run, binding := admissionFixture(t)
 	run.Status.Phase = api.AgentRunPhaseRunning
 	run.Status.CellnParent = &api.CellnParentStatus{Binding: binding, CreateAttempted: true, InitialTurn: &api.CellnParentTurnStatus{ID: "initial", Message: "hello", Child: testID, Attempted: true, Result: &api.CellnParentTurnResult{Succeeded: true, Answer: "ready"}}}
+	run.Generation = 1
+	run.Status.Conditions = []metav1.Condition{{Type: "CellnParentReady", Status: metav1.ConditionTrue, Reason: "Ready", ObservedGeneration: 1}}
 	if admittedAt != nil {
 		run.Status.CellnParent.AdmittedAt = &metav1.Time{Time: *admittedAt}
 	}

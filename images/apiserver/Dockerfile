@@ -15,11 +15,15 @@ ARG TARGETARCH
 RUN apk add --no-cache git ca-certificates
 WORKDIR /workspace
 COPY go.mod go.sum ./
-RUN go mod download
+# Retry: proxy.golang.org intermittently resets streams in CI.
+RUN for i in 1 2 3 4 5; do go mod download && break; [ "$i" = 5 ] && exit 1; \
+    echo "go mod download failed (attempt $i/5); retrying in $((i*5))s" >&2; sleep $((i*5)); done
 COPY . .
 # Copy built frontend into the embed directory
 COPY --from=frontend /web/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=mod -ldflags="-s -w" -o /apiserver ./cmd/apiserver
+# Declared late so a new tag does not invalidate the module download layer.
+ARG IMAGE_TAG=latest
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=mod -ldflags="-s -w -X main.version=${IMAGE_TAG}" -o /apiserver ./cmd/apiserver
 
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /apiserver /apiserver

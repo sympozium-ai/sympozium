@@ -17,8 +17,7 @@ import { CellnAgentConversation } from "@/components/celln-agent-conversation";
 import { isCellnEnduringAgent } from "@/lib/persistent-harness";
 import { CellnStarterTools } from "@/components/celln-starter-tools";
 import { CellnPermissionPreview } from "@/components/celln-permission-preview";
-import { CellnBackendPicker, backendLabel } from "@/components/celln-backend-picker";
-import { CellnAddBackend } from "@/components/celln-add-backend";
+import { CellnAgentConnection } from "@/components/celln-agent-connection";
 import { StatusBadge } from "@/components/status-badge";
 import { GithubAuthDialog } from "@/components/github-auth-dialog";
 import {
@@ -66,6 +65,7 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useRunsSeen } from "@/hooks/use-runs-seen";
+import { LEGACY_ENDURING_DEFAULTS } from "@/lib/agent-execution";
 import {
   costTooltip,
   effectiveCost,
@@ -540,10 +540,10 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
   // Every save keeps the selection's runtime and shared tools; only the
   // borrowed (namespaced) tool list is what the card edits.
   const selectionWith = (toolRefs: typeof tools) => ({ ...(execution?.cellnSelection || {}), toolRefs });
-  const enduringDefaults = execution?.enduring || wrapperProfile?.sessionDefaults || { leaseSeconds: 600, maxTurns: 8, maxModelRequests: 24, maxOutputTokens: 8192 };
+  const enduringDefaults = execution?.enduring || wrapperProfile?.sessionDefaults || LEGACY_ENDURING_DEFAULTS;
   const runtimeLabel = (runtime: import("@/lib/api").AgentRuntime) => {
     const profile = runtime.spec.cellnProfileRef ? (platformProfiles.data || []).find((candidate) => candidate.name === runtime.spec.cellnProfileRef?.name) : undefined;
-    if (profile) return `${runtime.metadata.name} — fleet backend ${backendLabel(profile)}`;
+    if (profile) return `${runtime.metadata.name} — Celln fleet runtime (${profile.name})`;
     return `${runtime.metadata.name}${runtime.spec.supportOwner ? ` — ${runtime.spec.supportOwner}` : ""}${runtime.spec.celln?.contractVersion === "celln.json-tools/v1" ? " · native Celln" : ""}`;
   };
 
@@ -632,8 +632,7 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
           {backend === "celln" && !compatibleHarness && <p role="alert" className="text-xs text-red-400">Celln defaults need a harness that declares celln.json-tools/v1.</p>}
         </div>
 
-        {backend === "celln" && <CellnBackendPicker agent={inst} runtimes={runtimes} />}
-        {backend === "celln" && <CellnAddBackend />}
+        {backend === "celln" && <CellnAgentConnection agent={inst} />}
 
         {backend === "celln" && (
           <div className="space-y-3 rounded-md border p-3">
@@ -668,7 +667,7 @@ function AgentRuntimeCard({ inst, runtimes }: { inst: Agent; runtimes: import("@
               <div className="space-y-1" data-testid="agent-shared-tools">
                 <Label>Shared tools (from the fleet policy)</Label>
                 <p className="text-xs text-muted-foreground">
-                  {(execution?.cellnSelection?.clusterToolRefs?.length ? execution.cellnSelection.clusterToolRefs : wrapperProfile?.tools || []).map((tool) => tool.name).join(", ") || "none"}. Lent by the platform policy; nothing is copied into this namespace. Commands such as grep or jq are real programs from digest-pinned images; the Runs page shows each tool's source image.
+                  {(execution?.cellnSelection?.clusterToolRefs || []).map((tool) => tool.name).join(", ") || "none (chat only)"}. Lent by the platform policy; nothing is copied into this namespace. Commands such as grep or jq are real programs from digest-pinned images; the Runs page shows each tool's source image.
                 </p>
               </div>
             ) : (

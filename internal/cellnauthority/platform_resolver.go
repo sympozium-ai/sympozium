@@ -54,6 +54,33 @@ func PlatformReason(err error) string {
 	return ""
 }
 
+// platformDetailLimit bounds the refusal detail copied into tenant status.
+const platformDetailLimit = 200
+
+// PlatformDetail returns the authored part of a platform refusal's detail when
+// it is safe to show a tenant, or "" otherwise. Details are short sentences
+// about names, revisions and limits. A wrapped error follows ": " and may carry
+// an operator path, address or URL, so it is cut off; whatever remains is
+// withheld entirely if it still holds a path separator, a control character or
+// non-ASCII text, and is length-bounded. The detail grants no authority.
+func PlatformDetail(err error) string {
+	var target *PlatformResolutionError
+	if !errors.As(err, &target) {
+		return ""
+	}
+	detail, _, _ := strings.Cut(strings.TrimSpace(target.Detail), ": ")
+	for _, r := range detail {
+		if r == '/' || r == '\\' || r < 0x20 || r > 0x7e {
+			return ""
+		}
+	}
+	detail = strings.TrimRight(detail, ". ")
+	if len(detail) > platformDetailLimit {
+		detail = detail[:platformDetailLimit-3] + "..."
+	}
+	return detail
+}
+
 type PlatformResolveRequest struct {
 	ClusterID         string
 	Now               time.Time
@@ -368,7 +395,10 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 			return nil, deny(ReasonPolicyContracted, "policy %q does not permit runtime revision", policy.Name)
 		}
 	}
-	if int64(len(s.Run.Spec.Task.GetPrompt())) > runtimeLimits.TaskBytes {
+	// A run's task is one user message. A current worker's taskBytes (16384)
+	// bounds history plus message, so the message keeps its own bound and is
+	// refused here rather than later as an unexplained invalid turn.
+	if int64(len(s.Run.Spec.Task.GetPrompt())) > min(runtimeLimits.TaskBytes, api.MaxConversationMessageBytes) {
 		return nil, deny(ReasonLimitRange, "task exceeds effective runtime limit")
 	}
 
@@ -511,6 +541,12 @@ func resolveDecisionRoute(s platformSnapshot, required bool) (DecisionRouteBindi
 	auth := "none"
 	if c.Spec.SecretRef != "" {
 		auth = "secret"
+		// The run author names the connection; the Agent owner grants the key.
+		// Without this a run could borrow any Secret-backed connection in its
+		// namespace, a credential its Agent was never given.
+		if !agentGrantsConnectionSecret(s.Agent, c) {
+			return empty, deny(ReasonRouteMismatch, "Agent %q does not grant the model connection's Secret; add it to the Agent's authRefs or select the connection in the Agent's execution defaults", s.Agent.Name)
+		}
 	}
 	if c.Spec.CredentialProfile != "" {
 		// An owner-installed credential profile is an explicit operator route
@@ -542,7 +578,7 @@ func resolveDecisionRoute(s platformSnapshot, required bool) (DecisionRouteBindi
 		for _, candidate := range policy.Spec.Routes {
 			// A plain-HTTP origin needs the operator's approval on the policy
 			// route itself, not only on the tenant's connection.
-			insecureApproved := strings.HasPrefix(strings.ToLower(origin), "https://") || candidate.Auth == "none" || candidate.AllowInsecure
+			insecureApproved := strings.HasPrefix(strings.ToLower(origin), "https://") || candidate.AllowInsecure
 			if candidate.Provider == c.Spec.Provider && candidate.Protocol == c.Spec.Protocol && candidate.Auth == auth && insecureApproved && slices.Contains(candidate.Models, s.Run.Spec.Model.Model) && slices.Contains(candidate.EndpointOrigins, origin) {
 				allowed = true
 				break
@@ -553,7 +589,13 @@ func resolveDecisionRoute(s platformSnapshot, required bool) (DecisionRouteBindi
 		}
 	}
 	uid := string(c.UID)
-	specDigest, err := digestJSON(c.Spec)
+	// The model gateway recomputes this digest from the live spec on every
+	// registration and invocation; both sides digest the spec's DigestView.
+	specView, err := c.Spec.DigestView()
+	if err != nil {
+		return empty, err
+	}
+	specDigest, err := digestJSON(specView)
 	if err != nil {
 		return empty, err
 	}
@@ -569,6 +611,57 @@ func resolveDecisionRoute(s platformSnapshot, required bool) (DecisionRouteBindi
 		route.CredentialSourceRef = &CredentialSourceRef{Kind: "Secret", SecretName: c.Spec.SecretRef, SecretKey: secretKey}
 	}
 	return route, nil
+}
+
+// agentGrantsConnectionSecret is the Agent-owned allow-list applied to a
+// Secret-backed connection, the same rule the pod and harness paths apply to
+// spec.model.authSecretRef: the Secret is listed in the Agent's authRefs (an
+// empty provider grants it for any provider), or the Agent's own execution
+// defaults select this connection, which is the Agent owner naming it.
+func agentGrantsConnectionSecret(agent api.Agent, connection *api.ModelConnection) bool {
+	if execution := agent.Spec.Execution; execution != nil && execution.ModelConnectionRef != "" && execution.ModelConnectionRef == connection.Name {
+		return true
+	}
+	for _, ref := range agent.Spec.AuthRefs {
+		if ref.Secret == connection.Spec.SecretRef && (ref.Provider == "" || strings.EqualFold(ref.Provider, connection.Spec.Provider)) {
+			return true
+		}
+	}
+	return false
+}
+
+// mediatedRequestOutputTokens is the per-request output bound a gateway-mediated
+// connection (auth secret or none) states for itself, when it differs from the
+// default every worker already asks for. Zero means nothing changes: a
+// host-profile route, no connection, or a connection at the default (unset, or
+// spelled out as 512) is sized and prepared byte-for-byte as before. It is
+// derived from the connection spec alone, which the decision binds by digest,
+// so every turn of a run derives the same value.
+func mediatedRequestOutputTokens(connection *api.ModelConnection) int64 {
+	if connection == nil || connection.Spec.CredentialProfile != "" {
+		return 0
+	}
+	if bound := connection.Spec.RequestOutputTokens(); bound != api.DefaultRequestOutputTokens {
+		return bound
+	}
+	return 0
+}
+
+// mediatedTurnAllowance is what one turn reserves on a gateway-mediated route
+// whose connection raises or lowers the per-request output bound: the worker's
+// model requests per turn, each of up to that bound. The receiver requires
+// min(profile json.maxTurns, turn requests) x bound to fit the turn cap; this
+// reserves turn requests x bound, which is never less.
+func mediatedTurnAllowance(s platformSnapshot) (requests, outputTokens int64, ok bool) {
+	bound := mediatedRequestOutputTokens(s.Connection)
+	if bound == 0 {
+		return 0, 0, false
+	}
+	requests = api.TurnModelRequests
+	if native := s.Profile.Spec.Native; native != nil && native.TurnModelRequests > 0 {
+		requests = native.TurnModelRequests
+	}
+	return requests, requests * bound, true
 }
 
 // OneShotParentGraceSeconds is added to a native one-shot's turn allowance so
@@ -619,7 +712,16 @@ func resolveBudget(s platformSnapshot, request PlatformResolveRequest, modelRequ
 		parentDeadline = request.Now.Unix() + lease
 	}
 	turnCap := runCap
-	if native := s.Profile.Spec.Native; native != nil && native.TurnModelRequests > 0 && native.TurnOutputTokens > 0 {
+	if requests, outputTokens, mediated := mediatedTurnAllowance(s); modelRequired && mediated {
+		// The guest may ask for the connection's bound on every request of a
+		// turn, so a turn reserves requests x bound. A budget that cannot pay
+		// for one such turn is refused here, by number, rather than admitted
+		// into a turn the owner or gateway would cut short.
+		if runCap.Requests < requests || runCap.OutputTokens < outputTokens {
+			return DecisionBudgetBinding{}, deny(ReasonLimitRange, "one turn on this model connection needs %d model requests and %d output tokens (%d requests x %d per request) but the run budget allows %d requests and %d output tokens", requests, outputTokens, requests, s.Connection.Spec.RequestOutputTokens(), runCap.Requests, runCap.OutputTokens)
+		}
+		turnCap = DecisionCap{Requests: requests, OutputTokens: outputTokens}
+	} else if native := s.Profile.Spec.Native; native != nil && native.TurnModelRequests > 0 && native.TurnOutputTokens > 0 {
 		// A native profile's per-turn allowance is what the owner enforces for
 		// every turn; the run's total still caps the sum.
 		turnCap.Requests = min(turnCap.Requests, native.TurnModelRequests)

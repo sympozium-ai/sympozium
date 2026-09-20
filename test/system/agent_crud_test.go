@@ -29,9 +29,10 @@ func TestAgentCreateViaAPI(t *testing.T) {
 		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", name, ns), nil)
 	})
 
-	// Verify Agent CR exists with correct spec.
+	// Verify Agent CR exists with correct spec. The read goes through the
+	// informer cache, which trails the POST.
 	var agent sympoziumv1alpha1.Agent
-	assertExists(t, &agent, ns, name)
+	waitForObject(t, &agent, ns, name)
 
 	cfg := agent.Spec.Agents.Default
 	if cfg.Model != "qwen/qwen3.5-9b" {
@@ -84,9 +85,11 @@ func TestAgentGetViaAPI(t *testing.T) {
 		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", name, ns), nil)
 	})
 
-	// GET via API.
-	rec = httpDo(t, http.MethodGet, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", name, ns), nil)
-	requireStatus(t, rec, http.StatusOK)
+	// GET via API. The server reads through the manager's cache, which sees
+	// the new Agent only after its informer does.
+	pollUntil(t, 10*time.Second, 200*time.Millisecond, func() bool {
+		return httpDo(t, http.MethodGet, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", name, ns), nil).Code == http.StatusOK
+	})
 
 	var agent sympoziumv1alpha1.Agent
 	agent, _ = httpJSON[sympoziumv1alpha1.Agent](t, http.MethodGet, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", name, ns), nil)

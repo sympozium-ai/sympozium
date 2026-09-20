@@ -31,6 +31,18 @@ if [ "${#hex}" -ne 64 ] || [ -n "${hex//[0-9a-f]/}" ]; then
 	exit 1
 fi
 umask 077
+# The celln-node owner runs as root: its dispatcher privileged, its
+# wait-prepared init container without capabilities, so that one reads the
+# state only as the owning uid. A directory an older install left to another
+# uid (the single-plane parent ran as 10001) keeps it out for ever. Hand the two
+# directories it looks into back to root and keep them 0700: nothing but root
+# gains access, and the credential material below them is not touched.
+for dir in "$FLEET_STATE" "$root"; do
+	if [ -d "$dir" ] && [ "$(stat -c '%u:%g' "$dir")" != 0:0 ]; then
+		echo "resetting $dir from owner $(stat -c '%u:%g mode %a' "$dir") to 0:0 mode 700 so the celln-node pod can read it"
+		chown 0:0 "$dir"
+	fi
+done
 install -d -m 0700 "$FLEET_STATE" "$root" "$root/motes" "$root/tools" \
 	"$root/parent-issuance" "$root/trusted-parent-permits" "$root/trusted-parent-launches"
 
@@ -91,37 +103,19 @@ for backend in $backend_names; do
 	output="$FLEET_STATE/.configure-$hex-$backend-$$"
 	rm -rf "$output"
 	plan="$(mktemp "$FLEET_STATE/.plan-XXXXXX")"
-	python3 - "$package" "$FLEET_PACKAGE_HASH" "$FLEET_PRINCIPAL" "$backend" "$output" >"$plan" <<'PY'
-import json, os, sys
-package, package_hash, principal, name, output = sys.argv[1:]
-backend = next(b for b in json.loads(os.environ["FLEET_BACKENDS"]) if b["name"] == name)
-scope = os.environ["FLEET_SCOPE"]
-plan = {"apiVersion": "celln.native-starter-config/v1", "package": package, "packageHash": package_hash,
-        "principal": principal, "credentialFile": backend["credentialFile"], "output": output}
-if backend.get("endpoint"):
-    # The operator's model route; Celln validates it again before configuring.
-    plan["modelConnection"] = {
-        "provider": backend["provider"],
-        "protocol": backend["protocol"],
-        "endpoint": backend["endpoint"],
-        "model": backend["model"],
-        "credentialProfile": scope if name == "native" else f"{scope}-{name}",
-        "allowInsecure": bool(backend.get("allowInsecure", False)),
-    }
-limits = {}
-for key, env in (("leaseSeconds", "FLEET_LIMIT_LEASE_SECONDS"), ("maxTurns", "FLEET_LIMIT_MAX_TURNS"),
-                 ("maxModelRequests", "FLEET_LIMIT_MAX_MODEL_REQUESTS"), ("maxOutputTokens", "FLEET_LIMIT_MAX_OUTPUT_TOKENS")):
-    value = int(os.environ.get(env, "0") or 0)
-    if value > 0:
-        limits[key] = value
-if limits:
-    plan["hostLimits"] = limits
-hosts = json.loads(os.environ.get("FLEET_HTTPS_HOSTS") or "[]")
-if hosts:
-    plan["httpsHosts"] = hosts
-print(json.dumps(plan))
-PY
-	"$celln" --root "$root" starter-configure "$plan" --approve-starter-effects
+	# fleet-plan.py builds the plan; a backend's model parameters and its
+	# output cap per request join it only when the backend sets them.
+	python3 /etc/celln-fleet/fleet-plan.py "$package" "$FLEET_PACKAGE_HASH" "$FLEET_PRINCIPAL" "$backend" "$output" >"$plan"
+	if ! "$celln" --root "$root" starter-configure "$plan" --approve-starter-effects; then
+		if python3 /etc/celln-fleet/fleet-plan.py --has-parameters "$backend"; then
+			echo "backend $backend sets model parameters: they need a Celln release newer than v0.5.22 on this node (the celln-node-configure image carries it); an older Celln refuses a plan that names them, and a newer one refuses parameters that break its rules (see its message above)" >&2
+		fi
+		if python3 /etc/celln-fleet/fleet-plan.py --has-max-output-tokens "$backend"; then
+			echo "backend $backend sets max output tokens per request: that needs a Celln release newer than v0.5.23 on this node (the celln-node-configure image carries it) and a starter package built by it; an older Celln refuses a plan that names the field, and a newer one refuses a package built before it or host limits below one turn of 6 requests (see its message above)" >&2
+		fi
+		rm -f "$plan"
+		exit 1
+	fi
 	rm -f "$plan"
 	mv "$output" "$configuration"
 done

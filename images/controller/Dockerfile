@@ -27,12 +27,18 @@ ARG IMAGE_TAG=latest
 RUN apk add --no-cache git ca-certificates
 WORKDIR /workspace
 COPY go.mod go.sum ./
-RUN go mod download
+# Retry: proxy.golang.org intermittently resets streams in CI.
+RUN for i in 1 2 3 4 5; do go mod download && break; [ "$i" = 5 ] && exit 1; \
+    echo "go mod download failed (attempt $i/5); retrying in $((i*5))s" >&2; sleep $((i*5)); done
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=mod -ldflags="-s -w -X main.imageTag=${IMAGE_TAG}" -o /controller ./cmd/controller
+# TLS edge for a fleet node's scoped receiver (celln.mediation): the chart runs
+# it from this image as an unprivileged sidecar beside the plaintext dispatcher.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=mod -ldflags="-s -w" -o /celln-parent-proxy ./cmd/celln-parent-proxy
 
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /controller /controller
+COPY --from=builder /celln-parent-proxy /celln-parent-proxy
 COPY --from=celln-cli /rootfs/ /
 USER 65532:65532
 ENTRYPOINT ["/controller"]

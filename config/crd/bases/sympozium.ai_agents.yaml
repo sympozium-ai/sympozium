@@ -2807,7 +2807,7 @@ spec:
                         type: integer
                       maxOutputTokens:
                         format: int64
-                        maximum: 3145728
+                        maximum: 25165824
                         minimum: 0
                         type: integer
                       maxTurns:

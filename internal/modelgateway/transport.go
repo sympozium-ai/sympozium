@@ -28,7 +28,7 @@ func (netResolver) LookupIP(ctx context.Context, network, host string) ([]net.IP
 type restrictedDialer struct {
 	resolver     ipResolver
 	allowPrivate bool
-	loopbackOnly bool
+	privateOnly  bool
 	dial         func(context.Context, string, string) (net.Conn, error)
 }
 
@@ -42,7 +42,7 @@ func (d restrictedDialer) DialContext(ctx context.Context, network, address stri
 		return nil, fail(ReasonProviderUnavailable, 502, err)
 	}
 	for _, ip := range ips {
-		if (d.loopbackOnly && !ip.IsLoopback()) || (forbiddenIP(ip) && !d.allowPrivate) {
+		if (d.privateOnly && !(ip.IsLoopback() || ip.IsPrivate())) || (forbiddenIP(ip) && !d.allowPrivate) {
 			return nil, fail(ReasonDestination, 403, nil)
 		}
 	}
@@ -65,7 +65,7 @@ func clientForEndpoint(endpoint string, allowPrivate bool, maxDuration time.Dura
 		roots = nil
 	}
 	base := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: -1}
-	dialer := restrictedDialer{resolver: netResolver{}, allowPrivate: allowPrivate, loopbackOnly: u.Scheme == "http", dial: base.DialContext}
+	dialer := restrictedDialer{resolver: netResolver{}, allowPrivate: allowPrivate, privateOnly: u.Scheme == "http", dial: base.DialContext}
 	transport := &http.Transport{
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,

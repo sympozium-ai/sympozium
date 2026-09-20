@@ -51,7 +51,7 @@ spec:
                     type: integer
                   maxOutputTokens:
                     format: int64
-                    maximum: 3145728
+                    maximum: 25165824
                     minimum: 0
                     type: integer
                   maxParentLeaseSeconds:
@@ -145,8 +145,8 @@ spec:
                     allowInsecure:
                       description: |-
                         AllowInsecure approves plain-HTTP or private endpoint origins for a
-                        host-profile route (for example a LAN llama-server). The credential stays
-                        on the node; a cluster Secret route can never use plain HTTP.
+                        keyless or host-profile route (for example a LAN llama-server).
+                        A cluster Secret route can never use plain HTTP.
                       type: boolean
                     auth:
                       enum:
@@ -185,13 +185,11 @@ spec:
                   - provider
                   type: object
                   x-kubernetes-validations:
-                  - message: credential-bearing routes require https; http is restricted
-                      to no-auth loopback origins or host-profile routes with allowInsecure
+                  - message: Secret routes require https; http requires auth none
+                      or host-profile and explicit allowInsecure
                     rule: self.endpointOrigins.all(x, x.startsWith('https://') ||
-                      (self.auth == 'none' && (x.startsWith('http://127.0.0.1') ||
-                      x.startsWith('http://localhost') || x.startsWith('http://[::1]')))
-                      || (self.auth == 'host-profile' && has(self.allowInsecure) &&
-                      self.allowInsecure))
+                      (x.startsWith('http://') && self.auth in ['none', 'host-profile']
+                      && has(self.allowInsecure) && self.allowInsecure))
                 maxItems: 32
                 type: array
                 x-kubernetes-list-type: atomic
@@ -220,7 +218,7 @@ spec:
                           type: integer
                         taskBytes:
                           format: int64
-                          maximum: 2048
+                          maximum: 16384
                           minimum: 1
                           type: integer
                         timeoutMillis:

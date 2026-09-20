@@ -14,6 +14,7 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useState } from "react";
 import { formatAge } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ClusterBadge } from "@/components/cluster-identity";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -50,6 +51,7 @@ export function Header() {
             </SelectContent>
           </Select>
         </div>
+        <ClusterBadge />
       </div>
       <div className="flex items-center gap-3">
         <Button size="sm" onClick={() => setCreateOpen(true)}>

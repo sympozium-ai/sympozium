@@ -66,7 +66,7 @@ func newPlatformFixture(t *testing.T, namespace string, model bool) platformFixt
 		return api.CellnImmutableRef{Hash: "blake3:" + strings.Repeat(ch, 64)}
 	}
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace, UID: types.UID(namespace + "-uid"), Labels: map[string]string{"sympozium.ai/celln-tenant": "enabled"}}}
-	agent := &api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "agent", UID: types.UID(namespace + "-agent"), Generation: 1}, Spec: api.AgentSpec{RuntimeRef: "runtime"}}
+	agent := &api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "agent", UID: types.UID(namespace + "-agent"), Generation: 1}, Spec: api.AgentSpec{RuntimeRef: "runtime", AuthRefs: []api.SecretRef{{Provider: "openai", Secret: "model-secret"}}}}
 	wrapperLimits := &api.AgentRuntimeCellnLimits{TimeoutMillis: 90000, MemoryBytes: 96 << 20, TaskBytes: 1024, OutputBytes: 32768, Workspace: "none"}
 	runtimeWrapper := &api.AgentRuntime{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "runtime", UID: types.UID(namespace + "-runtime"), Generation: 1}, Spec: api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: "json-agent-v1", Revision: "v1"}, CellnLimits: wrapperLimits}}
 	profile := &api.CellnRuntimeProfile{ObjectMeta: metav1.ObjectMeta{Name: "json-agent-v1", UID: "profile-uid", Generation: 1}, Spec: api.CellnRuntimeProfileSpec{
@@ -149,6 +149,49 @@ func TestPlatformResolverAllowsExplicitPrivateTLSCredentialRoute(t *testing.T) {
 	}
 	if _, err := f.resolver.Resolve(ctx, f.runKey, PlatformResolveRequest{ClusterID: "cluster", Now: f.now, AdmissionWindow: time.Minute, Operation: "execution.start"}); PlatformReason(err) != ReasonRouteMismatch {
 		t.Fatalf("credential-bearing HTTP route was not refused: %v", err)
+	}
+}
+
+func TestPlatformResolverKeylessLANRequiresPolicyApproval(t *testing.T) {
+	f := newPlatformFixture(t, "keyless-lan-route", true)
+	ctx := context.Background()
+	var connection api.ModelConnection
+	if err := f.client.Get(ctx, types.NamespacedName{Namespace: f.runKey.Namespace, Name: "model"}, &connection); err != nil {
+		t.Fatal(err)
+	}
+	connection.Spec.SecretRef = ""
+	connection.Spec.Endpoint = "http://192.168.1.237:8080/v1/chat/completions"
+	connection.Spec.AllowInsecure = true
+	if err := f.client.Update(ctx, &connection); err != nil {
+		t.Fatal(err)
+	}
+	var policies api.CellnExecutionPolicyList
+	if err := f.client.List(ctx, &policies); err != nil {
+		t.Fatal(err)
+	}
+	for i := range policies.Items {
+		policies.Items[i].Spec.Routes[0].Auth = "none"
+		policies.Items[i].Spec.Routes[0].EndpointOrigins = []string{"http://192.168.1.237:8080"}
+		if err := f.client.Update(ctx, &policies.Items[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := PlatformResolveRequest{ClusterID: "cluster", Now: f.now, AdmissionWindow: time.Minute, Operation: "execution.start"}
+	if _, err := f.resolver.Resolve(ctx, f.runKey, request); PlatformReason(err) != ReasonRouteMismatch {
+		t.Fatalf("tenant-only approval accepted: %v", err)
+	}
+	for i := range policies.Items {
+		policies.Items[i].Spec.Routes[0].AllowInsecure = true
+		if err := f.client.Update(ctx, &policies.Items[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolved, err := f.resolver.Resolve(ctx, f.runKey, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Decision.Route.Auth != "none" || resolved.Decision.Route.CredentialSource != nil {
+		t.Fatalf("unexpected keyless route: %+v", resolved.Decision.Route)
 	}
 }
 

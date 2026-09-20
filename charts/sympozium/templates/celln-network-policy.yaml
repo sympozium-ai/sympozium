@@ -81,5 +81,19 @@ spec:
       ports:
         - protocol: TCP
           port: 8787
+    {{- if include "sympozium.cellnMediation" . }}
+    # Mediated model access: only the controller reaches the scoped
+    # receiver's TLS edge; the plaintext dispatcher port stays router-only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "sympozium.namespace" . | quote }}
+          podSelector:
+            matchLabels:
+              control-plane: controller-manager
+      ports:
+        - protocol: TCP
+          port: {{ int (((.Values.celln.mediation | default dict).receiver | default dict).port | default 9443) }}
+    {{- end }}
 {{- end }}
 {{- end }}

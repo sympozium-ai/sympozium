@@ -29,7 +29,30 @@ func NewExecution(backend string) (http.Handler, func(), error) {
 	return newProxy(backend, executionRoute)
 }
 
+// NewScoped exposes only the operator-enabled scoped receiver protocol
+// (/v1/scoped/*) of a loopback dispatcher. The dispatcher's own operator bearer
+// and signed permits remain the authority; this edge only adds TLS. Its body
+// bound follows the receiver's (256 KiB), not the parent protocol's.
+func NewScoped(backend string) (http.Handler, func(), error) {
+	return newBoundedProxy(backend, scopedRoute, 262144)
+}
+
+func scopedRoute(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	switch path {
+	case "/v1/scoped/prepare", "/v1/scoped/start", "/v1/scoped/read", "/v1/scoped/cleanup":
+		return true
+	}
+	return false
+}
+
 func newProxy(backend string, allowed func(string, string) bool) (http.Handler, func(), error) {
+	return newBoundedProxy(backend, allowed, 65536)
+}
+
+func newBoundedProxy(backend string, allowed func(string, string) bool, maxBody int64) (http.Handler, func(), error) {
 	u, err := url.Parse(backend)
 	if err != nil || u.Scheme != "http" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() || u.Port() == "" || u.User != nil || u.Opaque != "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, nil, fmt.Errorf("fixed literal loopback HTTP dispatcher origin required")
@@ -50,11 +73,11 @@ func newProxy(backend string, allowed func(string, string) bool) (http.Handler, 
 			http.Error(w, "configured protocol route required", http.StatusNotFound)
 			return
 		}
-		if r.ContentLength > 65536 {
+		if r.ContentLength > maxBody {
 			http.Error(w, "parent request too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 65536)
+		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

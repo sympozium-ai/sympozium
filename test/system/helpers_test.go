@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -13,7 +14,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
 
 // httpDo sends an HTTP request through the API server mux and returns the response recorder.
@@ -81,7 +86,69 @@ func pollUntil(t *testing.T, timeout, interval time.Duration, condition func() b
 	}
 }
 
-// assertExists verifies the resource exists in the cluster.
+// waitForObject polls until the resource is readable through k8sClient and
+// leaves it in obj. k8sClient is the manager's cached client, so an object
+// written a moment ago — by the test, the API server or a controller — is
+// visible only once its informer has delivered it. Use this, not assertExists,
+// for any read that follows a write.
+func waitForObject(t *testing.T, obj client.Object, ns, name string) {
+	t.Helper()
+	key := client.ObjectKey{Namespace: ns, Name: name}
+	var lastErr error
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if lastErr = k8sClient.Get(testCtx, key, obj); lastErr == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected %T %s/%s to exist: %v", obj, ns, name, lastErr)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// waitForGET polls an API GET until it returns 200. The API server reads
+// through the same informer cache, so a handler that looks an object up
+// (createRun's Agent, triggerStimulus's Ensemble) answers 404 for one that was
+// created a moment ago. Wait for the GET before calling such a handler.
+func waitForGET(t *testing.T, path string) {
+	t.Helper()
+	var last *httptest.ResponseRecorder
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if last = httpDo(t, http.MethodGet, path, nil); last.Code == http.StatusOK {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GET %s never returned 200; last status = %d, body = %s", path, last.Code, last.Body.String())
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// updateEnsemble applies mutate to the named Ensemble and writes it back,
+// re-reading and retrying on a conflict. The read comes from the informer
+// cache, which can trail the controller's own status writes, so a single
+// get-modify-update can carry a stale resourceVersion.
+func updateEnsemble(t *testing.T, ns, name string, mutate func(*sympoziumv1alpha1.Ensemble)) {
+	t.Helper()
+	backoff := wait.Backoff{Steps: 50, Duration: 200 * time.Millisecond, Factor: 1.0}
+	err := retry.RetryOnConflict(backoff, func() error {
+		var e sympoziumv1alpha1.Ensemble
+		if err := k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: name}, &e); err != nil {
+			return err
+		}
+		mutate(&e)
+		return k8sClient.Update(testCtx, &e)
+	})
+	if err != nil {
+		t.Fatalf("update ensemble %s/%s: %v", ns, name, err)
+	}
+}
+
+// assertExists verifies the resource exists, with a single cached read. Only
+// valid once the cache is already known to hold the object (for instance after
+// a List through the same cache returned it); after a write use waitForObject.
 func assertExists(t *testing.T, obj client.Object, ns, name string) {
 	t.Helper()
 	key := client.ObjectKey{Namespace: ns, Name: name}

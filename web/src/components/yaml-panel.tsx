@@ -12,12 +12,15 @@ import { toYaml, type YamlValue } from "@/lib/yaml";
 import type { WizardResult } from "@/components/onboarding-wizard";
 import { executionFromWizard, modelConnectionName, modelConnectionEndpoint } from "@/lib/agent-execution";
 import { skillParamsFromWizard } from "@/lib/create-fields";
-import type { Agent, Ensemble } from "@/lib/api";
+import type { Agent, Ensemble, ModelConnection } from "@/lib/api";
 
 // ── YAML builders ─────────────────────────────────────────────────────────────
 
-/** Build a Agent YAML manifest from wizard form state. */
-export function instanceYamlFromWizard(result: WizardResult): string {
+/**
+ * Build a Agent YAML manifest from wizard form state. A Celln Agent passes its
+ * own connection spec; it names the Secret and never carries the key.
+ */
+export function instanceYamlFromWizard(result: WizardResult, ownConnection?: ModelConnection["spec"]): string {
   const wizardSkillParams = skillParamsFromWizard(result);
   const skills = result.skills
     .filter((s) => s !== "memory")
@@ -68,6 +71,7 @@ export function instanceYamlFromWizard(result: WizardResult): string {
         model: result.model,
         provider: result.provider,
         modelConnectionRef: connectionName,
+        enduringDefaults: result.enduringDefaults,
       })
     : executionFromWizard(result);
 
@@ -94,14 +98,12 @@ export function instanceYamlFromWizard(result: WizardResult): string {
     apiVersion: "sympozium.ai/v1alpha1",
     kind: "ModelConnection",
     metadata: { name: connectionName },
-    spec: {
+    spec: (ownConnection as unknown as YamlValue) || {
       provider: result.provider,
-      protocol:
-        result.provider === "anthropic" ? "anthropic-messages" : "openai-chat",
+      protocol: "openai-chat",
       endpoint: modelConnectionEndpoint(result.baseURL, result.provider),
-      credentialProfile: result.credentialProfile || result.provider,
+      ...(result.secretName ? { secretRef: result.secretName } : {}),
       models: [result.model],
-      ...(result.allowInsecure ? { allowInsecure: true } : {}),
     },
   };
 

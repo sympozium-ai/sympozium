@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { CellnCell, CellnNodeCells, CellnRunRef } from "@/lib/api";
+import type { CellnCell, CellnCellsSource, CellnNodeCells, CellnNodeParent, CellnRunRef } from "@/lib/api";
 import { useCellnFleetCells } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,16 @@ function duration(cell: CellnCell, now: number) {
 
 export { shortTurn };
 
+const sourceLabel: Record<CellnCellsSource, string> = { gateway: "gateway", "node-report": "node reports" };
+
+// A parent the gateway observed live holds a context unless its owner says
+// otherwise; without the gateway, the run's phase is the only evidence.
+const endedParentStatus = new Set(["Stopped", "ContextLost", "TeardownUncertain"]);
+function parentIsLive(p: CellnNodeParent) {
+  if (p.status && p.statusLive) return !endedParentStatus.has(p.status);
+  return !!p.run?.live;
+}
+
 export function RunLink({ run }: { run: CellnRunRef }) {
   return (
     <Link to={`/runs/${run.name}`} className="font-mono text-blue-400 hover:underline">
@@ -48,8 +58,9 @@ export function RunLink({ run }: { run: CellnRunRef }) {
 }
 
 /**
- * `celln ps` for every fleet node: each node's configure pod reports its
- * cells and parents, and the API server joins them to their runs. Worker
+ * `celln ps` for every fleet node: the Celln gateway lists each node's cells
+ * and parents (or, on older Celln releases, each node's configure pod reports
+ * them), and the API server joins them to their runs. Worker
  * cells run one turn each; the persistent parent holding a conversation's
  * context is listed separately, as `celln ps` does not show it.
  */
@@ -75,6 +86,10 @@ export function CellnNodeCellsCard() {
   if (!data && (isError || !isLoading)) return null;
   if (data && data.length === 0) return null;
   const polling = !isError && now - dataUpdatedAt < 10000;
+  // One source for the whole fleet is said once, in the header; a mix (a
+  // backend the gateway could not list, filled from its node report) per node.
+  const sources = Array.from(new Set((data || []).map((n) => n.source).filter((s): s is CellnCellsSource => !!s)));
+  const mixed = sources.length > 1;
 
   return (
     <Card data-testid="celln-node-cells">
@@ -87,6 +102,11 @@ export function CellnNodeCellsCard() {
                 <span className={cn("h-1.5 w-1.5 rounded-full", polling ? "animate-pulse bg-emerald-400" : "bg-amber-500")} />
                 {polling ? "live" : "not updating"} · updated {ago(dataUpdatedAt, now)}
               </span>
+              {sources.length > 0 && (
+                <span className="text-xs font-normal text-muted-foreground" data-testid="celln-cells-source">
+                  source: {mixed ? "mixed" : sourceLabel[sources[0]]}
+                </span>
+              )}
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               <code>celln ps{all ? " -a" : ""}</code> on each fleet node, refreshed every 2 seconds. Each turn runs in its own worker cell; the parent holding a conversation is listed below it.
@@ -109,15 +129,15 @@ export function CellnNodeCellsCard() {
       </CardHeader>
       <CardContent className="space-y-5">
         {isLoading && <p className="text-xs text-muted-foreground">Reading fleet nodes…</p>}
-        {nodes.map((n) => <NodeCells key={n.node} report={n} all={all} now={now} />)}
+        {nodes.map((n) => <NodeCells key={n.node} report={n} all={all} now={now} showSource={mixed} />)}
       </CardContent>
     </Card>
   );
 }
 
-function NodeCells({ report, all, now }: { report: CellnNodeCells; all: boolean; now: number }) {
+function NodeCells({ report, all, now, showSource }: { report: CellnNodeCells; all: boolean; now: number; showSource: boolean }) {
   const cells = all ? report.cells : report.cells.filter((c) => c.status === "running");
-  const liveParents = report.parents.filter((p) => p.run?.live);
+  const liveParents = report.parents.filter(parentIsLive);
   const parents = all ? report.parents : liveParents;
   return (
     <div className="space-y-2" data-testid={`celln-node-${report.node}`}>
@@ -131,6 +151,9 @@ function NodeCells({ report, all, now }: { report: CellnNodeCells; all: boolean;
           <span className={cn("text-xs", report.stale ? "text-amber-500" : "text-muted-foreground")}>
             reported {ago(report.reportedMs, now)}{report.stale ? " — stale; check celln-node-configure on this node" : ""}
           </span>
+        )}
+        {showSource && report.source && (
+          <span className="text-xs text-muted-foreground" data-testid={`celln-node-source-${report.node}`}>source: {sourceLabel[report.source]}</span>
         )}
       </div>
       <div className="overflow-x-auto rounded border">
@@ -176,7 +199,14 @@ function NodeCells({ report, all, now }: { report: CellnNodeCells; all: boolean;
                 <li key={p.incarnation} className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                   <span className="font-mono" title={p.incarnation}>{p.incarnation.slice(7, 19)}</span>
                   {p.run ? <RunLink run={p.run} /> : <span className="text-muted-foreground">run not found</span>}
-                  <span className="text-muted-foreground">{p.run?.phase || "unknown"}{p.run && !p.run.live ? " (ended)" : ""}</span>
+                  {p.status ? (
+                    // The owner's own observation beats the run's phase.
+                    <span className={p.statusLive ? "text-foreground" : "text-muted-foreground"} title={`Parent status from the Celln gateway${p.statusLive ? "" : " (not a live observation)"}; run phase ${p.run?.phase || "unknown"}`} data-testid="celln-parent-status">
+                      {p.status}{p.statusLive ? "" : " (last known)"}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{p.run?.phase || "unknown"}{p.run && !p.run.live ? " (ended)" : ""}</span>
+                  )}
                   <span className="text-muted-foreground">{p.turns.length} turn{p.turns.length === 1 ? "" : "s"}{last ? `, last ${shortTurn(last.turnId)}: ${last.stage}${last.succeeded === false ? " (failed)" : ""}` : ""}</span>
                   <span className="text-muted-foreground">{ago(p.updatedMs, now)}</span>
                 </li>

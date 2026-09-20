@@ -229,12 +229,13 @@ func TestInstallPlatformPublishesCatalogueOncePerScopeAndWrapsNamespaces(t *test
 }
 
 func TestSessionDefaultsStayInsideCeilings(t *testing.T) {
-	wide := SessionDefaults(api.EnduringRunSpec{LeaseSeconds: 86400, MaxTurns: 256, MaxModelRequests: 768, MaxOutputTokens: 393216})
-	if wide.LeaseSeconds != 14400 || wide.MaxTurns != 64 || wide.MaxModelRequests != 192 || wide.MaxOutputTokens != 98304 {
+	wide := SessionDefaults(api.EnduringRunSpec{LeaseSeconds: 86400, MaxTurns: 256, MaxModelRequests: 1536, MaxOutputTokens: 786432})
+	if wide.LeaseSeconds != 14400 || wide.MaxTurns != 64 || wide.MaxModelRequests != 384 || wide.MaxOutputTokens != 196608 {
 		t.Fatalf("session defaults: %+v", wide)
 	}
+	// Ceilings that pay for two turns yield two, not the four the policy names.
 	narrow := SessionDefaults(api.EnduringRunSpec{LeaseSeconds: 600, MaxTurns: 4, MaxModelRequests: 12, MaxOutputTokens: 6144})
-	if narrow.LeaseSeconds != 600 || narrow.MaxTurns != 4 || narrow.MaxModelRequests != 12 || narrow.MaxOutputTokens != 6144 {
+	if narrow.LeaseSeconds != 600 || narrow.MaxTurns != 2 || narrow.MaxModelRequests != 12 || narrow.MaxOutputTokens != 6144 {
 		t.Fatalf("session defaults exceed narrow ceilings: %+v", narrow)
 	}
 }

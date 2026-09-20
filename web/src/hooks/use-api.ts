@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, type AgentRun } from "@/lib/api";
 import { toast } from "sonner";
 
 /** Show a user-friendly toast for mutation errors.  Network failures get a
@@ -83,6 +83,16 @@ export function useModelConnections() {
 
 export function useCellnPlatformProfiles(enabled = true) {
   return useQuery({ queryKey: ["celln-platform-profiles"], queryFn: api.cellnPlatform.profiles, enabled });
+}
+
+/** Provider routes the operator declared for Agents that bring their own key. */
+export function useCellnMediation(enabled = true) {
+  return useQuery({ queryKey: ["celln-mediation"], queryFn: api.cellnPlatform.mediation, enabled, retry: false });
+}
+
+/** Names of Secrets in the namespace that already hold the given model key. */
+export function useCellnKeySecrets(key: string, enabled = true) {
+  return useQuery({ queryKey: ["celln-key-secrets", key], queryFn: () => api.cellnPlatform.keySecrets(key), enabled: enabled && !!key, retry: false });
 }
 
 export function useInstallDefaultRuntimes() {
@@ -226,6 +236,28 @@ export function useCreateRun() {
   });
 }
 
+/**
+ * An enduring run's turn history, pinned to the run UID it was loaded for. The
+ * conversation view and the failure diagnosis share this one query, so the
+ * page polls the history once however many of them are mounted.
+ */
+export function useParentTurns(run: AgentRun, enabled = true) {
+  const uid = run.metadata.uid || "";
+  const namespace = run.metadata.namespace || "default";
+  return useInfiniteQuery({
+    queryKey: ["parent-turns", namespace, run.metadata.name, uid],
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const page = await api.runs.turns(run.metadata.name, namespace, pageParam);
+      if (page.runUID !== uid) throw new Error("Run identity changed. Reload the run before continuing.");
+      return page;
+    },
+    getNextPageParam: (page) => page.continue || undefined,
+    enabled: enabled && Boolean(uid),
+    refetchInterval: 2000,
+  });
+}
+
 export function useContinueRun() {
   const qc = useQueryClient();
   return useMutation({
@@ -238,16 +270,6 @@ export function useContinueRun() {
   });
 }
 
-export function useCellnFleetBackends(enabled = true) {
-  return useQuery({
-    queryKey: ["celln-fleet-backends"],
-    queryFn: api.cellnPlatform.backends,
-    enabled,
-    retry: false,
-    refetchInterval: 15000,
-  });
-}
-
 /** Every fleet node's Celln cells (`celln ps -a`), refreshed while shown. */
 export function useCellnFleetCells(enabled = true) {
   return useQuery({
@@ -256,19 +278,6 @@ export function useCellnFleetCells(enabled = true) {
     enabled,
     retry: false,
     refetchInterval: 2000,
-  });
-}
-
-export function useAddCellnFleetBackend() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: api.cellnPlatform.addBackend,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["celln-fleet-backends"] });
-      qc.invalidateQueries({ queryKey: ["celln-platform-profiles"] });
-      toast.success("Backend recorded; the fleet's nodes are configuring it");
-    },
-    onError: toastError,
   });
 }
 
@@ -754,6 +763,19 @@ export function useClusterInfo() {
     queryKey: ["cluster", "info"],
     queryFn: api.cluster.info,
     refetchInterval: 15000,
+  });
+}
+
+/** Which cluster the console is talking to. Identity rarely changes, so this
+ *  polls far slower than the 5 s app default; a window refocus still refetches,
+ *  which is when a silently re-pointed port-forward is most likely noticed. */
+export function useCluster(refetchInterval = 60000) {
+  return useQuery({
+    queryKey: ["cluster", "identity"],
+    queryFn: api.cluster.get,
+    refetchInterval,
+    // Always stale, so every return to the tab re-checks the cluster.
+    staleTime: 0,
   });
 }
 

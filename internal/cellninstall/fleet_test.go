@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/cellnparent"
 	"github.com/zeebo/blake3"
 	corev1 "k8s.io/api/core/v1"
@@ -315,10 +316,18 @@ func TestFleetLimitsDefaultToLongRunningAndAreBounded(t *testing.T) {
 	if err != nil || got.LeaseSeconds != 3600 || got.MaxTurns != DefaultFleetLimits.MaxTurns {
 		t.Fatalf("partial override: %+v %v", got, err)
 	}
-	for name, l := range map[string]FleetLimits{"lease too long": {LeaseSeconds: 86401}, "lease too short": {LeaseSeconds: 30}, "no turns": {MaxTurns: -1}, "tokens below one turn": {MaxOutputTokens: 1000}} {
-		if _, err := l.Resolve(); err == nil {
-			t.Fatalf("%s accepted", name)
+	// Every turn reserves 6 requests and 3072 tokens, so the defaults afford
+	// exactly their 256 turns.
+	if got.MaxTurns != 256 || got.MaxModelRequests != 1536 || got.MaxOutputTokens != 786432 || TurnsAfforded(got.MaxModelRequests, got.MaxOutputTokens, api.TurnModelRequests, api.TurnOutputTokens) != got.MaxTurns {
+		t.Fatalf("defaults do not afford their turns: %+v", got)
+	}
+	for name, l := range map[string]FleetLimits{"lease too long": {LeaseSeconds: 86401}, "lease too short": {LeaseSeconds: 30}, "no turns": {MaxTurns: -1}, "tokens below one turn": {MaxOutputTokens: 3071}, "requests below one turn": {MaxModelRequests: 5}, "the old one-turn minimum": {MaxModelRequests: 3, MaxOutputTokens: 1536}, "too many requests": {MaxModelRequests: 6145}, "too many tokens": {MaxOutputTokens: 25165825}} {
+		if _, err := l.Resolve(); err == nil || !strings.Contains(err.Error(), "model requests 6–6144, output tokens 3072–25165824") {
+			t.Fatalf("%s: %v", name, err)
 		}
+	}
+	if one, err := (FleetLimits{MaxTurns: 1, MaxModelRequests: 6, MaxOutputTokens: 3072}).Resolve(); err != nil || one.MaxModelRequests != 6 {
+		t.Fatalf("one turn of the allowance refused: %+v %v", one, err)
 	}
 	o := validFleet()
 	o.Limits = FleetLimits{LeaseSeconds: 7200}

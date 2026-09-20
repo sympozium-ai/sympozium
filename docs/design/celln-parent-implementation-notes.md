@@ -2814,3 +2814,28 @@ test passed in isolation, and the full rerun passed including it and the new
 routing test (`target/parent-child-routing-repeat-ci.log`). This intermittent
 root-lock test failure remains a follow-up investigation; no ownership check
 was weakened or skipped and its cause has not been established.
+
+## A failed initial turn no longer closes the conversation
+
+The starter release required the initial turn's committed *success* before any
+follow-up (`ClaimTurnSlot`, the turn API's readiness check and the composer). No
+host rule asked for that: the Celln owner ends a parent session only on a
+handler error (reported as `ContextLost`); a committed `succeeded:false` result
+leaves the context intact and the owner `Ready`, exactly as after a failed
+later turn. On a real fleet a first-turn harness error therefore left a live,
+Ready parent that refused every message with a 409.
+
+`cellnparent.TurnReadiness` is now the single rule, used by the API before it
+records a turn and by `ClaimTurnSlot` against a fresh read. It requires a live
+enduring run in phase Running, no recorded owner outcome, a *committed* initial
+result (either outcome), `CellnParentReady=True` for the current generation, an
+unchanged frozen binding, a free slot (or the slot's own turn re-claiming), an
+unexpired original lease and unspent turn budget. Each refusal carries a stable
+reason and a user-safe message (`X-Sympozium-Turn-Refusal` on the API's 409).
+Budget accounting is unchanged: the initial turn, failed or not, is the one turn
+outside `acceptedTurns`, so follow-ups stop at `maxTurns - 1`.
+
+Lost, stopped, teardown-uncertain, create-refused, unreconciled and uncommitted
+parents stay refused. `AutomaticContinuationStalled` is unchanged: a seeded
+resume turn is never follow-up work, even when it failed; a message the user
+sends afterwards is.

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "cypress:open": "cypress open",
     "cypress:run": "cypress run",
+    "test:stubbed": "cypress run --spec cypress/e2e/celln-cells-ux.cy.ts,cypress/e2e/celln-own-key.cy.ts,cypress/e2e/celln-conversation.cy.ts,cypress/e2e/celln-scoped-review.cy.ts,cypress/e2e/celln-selection.cy.ts,cypress/e2e/topology-standalone-agent.cy.ts,cypress/e2e/run-diagnosis.cy.ts,cypress/e2e/cluster-identity.cy.ts",
     "demo:record": "./scripts/record-demo.sh"
   },
   "dependencies": {

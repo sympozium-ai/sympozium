@@ -41,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -92,6 +93,7 @@ Running without a subcommand launches the interactive TUI.`,
 
 	rootCmd.AddCommand(
 		newInstallCmd(),
+		newDoctorCmd(),
 		newUninstallCmd(),
 		newOnboardCmd(),
 		newTokenCmd(),
@@ -99,6 +101,7 @@ Running without a subcommand launches the interactive TUI.`,
 		newRunsCmd(),
 		newWorkspaceCmd(),
 		newCellnToolCmd(),
+		newCellnMediationCmd(),
 		newPoliciesCmd(),
 		newSkillsCmd(),
 		newMCPServersCmd(),
@@ -160,6 +163,22 @@ the output as a credential and do not paste it into logs or shell history.`,
 	return cmd
 }
 
+// loadRESTConfig resolves the cluster the way kubectl does: --kubeconfig,
+// then $KUBECONFIG, then ~/.kube/config.
+func loadRESTConfig() (*rest.Config, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loadingRules, &clientcmd.ConfigOverrides{},
+	).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+	return config, nil
+}
+
 func initClient() error {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -168,16 +187,9 @@ func initClient() error {
 		return fmt.Errorf("failed to register scheme: %w", err)
 	}
 
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		loadingRules.ExplicitPath = kubeconfig
-	}
-
-	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		loadingRules, &clientcmd.ConfigOverrides{},
-	).ClientConfig()
+	config, err := loadRESTConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load kubeconfig: %w", err)
+		return err
 	}
 
 	c, err := client.New(config, client.Options{Scheme: scheme})
@@ -1287,6 +1299,9 @@ Use --celln-native to also install the native Celln starter catalogue and grant
 layers (enduring native parents); it requires the operator-reviewed
 --celln-native-* inputs and --celln-native-approve-starter-tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if note := sourceBuildInstallerNote(cellnInstallerImage); note != "" && !noCelln {
+				fmt.Println(note)
+			}
 			if !fleet.enabled && !noCelln && !cellnHostInstaller && !cellnNative && len(cellnBackends) == 0 {
 				// A build that pins a starter package makes the fleet the
 				// default Celln plane: no package flags, backend from the
@@ -1296,6 +1311,9 @@ layers (enduring native parents); it requires the operator-reviewed
 					return err
 				}
 				fleet.enabled = enabled
+			}
+			if !fleet.enabled && (fleet.mediateBackends || len(fleet.mediatedRouteSpecs) != 0) {
+				return fmt.Errorf("--celln-mediated-route and --celln-mediate-backends extend a Celln fleet's execution policy; this install has no fleet (pass --celln-fleet)")
 			}
 			if fleet.enabled {
 				if noCelln || cellnHostInstaller || cellnNative || len(cellnBackends) != 0 {
@@ -1373,14 +1391,15 @@ layers (enduring native parents); it requires the operator-reviewed
 		},
 	}
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "Override image tag (e.g. 'latest')")
+	cmd.Flags().BoolVar(&installAdoptExisting, "adopt-existing", false, "Adopt existing objects the chart would own (Namespace, ServiceAccount, ConfigMap, Secret, Service, NetworkPolicy, PersistentVolumeClaim and the chart's own sympozium.ai resources) into the Helm release instead of refusing; Deployments, DaemonSets and other kinds are never adopted and must be deleted")
 	cmd.Flags().StringArrayVar(&setValues, "set", nil, "Set Helm values (key=value, can be repeated)")
 	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false, "Deprecated: Celln is enabled by default; use --no-celln to skip it")
 	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Do not deploy the Celln backend (dispatcher, router, credentials, ownership PVC)")
 	cmd.Flags().BoolVar(&noErgoz, "no-ergoz", false, "Do not install ergoz (accelerator power telemetry) into ergoz-system")
 	cmd.Flags().BoolVar(&cellnHostInstaller, "celln-host-installer", false, "Deploy the privileged host-installer DaemonSet (bare-metal systemd dispatcher) instead of the in-cluster pod dispatcher; requires --celln-backend")
 	cmd.Flags().StringArrayVar(&cellnBackends, "celln-backend", nil, "Celln router dispatcher origin(s) http://host:port (repeatable); defaults to the in-cluster celln-dispatcher Service")
-	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.21)")
-	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/sympozium/celln-installer, tagged with this release)")
+	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default ghcr.io/sympozium-ai/celln:v0.5.28)")
+	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/sympozium/celln-installer, tagged with this release; a source build uses the embedded chart's appVersion, never 'latest')")
 	cmd.Flags().IntVar(&cellnRouterReplicas, "celln-router-replicas", 1, "Celln router replicas for the generated ReadWriteOnce ownership PVC")
 	cmd.Flags().BoolVar(&cellnNative, "celln-native", false, "Also install the native Celln starter catalogue and grant layers (requires the operator --celln-native-* inputs)")
 	cmd.Flags().BoolVar(&cellnNativeApprove, "celln-native-approve-starter-tools", false, "Explicitly approve the three bounded starter tool grants for --celln-native")
@@ -1402,12 +1421,12 @@ func cellnInstallSetValues(ctx context.Context, routerImage, installerImage stri
 	if replicas <= 0 {
 		replicas = 1
 	}
-	routerRepo, routerRef, routerIsDigest := splitImageRef(routerImage, "ghcr.io/sympozium-ai/celln", "v0.5.21")
-	installerTag := version
-	if installerTag == "" || installerTag == "dev" {
-		installerTag = "latest"
+	routerRepo, routerRef, routerIsDigest := splitImageRef(routerImage, "ghcr.io/sympozium-ai/celln", "v0.5.28")
+	releaseTag, _, err := defaultReleaseTag()
+	if err != nil {
+		return nil, err
 	}
-	installerRepo, installerTag, _ := splitImageRef(installerImage, "ghcr.io/sympozium-ai/sympozium/celln-installer", installerTag)
+	installerRepo, installerTag, _ := splitImageRef(installerImage, defaultCellnInstallerRepo, releaseTag)
 
 	// Default execution path is the in-cluster (pod-based) dispatcher, reached
 	// by the router over the celln-dispatcher Service. `--celln-host-installer`
@@ -1455,6 +1474,40 @@ func cellnInstallSetValues(ctx context.Context, routerImage, installerImage stri
 		vals = append(vals, "celln.router.image.tag="+routerRef)
 	}
 	return vals, nil
+}
+
+const defaultCellnInstallerRepo = "ghcr.io/sympozium-ai/sympozium/celln-installer"
+
+// sourceBuildInstallerNote says which installer tag a source build chose and
+// why; empty for a release build or when --celln-installer-image names a tag.
+func sourceBuildInstallerNote(installerImage string) string {
+	releaseTag, fromChart, err := defaultReleaseTag()
+	if err != nil || !fromChart {
+		return ""
+	}
+	if _, tag, isDigest := splitImageRef(installerImage, defaultCellnInstallerRepo, releaseTag); isDigest || tag != releaseTag {
+		return ""
+	}
+	return fmt.Sprintf("  Source build (no release version linked in): the Celln installer image uses tag %s, the embedded chart's appVersion, instead of the mutable 'latest'. Override with --celln-installer-image.", releaseTag)
+}
+
+// isDevBuild reports a CLI built without the release ldflags.
+func isDevBuild() bool { return version == "" || version == "dev" }
+
+// defaultReleaseTag is the image tag this binary belongs to: the linked
+// release version, or for a source build the embedded chart's appVersion,
+// v-prefixed like every release tag. A source build never defaults to
+// 'latest': with pullPolicy IfNotPresent a node's cached 'latest' can be
+// months older than this CLI.
+func defaultReleaseTag() (tag string, fromChart bool, err error) {
+	if !isDevBuild() {
+		return version, false, nil
+	}
+	appVersion, err := helmchart.AppVersion()
+	if err != nil {
+		return "", false, err
+	}
+	return "v" + strings.TrimPrefix(appVersion, "v"), true, nil
 }
 
 // splitImageRef splits "repo:tag" or "repo@sha256:..." and reports whether the
@@ -1602,6 +1655,11 @@ func runInstall(imageTag string, setValues []string) error {
 		ver = "embedded"
 	}
 	fmt.Printf("  Installing Sympozium %s...\n", ver)
+	if imageTag == "" && isDevBuild() {
+		if tag, _, err := defaultReleaseTag(); err == nil {
+			fmt.Printf("  Source build: control-plane images use tag %s, the embedded chart's appVersion. Override with --image-tag.\n", tag)
+		}
+	}
 	for _, kv := range setValues {
 		if kv == "celln.installer.enabled=true" {
 			fmt.Println("  ⚠️  Hermetic workloads (Celln) enabled — this deploys a privileged,")
@@ -1637,6 +1695,13 @@ func runInstall(imageTag string, setValues []string) error {
 		// Wait for the namespace to be fully removed.
 		fmt.Println("  Waiting for namespace to be deleted...")
 		_ = kubectl("wait", "--for=delete", "namespace/"+helmNamespace, "--timeout=60s")
+	}
+
+	// ── Pre-flight: leftovers of earlier installs ───────────────────────
+	// Helm stops at the first object it may not take over and a Terminating
+	// CRD only draws a kubectl warning; find all of it before changing anything.
+	if err := runInstallPreflight(imageTag, setValues); err != nil {
+		return err
 	}
 
 	// ── Pre-flight: CRDs ────────────────────────────────────────────────
@@ -11872,6 +11937,30 @@ func wrapText(s string, maxWidth int) []string {
 
 // ---------- serve command ----------
 
+// kubectlOutput runs kubectl and returns its trimmed stdout, or "" on failure.
+func kubectlOutput(args ...string) string {
+	out, err := exec.Command("kubectl", args...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// serveTargetLine names the cluster 'serve' is about to forward to. Every
+// lookup is best effort; an unknown value is printed as "unknown".
+func serveTargetLine(kubectl func(args ...string) string) string {
+	orUnknown := func(v string) string {
+		if v == "" {
+			return "unknown"
+		}
+		return v
+	}
+	kubeContext := orUnknown(kubectl("config", "current-context"))
+	server := orUnknown(kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"))
+	node := orUnknown(kubectl("get", "nodes", "--request-timeout=5s", "-o", "jsonpath={.items[0].metadata.name}"))
+	return fmt.Sprintf("Serving the console for context %s (%s), node %s", kubeContext, server, node)
+}
+
 func newServeCmd() *cobra.Command {
 	var localPort string
 	var openBrowser bool
@@ -11895,6 +11984,10 @@ the login URL.`,
 			if ns == "" {
 				ns = "sympozium-system"
 			}
+
+			// Say which cluster this follows: the forward silently tracks
+			// the active kubeconfig context.
+			fmt.Println("  " + serveTargetLine(kubectlOutput))
 
 			// Retrieve the UI token from the cluster secret.
 			fmt.Println("  Retrieving UI token...")

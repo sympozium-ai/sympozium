@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { api, type AgentRun, type AgentRunTurn } from "@/lib/api";
+import { useParentTurns } from "@/hooks/use-api";
+import { RunDiagnosisPanel, useRunDiagnosis } from "@/components/run-diagnosis";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CellnScopedExecution } from "@/components/celln-scoped-execution";
@@ -21,7 +22,12 @@ function turnOutcomeCommitted(turn: AgentRunTurn) {
   return Boolean(scoped?.nativePhase && terminalNativePhases.has(scoped.nativePhase) && condition?.status === "True" && condition.reason === "Committed");
 }
 
-export function CellnConversation({ run, observationUnavailable = false, retainEvidence = false, compactEvidence = false }: { run: AgentRun; observationUnavailable?: boolean; retainEvidence?: boolean; compactEvidence?: boolean }) {
+/**
+ * showDiagnosis renders the "why did this fail" panel inside the conversation;
+ * a page that already shows it (run detail) passes false and gets the same
+ * explanation as one line instead.
+ */
+export function CellnConversation({ run, observationUnavailable = false, retainEvidence = false, compactEvidence = false, showDiagnosis = true, onContinued }: { run: AgentRun; observationUnavailable?: boolean; retainEvidence?: boolean; compactEvidence?: boolean; showDiagnosis?: boolean; onContinued?: (next: AgentRun) => void }) {
   const uid = run.metadata.uid || "";
   const namespace = run.metadata.namespace || "default";
   const storageKey = `celln-turn:${namespace}:${uid}`;
@@ -42,20 +48,11 @@ export function CellnConversation({ run, observationUnavailable = false, retainE
   const [pending, setPending] = useState<Pending | null>(() => {
     try { return JSON.parse(sessionStorage.getItem(storageKey) || "null"); } catch { return null; }
   });
-  const history = useInfiniteQuery({
-    queryKey: ["parent-turns", namespace, run.metadata.name, uid],
-    initialPageParam: "",
-    queryFn: async ({ pageParam }) => {
-      const page = await api.runs.turns(run.metadata.name, namespace, pageParam);
-      if (page.runUID !== uid) throw new Error("Run identity changed. Reload the run before continuing.");
-      return page;
-    },
-    getNextPageParam: (page) => page.continue || undefined,
-    enabled: Boolean(uid),
-    refetchInterval: 2000,
-  });
-  const turns = (history.data?.pages.flatMap((page) => page.items) || []).sort((a, b) =>
-    (a.metadata.creationTimestamp || "").localeCompare(b.metadata.creationTimestamp || "") || a.metadata.name.localeCompare(b.metadata.name));
+  const history = useParentTurns(run);
+  const turns = useMemo(() => (history.data?.pages.flatMap((page) => page.items) || []).sort((a, b) =>
+    (a.metadata.creationTimestamp || "").localeCompare(b.metadata.creationTimestamp || "") || a.metadata.name.localeCompare(b.metadata.name)), [history.data]);
+  // One source of truth for failure wording: lib/run-diagnosis.
+  const diagnosis = useRunDiagnosis(run, turns);
   const pendingTurn = turns.find((turn) => turn.metadata.name === pending?.name);
   const completedPending = pendingTurn && turnOutcomeCommitted(pendingTurn);
   useEffect(() => {
@@ -83,29 +80,25 @@ export function CellnConversation({ run, observationUnavailable = false, retainE
   const initialFailed = parent?.initialTurn?.result?.succeeded === false;
   const scopedActiveTurn = scoped ? turns.find((turn) => !turnOutcomeCommitted(turn) && !turn.status?.cellnScoped?.cleanupConfirmed) : undefined;
   const activeTurn = Boolean(parent?.activeTurn || scopedActiveTurn);
-  const unavailableReason = parentCondition?.status === "False" ? parentCondition.reason : undefined;
+  // Lost, refused and withheld parents are explained by the diagnosis.
+  const lostDiagnosis = !scoped && diagnosis && ["parent-lost", "continuation-withheld", "create-refused", "reconciliation-required"].includes(diagnosis.kind) ? diagnosis : undefined;
   const lifecycleDetail = scoped && parentCondition?.status === "Unknown"
     ? parentCondition.message || "The scoped parent's outcome is unconfirmed. Sending remains disabled while the original owner is reconciled."
     : scoped && parentCondition?.status === "False"
     ? parentCondition.message || "Scoped parent admission or execution is not confirmed. No replacement work will be submitted."
-    : unavailableReason === "ContextLost"
-    ? parent?.continuedBy
-      ? `Live harness context was lost; the conversation continues as ${parent.continuedBy} on another node, seeded with what was said here.`
-      : "Live harness context was lost. Recorded answers remain available, but this parent cannot resume."
-    : unavailableReason === "Stopped"
-    ? "The parent has stopped. Recorded answers remain available; this conversation cannot accept more turns."
-    : unavailableReason === "TeardownUncertain"
-    ? "Parent teardown is unconfirmed. Ask the operator to reconcile the original owner; do not create replacement work or assume its resources are free."
-    : unavailableReason === "ReconciliationRequired"
-    ? "The original parent's outcome is unconfirmed. Sending is paused while its owner is reconciled; no work will be replayed automatically."
-    : ready && initialFailed
-    ? "The initial turn failed. Sending is disabled; inspect the recorded failure before creating any new work."
+    : lostDiagnosis
+    ? showDiagnosis ? "" : lostDiagnosis.cause
     : ready && activeTurn
     ? "One turn is already active or awaiting reconciliation. It must have a committed result before another turn can begin."
     : ready && ceilingReached
     ? scoped
       ? "The loaded turn records reach the requested turn ceiling, including the initial turn. Sending is disabled; this is not host budget-usage telemetry."
       : "The requested turn ceiling is exhausted, including the initial turn. Refreshing this page does not restore the budget."
+    // A failed turn result leaves the parent's context intact (the owner still
+    // reports Ready), so a failed first turn is as survivable as a later one.
+    // The API applies the same rule (cellnparent.TurnReadiness).
+    : ready && initialFailed && turns.length === 0
+    ? "The first turn failed; the conversation is still open — send another message. The failed turn still counts toward the turn ceiling."
     : "";
   const completeHistory = Boolean(history.data) && !history.hasNextPage;
   // The lease runs from the single create attempt; after it no new turn is
@@ -124,9 +117,11 @@ export function CellnConversation({ run, observationUnavailable = false, retainE
       ? `This conversation's lease ended at ${leaseEnd.toLocaleString()}. Recorded answers remain; start a new conversation to continue.`
       : `Lease ends ${leaseEnd.toLocaleString()} (${formatRemaining(leaseEnd.getTime() - now)} left). Turns used: ${(parent?.acceptedTurns || 0) + 1} of ${requestedTurns}.`
     : "";
-  const canCompose = ready && !initialFailed && !activeTurn && !ceilingReached && !pending && !sending && completeHistory && !leaseExpired;
+  const canCompose = ready && !activeTurn && !ceilingReached && !pending && !sending && completeHistory && !leaseExpired;
   const bytes = new TextEncoder().encode(draft).length;
-  const initialConfirmed = scoped ? Boolean(scopedParent?.receiptDigest && scopedParent.output) : Boolean(parent?.initialTurn?.result?.succeeded);
+  // A committed initial result, succeeded or failed, opens the conversation;
+  // an uncommitted one does not.
+  const initialConfirmed = scoped ? Boolean(scopedParent?.receiptDigest && scopedParent.output) : Boolean(parent?.initialTurn?.result);
   const canSend = ready && initialConfirmed && !activeTurn && !pending && !sending && !history.isError && completeHistory &&
     !ceilingReached && !leaseExpired && draft.trim().length > 0 && bytes <= 2048 && !draft.includes("\0");
 
@@ -204,7 +199,8 @@ export function CellnConversation({ run, observationUnavailable = false, retainE
       {lifecycleDetail && <p role="status" data-testid="celln-parent-lifecycle-detail">{lifecycleDetail}</p>}
       {leaseDetail && <p role="status" data-testid="celln-parent-lease" className={leaseExpired ? "text-amber-600" : "text-muted-foreground"}>{leaseDetail}</p>}
       <p className="text-sm text-muted-foreground" data-testid="celln-parent-turn-limit">Requested ceiling: {requestedTurns} total turns, including the initial turn. The host may enforce stricter limits; this is not a guarantee of remaining capacity.</p>
-      {admissionPending && <p className="text-sm" data-testid="celln-parent-admission">{parentCondition.message}</p>}
+      {admissionPending && !showDiagnosis && <p className="text-sm" data-testid="celln-parent-admission">{diagnosis?.cause || parentCondition.message}</p>}
+      {showDiagnosis && diagnosis && <RunDiagnosisPanel run={run} diagnosis={diagnosis} onContinued={onContinued} />}
       {initial && <div className="space-y-2 rounded border p-3"><p className="whitespace-pre-wrap">You: {initial.message}</p><p className="whitespace-pre-wrap">{initial.result ? `${initial.result.succeeded ? "Agent" : "Initial turn failed"}: ${initial.result.answer}` : initial.attempted ? "Initial turn awaiting reconciliation" : "Initial turn queued"}</p></div>}
       {scopedParent && <>
         <div className="space-y-2 rounded border p-3">

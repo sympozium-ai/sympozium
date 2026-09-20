@@ -155,8 +155,19 @@ ux-tests-serve-open: web-install ## Open Cypress interactive runner against `sym
 test-web-proxy: ## Run web-proxy HTTP API tests (requires a running web-endpoint service)
 	bash ./test/integration/test-web-proxy-api.sh
 
-vet: ## Run go vet
+vet: vet-tags ## Run go vet (including build-tagged code, see vet-tags)
 	$(GOVET) ./...
+
+# Files behind a build constraint are invisible to `go build|vet|test ./...`, so
+# they can stop compiling without anything noticing: the envtest suite did, for
+# six weeks. Vet only type-checks — it needs no envtest assets and runs nothing.
+# Every constraint in the repo is listed here; add a line when you add a tag
+# (`grep -rn '^//go:build' --include='*.go' .`).
+.PHONY: vet-tags
+vet-tags: ## Vet code `go vet ./...` cannot see (build tags, other-OS files)
+	$(GOVET) -tags system ./test/system/...
+	$(GOVET) hack/sync-harness-defaults.go
+	GOOS=windows $(GOVET) ./internal/cellnreview/...
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...
@@ -176,9 +187,28 @@ ENVTEST_K8S_VERSION ?= 1.31.0
 envtest: $(ENVTEST) ## Install setup-envtest locally
 $(ENVTEST):
 	@mkdir -p $(LOCALBIN)
-	GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
+	@# Retry: proxy.golang.org intermittently resets streams in CI.
+	@for i in 1 2 3 4 5; do \
+		GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) && break; \
+		[ "$$i" = 5 ] && exit 1; \
+		echo "setup-envtest install failed (attempt $$i/5); retrying in $$((i*5))s" >&2; sleep $$((i*5)); \
+	done
 
-test-system: envtest ## Run system tests (envtest — no cluster needed, fast)
+# Downloads etcd + kube-apiserver into $(LOCALBIN)/k8s. A no-op (and offline)
+# once they are there, which is what CI's cache of $(LOCALBIN) relies on.
+.PHONY: envtest-assets
+envtest-assets: envtest ## Download the envtest control-plane binaries
+	@for i in 1 2 3 4 5; do \
+		$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path >/dev/null && break; \
+		[ "$$i" = 5 ] && exit 1; \
+		echo "envtest asset download failed (attempt $$i/5); retrying in $$((i*5))s" >&2; sleep $$((i*5)); \
+	done
+
+.PHONY: envtest-k8s-version
+envtest-k8s-version: ## Print ENVTEST_K8S_VERSION (CI cache key)
+	@echo $(ENVTEST_K8S_VERSION)
+
+test-system: envtest-assets ## Run system tests (envtest — no cluster needed, fast)
 	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 	$(GOCMD) test -tags system ./test/system/ -v -count=1 -timeout 120s
 
@@ -253,6 +283,7 @@ web-dev-serve: web-install ## Vite hot-reload + port-forward to in-cluster apise
 	echo "  UI:     http://localhost:$(VITE_PORT)"; \
 	echo "  API:    localhost:$(API_LOCAL_PORT) (port-forward)"; \
 	echo "  Token:  $$APISERVER_TOKEN"; \
+	echo "  Context: $$(kubectl config current-context 2>/dev/null || echo unknown) ($$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)), node $$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"; \
 	echo "============================================"; \
 	echo ""; \
 	PF_LOG=/tmp/sympozium-web-dev-serve-portforward.log; \

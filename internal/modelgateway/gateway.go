@@ -184,7 +184,15 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 	if connection.Spec.Endpoint != authority.Endpoint || connection.Spec.AllowInsecure != authority.AllowInsecure {
 		return InvokeResponse{}, fail(ReasonRouteChanged, 403, nil)
 	}
-	reservedOutput, digest, body, err := validateProviderRequest(decision.Route.Protocol, decision.Route.Model, in.Request, decision.Budget.TurnCap.OutputTokens)
+	// Request policy comes from the live spec just revalidated against the
+	// decision's modelConnectionSpecSha256, never from the guest or a cache.
+	policy, err := connectionRequestPolicy(connection.Spec)
+	if err != nil {
+		return InvokeResponse{}, fail(ReasonRouteChanged, 403, err)
+	}
+	// digest covers the guest body only; body is that guest body plus the
+	// connection's host-pinned parameters and is what the provider receives.
+	reservedOutput, digest, _, body, err := validateProviderRequest(decision.Route.Protocol, decision.Route.Model, in.Request, decision.Budget.TurnCap.OutputTokens, policy)
 	if err != nil {
 		return InvokeResponse{}, err
 	}

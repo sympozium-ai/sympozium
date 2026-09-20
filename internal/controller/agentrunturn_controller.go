@@ -37,6 +37,27 @@ type AgentRunTurnReconciler struct {
 	ParentConfigPath string
 }
 
+// turnOnNativeParent reports whether a turn belongs to a run the fleet's
+// provision path admitted (status.cellnParent) rather than to a scoped run.
+// A turn already bound to a scoped operation stays scoped; a turn that carries
+// a parent-path execution record stays on the parent path even after its run
+// is gone. A turn whose run is bound to neither path keeps the scoped handling
+// this manager has always given it.
+func (r *AgentRunTurnReconciler) turnOnNativeParent(ctx context.Context, reader client.Reader, turn *api.AgentRunTurn) (bool, error) {
+	if turn.Status.CellnScoped != nil {
+		return false, nil
+	}
+	if turn.Status.Execution != nil {
+		// The scoped path writes status.execution only beside status.cellnScoped.
+		return true, nil
+	}
+	var run api.AgentRun
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: turn.Namespace, Name: turn.Spec.RunName}, &run); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	return string(run.UID) == turn.Spec.RunUID && run.Status.CellnScoped == nil && run.Status.CellnParent != nil, nil
+}
+
 // +kubebuilder:rbac:groups=sympozium.ai,resources=agentrunturns,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=sympozium.ai,resources=agentrunturns/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=sympozium.ai,resources=agentrunturns/finalizers,verbs=update;patch
@@ -52,8 +73,22 @@ func (r *AgentRunTurnReconciler) Reconcile(ctx context.Context, request ctrl.Req
 	// The separately deployed parent-only controller is an explicit legacy
 	// mode, not a fallback from scoped reconciliation. The primary manager never
 	// supplies ParentConfigPath to this reconciler.
-	if r.ScopedDispatcher == nil && r.ParentConfigPath != "" {
+	parentPath := r.ScopedDispatcher == nil && r.ParentConfigPath != ""
+	if r.ScopedDispatcher != nil && r.ParentConfigPath != "" {
+		// Both enduring paths on one manager: a turn follows its parent run.
+		onParent, err := r.turnOnNativeParent(ctx, reader, &turn)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		parentPath = onParent
+	}
+	if parentPath {
 		if !turn.DeletionTimestamp.IsZero() {
+			// A turn that waited under the scoped finalizer before its run was
+			// bound to a native parent never acquired a scoped operation.
+			if r.ScopedDispatcher != nil && turn.Status.CellnScoped == nil && controllerutil.ContainsFinalizer(&turn, agentRunTurnFinalizer) {
+				return r.removeTurnFinalizer(ctx, &turn)
+			}
 			return ctrl.Result{}, nil
 		}
 		done, err := cellnparent.ReconcileTurn(ctx, r.Client, reader, request.NamespacedName, r.ParentConfigPath)
@@ -333,7 +368,7 @@ func (r *AgentRunTurnReconciler) applyTurnStatus(ctx context.Context, turn *api.
 		if state == nil {
 			return errors.New("scoped turn status lost")
 		}
-		if len(current.UID) <= 64 && len(state.Output) >= 1 && len(state.Output) <= 2048 && len(state.ChildID) == 71 && state.ChildID[:7] == "blake3:" && scopedReceiptPattern.MatchString(state.ChildID) {
+		if len(current.UID) <= 64 && len(state.Output) >= 1 && len(state.Output) <= api.MaxConversationAnswerBytes && len(state.ChildID) == 71 && state.ChildID[:7] == "blake3:" && scopedReceiptPattern.MatchString(state.ChildID) {
 			current.Status.Execution = &api.CellnParentTurnStatus{ID: string(current.UID), Message: current.Spec.Message, Child: state.ChildID, Attempted: true, Result: &api.CellnParentTurnResult{Succeeded: observed.Phase == "Succeeded", Answer: state.Output}}
 		}
 		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "CellnTurnComplete", Status: metav1.ConditionTrue, Reason: "Committed", Message: "The original scoped turn owner returned a terminal correlated result; child cleanup confirmation is pending.", ObservedGeneration: current.Generation})

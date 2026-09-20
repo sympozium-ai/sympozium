@@ -47,11 +47,17 @@ type ExtraBackend struct {
 	Model          string `json:"model"`
 	AllowInsecure  bool   `json:"allowInsecure"`
 	CredentialFile string `json:"credentialFile"`
+	// Parameters are the backend's model parameters; absent when it has none,
+	// so the node builds the same plan as before for such a backend.
+	Parameters map[string]any `json:"parameters,omitempty"`
+	// MaxOutputTokens is the backend's output cap per model request; absent
+	// when it is Celln's default, for the same reason.
+	MaxOutputTokens int64 `json:"maxOutputTokens,omitempty"`
 }
 
 // ExtraBackendFor renders a resolved backend the way the node script reads it.
 func ExtraBackendFor(b FleetBackend) ExtraBackend {
-	return ExtraBackend{Name: b.Name, Provider: b.Model.Provider, Protocol: b.Model.Protocol, Endpoint: b.Model.Endpoint, Model: b.Model.Name, AllowInsecure: b.Model.AllowInsecure, CredentialFile: "/etc/celln-native/credentials/" + b.Name}
+	return ExtraBackend{Name: b.Name, Provider: b.Model.Provider, Protocol: b.Model.Protocol, Endpoint: b.Model.Endpoint, Model: b.Model.Name, AllowInsecure: b.Model.AllowInsecure, CredentialFile: "/etc/celln-native/credentials/" + b.Name, Parameters: b.Model.Parameters, MaxOutputTokens: NormalModelMaxOutputTokens(b.Model.MaxOutputTokens)}
 }
 
 // FleetFacts are the scope's identities the configure DaemonSet carries, so
@@ -128,6 +134,13 @@ func AppendExtraBackend(ctx context.Context, store client.Client, facts FleetFac
 	if !backendNamePattern.MatchString(b.Name) {
 		return "", fmt.Errorf("backend name must be a DNS label of at most 32 characters")
 	}
+	if err := ValidateModelParameters(b.Parameters); err != nil {
+		return "", err
+	}
+	if err := ValidateModelMaxOutputTokens(b.MaxOutputTokens); err != nil {
+		return "", err
+	}
+	b.MaxOutputTokens = NormalModelMaxOutputTokens(b.MaxOutputTokens)
 	for _, name := range facts.Backends {
 		if name == b.Name {
 			return "", fmt.Errorf("backend %s was configured at install", b.Name)

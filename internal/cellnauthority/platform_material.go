@@ -18,6 +18,15 @@ type PlatformExecutionMaterial struct {
 	SystemPrompt        string                      `json:"systemPrompt"`
 	ModelConnectionName string                      `json:"modelConnectionName"`
 	CredentialSourceRef *CredentialSourceRef        `json:"credentialSourceRef"`
+	// RequestOutputTokens is the output tokens one model request of this
+	// operation asks for (the receiver's resolution.execution.requestOutputTokens):
+	// a gateway-mediated connection's spec.maxOutputTokens, 256-4096. It is
+	// omitted at the default 512, so such an operation is byte-identical to one
+	// prepared before the field existed, and it is never set on a host-profile
+	// or model-free route. It is not part of any signed digest: the model
+	// gateway enforces the connection's bound per request and the signed turn
+	// and run caps, sized for it by resolveBudget, bound the total.
+	RequestOutputTokens int64 `json:"requestOutputTokens,omitempty"`
 	// TurnUID is captured from the persisted AgentRunTurn object. It is data
 	// correlated with this prepared operation, never authority supplied by a
 	// token or an HTTP caller.
@@ -66,6 +75,7 @@ func executionMaterial(s platformSnapshot, request PlatformResolveRequest, decis
 	out.SystemPrompt = s.Run.Spec.SystemPrompt
 	if s.Connection != nil {
 		out.ModelConnectionName = s.Connection.Name
+		out.RequestOutputTokens = mediatedRequestOutputTokens(s.Connection)
 	}
 	if s.Turn != nil {
 		out.Payload = s.Turn.Spec.Message

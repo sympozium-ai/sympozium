@@ -197,3 +197,46 @@ func TestWrappersBindTheRouteOfTheProfilesProtocol(t *testing.T) {
 		t.Fatalf("an unannotated profile must keep the first matching route: %v", err)
 	}
 }
+
+// An Agent that owns its backend needs only the profile's runtime wrapper:
+// no shared Agent, no host-profile connection, and its own Secret-backed
+// connection is left exactly as the tenant wrote it.
+func TestEnsureRuntimeWrapperLeavesAnAgentsOwnConnectionAlone(t *testing.T) {
+	ctx := context.Background()
+	profile, policy := catalogue(OpenSelector(SystemNamespaces()))
+	own := &api.ModelConnection{ObjectMeta: metav1.ObjectMeta{Name: "my-anthropic", Namespace: "team-a"}, Spec: api.ModelConnectionSpec{Provider: "anthropic", Protocol: "anthropic-messages", Endpoint: "https://api.anthropic.com/v1/messages", SecretRef: "my-key", Models: []string{"claude"}, MaxOutputTokens: 4096}}
+	c := store(t, profile, policy, namespace("team-a", nil), own)
+	for attempt := range 2 {
+		name, err := EnsureRuntimeWrapper(ctx, c, "team-a", profile.Name)
+		if err != nil || name != WrapperRuntimeName {
+			t.Fatalf("attempt %d: %q %v", attempt, name, err)
+		}
+	}
+	var wrapper api.AgentRuntime
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "team-a", Name: WrapperRuntimeName}, &wrapper); err != nil || wrapper.Spec.CellnProfileRef == nil || *wrapper.Spec.CellnProfileRef != (api.CellnRuntimeProfileRef{Name: profile.Name, Revision: "v1"}) || wrapper.Spec.Celln != nil || wrapper.Spec.Model != nil {
+		t.Fatalf("runtime wrapper: %+v %v", wrapper.Spec, err)
+	}
+	var connections api.ModelConnectionList
+	if err := c.List(ctx, &connections, client.InNamespace("team-a")); err != nil || len(connections.Items) != 1 || connections.Items[0].Name != "my-anthropic" || connections.Items[0].Spec.SecretRef != "my-key" || connections.Items[0].Spec.CredentialProfile != "" {
+		t.Fatalf("connections after ensuring the runtime wrapper: %+v %v", connections.Items, err)
+	}
+	var agents api.AgentList
+	if err := c.List(ctx, &agents, client.InNamespace("team-a")); err != nil || len(agents.Items) != 0 {
+		t.Fatalf("a shared Agent was created: %v", err)
+	}
+	// The backend's own wrappers may still be added later; they reuse the
+	// runtime and never touch the Agent's connection.
+	got, err := EnsureWrappers(ctx, c, "team-a", profile.Name)
+	if err != nil || strings.Join(got.Created, ",") != "celln-agent,celln-native" {
+		t.Fatalf("backend wrappers after the runtime wrapper: %+v %v", got, err)
+	}
+	var kept api.ModelConnection
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "team-a", Name: "my-anthropic"}, &kept); err != nil || kept.Spec.SecretRef != "my-key" || kept.Spec.MaxOutputTokens != 4096 {
+		t.Fatalf("the Agent's own connection changed: %+v %v", kept.Spec, err)
+	}
+	for _, refused := range []struct{ namespace, profile string }{{"team-a", "other-profile"}, {"kube-system", profile.Name}} {
+		if _, err := EnsureRuntimeWrapper(ctx, c, refused.namespace, refused.profile); err == nil {
+			t.Fatalf("runtime wrapper prepared for %+v", refused)
+		}
+	}
+}

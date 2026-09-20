@@ -8,8 +8,13 @@
 #
 # Writes DIR/package (the package), DIR/inspect.json (celln starter-inspect)
 # and DIR/starter.json: {"image": "REPO@sha256:…", "packageHash": "blake3:…",
-# "publisher": "…", "cellnVersion": "…"} — the exact identity the installer
-# embeds. The signing seed is ephemeral unless one is supplied: the package is
+# "publisher": "…", "cellnVersion": "…", "inputs": "sha256:…"} — the exact
+# identity the installer embeds, plus the fingerprint of the repository inputs
+# that decided it (hack/celln-starter-inputs.sh). A release whose inputs match
+# the previous release's republishes that identity instead of running this
+# (hack/celln-starter-reuse.sh), because every new package costs a fleet its
+# live parents; anything this script starts reading from the repository as
+# package content belongs in that fingerprint. The signing seed is ephemeral unless one is supplied: the package is
 # trusted by its publisher key and hash, which the installer approves
 # explicitly, not by who holds the seed afterwards.
 set -euo pipefail
@@ -29,6 +34,10 @@ while [ $# -gt 0 ]; do
 	esac
 done
 [ -n "$bundle" ] && [ -n "$kernel" ] && [ -n "$image" ] && [ -n "$out" ] || { echo "usage: $0 --bundle DIR --kernel FILE --image REPO:TAG --out DIR [--tool-image NAME]... [--push]" >&2; exit 2; }
+# Fingerprinted as given: the default below is covered by this file's own hash.
+inputs_args=()
+for name in "${tool_images[@]}"; do inputs_args+=(--tool-image "$name"); done
+inputs="$("$(dirname "${BASH_SOURCE[0]}")/celln-starter-inputs.sh" "${inputs_args[@]}")"
 [ ${#tool_images[@]} -gt 0 ] || tool_images=(busybox jq)
 # celln refuses relative packaging paths; callers may pass either.
 mkdir -p "$out"
@@ -63,9 +72,9 @@ if [ "$push" = 1 ]; then
 	docker push -q "$image" >/dev/null
 	digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image" | sed 's/.*@//')"
 fi
-python3 - "$out/inspect.json" "$image" "$digest" "$version" >"$out/starter.json" <<'PY'
+python3 - "$out/inspect.json" "$image" "$digest" "$version" "$inputs" >"$out/starter.json" <<'PY'
 import json, sys
-inspect, image, digest, version = sys.argv[1:]
+inspect, image, digest, version, inputs = sys.argv[1:]
 report = json.load(open(inspect))
 def publishers(o):
     if isinstance(o, dict):
@@ -79,6 +88,6 @@ def publishers(o):
 keys = sorted(set(publishers(report)))
 assert len(keys) == 1, f"one publisher expected, found {keys}"
 repo = image.rsplit(":", 1)[0] if "@" not in image else image.split("@", 1)[0]
-print(json.dumps({"image": f"{repo}@{digest}" if digest else "", "packageHash": report["packageHash"], "publisher": keys[0], "cellnVersion": version}, indent=2))
+print(json.dumps({"image": f"{repo}@{digest}" if digest else "", "packageHash": report["packageHash"], "publisher": keys[0], "cellnVersion": version, "inputs": inputs}, indent=2))
 PY
 cat "$out/starter.json"

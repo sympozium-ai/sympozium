@@ -17,8 +17,8 @@ function openForm(runtime = "native", unavailable = false, catalogue: unknown[] 
   cy.get('[role="dialog"]').find('[role="combobox"]').eq(0).click();
   cy.get('[role="option"]').contains("agent").click();
   cy.get('textarea').type("Uppercase celln, then measure its length");
-  cy.get('[role="dialog"]').find('[role="combobox"]').eq(2).click();
-  cy.get('[role="option"]').contains("Celln —").click();
+  // The backend is the shared PlanePicker card toggle (#492), not a third Select.
+  cy.get('[data-testid="execution-environment"]').contains("button", "Celln cell").click();
 }
 
 describe("Harness in Celln run selection", () => {
@@ -42,7 +42,8 @@ describe("Harness in Celln run selection", () => {
     });
     cy.get('[data-testid="celln-enduring-opt-in"]').check();
     cy.get('[data-testid="celln-starter-tools"]').should("contain", "workspace-write: unavailable");
-    cy.contains("button", "Use approved starter tools (2/3)").scrollIntoView().click();
+    // The starter set is eight brokered tools (326158c6); this fixture installs three.
+    cy.contains("button", "Use approved starter tools (2/8)").scrollIntoView().click();
     cy.get('[data-testid="celln-permission-preview"]').should("contain", "Run files: read").and("contain", "example.com").and("contain", "no model credentials");
     cy.intercept("POST", "/api/v1/runs*", (request) => {
       expect(request.body.cellnSelection.toolRefs).to.deep.eq([{ name: "workspace-read", revision: "v1" }, { name: "https-fetch", revision: "v1" }]);
@@ -56,7 +57,7 @@ describe("Harness in Celln run selection", () => {
     openForm();
     cy.get('[data-testid="celln-enduring-opt-in"]').check();
     cy.get('[data-testid="celln-starter-tools"]').should("contain", "workspace-read: not installed");
-    cy.contains("button", "Use approved starter tools (0/3)").should("be.disabled");
+    cy.contains("button", "Use approved starter tools (0/8)").should("be.disabled");
   });
   it("requires selected tools before submitting explicit per-turn tool execution intent", () => {
     openForm();

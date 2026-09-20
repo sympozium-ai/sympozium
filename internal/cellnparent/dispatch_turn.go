@@ -111,7 +111,7 @@ func ReconcileTurn(ctx context.Context, writer client.Client, reader client.Read
 		Succeeded *bool  `json:"succeeded"`
 		Answer    string `json:"answer"`
 	}
-	if json.Unmarshal(evidence.Turn.Record, &record) != nil || record.Child != expected.Child || record.Succeeded == nil || strings.TrimSpace(record.Answer) == "" || len(record.Answer) > 2048 || strings.ContainsRune(record.Answer, 0) {
+	if json.Unmarshal(evidence.Turn.Record, &record) != nil || record.Child != expected.Child || record.Succeeded == nil || strings.TrimSpace(record.Answer) == "" || len(record.Answer) > api.MaxConversationAnswerBytes || strings.ContainsRune(record.Answer, 0) {
 		return false, ErrReconcile
 	}
 	return saveTurnResult(ctx, writer, reader, key, string(turn.UID), binding, expected, api.CellnParentTurnResult{Succeeded: *record.Succeeded, Answer: record.Answer})

@@ -29,37 +29,134 @@ func scopedCatalogueSelected(run *api.AgentRun) bool {
 	return run.Spec.CellnSelection != nil && (run.Spec.ExecutionLifecycle == "" || run.Spec.ExecutionLifecycle == "one-shot" || run.Spec.ExecutionLifecycle == "enduring")
 }
 
+// Route authority kinds of a run's selected ModelConnection, as the platform
+// resolver will bind them (DecisionRouteBinding.Auth).
+const (
+	routeAuthHostProfile = "host-profile"
+	routeAuthSecret      = "secret"
+	routeAuthNone        = "none"
+)
+
+// selectedRouteAuth classifies the model route a run selected, from API reads
+// only: host-profile (an owner-installed credential, served by the fleet's
+// provision path), or secret/none (gateway-mediated, served by the scoped
+// receiver). It returns "" when the run names no connection or the connection
+// does not exist; the caller then keeps its configured default and that path's
+// resolver refuses the run.
+//
+// This chooses a path, never authority. Each path performs its own single
+// resolution, and each refuses a decision of the other kind: the provision
+// plan requires auth host-profile (cellnparent.BuildPlatformProvisionPlan) and
+// scoped finalisation accepts only secret or none. A route frozen into the run
+// (spec.model.credentialProfile) outranks the live connection so a run cannot
+// change path after it was normalised; if the two disagree the resolver denies.
+func (r *AgentRunReconciler) selectedRouteAuth(ctx context.Context, run *api.AgentRun) (string, error) {
+	if run.Spec.Model.CredentialProfile != "" {
+		return routeAuthHostProfile, nil
+	}
+	if run.Spec.Model.ConnectionRef == "" {
+		return "", nil
+	}
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	var connection api.ModelConnection
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.Model.ConnectionRef}, &connection); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	switch {
+	case connection.Spec.CredentialProfile != "":
+		return routeAuthHostProfile, nil
+	case connection.Spec.SecretRef != "":
+		return routeAuthSecret, nil
+	}
+	return routeAuthNone, nil
+}
+
+// platformServesOneShot reports whether a one-shot shared selection is a
+// single-turn parent on the fleet. A host-profile route always is when the
+// platform admission is capable, whether or not a scoped receiver is also
+// configured; a gateway-mediated route never is; a route that cannot be
+// classified keeps the configured default (the scoped receiver when present).
+func (r *AgentRunReconciler) platformServesOneShot(ctx context.Context, run *api.AgentRun) (bool, error) {
+	if r.ParentAdmission == nil || !r.ParentAdmission.SupportsPlatform() || !run.Spec.PlatformOneShotShape() {
+		return false, nil
+	}
+	auth, err := r.selectedRouteAuth(ctx, run)
+	if err != nil {
+		return false, err
+	}
+	switch auth {
+	case routeAuthHostProfile:
+		return true, nil
+	case routeAuthSecret, routeAuthNone:
+		return false, nil
+	}
+	return r.ScopedDispatcher == nil, nil
+}
+
 // sharedCatalogueSelected disambiguates tool-free legacy and shared selections
 // using only API reads. It intentionally runs before model normalization and
-// prerequisite creation. A persisted scoped binding always wins recovery.
+// prerequisite creation. A persisted scoped binding always wins recovery, and
+// a bound native parent never moves to the scoped receiver.
 func (r *AgentRunReconciler) sharedCatalogueSelected(ctx context.Context, run *api.AgentRun) (bool, error) {
 	if run.Status.CellnScoped != nil {
 		return true, nil
+	}
+	if run.Status.CellnParent != nil {
+		return false, nil
 	}
 	selection := run.Spec.CellnSelection
 	if selection == nil {
 		return false, nil
 	}
-	// A configured scoped receiver owns every enduring catalogue selection;
-	// unsupported wrappers are refused by its resolver rather than falling
-	// through. Without one, an enduring selection is still held for it unless
-	// the prepared native parent path is actually configured, and even then
-	// explicit shared intent (cluster tools, a platform profile) never reaches
-	// legacy parent issuance.
+	platform := r.ParentAdmission != nil && r.ParentAdmission.SupportsPlatform()
 	if run.Spec.ExecutionLifecycle == "enduring" {
+		// With a platform-capable parent admission both enduring paths coexist
+		// and the selected route decides: an owner-installed credential is
+		// provisioned on the fleet, a namespace's own Secret (or no credential)
+		// is executed gateway-mediated by the scoped receiver. A mediated run
+		// is held for the scoped receiver when none is configured
+		// (ScopedDispatchDisabled); it never falls back to provisioning.
+		if platform {
+			auth, err := r.selectedRouteAuth(ctx, run)
+			if err != nil {
+				return false, err
+			}
+			switch auth {
+			case routeAuthHostProfile:
+				return false, nil
+			case routeAuthSecret, routeAuthNone:
+				return true, nil
+			}
+		}
+		// Otherwise a configured scoped receiver owns every enduring catalogue
+		// selection; unsupported wrappers are refused by its resolver rather
+		// than falling through. Without one, an enduring selection is still
+		// held for it unless the prepared native parent path is actually
+		// configured, and even then explicit shared intent (cluster tools, a
+		// platform profile) never reaches legacy parent issuance.
 		if r.ScopedDispatcher != nil || r.ParentAdmission == nil {
 			return true, nil
 		}
 		// A platform-capable parent admission resolves wrapper runtimes and
 		// cluster tools itself (the fleet); it never issues from namespace grants.
-		if r.ParentAdmission.SupportsPlatform() {
+		if platform {
 			return false, nil
 		}
 	}
 	// A platform-capable parent admission also serves one-shot shared
-	// selections (a single-turn parent on the fleet) when no scoped receiver
-	// is configured to own them.
-	platformOneShot := r.ScopedDispatcher == nil && r.ParentAdmission != nil && r.ParentAdmission.SupportsPlatform() && run.Spec.PlatformOneShotShape()
+	// selections on an owner-installed credential (a single-turn parent on the
+	// fleet). A gateway-mediated one is a shared selection like any other: the
+	// scoped receiver executes it, or it is held while none is configured.
+	platformOneShot, err := r.platformServesOneShot(ctx, run)
+	if err != nil {
+		return false, err
+	}
 	if len(selection.ClusterToolRefs) != 0 {
 		return !platformOneShot, nil
 	}
@@ -97,11 +194,11 @@ func (r *AgentRunReconciler) sharedCatalogueSelected(ctx context.Context, run *a
 
 // platformOneShotSelected reports whether a pending one-shot run is a shared
 // selection this controller serves as a single-turn parent: the platform
-// admission is capable, no scoped receiver owns shared selections, and the
+// admission is capable, the selected route is not gateway-mediated, and the
 // run selects cluster tools or a platform wrapper runtime.
 func (r *AgentRunReconciler) platformOneShotSelected(ctx context.Context, run *api.AgentRun) (bool, error) {
-	if r.ScopedDispatcher != nil || r.ParentAdmission == nil || !r.ParentAdmission.SupportsPlatform() || !run.Spec.PlatformOneShotShape() {
-		return false, nil
+	if served, err := r.platformServesOneShot(ctx, run); err != nil || !served {
+		return false, err
 	}
 	selection := run.Spec.CellnSelection
 	if len(selection.ClusterToolRefs) != 0 {

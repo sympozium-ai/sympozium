@@ -3,8 +3,9 @@ name: Build and Push Images
 on:
   push:
     branches: [main]
+  # No base-branch filter: stacked PRs (base = another feature branch) get the
+  # same checks. Pushes only trigger on main, so nothing runs twice.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -25,6 +26,8 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      web: ${{ steps.filter.outputs.web }}
+      system: ${{ steps.filter.outputs.system }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -41,6 +44,23 @@ jobs:
               - '.github/workflows/native-artifacts.yaml'
               - 'config/host/**'
               - 'config/celln/**'
+            web:
+              - 'web/**'
+              - '.github/workflows/build.yaml'
+            # Inputs of the envtest suite: Go code (api/, internal/, the tests
+            # themselves), the CRDs it installs, and the chart copies that must
+            # match them. Kept apart from `code`, which also gates image builds.
+            system:
+              - '**.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - 'api/**'
+              - 'config/crd/**'
+              - 'charts/sympozium/crds/**'
+              - 'charts/sympozium-crds/templates/**'
+              - 'test/system/**'
+              - '.github/workflows/build.yaml'
 
   verify:
     name: Verify
@@ -64,12 +84,14 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
+      - name: Vet build-tagged code
+        # `./...` skips files behind a build constraint (test/system is
+        # `//go:build system`), so they can stop compiling unnoticed.
+        run: make vet-tags
       - name: Build
         run: go build ./...
       - name: Test
         run: go test -race -short ./...
-      - name: System tests
-        run: make test-system
       - name: Check generated code is up to date
         run: |
           make generate
@@ -80,6 +102,83 @@ jobs:
           fi
       - name: Check Helm chart CRDs in sync
         run: make helm-sync-check
+
+  system-tests:
+    name: System tests (envtest)
+    # Controllers + API server against a real kube-apiserver/etcd; no cluster.
+    # `make test-system` is what CLAUDE.md prescribes for reconcile changes.
+    needs: [changes]
+    if: >-
+      always() &&
+      (needs.changes.outputs.system == 'true' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Read envtest Kubernetes version
+        id: envtest
+        run: echo "version=$(make -s envtest-k8s-version)" >> "$GITHUB_OUTPUT"
+      - name: Cache envtest binaries
+        # bin/ is the Makefile's LOCALBIN: setup-envtest plus the etcd and
+        # kube-apiserver it downloads. With a hit, the run needs no download.
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: envtest-${{ runner.os }}-${{ runner.arch }}-${{ steps.envtest.outputs.version }}
+      - name: Download envtest binaries
+        run: make envtest-assets
+      - name: Run system tests
+        run: make test-system
+
+  web-stubbed-e2e:
+    name: Console stubbed Cypress specs
+    # These specs intercept every API call, so they need no cluster or model.
+    # The spec list lives in web/package.json ("test:stubbed").
+    needs: [changes]
+    if: needs.changes.outputs.web == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Start dev server
+        run: |
+          npx vite --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf http://localhost:5173 > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "::error::vite dev server did not start"
+          cat "$RUNNER_TEMP/vite.log"
+          exit 1
+      - name: Run stubbed specs
+        env:
+          CYPRESS_API_TOKEN: test-token
+        run: npm run test:stubbed
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: web/cypress/screenshots
+          if-no-files-found: ignore
 
   native-artifacts:
     needs: [changes, verify]

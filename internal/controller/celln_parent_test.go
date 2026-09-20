@@ -71,6 +71,20 @@ func TestCellnParentAdmissionFailureDoesNotStart(t *testing.T) {
 	if condition = meta.FindStatusCondition(fresh.Status.Conditions, "CellnParentReady"); condition == nil || !strings.Contains(condition.Message, cellnauthority.ReasonPolicyWithdrawn) || strings.Contains(condition.Message, "/var/lib") {
 		t.Fatalf("platform refusal not reported by stable reason: %+v", condition)
 	}
+	// A path-free authored detail is shown so the console can say what to
+	// fix; a wrapped error after it never is.
+	r.ParentAdmission = parentAdmissionFunc(func(context.Context, types.NamespacedName) error {
+		return cellnauthority.Refuse(cellnauthority.ReasonToolUnknown, "cluster tool %q unavailable: %v", "web-fetch", fmt.Errorf("dial tcp 10.0.0.1:443"))
+	})
+	if _, err := r.reconcileCellnParent(context.Background(), run); err == nil {
+		t.Fatal("detailed platform refusal ignored")
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if condition = meta.FindStatusCondition(fresh.Status.Conditions, "CellnParentReady"); condition == nil || !strings.Contains(condition.Message, `(AUTH_TOOL_UNKNOWN): cluster tool "web-fetch" unavailable. Ask`) || strings.Contains(condition.Message, "10.0.0.1") {
+		t.Fatalf("platform refusal detail not reported safely: %+v", condition)
+	}
 	r.ParentAdmission = parentAdmissionFunc(func(context.Context, types.NamespacedName) error { return fmt.Errorf("no prepared registration") })
 	if _, err := r.reconcileCellnParent(context.Background(), run); err == nil {
 		t.Fatal("generic refusal after platform refusal ignored")
@@ -277,7 +291,7 @@ func TestCellnParentLostContinuationIsNotContinuedAgain(t *testing.T) {
 	seed := []api.ConversationExchange{{User: "Remember the word saffron.", Assistant: "Noted: saffron."}}
 	asContinuation := func(t *testing.T, run *api.AgentRun, origin string) *api.AgentRun {
 		t.Helper()
-		next, err := cellnparent.Continuation(run, seed, origin)
+		next, err := cellnparent.Continuation(run, seed, origin, cellnparent.LegacySeedBytes)
 		if err != nil {
 			t.Fatal(err)
 		}

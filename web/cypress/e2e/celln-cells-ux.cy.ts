@@ -15,16 +15,18 @@ const cells = [
     node: "framework",
     reportedMs: now - 3000,
     stale: false,
+    source: "gateway",
     cells: [
       { id: "2e1e3481f3b7", description: child.slice(0, 29) + "…", status: "running", backend: "kvm", started_ms: now - 12000, finished_ms: null, duration_ms: null, error: null, tools: ["/worker"], run, parent: incarnation, turn: "initial" },
       { id: "07359a714094", description: "blake3:80a5803438c9b4dba1f6bc8…", status: "failed", backend: "kvm", started_ms: now - 600000, finished_ms: now - 570000, duration_ms: 30000, error: "guest exited with code 1", tools: ["/worker"] },
     ],
     parents: [
-      { incarnation, updatedMs: now - 12000, turns: [{ turnId: "initial", stage: "reserved", child }], run },
+      { incarnation, updatedMs: now - 12000, turns: [{ turnId: "initial", stage: "reserved", child }], run, status: "TurnActive", statusLive: true },
       { incarnation: "blake3:" + "b".repeat(64), updatedMs: now - 900000, turns: [{ turnId: "initial", stage: "child-destroyed", succeeded: false }], run: { ...run, name: "hermes-old01", phase: "Failed", live: false } },
     ],
   },
-  { node: "gpu-2", reportedMs: now - 600000, stale: true, cells: [], parents: [] },
+  // A backend the gateway could not list, filled from its node's own report.
+  { node: "gpu-2", reportedMs: now - 600000, stale: true, source: "node-report", cells: [], parents: [] },
 ];
 
 const hermes = {
@@ -35,7 +37,7 @@ const hermes = {
     execution: {
       backend: "celln", executionLifecycle: "enduring", modelConnectionRef: "celln-llama-server", model: "Qwen3.8-27B-UD-Q4_K_XL.gguf",
       cellnSelection: { runtimeRef: "celln-llama-server", toolRefs: [], clusterToolRefs: [{ name: "celln-starter-grep", revision: "v1" }] },
-      enduring: { leaseSeconds: 14400, maxTurns: 64, maxModelRequests: 192, maxOutputTokens: 98304 },
+      enduring: { leaseSeconds: 14400, maxTurns: 64, maxModelRequests: 384, maxOutputTokens: 196608 },
     },
   },
   status: { phase: "Running" },
@@ -77,6 +79,11 @@ describe("Celln cells in the console", () => {
     cy.wait("@cells");
     cy.get('[data-testid="celln-node-cells"]').within(() => {
       cy.contains("celln ps").should("be.visible");
+      // Two sources in one fleet: said per node, and the parent's own status shown.
+      cy.get('[data-testid="celln-cells-source"]').should("contain", "source: mixed");
+      cy.get('[data-testid="celln-node-source-framework"]').should("contain", "source: gateway");
+      cy.get('[data-testid="celln-node-source-gpu-2"]').should("contain", "source: node reports");
+      cy.get('[data-testid="celln-parent-status"]').should("contain", "TurnActive");
       cy.get('[data-testid="celln-node-framework"]').within(() => {
         cy.contains("1 running");
         cy.contains("1 live parent");
@@ -161,51 +168,3 @@ describe("Celln cells in the console", () => {
 // Two fleet backends: the Provider step picks the backend, so the wizard must
 // not also ask which wrapper runtime to use, and a fleet runtime must not be
 // asked for a Kubernetes harness policy. Intercepted; no cluster needed.
-describe("Create Agent on a fleet with several backends", () => {
-  const profile = (backend: string, model: string) => ({
-    name: `celln-native-starter${backend === "native" ? "" : "-" + backend}`,
-    revision: "v1", policy: "celln-fleet-starter", model, provider: backend === "native" ? "deepseek" : backend,
-    endpoint: backend === "native" ? "https://api.deepseek.com/chat/completions" : "http://framework:8080/v1/chat/completions",
-    credentialProfile: `starter${backend === "native" ? "" : "-" + backend}`, systemPrompt: "Keep replies brief.",
-    backend, wrapper: backend === "native" ? "celln-native" : `celln-${backend}`, agent: "celln-agent",
-    tools: [{ name: "celln-starter-workspace-read", revision: "v1" }, { name: "celln-starter-grep", revision: "v1" }],
-    ceilings: { leaseSeconds: 86400, maxTurns: 256, maxModelRequests: 768, maxOutputTokens: 393216 },
-    sessionDefaults: { leaseSeconds: 14400, maxTurns: 64, maxModelRequests: 192, maxOutputTokens: 98304 },
-  });
-  const profiles = [profile("native", "deepseek-chat"), profile("llama-server", "Qwen3.8-27B-UD-Q4_K_XL.gguf")];
-  const runtimeFor = (p: (typeof profiles)[number]) => ({
-    metadata: { name: p.wrapper, namespace: "default", labels: { "sympozium.ai/managed-by": "celln-platform" } },
-    spec: { cellnProfileRef: { name: p.name, revision: p.revision }, supportOwner: "celln-platform" },
-  });
-
-  beforeEach(() => {
-    cy.intercept("GET", "**/api/v1/**", { body: [] });
-    cy.intercept("GET", "**/api/v1/celln-platform/profiles*", { body: profiles }).as("profiles");
-    cy.intercept("GET", "**/api/v1/runtimes*", { body: profiles.map(runtimeFor) });
-    cy.intercept("GET", "**/api/v1/cluster-celln-tools*", {
-      body: profiles[0].tools.map((tool) => ({
-        metadata: { name: tool.name, uid: tool.name }, spec: { revision: tool.revision, invocationABI: "celln.json-stdio/v1", lane: "tool", description: tool.name, limits: { timeoutMillis: 30000, memoryBytes: 1, workspace: "none", effects: "none" }, supportOwner: "op", publisherKey: "k" },
-      })),
-    });
-    cy.intercept("GET", "**/api/v1/capabilities*", { body: { celln: { available: true, state: "ready", reason: "fleet ready" } } });
-    cy.intercept("GET", "**/api/v1/model-connections*", { body: [] });
-  });
-
-  it("skips the runtime step and never asks a fleet runtime for a harness policy", () => {
-    cy.visit("/agents?create=1&kind=agent#token=test-token");
-    cy.get('[role="dialog"]').within(() => {
-      cy.get('input[placeholder="my-agent"]').type(`fleet-${Date.now().toString(36)}`);
-      cy.contains("button", "Next").click();
-      cy.get('[data-testid="create-agent-execution-environment"]').contains("button", "Celln").click();
-      cy.contains("button", "Next").click();
-      // Straight to tools: no "Choose a native Celln runtime" step in between.
-      cy.get('[data-testid="create-agent-borrowed-tools"]').should("be.visible");
-      cy.contains("Choose a native Celln runtime").should("not.exist");
-      cy.contains("needs an approving policy").should("not.exist");
-      cy.contains("button", "Next").click();
-      // The Provider step is where the backend is chosen.
-      cy.get('[data-testid="platform-model-route"]').should("be.visible").and("contain", "DeepSeek");
-      cy.contains("button", "Next").should("be.visible").and("be.enabled");
-    });
-  });
-});

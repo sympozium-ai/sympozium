@@ -2,6 +2,8 @@
 {{- $parent := .Values.celln.dispatcher.enduring }}
 {{- $fleet := .Values.celln.fleet | default dict }}
 {{- $fleetParents := and .Values.celln.enabled $fleet.enabled ($fleet.parentConfigSecret | default "") }}
+{{- $mediated := include "sympozium.cellnMediation" . }}
+{{- $mediation := .Values.celln.mediation | default dict }}
 {{- if and .Values.controller.watchNamespace .Values.controller.excludeWatchNamespaces }}
 {{- fail "choose either controller.watchNamespace or controller.excludeWatchNamespaces" }}
 {{- end }}
@@ -40,7 +42,11 @@ spec:
       {{- if $fleetParents }}
       # The manager refuses to create its journal/approval directories, so a
       # root step prepares them on the claim for the non-root manager.
+      {{- end }}
+      {{- if or $fleetParents $mediated }}
       initContainers:
+      {{- end }}
+      {{- if $fleetParents }}
         - name: prepare-parent-journal
           image: {{ printf "%s:%s" (.Values.celln.image.repository | default "ghcr.io/sympozium-ai/sympozium/celln-installer") (.Values.celln.image.tag | default .Chart.AppVersion) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -55,6 +61,46 @@ spec:
           volumeMounts:
             - name: celln-parent-journal
               mountPath: /var/lib/sympozium/celln-parent
+      {{- end }}
+      {{- if $mediated }}
+        # The manager refuses a signing key or transport token that is not
+        # owner-only, and a Secret volume cannot be owned by a non-root user.
+        # This step copies the operator's files into memory as UID 65532, mode
+        # 0400; it generates nothing. Only it mounts the Secret.
+        - name: celln-scoped-private-files
+          image: {{ printf "%s:%s" (.Values.celln.image.repository | default "ghcr.io/sympozium-ai/sympozium/celln-installer") (.Values.celln.image.tag | default .Chart.AppVersion) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              umask 077
+              for file in issuer.key receiver-token gateway-token; do
+                [ -s "/operator/$file" ] || { echo "Secret key $file is missing or empty; run sympozium celln-mediation bootstrap" >&2; exit 1; }
+                rm -f "/private/$file"
+                install -m 0400 "/operator/$file" "/private/$file"
+              done
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: celln-scoped-operator
+              mountPath: /operator
+              readOnly: true
+            - name: celln-scoped-private
+              mountPath: /private
       {{- end }}
       containers:
         - name: manager
@@ -191,6 +237,12 @@ spec:
             - name: CELLN_PARENT_REGISTRATIONS
               value: /etc/sympozium/celln-parent/registrations.json
             {{- end }}
+            {{- if $mediated }}
+            # Mediated model access: scoped dispatch to the fleet's receiver
+            # and registration with the model gateway (celln.mediation).
+            - name: CELLN_SCOPED_CONFIG
+              value: /etc/sympozium/celln-scoped/config.json
+            {{- end }}
             {{- if $fleetParents }}
             # Fleet parents are issued by their gateway-bound owner; the
             # controller keeps only its own journal/approvals on a claim.
@@ -229,7 +281,7 @@ spec:
             {{- toYaml .Values.controller.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap $fleetParents (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
+          {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap $fleetParents $mediated (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
           volumeMounts:
             {{- if .Values.celln.caConfigMap }}
             - name: celln-router-ca
@@ -260,8 +312,19 @@ spec:
               mountPath: /etc/sympozium/celln-parent
               readOnly: true
             {{- end }}
+            {{- if $mediated }}
+            - name: celln-scoped-config
+              mountPath: /etc/sympozium/celln-scoped
+              readOnly: true
+            - name: celln-scoped-trust
+              mountPath: /etc/sympozium/celln-scoped-trust
+              readOnly: true
+            - name: celln-scoped-private
+              mountPath: /run/sympozium/celln-scoped
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap $fleetParents (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
+      {{- if and .Values.celln.enabled (or .Values.celln.tokenSecret .Values.celln.catalogueConfigSecret .Values.celln.caConfigMap $fleetParents $mediated (and .Values.celln.dispatcher .Values.celln.dispatcher.enduring .Values.celln.dispatcher.enduring.enabled .Values.celln.dispatcher.enduring.parentConfigSecret)) }}
       volumes:
         {{- if .Values.celln.caConfigMap }}
         - name: celln-router-ca
@@ -297,6 +360,34 @@ spec:
         - name: celln-parent-config
           secret:
             secretName: {{ $fleet.parentConfigSecret | quote }}
+        {{- end }}
+        {{- if $mediated }}
+        - name: celln-scoped-config
+          configMap:
+            name: sympozium-celln-scoped-config
+        - name: celln-scoped-trust
+          configMap:
+            name: {{ $mediation.trustConfigMap | quote }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        # World-readable inside this volume only so UID 65532 can copy it; the
+        # manager container never mounts it.
+        - name: celln-scoped-operator
+          secret:
+            secretName: {{ $mediation.controllerSecret | quote }}
+            defaultMode: 0444
+            items:
+              - key: issuer.key
+                path: issuer.key
+              - key: receiver-token
+                path: receiver-token
+              - key: gateway-token
+                path: gateway-token
+        - name: celln-scoped-private
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         {{- end }}
       {{- end }}
       {{- if $enduring }}

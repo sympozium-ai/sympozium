@@ -32,6 +32,22 @@ var (
 	turnPattern      = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
+// Bounds of the enduring-conversation protocol, mirroring the Celln host
+// (celln-warden parent_protocol). A turn-status response carries the
+// journal's reservation, which holds the whole worker task (history plus
+// message, up to 16384 bytes, escaped again inside a JSON string), so it runs
+// to tens of kilobytes; the response bound leaves room for that.
+const (
+	// MaxParentMessageBytes bounds one user message.
+	MaxParentMessageBytes = 2048
+	// MaxParentAnswerBytes bounds one committed worker answer. A fleet still
+	// on a starter package built for 2048-byte answers is held to that by
+	// the Celln host, as a failed turn; this client accepts both.
+	MaxParentAnswerBytes = 8192
+	// MaxParentResponseBytes bounds any one owner response body.
+	MaxParentResponseBytes = 131072
+)
+
 const (
 	ownerRemovedError  = "original parent backend removed"
 	createRefusedError = "parent creation refused; reconcile incarnation"
@@ -102,8 +118,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, outp
 		return 0, ErrReconcile
 	}
 	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 32769))
-	if err != nil || len(data) > 32768 {
+	data, err := io.ReadAll(io.LimitReader(res.Body, MaxParentResponseBytes+1))
+	if err != nil || len(data) > MaxParentResponseBytes {
 		return res.StatusCode, ErrReconcile
 	}
 	if res.StatusCode == http.StatusNotFound {
@@ -230,7 +246,7 @@ func (c *Client) submitParentTurn(ctx context.Context, id, turn, message string,
 	if err != nil {
 		return result, err
 	}
-	if !turnPattern.MatchString(turn) || strings.TrimSpace(message) == "" || len(message) > 2048 || strings.ContainsRune(message, 0) {
+	if !turnPattern.MatchString(turn) || strings.TrimSpace(message) == "" || len(message) > MaxParentMessageBytes || strings.ContainsRune(message, 0) {
 		return result, errors.New("invalid bounded parent turn")
 	}
 	body := map[string]string{"kind": "turn", "apiVersion": "celln.parent-context/v1", "turnId": turn, "message": message}
@@ -241,7 +257,7 @@ func (c *Client) submitParentTurn(ctx context.Context, id, turn, message string,
 	if code == http.StatusAccepted && result.Pending && result.Retry != nil && !*result.Retry && result.Kind == "" && result.TurnID == "" && result.Succeeded == nil && result.Answer == "" {
 		return result, nil
 	}
-	if code != http.StatusOK || result.Pending || result.Kind != "completed" || result.Version != "celln.parent-context/v1" || result.TurnID != turn || result.Succeeded == nil || len(result.Answer) > 2048 || strings.TrimSpace(result.Answer) == "" || strings.ContainsRune(result.Answer, 0) {
+	if code != http.StatusOK || result.Pending || result.Kind != "completed" || result.Version != "celln.parent-context/v1" || result.TurnID != turn || result.Succeeded == nil || len(result.Answer) > MaxParentAnswerBytes || strings.TrimSpace(result.Answer) == "" || strings.ContainsRune(result.Answer, 0) {
 		return ParentTurnResult{}, ErrReconcile
 	}
 	return result, nil

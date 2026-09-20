@@ -60,8 +60,10 @@ export function AgentsPage() {
     )
     .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
 
+  // Returns the creation so the wizard can say what a failed Celln Agent left
+  // behind; the mutation still reports every failure itself.
   function handleComplete(result: WizardResult) {
-    createAgent.mutate(
+    return createAgent.mutateAsync(
       {
         name: result.name,
         provider: result.provider,

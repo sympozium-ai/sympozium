@@ -60,6 +60,16 @@ spec:
                   Native Celln requires a full HTTPS request URL.
                 maxLength: 2048
                 type: string
+              maxOutputTokens:
+                description: |-
+                  MaxOutputTokens bounds the output tokens one model request through this
+                  connection may ask for. Omitted means 512. The model gateway refuses a
+                  request above it; a turn's own output-token cap still applies. Only
+                  gateway-mediated connections (secretRef or no credential) may set it.
+                format: int64
+                maximum: 4096
+                minimum: 256
+                type: integer
               models:
                 description: Models lists the exact model identifiers selectable through
                   this connection.
@@ -69,6 +79,19 @@ spec:
                 minItems: 1
                 type: array
                 x-kubernetes-list-type: set
+              parameters:
+                description: |-
+                  Parameters is a bounded JSON object the model gateway merges into every
+                  provider request made through this connection, for example
+                  {"temperature":0.7} or {"chat_template_kwargs":{"enable_thinking":false}}.
+                  It is operator policy pinned on the host side: the guest never sees it, a
+                  guest request that carries one of its keys is refused, and request fields
+                  the gateway owns (ReservedModelParameters) cannot be set. At most 16
+                  top-level keys matching ^[a-z][a-z0-9_]{0,63}$, 3 levels deep and 2048
+                  bytes (ValidateModelParameters). Only gateway-mediated connections
+                  (secretRef or no credential) may set it.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
               protocol:
                 description: Protocol selects the host adapter. Compatible gateways
                   may expose other providers.

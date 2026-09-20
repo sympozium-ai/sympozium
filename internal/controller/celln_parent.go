@@ -192,7 +192,14 @@ func (r *AgentRunReconciler) recordParentAdmissionPending(ctx context.Context, o
 	// A platform refusal has a stable, secret-free reason code worth showing;
 	// anything else stays generic so operator paths never reach tenant status.
 	if reason := cellnauthority.PlatformReason(cause); reason != "" {
-		message = "Platform policy refused admission (" + reason + "). Ask the operator to authorise this namespace, runtime profile, tools and model route; do not create a replacement run."
+		// The detail names what differed (a tool, the persona, a limit) so the
+		// console can say how to fix it. PlatformDetail drops wrapped errors,
+		// withholds anything path-like and bounds the length.
+		refusal := "(" + reason + ")"
+		if detail := cellnauthority.PlatformDetail(cause); detail != "" {
+			refusal += ": " + detail
+		}
+		message = "Platform policy refused admission " + refusal + ". Ask the operator to authorise this namespace, runtime profile, tools and model route; do not create a replacement run."
 	}
 	meta.SetStatusCondition(&fresh.Status.Conditions, metav1.Condition{Type: "CellnParentReady", Status: metav1.ConditionFalse, Reason: "AdmissionPending", Message: message, ObservedGeneration: fresh.Generation})
 	if apiequality.Semantic.DeepEqual(before.Status, fresh.Status) {
@@ -210,11 +217,12 @@ func (r *AgentRunReconciler) recordParentAdmissionPending(ctx context.Context, o
 // continueConversation creates the run that carries a lost enduring parent's
 // conversation on, seeded with its recorded exchanges, and returns its name.
 func (r *AgentRunReconciler) continueConversation(ctx context.Context, lost *api.AgentRun) (string, error) {
-	seed, err := cellnparent.Transcript(ctx, r.parentReader(), lost)
+	budget := cellnparent.SeedBudgetFor(ctx, r.parentReader(), lost)
+	seed, err := cellnparent.Transcript(ctx, r.parentReader(), lost, budget)
 	if err != nil {
 		return "", err
 	}
-	next, err := cellnparent.Continuation(lost, seed, cellnparent.ContinuationOriginAutomatic)
+	next, err := cellnparent.Continuation(lost, seed, cellnparent.ContinuationOriginAutomatic, budget)
 	if err != nil {
 		return "", err
 	}

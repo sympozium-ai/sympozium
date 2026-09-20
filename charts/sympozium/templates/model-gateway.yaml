@@ -1,18 +1,88 @@
-{{- if .Values.modelGateway.enabled }}
+{{- /* celln.mediation deploys this gateway too, from Secret/ConfigMap volumes
+     instead of the configuration claim; see _helpers.tpl for its checks. */}}
+{{- $mediated := include "sympozium.cellnMediation" . }}
+{{- if or .Values.modelGateway.enabled $mediated }}
 {{- $image := required "modelGateway.image requires an immutable image digest" .Values.modelGateway.image }}
 {{- if not (regexMatch "^.+@sha256:[0-9a-f]{64}$" $image) }}
 {{- fail "modelGateway.image must be pinned by sha256 digest" }}
 {{- end }}
-{{- $claim := required "modelGateway.configurationClaim must contain reviewed TLS/JWKS/PostgreSQL configuration" .Values.modelGateway.configurationClaim }}
+{{- $claim := "" }}
+{{- if not $mediated }}
+{{- $claim = required "modelGateway.configurationClaim must contain reviewed TLS/JWKS/PostgreSQL configuration" .Values.modelGateway.configurationClaim }}
+{{- end }}
 {{- if not .Values.modelGateway.egress }}
 {{- fail "modelGateway.egress must explicitly declare reviewed DNS/API/PostgreSQL/provider paths" }}
 {{- end }}
 {{- $name := printf "%s-model-gateway" (include "sympozium.fullname" .) }}
+{{- $m := .Values.celln.mediation | default dict }}
+{{- $database := .Values.modelGateway.database | default dict }}
+{{- $tenantNamespaces := .Values.modelGateway.namespaces | default list }}
+{{- $seenNamespaces := dict }}
+{{- range $ns := $tenantNamespaces }}
+{{- if or (not (regexMatch "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" ($ns | toString))) (hasKey $seenNamespaces ($ns | toString)) }}
+{{- fail (printf "modelGateway.namespaces must be unique namespace names: %q" ($ns | toString)) }}
+{{- end }}
+{{- $_ := set $seenNamespaces ($ns | toString) true }}
+{{- end }}
+{{- $gatewayConfig := dict }}
+{{- if $mediated }}
+{{- $gatewayConfig = dict "clusterId" $m.clusterId "issuer" $m.issuer.name "listen" ":8443" "tlsCertificateFile" "/run/model-gateway/private/tls.crt" "tlsKeyFile" "/run/model-gateway/private/tls.key" "verificationKeysFile" "/etc/model-gateway/trust/jwks.json" "registrationTokenFile" "/run/model-gateway/private/registration-token" "databaseUrlFile" "/run/model-gateway/private/database-url" "privateOrigins" (.Values.modelGateway.privateOrigins | default list) }}
+{{- if $tenantNamespaces }}
+{{- $_ := set $gatewayConfig "readinessNamespaces" $tenantNamespaces }}
+{{- end }}
+{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ $name }}
   namespace: {{ include "sympozium.namespace" . }}
+{{- if $tenantNamespaces }}
+---
+# Least privilege: cluster scope keeps only the named Namespace reads and the
+# gateway's own access reviews; Secrets and ModelConnections are readable in
+# the listed tenant namespaces alone.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: {{ toJson $tenantNamespaces }}
+    verbs: [get]
+  - apiGroups: [authorization.k8s.io]
+    resources: [selfsubjectaccessreviews]
+    verbs: [create]
+{{- range $ns := $tenantNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns | quote }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+  - apiGroups: [sympozium.ai]
+    resources: [modelconnections]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ include "sympozium.namespace" $ }}
+{{- end }}
+{{- else }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -29,6 +99,7 @@ rules:
   - apiGroups: [authorization.k8s.io]
     resources: [selfsubjectaccessreviews]
     verbs: [create]
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -59,6 +130,10 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ $name }}
+      {{- if $mediated }}
+      annotations:
+        checksum/configuration: {{ toJson $gatewayConfig | sha256sum | quote }}
+      {{- end }}
     spec:
       serviceAccountName: {{ $name }}
       {{- with .Values.imagePullSecrets }}
@@ -71,10 +146,55 @@ spec:
         runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      {{- if $mediated }}
+      # The gateway refuses a token or database file that is not owner-only,
+      # and a Secret volume cannot be owned by a non-root user. This step
+      # copies the operator's files into memory as UID 65532, mode 0400; it
+      # creates, fetches and changes nothing. Only it mounts the Secrets.
+      initContainers:
+        - name: private-files
+          image: {{ printf "%s:%s" (.Values.celln.image.repository | default "ghcr.io/sympozium-ai/sympozium/celln-installer") (.Values.celln.image.tag | default .Chart.AppVersion) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              umask 077
+              for file in tls.crt tls.key registration-token database-url; do
+                [ -s "/operator/$file" ] || { echo "operator Secret key for $file is missing or empty" >&2; exit 1; }
+                rm -f "/private/$file"
+                install -m 0400 "/operator/$file" "/private/$file"
+              done
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: operator
+              mountPath: /operator
+              readOnly: true
+            - name: private
+              mountPath: /private
+      {{- end }}
       containers:
         - name: model-gateway
           image: {{ $image | quote }}
+          {{- if $mediated }}
+          args: ["--config=/etc/model-gateway/configuration/gateway.json"]
+          {{- else }}
           args: ["--config=/configuration/gateway.json"]
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -96,14 +216,75 @@ spec:
               cpu: "1"
               memory: 512Mi
           volumeMounts:
+            {{- if $mediated }}
+            - name: configuration
+              mountPath: /etc/model-gateway/configuration
+              readOnly: true
+            - name: trust
+              mountPath: /etc/model-gateway/trust
+              readOnly: true
+            - name: private
+              mountPath: /run/model-gateway/private
+              readOnly: true
+            {{- else }}
             - name: configuration
               mountPath: /configuration
               readOnly: true
+            {{- end }}
       volumes:
+        {{- if $mediated }}
+        - name: configuration
+          configMap:
+            name: {{ printf "%s-configuration" $name | quote }}
+        # Public JWKS; mounted without subPath so a rotated keyset arrives and
+        # an explicit SIGHUP reloads it.
+        - name: trust
+          configMap:
+            name: {{ $m.trustConfigMap | quote }}
+            items:
+              - key: jwks.json
+                path: jwks.json
+        # World-readable inside this volume only so UID 65532 can copy it; the
+        # gateway container never mounts it.
+        - name: operator
+          projected:
+            defaultMode: 0444
+            sources:
+              - secret:
+                  name: {{ $m.gatewaySecret | quote }}
+                  items:
+                    - key: tls.crt
+                      path: tls.crt
+                    - key: tls.key
+                      path: tls.key
+                    - key: registration-token
+                      path: registration-token
+              - secret:
+                  name: {{ $database.secretName | quote }}
+                  items:
+                    - key: {{ $database.key | quote }}
+                      path: database-url
+        - name: private
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        {{- else }}
         - name: configuration
           persistentVolumeClaim:
             claimName: {{ $claim | quote }}
             readOnly: true
+        {{- end }}
+{{- if $mediated }}
+---
+# Paths only; every credential stays in the operator's Secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-configuration" $name | quote }}
+  namespace: {{ include "sympozium.namespace" . }}
+data:
+  gateway.json: {{ toJson $gatewayConfig | quote }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -148,6 +329,14 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: celln-router
+        # The installed fleet runs its dispatcher inside the celln-node
+        # DaemonSet pods (celln-fleet.yaml), which carry this label instead.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: celln-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: celln-node
       ports:
         - protocol: TCP
           port: 8443

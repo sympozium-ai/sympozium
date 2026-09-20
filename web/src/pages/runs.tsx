@@ -119,7 +119,7 @@ export function RunsPage() {
   const selectedRuntime = (runtimes.data || []).find((runtime) => runtime.metadata.name === runtimeName);
   const cellnHarness = form.backend === "celln" && !!runtimeName;
   const enduringRequest = cellnHarness && enduring;
-  const parentBounds = { leaseSeconds: [1, 86400], maxTurns: [1, 1024], maxModelRequests: [0, 6144], maxOutputTokens: [0, 3145728] } as const;
+  const parentBounds = { leaseSeconds: [1, 86400], maxTurns: [1, 1024], maxModelRequests: [0, 6144], maxOutputTokens: [0, 25165824] } as const;
   const invalidParent = enduringRequest && (new TextEncoder().encode(form.task).length > 2048 || form.task.includes("\0") ||
     (requireToolCall && (lentTools.length === 0 || parentLimits.maxModelRequests < 2 || parentLimits.maxOutputTokens < 1)) ||
     Object.entries(parentLimits).some(([key, value]) => {

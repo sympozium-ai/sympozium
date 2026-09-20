@@ -5,6 +5,11 @@ It is disabled by default and **does not enable mediated Celln admission** or
 complete the install-once tenant journey. The reviewed contract/runtime/broker
 and installed release gates remain prerequisites for production enablement.
 
+> To run the gateway as part of mediated Celln model access, from Secret and
+> ConfigMap volumes instead of the PVC described here, see
+> [Mediated model access](celln-mediated-model-access.md). This page remains
+> the reference for the standalone, claim-based component.
+
 ## Operator prerequisites
 
 1. Build `images/model-gateway/Dockerfile`, publish and record its image digest.

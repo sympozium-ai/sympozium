@@ -3,10 +3,12 @@ package apiserver
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"time"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/cellnparent"
@@ -78,27 +80,27 @@ func (s *Server) createRunTurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "turn storage unavailable", 503)
 		return
 	}
-	// This rejects a known occupied legacy slot, not simultaneous admission races.
-	// The controller's parent-status CAS remains the authoritative serializer.
-	// Original-request observation above stays available while another turn runs.
-	if run.Status.CellnParent != nil && run.Status.CellnParent.ActiveTurn != nil {
-		http.Error(w, "parent already owns an active turn; reconcile it before new work", http.StatusConflict)
-		return
-	}
-	legacyReady := run.Status.CellnParent != nil && run.Status.CellnParent.CreateAttempted && run.Status.CellnParent.InitialTurn != nil && run.Status.CellnParent.InitialTurn.Result != nil && run.Status.CellnParent.InitialTurn.Result.Succeeded && run.Status.CellnParent.AcceptedTurns < run.Spec.Enduring.MaxTurns-1
 	scopedCondition := meta.FindStatusCondition(run.Status.Conditions, "CellnScopedExecution")
 	scopedReady := run.Status.CellnScoped != nil && run.Status.CellnScoped.StartAttempted && run.Status.CellnScoped.ParentIncarnation != "" && run.Status.CellnScoped.NativePhase == "Running" && scopedCondition != nil && scopedCondition.Status == metav1.ConditionTrue && scopedCondition.Reason == "EnduringParentReady" && scopedCondition.ObservedGeneration == run.Generation
-	if run.Status.Phase != api.AgentRunPhaseRunning || (!legacyReady && !scopedReady) {
-		http.Error(w, "parent is not ready for subsequent turns", 409)
-		return
-	}
-	if legacyReady {
-		ready := meta.FindStatusCondition(run.Status.Conditions, "CellnParentReady")
-		if ready == nil || ready.Status != "True" || run.Generation < 1 || ready.ObservedGeneration != run.Generation || cellnparent.ValidateAdmission(run, run.Status.CellnParent.Binding) != nil {
-			http.Error(w, "parent readiness does not match current run intent", http.StatusConflict)
+	if run.Status.CellnParent != nil || run.Status.CellnScoped == nil {
+		// A native parent: cellnparent.TurnReadiness is the one rule, shared
+		// with the controller's slot claim. This rejects known state, not
+		// simultaneous admission races; the controller's parent-status CAS
+		// remains the authoritative serializer. Original-request observation
+		// above stays available whatever this decides.
+		if err := cellnparent.TurnReadiness(run, nil, time.Now().UTC()); err != nil {
+			var refusal *cellnparent.TurnRefusal
+			if errors.As(err, &refusal) {
+				w.Header().Set("X-Sympozium-Turn-Refusal", refusal.Reason)
+			}
+			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 	} else {
+		if run.Status.Phase != api.AgentRunPhaseRunning || !scopedReady {
+			http.Error(w, "scoped parent is not ready for subsequent turns", http.StatusConflict)
+			return
+		}
 		var prior api.AgentRunTurnList
 		if err := s.client.List(r.Context(), &prior, client.InNamespace(run.Namespace), client.Limit(1024)); err != nil {
 			http.Error(w, "turn history unavailable", http.StatusServiceUnavailable)
@@ -233,12 +235,13 @@ func (s *Server) continueRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "only a live enduring conversation can be continued", http.StatusBadRequest)
 		return
 	}
-	seed, err := cellnparent.Transcript(r.Context(), s.client, run)
+	budget := cellnparent.SeedBudgetFor(r.Context(), s.client, run)
+	seed, err := cellnparent.Transcript(r.Context(), s.client, run, budget)
 	if err != nil {
 		http.Error(w, "turn history unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	next, err := cellnparent.Continuation(run, seed, cellnparent.ContinuationOriginRequested)
+	next, err := cellnparent.Continuation(run, seed, cellnparent.ContinuationOriginRequested, budget)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

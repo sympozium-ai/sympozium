@@ -171,6 +171,40 @@ func AuthorisedProfiles(ctx context.Context, reader client.Reader, namespace str
 	return out, nil
 }
 
+// RuntimeWrapper is the one object a namespace needs to run an authorised
+// profile's reviewed worker: an AgentRuntime naming the profile at its exact
+// revision. It carries no model route and no credential, so it serves an Agent
+// that owns its backend (its own Secret-backed ModelConnection, executed
+// gateway-mediated) exactly as it serves the backend's own wrappers.
+func RuntimeWrapper(namespace string, profile *api.CellnRuntimeProfile) *api.AgentRuntime {
+	names := WrapperNames(Backend(profile))
+	return &api.AgentRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: names.Runtime, Namespace: namespace, Labels: map[string]string{ManagedByLabel: ManagedByValue, BackendLabel: names.Backend}},
+		Spec:       api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: profile.Name, Revision: profile.Spec.Revision}, SupportOwner: "celln-platform"},
+	}
+}
+
+// EnsureRuntimeWrapper creates the runtime wrapper a namespace lacks for an
+// authorised profile and returns its name. It creates neither the backend's
+// shared Agent nor its host-profile ModelConnection: an Agent with its own
+// ModelConnection needs neither, and its connection is never touched. An
+// existing wrapper is kept as it is.
+func EnsureRuntimeWrapper(ctx context.Context, c client.Client, namespace, profileName string) (string, error) {
+	authorised, err := AuthorisedProfiles(ctx, c, namespace)
+	if err != nil {
+		return "", err
+	}
+	index := slices.IndexFunc(authorised, func(a Authorised) bool { return a.Profile.Name == profileName })
+	if index < 0 {
+		return "", fmt.Errorf("no execution policy admits profile %q in namespace %q", profileName, namespace)
+	}
+	wrapper := RuntimeWrapper(namespace, &authorised[index].Profile)
+	if err := c.Create(ctx, wrapper); err != nil && !apierrors.IsAlreadyExists(err) {
+		return "", fmt.Errorf("create AgentRuntime %s: %w", wrapper.Name, err)
+	}
+	return wrapper.Name, nil
+}
+
 // TenantWrappers builds the three objects a namespace needs to run a native
 // profile: a runtime wrapper, an agent and the host-profile model connection
 // bound to the policy's route for the profile's model.
@@ -216,7 +250,7 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 		return metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{ManagedByLabel: ManagedByValue, BackendLabel: names.Backend}}
 	}
 	return []client.Object{
-		&api.AgentRuntime{ObjectMeta: meta(names.Runtime), Spec: api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: profile.Name, Revision: profile.Spec.Revision}, SupportOwner: "celln-platform"}},
+		RuntimeWrapper(namespace, profile),
 		&api.Agent{ObjectMeta: meta(names.Agent), Spec: api.AgentSpec{RuntimeRef: names.Runtime}},
 		&api.ModelConnection{ObjectMeta: meta(names.Connection), Spec: api.ModelConnectionSpec{Provider: route.Provider, Protocol: route.Protocol, Endpoint: harness.URL, CredentialProfile: native.CredentialProfile, Models: []string{harness.Model}, AllowInsecure: harness.AllowInsecure}},
 	}, nil
