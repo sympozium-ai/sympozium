@@ -11,6 +11,10 @@ import "encoding/json"
 // agent-runner reads it before the LLM call and short-circuits the run without
 // spending tokens; the controller then marks the AgentRun as Skipped. Any
 // content written to the file is surfaced as the human-readable skip reason.
+//
+// In harness mode the adapter replaces agent-runner. The controller mounts
+// /ipc/control read-only into the harness container, and the adapter must
+// check this file itself and report ResultStatusSkipped.
 const SkipMarkerPath = "/ipc/control/skip"
 
 // ResultStatusSkipped is the AgentResult.Status value emitted when a run is

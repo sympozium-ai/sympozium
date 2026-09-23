@@ -365,13 +365,14 @@ func TestHarnessHandler_Override_WritableHomeIsAnEmptyDir(t *testing.T) {
 	}
 }
 
-// The harness gets /ipc/input and /ipc/output and nothing else. The other six
+// The harness gets /ipc/input, /ipc/control and /ipc/output and nothing else.
+// The other six
 // directories the bridge watches — spawn, tools, messages, schedules, prompts,
 // context — each turn a dropped JSON file into a control-plane action, so a
 // harness holding the volume root could spawn children or message a channel
 // whatever its capability descriptor claims. Pinned because the failure is
 // silent: the pod still runs, and nothing reports the extra reach.
-func TestHarnessHandler_Override_NarrowsIPCToInputAndOutput(t *testing.T) {
+func TestHarnessHandler_Override_NarrowsIPCToInputControlAndOutput(t *testing.T) {
 	h := NewHarnessHandler()
 	override, err := h.OverrideAgentContainer(harnessTask(nil))
 	if err != nil {
@@ -384,8 +385,8 @@ func TestHarnessHandler_Override_NarrowsIPCToInputAndOutput(t *testing.T) {
 			ipc = append(ipc, m)
 		}
 	}
-	if len(ipc) != 2 {
-		t.Fatalf("ipc mounts = %v, want exactly two (input, output)", ipc)
+	if len(ipc) != 3 {
+		t.Fatalf("ipc mounts = %v, want exactly three (input, control, output)", ipc)
 	}
 
 	bySubPath := map[string]corev1.VolumeMount{}
@@ -405,6 +406,17 @@ func TestHarnessHandler_Override_NarrowsIPCToInputAndOutput(t *testing.T) {
 	}
 	if !in.ReadOnly {
 		t.Error("the task input is read-only for the harness; it is an input, not a channel")
+	}
+
+	ctrl, ok := bySubPath[harnessIPCControlDir]
+	if !ok {
+		t.Fatalf("no %q subPath mount; the adapter cannot see a preRun hook's skip marker", harnessIPCControlDir)
+	}
+	if ctrl.MountPath != harnessIPCCtrlPath {
+		t.Errorf("control mounted at %q, want %q", ctrl.MountPath, harnessIPCCtrlPath)
+	}
+	if !ctrl.ReadOnly {
+		t.Error("control is read-only for the harness; the skip marker is the preRun hook's decision")
 	}
 
 	out, ok := bySubPath[harnessIPCOutputDir]

@@ -50,10 +50,18 @@ spec:
       - name: check-queue
         image: curlimages/curl:latest
         command: ["sh", "-c",
-          "test -s /workspace/queue.json || echo 'queue empty' > /ipc/control/skip"]
+          "test -s /workspace/queue.json || { mkdir -p /ipc/control && echo 'queue empty' > /ipc/control/skip; }"]
 ```
 
 Notes:
+
+- **Create the directory.** Nothing creates `/ipc/control` before preRun hooks
+  run, so the hook must `mkdir -p` it before it writes the marker.
+- **In [harness mode](../modes/harness.md), the adapter does the skip.** The
+  harness replaces `agent-runner`. Sympozium mounts `/ipc/control` read-only
+  into the harness container, and the adapter must check the marker and return
+  a `skipped` result. An adapter that ignores the marker runs the harness
+  anyway. See [Skipped runs](../modes/harness-adapters.md#skipped-runs).
 
 - **Exit `0`, don't fail.** A non-zero exit fails the whole Pod (standard init
   container behavior) and marks the run `Failed` — that is *not* a skip.

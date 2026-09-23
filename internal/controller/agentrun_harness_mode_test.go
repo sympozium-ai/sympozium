@@ -423,7 +423,7 @@ func TestBuildContainers_HarnessCannotReachTheOtherIPCDirectories(t *testing.T) 
 		if m.SubPath == "" {
 			t.Fatalf("agent mounts the whole ipc volume at %q; spawn/, tools/, messages/ and schedules/ are all writable", m.MountPath)
 		}
-		if m.SubPath != "input" && m.SubPath != "output" {
+		if m.SubPath != "input" && m.SubPath != "control" && m.SubPath != "output" {
 			t.Errorf("unexpected ipc subPath %q mounted at %q", m.SubPath, m.MountPath)
 		}
 	}
