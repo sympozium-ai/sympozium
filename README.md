@@ -132,6 +132,8 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 
 **And that is the whole product.** Sympozium decides what agents *do*. Where compute *happens* is the job of a capability layer &mdash; [llmfit-dra](https://github.com/sympozium-ai/llmfit-dra), a Kubernetes DRA driver that places models by physics through the stock scheduler. How tokens *move* is the serving engine's job (vLLM, SGLang, llama.cpp). When an agent needs a model, Sympozium *claims* one the way an application claims a PersistentVolume &mdash; it never decides where it runs. See [Positioning](https://deploy.sympozium.ai/docs/positioning/) for the boundary and what's deliberately out of scope.
 
+Evaluating Google's [AX](https://github.com/google/ax) and [Agent Substrate](https://github.com/agent-substrate/substrate)? Read [Sympozium vs Google AX](https://deploy.sympozium.ai/docs/sympozium-vs-google-ax/), an honest comparison that includes where they are ahead (idle-agent density, suspend/resume, control-plane scale) and how the two could fit together.
+
 ### Agent Coordination
 
 | | |
@@ -167,6 +169,7 @@ Sympozium is a **Kubernetes-native coordination layer** for multi-agent AI syste
 |-------|------|
 | Getting Started | [deploy.sympozium.ai/docs/getting-started](https://deploy.sympozium.ai/docs/getting-started/) |
 | Positioning &mdash; what Sympozium is (and isn't) | [deploy.sympozium.ai/docs/positioning](https://deploy.sympozium.ai/docs/positioning/) |
+| Sympozium vs Google AX &amp; Agent Substrate &mdash; an honest comparison | [deploy.sympozium.ai/docs/sympozium-vs-google-ax](https://deploy.sympozium.ai/docs/sympozium-vs-google-ax/) |
 | Architecture | [deploy.sympozium.ai/docs/architecture](https://deploy.sympozium.ai/docs/architecture/) |
 | Custom Resources | [deploy.sympozium.ai/docs/concepts/custom-resources](https://deploy.sympozium.ai/docs/concepts/custom-resources/) |
 | Ensembles | [deploy.sympozium.ai/docs/concepts/ensembles](https://deploy.sympozium.ai/docs/concepts/ensembles/) |
