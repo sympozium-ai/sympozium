@@ -234,8 +234,12 @@ spec:
                 properties:
                   defaultAction:
                     default: allow
-                    description: DefaultAction is the default action for unmatched
-                      tools (allow, deny, ask).
+                    description: |-
+                      DefaultAction applies to tools no rule names. With deny, a run may use
+                      only the tools a rule allows.
+                    enum:
+                    - allow
+                    - deny
                     type: string
                   rules:
                     description: Rules is the list of tool-specific rules.
@@ -243,8 +247,10 @@ spec:
                       description: ToolGatingRule defines a rule for a specific tool.
                       properties:
                         action:
-                          description: Action is the action to take (allow, deny,
-                            ask).
+                          description: Action is allow or deny.
+                          enum:
+                          - allow
+                          - deny
                           type: string
                         tool:
                           description: Tool is the tool name this rule applies to.

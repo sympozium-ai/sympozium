@@ -35,6 +35,9 @@ type Manifest struct {
 // file to appear. The mount can lag pod start by a moment.
 const DefaultLoadTimeout = 5 * time.Second
 
+// DenyAllTools in a deny list denies every tool, whatever the allow list says.
+const DenyAllTools = "*"
+
 // LoadManifest reads the controller-written manifest, waiting up to timeout for
 // the file to appear. A missing file after the deadline is an error: the caller
 // only asks when the controller said there would be one, so an absent manifest
@@ -71,8 +74,8 @@ func LoadManifest(path string, timeout time.Duration) (Manifest, error) {
 // The semantics match agent-runner's applyToolPolicy exactly, and must keep
 // matching: the same AgentRun field is enforced in both places, and a run that
 // behaved differently depending on which process held the tools would make the
-// policy meaningless. Deny wins over allow, and a non-empty allow list is
-// exclusive.
+// policy meaningless. Deny wins over allow, "*" in the deny list denies every
+// tool, and a non-empty allow list is exclusive.
 func FilterByPolicy(tools []Tool, allowList, denyList string) []Tool {
 	allowed := splitSet(allowList)
 	denied := splitSet(denyList)
@@ -80,7 +83,7 @@ func FilterByPolicy(tools []Tool, allowList, denyList string) []Tool {
 
 	filtered := make([]Tool, 0, len(tools))
 	for _, t := range tools {
-		if denied[t.Name] {
+		if denied[t.Name] || denied[DenyAllTools] {
 			continue
 		}
 		if useAllowlist && !allowed[t.Name] {

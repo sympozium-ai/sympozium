@@ -896,21 +896,6 @@ func (mpe *MutatingPolicyEnforcer) Handle(ctx context.Context, req admission.Req
 		}
 	}
 
-	// Inject tool policy defaults from SympoziumPolicy
-	if policy.Spec.ToolGating != nil && run.Spec.ToolPolicy == nil {
-		tp := &sympoziumv1alpha1.ToolPolicySpec{}
-		for _, rule := range policy.Spec.ToolGating.Rules {
-			switch rule.Action {
-			case "allow":
-				tp.Allow = append(tp.Allow, rule.Tool)
-			case "deny":
-				tp.Deny = append(tp.Deny, rule.Tool)
-			}
-		}
-		run.Spec.ToolPolicy = tp
-		modified = true
-	}
-
 	// Inject network isolation labels (used by NetworkPolicy)
 	if run.Labels == nil {
 		run.Labels = make(map[string]string)

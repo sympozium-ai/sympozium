@@ -18,11 +18,11 @@ spec:
         action: allow
       - tool: fetch_url
         action: allow
-      # Require manual approval for destructive operations
+      # Deny destructive operations
       - tool: write_file
-        action: ask
+        action: deny
       - tool: execute_command
-        action: ask
+        action: deny
   sandboxPolicy:
     required: true
     defaultImage: ghcr.io/sympozium-ai/sympozium/sandbox:latest

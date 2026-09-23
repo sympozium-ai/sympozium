@@ -1107,7 +1107,8 @@ spec:
                       type: string
                     type: array
                   deny:
-                    description: Deny lists explicitly denied tools.
+                    description: Deny lists explicitly denied tools. "*" denies every
+                      tool.
                     items:
                       type: string
                     type: array
