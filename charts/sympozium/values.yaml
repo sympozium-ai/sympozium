@@ -523,6 +523,9 @@ celln:
   dispatcher:
     enabled: false
     replicas: 1
+    # -- Explicit pod tolerations, e.g. for a tainted KVM-capable control-plane node.
+    # No taints are tolerated by default.
+    tolerations: []
     # -- Image carrying the celln binary + runtime assets (and Rust for the
     # forge compile step). Defaults to celln.image when empty.
     image:

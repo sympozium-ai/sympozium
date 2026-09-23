@@ -311,6 +311,10 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: {{ $parent.nodeName | quote }}
       {{- end }}
+      {{- with $dispatcher.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: dispatcher
         {{- if $parent.enabled }}
