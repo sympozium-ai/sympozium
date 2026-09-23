@@ -178,6 +178,7 @@ nav:
     - Helm Chart: reference/helm.md
     - Testing: reference/testing.md
   - Sympozium vs kagent: sympozium-vs-kagent.md
+  - Sympozium vs Google AX: sympozium-vs-google-ax.md
   - Design & History:
     - Design Notes: design/index.md
     - Original Design (Feb 2026): design.md
