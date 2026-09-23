@@ -129,12 +129,12 @@ Other fields worth knowing: `spec.task.mode: harness` or an `AgentRuntime` repla
 
 ## SympoziumPolicy
 
-Gates features and tools at admission time. The webhook evaluates policies before a pod is created.
+Gates features and tools. The webhook checks feature gates and limits when a run is admitted; the controller applies the tool rules to every run's pod. See [Security](security.md#policies).
 
 | Policy | Who it is for | Key rules |
 |--------|---------------|-----------|
-| **Permissive** | Dev clusters, demos | All tools allowed, no approval needed |
-| **Default** | General use | `execute_command` requires approval, everything else allowed |
+| **Permissive** | Dev clusters, demos | All tools allowed |
+| **Default** | General use | All tools allowed except `fetch_url` |
 | **Restrictive** | Production, security | All tools denied by default, must be explicitly allowed |
 
 ---

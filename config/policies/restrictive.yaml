@@ -4,7 +4,7 @@
 # Use this when agents operate in sensitive environments:
 #   - Sandbox is mandatory (all commands run in an isolated container)
 #   - Tools default to deny; only explicitly allowed tools are usable
-#   - Shell execution requires approval ("ask")
+#   - Shell execution denied
 #   - Network fetch and file writes are denied
 #   - Sub-agent depth and concurrency are tightly capped
 #   - Code execution feature gate is enabled (sandbox enforces isolation)
@@ -26,7 +26,7 @@ spec:
     defaultAction: deny
     rules:
       - tool: execute_command
-        action: ask
+        action: deny
       - tool: read_file
         action: allow
       - tool: list_directory

@@ -1162,11 +1162,11 @@ spec:
   toolGating:
     defaultAction: allow
     rules:
-      - tool: exec_command
-        action: ask
+      - tool: execute_command
+        action: allow
       - tool: write_file
         action: allow
-      - tool: network_request
+      - tool: fetch_url
         action: deny
   subagentPolicy:
     maxDepth: 3
@@ -11574,9 +11574,9 @@ func tuiOnboardApply(ns string, w *wizardState) (string, error) {
 				ToolGating: &sympoziumv1alpha1.ToolGatingSpec{
 					DefaultAction: "allow",
 					Rules: []sympoziumv1alpha1.ToolGatingRule{
-						{Tool: "exec_command", Action: "ask"},
+						{Tool: "execute_command", Action: "allow"},
 						{Tool: "write_file", Action: "allow"},
-						{Tool: "network_request", Action: "deny"},
+						{Tool: "fetch_url", Action: "deny"},
 					},
 				},
 				SubagentPolicy: &sympoziumv1alpha1.SubagentPolicySpec{

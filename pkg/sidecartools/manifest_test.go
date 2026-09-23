@@ -28,6 +28,7 @@ func TestFilterByPolicy(t *testing.T) {
 		{"whitespace is trimmed", " read , write ", "", []string{"read", "write"}},
 		{"empty entries ignored", "read,,", "", []string{"read"}},
 		{"allow list matching nothing yields nothing", "absent", "", nil},
+		{"deny-all marker denies everything", "read", DenyAllTools, nil},
 	}
 
 	for _, c := range cases {

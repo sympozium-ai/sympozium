@@ -44,6 +44,12 @@ func TestApplyToolPolicy(t *testing.T) {
 			wantNames: []string{"read_file", "write_file"},
 		},
 		{
+			name:      "* in the deny list denies everything, allow list included",
+			allow:     "read_file",
+			deny:      "*",
+			wantNames: []string{},
+		},
+		{
 			name:      "tool in both lists is denied",
 			allow:     "write_file",
 			deny:      "write_file",

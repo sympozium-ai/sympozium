@@ -140,8 +140,10 @@ type SubagentPolicySpec struct {
 
 // ToolGatingSpec defines tool access rules.
 type ToolGatingSpec struct {
-	// DefaultAction is the default action for unmatched tools (allow, deny, ask).
+	// DefaultAction applies to tools no rule names. With deny, a run may use
+	// only the tools a rule allows.
 	// +kubebuilder:default="allow"
+	// +kubebuilder:validation:Enum=allow;deny
 	DefaultAction string `json:"defaultAction,omitempty"`
 
 	// Rules is the list of tool-specific rules.
@@ -153,7 +155,8 @@ type ToolGatingRule struct {
 	// Tool is the tool name this rule applies to.
 	Tool string `json:"tool"`
 
-	// Action is the action to take (allow, deny, ask).
+	// Action is allow or deny.
+	// +kubebuilder:validation:Enum=allow;deny
 	Action string `json:"action"`
 }
 

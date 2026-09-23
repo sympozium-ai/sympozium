@@ -21,6 +21,7 @@ import (
 
 	"github.com/sympozium-ai/sympozium/internal/ipc"
 	"github.com/sympozium-ai/sympozium/internal/llmprovider"
+	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 )
 
 // maxToolIterations is the maximum number of LLM reasoning rounds before
@@ -833,6 +834,7 @@ func readSkipMarker(path string) (string, bool) {
 // - deny only: tools in the deny list are removed (blocklist mode)
 // - allow only: all tools not in the allow list are denied (allowlist mode)
 // - both: deny wins on conflict — a tool in both lists is denied (least privilege)
+// - sidecartools.DenyAllTools ("*") in the deny list denies every tool
 func applyToolPolicy(tools []ToolDef, allowList, denyList string) []ToolDef {
 	allowed := make(map[string]bool)
 	for _, name := range strings.Split(allowList, ",") {
@@ -851,7 +853,7 @@ func applyToolPolicy(tools []ToolDef, allowList, denyList string) []ToolDef {
 	useAllowlist := len(allowed) > 0
 	filtered := make([]ToolDef, 0, len(tools))
 	for _, t := range tools {
-		if denied[t.Name] {
+		if denied[t.Name] || denied[sidecartools.DenyAllTools] {
 			log.Printf("tool policy: denied tool %q", t.Name)
 			continue
 		}
