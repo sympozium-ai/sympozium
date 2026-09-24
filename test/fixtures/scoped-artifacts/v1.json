@@ -1,0 +1,28 @@
+{
+  "apiVersion": "celln.scoped-artifacts/v1",
+  "declared": {"operation":"write","maxOperations":4,"maxFiles":8,"maxFileBytes":4096,"maxTotalBytes":16384},
+  "effects": "external-side-effects",
+  "vectors": [
+    {"name":"write-exact","patch":{},"accepted":true},
+    {"name":"write-attenuated","patch":{"maxOperations":2,"maxFiles":4,"maxFileBytes":1024,"maxTotalBytes":4096},"accepted":true},
+    {"name":"operations-widened","patch":{"maxOperations":5},"accepted":false},
+    {"name":"files-widened","patch":{"maxFiles":9},"accepted":false},
+    {"name":"bytes-widened","patch":{"maxTotalBytes":16385},"accepted":false},
+    {"name":"zero-operations","patch":{"maxOperations":0},"accepted":false},
+    {"name":"zero-files","patch":{"maxFiles":0},"accepted":false},
+    {"name":"zero-file-bytes","patch":{"maxFileBytes":0},"accepted":false},
+    {"name":"file-exceeds-total","patch":{"maxTotalBytes":4095},"accepted":false},
+    {"name":"noninteger","patch":{"maxOperations":"4"},"accepted":false},
+    {"name":"not-a-read-grant","patch":{"operation":"read"},"accepted":false},
+    {"name":"not-an-append-grant","patch":{"operation":"append"},"accepted":false},
+    {"name":"not-a-delete-grant","patch":{"operation":"delete"},"accepted":false},
+    {"name":"not-a-symlink-grant","patch":{"operation":"symlink"},"accepted":false},
+    {"name":"unknown-host-path","patch":{"hostPath":"/etc"},"accepted":false}
+  ],
+  "guest": {
+    "write":{"apiVersion":"celln.workspace/v1","body":{"operation":"write","name":"notes/sentinel.txt","revision":0,"content":"artifact-violet"}},
+    "read":{"apiVersion":"celln.workspace/v1","body":{"operation":"read","name":"notes/sentinel.txt"}},
+    "writeResponse":{"revision":1},
+    "readResponse":{"revision":1,"content":"artifact-violet"}
+  }
+}

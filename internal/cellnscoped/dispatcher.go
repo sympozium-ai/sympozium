@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -53,8 +54,23 @@ func (d *Dispatcher) PrepareTurn(ctx context.Context, runKey, turnKey types.Name
 	if d == nil || original == nil || original.Decision.Operation != "execution.start" || original.Decision.Lifecycle != "enduring-initial" || original.Decision.Parent == nil || original.Decision.Parent.Incarnation != incarnation {
 		return nil, errors.New("original enduring authority is unavailable")
 	}
+	root, err := d.Store.Load(ctx, original.PreparationName)
+	if err != nil {
+		return nil, err
+	}
+	if root.UID != original.PreparationUID {
+		return nil, errors.New("original preparation identity changed")
+	}
 	decision := original.Decision
-	return d.Store.Prepare(ctx, runKey, cellnauthority.PlatformResolveRequest{ClusterID: d.ClusterID, Now: time.Now().UTC(), AdmissionWindow: 60 * time.Second, Operation: "execution.turn", ParentIncarnation: incarnation, TurnKey: &turnKey, Original: &decision})
+	next, err := d.Store.Prepare(ctx, runKey, cellnauthority.PlatformResolveRequest{ClusterID: d.ClusterID, Now: time.Now().UTC(), AdmissionWindow: 60 * time.Second, Operation: "execution.turn", ParentIncarnation: incarnation, TurnKey: &turnKey, Original: &decision})
+	if err != nil {
+		return nil, err
+	}
+	before, after := root.Operation.Resolution.Execution, next.Operation.Resolution.Execution
+	if before == nil || after == nil || !reflect.DeepEqual(before.Tools, after.Tools) {
+		return nil, cellnauthority.Refuse(cellnauthority.ReasonPolicyContracted, "original ordered tool material changed")
+	}
+	return next, nil
 }
 
 func (d *Dispatcher) EnsureFinal(ctx context.Context, prepared *cellnauthority.StoredPreparation) (*cellnauthority.FinalizedPreparation, error) {
@@ -68,6 +84,9 @@ func (d *Dispatcher) EnsureFinal(ctx context.Context, prepared *cellnauthority.S
 		return nil, err
 	}
 	base := prepared.Operation.Resolution.Decision
+	if err := d.Receiver.PreflightArtifacts(ctx, base); err != nil {
+		return nil, err
+	}
 	secretUID := ""
 	if base.Route.Auth == "secret" {
 		if d.Gateway == nil || base.Route.CredentialSourceRef == nil {
@@ -99,6 +118,9 @@ func (d *Dispatcher) EnsureTurnFinal(ctx context.Context, prepared *cellnauthori
 	if prepared == nil || original == nil || prepared.Operation.Resolution.Decision.Operation != "execution.turn" {
 		return nil, errors.New("turn finalization requires original prepared authority")
 	}
+	if err := d.Receiver.PreflightArtifacts(ctx, prepared.Operation.Resolution.Decision); err != nil {
+		return nil, err
+	}
 	secretUID := ""
 	if original.Decision.Route.CredentialSource != nil {
 		secretUID = original.Decision.Route.CredentialSource.SecretUID
@@ -128,6 +150,9 @@ func CapabilityDecision(decision cellnauthority.PlatformDecision) (cap.Decision,
 func (d *Dispatcher) RevalidateAdmission(ctx context.Context, prepared *cellnauthority.StoredPreparation) error {
 	if d == nil || d.Store.Reader == nil || prepared == nil {
 		return errors.New("scoped admission reader is unavailable")
+	}
+	if err := d.Receiver.PreflightArtifacts(ctx, prepared.Operation.Resolution.Decision); err != nil {
+		return err
 	}
 	frozen := prepared.Operation.Resolution
 	frozen.Request = prepared.Operation.ResolveRequest

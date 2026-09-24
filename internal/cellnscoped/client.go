@@ -165,6 +165,9 @@ type OperationStatus struct {
 
 func (c *NativeClient) Prepare(ctx context.Context, operation cellnauthority.PreparedOperation, decision cap.Decision) (PrepareResponse, error) {
 	var out PrepareResponse
+	if err := c.PreflightArtifacts(ctx, operation.Resolution.Decision); err != nil {
+		return out, err
+	}
 	in := struct {
 		Operation cellnauthority.PreparedOperation `json:"operation"`
 		Decision  cap.Decision                     `json:"decision"`
