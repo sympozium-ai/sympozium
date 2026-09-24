@@ -417,7 +417,11 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 						if !validToolLimits(*allowed.Limits) {
 							return nil, deny(ReasonLimitRange, "policy %q has invalid limits for tool %q", policy.Name, tool.Name)
 						}
-						limits = intersectToolLimits(limits, *allowed.Limits)
+						var err error
+						limits, err = intersectToolLimits(limits, *allowed.Limits)
+						if err != nil {
+							return nil, deny(ReasonPolicyContracted, "policy %q removes or changes tool capability: %v", policy.Name, err)
+						}
 					}
 					break
 				}
@@ -426,12 +430,20 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 				return nil, deny(ReasonToolUnknown, "policy %q does not permit tool %q at the selected revision", policy.Name, tool.Name)
 			}
 		}
+		if limits.Artifacts != nil && lifecycle != "enduring" {
+			return nil, deny(ReasonLifecycle, "scoped artifacts require mediated enduring execution")
+		}
 		tools = append(tools, decisionTool(tool, limits))
 	}
 
 	route, err := resolveDecisionRoute(s, modelRequired)
 	if err != nil {
 		return nil, err
+	}
+	for _, tool := range tools {
+		if tool.Limits.Artifacts != nil && route.Auth == "host-profile" {
+			return nil, deny(ReasonRouteMismatch, "scoped artifacts require a mediated model route")
+		}
 	}
 	policyBinding, err := bindPolicies(s.Policies)
 	if err != nil {
@@ -860,6 +872,9 @@ func validateRuntimeProfile(profile api.CellnRuntimeProfile, lifecycle string) e
 
 func validateClusterTool(tool api.ClusterCellnTool) error {
 	s := tool.Spec
+	if (s.Limits.Artifacts != nil || s.Limits.HTTPS != nil) && s.InvocationABI != "celln.json-stdio/v1" {
+		return deny(ReasonToolUnknown, "broker capability requires JSON-stdio")
+	}
 	if s.Revision == "" || (s.InvocationABI != "celln.json-stdio/v1" && s.InvocationABI != "celln.argv/v1") || s.Lane != "tool" || s.Platform != "linux/amd64" || !hashPattern.MatchString(s.Executable.Hash) || !hashPattern.MatchString(s.Closure.Hash) || !hashPattern.MatchString(s.ArgumentsSchema.Hash) || !hashPattern.MatchString(s.ResultSchema.Hash) || !publisherPattern.MatchString(s.PublisherKey) || !pathPattern.MatchString(s.EntryPoint) || !validToolLimits(s.Limits) {
 		return deny(ReasonToolUnknown, "unsupported cluster tool")
 	}
@@ -870,11 +885,11 @@ func validToolLimits(limits api.CellnToolLimits) bool {
 	if limits.TimeoutMillis < 1 || limits.MemoryBytes < 1 || limits.ArgumentBytes < 1 || limits.OutputBytes < 1 || limits.Workspace != "none" || (limits.Effects != "none" && limits.Effects != "external-side-effects") || len(limits.Egress) != 0 || len(limits.Inputs) != 0 {
 		return false
 	}
-	if limits.Artifacts != nil && (!ArtifactOperations[limits.Artifacts.Operation] || limits.Artifacts.MaxOperations < 1 || limits.Artifacts.MaxFiles < 1 || limits.Artifacts.MaxFileBytes < 1 || limits.Artifacts.MaxTotalBytes < 1) {
+	if validateBrokerLimits(limits) != nil {
 		return false
 	}
-	if limits.HTTPS != nil && (len(limits.HTTPS.AllowHosts) == 0 || limits.HTTPS.MaxRequests < 1 || limits.HTTPS.MaxResponseBytes < 1 || limits.HTTPS.TimeoutMillis < 1) {
-		return false
+	if a := limits.Artifacts; a != nil {
+		return (a.Operation == "read" && limits.Effects == "none") || (a.Operation == "write" && limits.Effects == "external-side-effects")
 	}
 	return true
 }
@@ -893,46 +908,24 @@ func minimumRuntimeLimits(left, right api.AgentRuntimeCellnLimits) api.AgentRunt
 	}
 }
 
-func intersectToolLimits(base, requested api.CellnToolLimits) api.CellnToolLimits {
+// A nil policy Limits means the explicitly selected catalogue revision's ceiling.
+// An explicit limits object must preserve its capability; omission is not a grant.
+func intersectToolLimits(base, requested api.CellnToolLimits) (api.CellnToolLimits, error) {
 	result := *base.DeepCopy()
 	result.TimeoutMillis = min(base.TimeoutMillis, requested.TimeoutMillis)
 	result.MemoryBytes = min(base.MemoryBytes, requested.MemoryBytes)
 	result.ArgumentBytes = min(base.ArgumentBytes, requested.ArgumentBytes)
 	result.OutputBytes = min(base.OutputBytes, requested.OutputBytes)
-	if requested.Workspace != base.Workspace {
-		result.Workspace = "none"
-	}
 	if requested.Effects == "none" {
 		result.Effects = "none"
 	}
-	if requested.Artifacts == nil {
-		result.Artifacts = nil
-	} else if result.Artifacts != nil && result.Artifacts.Operation == requested.Artifacts.Operation {
-		result.Artifacts.MaxOperations = min(result.Artifacts.MaxOperations, requested.Artifacts.MaxOperations)
-		result.Artifacts.MaxFiles = min(result.Artifacts.MaxFiles, requested.Artifacts.MaxFiles)
-		result.Artifacts.MaxFileBytes = min(result.Artifacts.MaxFileBytes, requested.Artifacts.MaxFileBytes)
-		result.Artifacts.MaxTotalBytes = min(result.Artifacts.MaxTotalBytes, requested.Artifacts.MaxTotalBytes)
-	} else {
-		result.Artifacts = nil
+	if err := intersectBrokerLimits(&result, requested); err != nil {
+		return result, err
 	}
-	if requested.HTTPS == nil {
-		result.HTTPS = nil
-	} else if result.HTTPS != nil {
-		allowed := make([]string, 0)
-		for _, host := range result.HTTPS.AllowHosts {
-			if slices.Contains(requested.HTTPS.AllowHosts, host) {
-				allowed = append(allowed, host)
-			}
-		}
-		sort.Strings(allowed)
-		result.HTTPS.AllowHosts = allowed
-		result.HTTPS.MaxRequests = min(result.HTTPS.MaxRequests, requested.HTTPS.MaxRequests)
-		result.HTTPS.MaxResponseBytes = min(result.HTTPS.MaxResponseBytes, requested.HTTPS.MaxResponseBytes)
-		result.HTTPS.TimeoutMillis = min(result.HTTPS.TimeoutMillis, requested.HTTPS.TimeoutMillis)
-	} else {
-		result.HTTPS = nil
+	if !validToolLimits(result) {
+		return result, fmt.Errorf("invalid effective tool limits")
 	}
-	return result
+	return result, nil
 }
 
 func decisionTool(tool api.ClusterCellnTool, limits api.CellnToolLimits) DecisionToolBinding {
