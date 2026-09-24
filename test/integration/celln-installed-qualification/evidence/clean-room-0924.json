@@ -1,0 +1,95 @@
+{
+  "installedAcceptance": false,
+  "cluster": {
+    "installedAcceptance": false,
+    "cluster": "hermes-celln-clean-0924",
+    "context": "kind-hermes-celln-clean-0924",
+    "kubeconfig": "/home/axjns/.hermes/cache/scratch/hermes-celln-clean-0924/kubeconfig",
+    "node": "hermes-celln-clean-0924-control-plane",
+    "nodeImage": "kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f",
+    "ciliumVersion": "1.18.2",
+    "kubeSystemUID": "e767874f-7e81-4086-aa07-24a4d6b86c80",
+    "scope": "single-host disposable development fixture, not normal release installation"
+  },
+  "epoch": "2b28e8253d",
+  "checksPassed": 21,
+  "realExitCodes": {
+    "bootstrap": 0,
+    "importQualificationImage": 0,
+    "importPostgresImage": 0,
+    "prepareFixtures": 0,
+    "runner": 0,
+    "collector": 0,
+    "bootstrapUnitTests": 0,
+    "initialB3sumProbe": 127,
+    "pythonBlake3AndImageVerification": 0
+  },
+  "manualClusterRepairs": [],
+  "helperFixesRequired": [],
+  "nodeLimits": {
+    "Memory": 8589934592,
+    "MemorySwap": 8589934592,
+    "NanoCpus": 4000000000
+  },
+  "nodeReady": true,
+  "package": {
+    "path": "/home/axjns/.hermes/cache/scratch/hermes-celln-package-0923",
+    "verifiedBlake3Entries": 50,
+    "manifestSHA256": "21889c57af46094e9c974d1a532ccb0596e7abb2c4ded2fad454d2804a978fde"
+  },
+  "imageManifest": "sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008",
+  "imageConfigAndLayersVerified": 5,
+  "postgresManifest": "sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28",
+  "identicalABRuntimeSpecs": {
+    "celln-review-a-495": {
+      "cellnProfileRef": {
+        "name": "celln-json-one-shot-review-495",
+        "revision": "r-de5d0b56b9d0-71efec768d3c"
+      },
+      "image": ""
+    },
+    "celln-review-b-495": {
+      "cellnProfileRef": {
+        "name": "celln-json-one-shot-review-495",
+        "revision": "r-de5d0b56b9d0-71efec768d3c"
+      },
+      "image": ""
+    }
+  },
+  "fixtureAgentAuthRefs": {
+    "celln-review-a-495": [
+      {
+        "provider": "review-fixture",
+        "secret": "review-provider-credential"
+      }
+    ],
+    "celln-review-b-495": [
+      {
+        "provider": "review-fixture",
+        "secret": "review-provider-credential"
+      }
+    ]
+  },
+  "retainedClusters": [
+    "celln-tenancy",
+    "hermes-celln-clean-0924",
+    "hermes-celln-qual2-0923",
+    "substrate-local"
+  ],
+  "artifactSHA256": {
+    "cluster.json": "e28d4a805f9ce32f643ab7c48a45af0432b7e1fc9d52092a2890ae42519307ea",
+    "evidence/report.json": "7b1170c2559506befecbd930637e7aec1cacc188876678e3d0543d210aab4a17",
+    "evidence/verified.json": "2e488c3925648f26a0980c96ccaaa1b62340ac4d1dde050746fe44f7b648a694",
+    "runner.log": "77461a142e9bcc619c7bbbf7fd72051bd4ab176841bc8412ca3701ae2502944d",
+    "prepare.log": "96f5931957cf6295c48bea6ff9c52afa51def5841112aac76761b06da7839566"
+  },
+  "sourceSHA256AtCollection": {
+    "bootstrap-kind.py": "82bad85aa683b0d79f1fc3747db25cb3fad3ec292d59cc3ffa0389ba30501c75",
+    "import-image.py": "15221a5de10c42f9098d77bdff9b7e95f63f6b36c44815ec214db2198b907a10",
+    "prepare-fixtures.py": "c06cfffc61e4a1c4d4e7f6d7aee4e66140d5b9d5952f602bc5df8e156c0900a6",
+    "test_bootstrap.py": "19b2d9f2cd5f5dc3c001c71796fdba56e750bb09ed9bb243c39bf50be63e5099",
+    "main.go": "7d84fa7214c9a4d8627e3221841b9fb4cbc1be9447a1e4d360733b93ef2573d1",
+    "collect-evidence.py": "eb91dcd68f85f5dc8e48a733957279f4c3e1bffdb072be3680149615c96fe4cf"
+  },
+  "collectorCaveat": "verified.json inherits an obsolete fixed limitation about a retained earlier admission-refused run. No such failure occurred on this clean cluster; that limitation refers only to the old qual2 cluster. Collector left unchanged per ownership boundary."
+}
