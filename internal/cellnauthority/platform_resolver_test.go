@@ -75,7 +75,7 @@ func newPlatformFixture(t *testing.T, namespace string, model bool) platformFixt
 	}}
 	tool := &api.ClusterCellnTool{ObjectMeta: metav1.ObjectMeta{Name: "workspace-write-v1", UID: "tool-uid", Generation: 1}, Spec: api.CellnToolSpec{
 		Revision: "v1", Description: "write", SupportOwner: "platform", PublisherKey: strings.Repeat("b", 64), Executable: hash("4"), Closure: hash("5"), EntryPoint: "/bin/write", InvocationABI: "celln.json-stdio/v1", ArgumentsSchema: hash("6"), ResultSchema: hash("7"), Platform: "linux/amd64", Lane: "tool",
-		Limits: api.CellnToolLimits{TimeoutMillis: 30000, MemoryBytes: 64 << 20, ArgumentBytes: 2048, OutputBytes: 4096, Workspace: "none", Effects: "none", Artifacts: &api.CellnArtifactLimits{Operation: "write", MaxOperations: 8, MaxFiles: 8, MaxFileBytes: 4096, MaxTotalBytes: 32768}},
+		Limits: api.CellnToolLimits{TimeoutMillis: 30000, MemoryBytes: 64 << 20, ArgumentBytes: 2048, OutputBytes: 4096, Workspace: "none", Effects: "none"},
 	}}
 	selection := &api.CellnCatalogueSelection{ToolRefs: []api.CellnCatalogueToolRef{}, ClusterToolRefs: []api.ClusterCellnToolRef{{Name: tool.Name, Revision: "v1"}}}
 	run := &api.AgentRun{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "run", UID: types.UID(namespace + "-run"), Generation: 1}, Spec: api.AgentRunSpec{AgentRef: "agent", AgentID: "agent", SessionKey: "session", Task: api.NewStringTask("write report"), Backend: "celln", ExecutionLifecycle: "one-shot", CellnSelection: selection, Cleanup: "delete"}}

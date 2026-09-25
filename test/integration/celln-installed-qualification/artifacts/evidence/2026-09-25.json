@@ -1,0 +1,885 @@
+{
+  "installedAcceptance": false,
+  "A03": false,
+  "fixture": "deterministic provider, not real LLM",
+  "epoch": "852b4e01f0",
+  "clusterUID": "900e72f1-abd3-4eba-9666-0669f3f2b9e8",
+  "providerImage": "docker.io/library/hermes-celln-artifacts@sha256:933f88e8e88ea89b3373b167545e5c7c5cf64a7cc7b56176a74c42babd286a26",
+  "complete": true,
+  "artifactContract": "celln.scoped-artifacts/v1",
+  "fixturesRestored": true,
+  "remainingQualificationResources": [],
+  "tenants": [
+    {
+      "namespace": "celln-review-a-495",
+      "tenantIdentity": "system:serviceaccount:celln-review-a-495:enduring-852b4e01f0",
+      "rootUID": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+      "turns": [
+        {
+          "uid": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "scoped": {
+            "cellId": "c992e18cd6f4",
+            "childId": "blake3:ca445570c97151032529cd75c53f147be757734d6778e221c7fbe3086eec066d",
+            "decisionName": "celln-final-a0ef34dd680cfabc71ec79ef9792a98ab4c0552d39f706e8ab449be08416c504",
+            "decisionUid": "b2eeb0ad-b512-4c84-b544-bed678d25ed7",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Running",
+            "output": "enduring-a-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "preparationName": "celln-op-7eae5c8921e4ed37c290d36f8e32dbe83040aaae18279aa52eac0a484f756ec8",
+            "preparationUid": "7de45b92-db7f-4903-a596-35577fabc47f",
+            "receiptDigest": "blake3:293386e1503e10251ca3157f975b0da2fa9a39d3464e63615357a5065823d5b0",
+            "receiverId": "sha256:d07ca94a9ad295de3d0f5884e003043d850331c5c411b447278e5c21a9bebc0e",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:0b86ca635976b9ea7e5373f325407cf194698ca8dd4d3191f8721198f384aa7f\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}"
+          },
+          "native": {
+            "id": "sha256:d07ca94a9ad295de3d0f5884e003043d850331c5c411b447278e5c21a9bebc0e",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Running",
+            "output": "enduring-a-852b4e01f0",
+            "receiptDigest": "blake3:293386e1503e10251ca3157f975b0da2fa9a39d3464e63615357a5065823d5b0",
+            "cleanupConfirmed": false,
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "childId": "blake3:ca445570c97151032529cd75c53f147be757734d6778e221c7fbe3086eec066d",
+            "cellId": "c992e18cd6f4",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:0b86ca635976b9ea7e5373f325407cf194698ca8dd4d3191f8721198f384aa7f",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        },
+        {
+          "uid": "7ec560ae-c905-49a9-9f94-bdf21be489d8",
+          "scoped": {
+            "cellId": "83c1086c226a",
+            "childId": "blake3:b1cc299fe8c0d02331850cee78667d7a2b7a504b1dbe4da2ad4677ec03099ff0",
+            "cleanupConfirmed": true,
+            "decisionName": "celln-final-af3df124e78c21d3797965a34b99ffdb23c25e7200d7e24610f81c778ab0aeb6",
+            "decisionUid": "7ccacfaf-41b9-4325-beee-7e5908b0bd35",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Succeeded",
+            "output": "enduring-a-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "preparationName": "celln-op-571f7e0f0f2432c2516dcd181db7cdde6b25f899d49e32604f42dce6977a61a7",
+            "preparationUid": "eb7dc1f7-1079-43c7-be8a-0db8c9e01cbc",
+            "receiptDigest": "blake3:0ec23ea3aae2e1cd9598f7e674d2b7dc9ba2d6509c841342376fa34d752b62ad",
+            "receiverId": "sha256:335f8eda45d3de63779f23dfb1e7f79091fd254eaa432342324401fbccba8108",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:ef5236a2084442a4dc38a27eee782fc8d7d50301cfa993c5faf9f233e3242988\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}",
+            "turnId": "7ec560ae-c905-49a9-9f94-bdf21be489d8"
+          },
+          "native": {
+            "id": "sha256:335f8eda45d3de63779f23dfb1e7f79091fd254eaa432342324401fbccba8108",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Succeeded",
+            "output": "enduring-a-852b4e01f0",
+            "receiptDigest": "blake3:0ec23ea3aae2e1cd9598f7e674d2b7dc9ba2d6509c841342376fa34d752b62ad",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "turnId": "7ec560ae-c905-49a9-9f94-bdf21be489d8",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "childId": "blake3:b1cc299fe8c0d02331850cee78667d7a2b7a504b1dbe4da2ad4677ec03099ff0",
+            "cellId": "83c1086c226a",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:ef5236a2084442a4dc38a27eee782fc8d7d50301cfa993c5faf9f233e3242988",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        },
+        {
+          "uid": "61e94b39-aa94-478d-bf65-6b722757af7d",
+          "scoped": {
+            "cellId": "ac98c39d2ce8",
+            "childId": "blake3:e0132f54cd4f1adcebe3518722d5fc987ca70edccfd39d982d3a183bcd35afb3",
+            "cleanupConfirmed": true,
+            "decisionName": "celln-final-572ee57ac90182ffac6c335a76827656c25bdeaf79b958570092bb097605821f",
+            "decisionUid": "117e9b20-2441-4e16-ab8d-853ffa1858d7",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Succeeded",
+            "output": "enduring-a-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "preparationName": "celln-op-b847e71f7ce61195f38d76f66916fe2768721dca3943b4af3875a0b9187e2233",
+            "preparationUid": "064ad214-14a6-42c0-9c22-08a2153b0de2",
+            "receiptDigest": "blake3:39f4eee98a36bb7d899c6c1bfbde11e4684fb0641c86508fdc584ee85ea61afd",
+            "receiverId": "sha256:0e68c1f2ceea3e1f5efdcadc3232408f31bd150aa9ba58852bf90ed334509ecc",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:786e2e102c3bc3bfbcf9c9978a43f0ad0f0876ff7aa4cd736ecaeb6841cd92ec\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}",
+            "turnId": "61e94b39-aa94-478d-bf65-6b722757af7d"
+          },
+          "native": {
+            "id": "sha256:0e68c1f2ceea3e1f5efdcadc3232408f31bd150aa9ba58852bf90ed334509ecc",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Succeeded",
+            "output": "enduring-a-852b4e01f0",
+            "receiptDigest": "blake3:39f4eee98a36bb7d899c6c1bfbde11e4684fb0641c86508fdc584ee85ea61afd",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "turnId": "61e94b39-aa94-478d-bf65-6b722757af7d",
+            "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+            "childId": "blake3:e0132f54cd4f1adcebe3518722d5fc987ca70edccfd39d982d3a183bcd35afb3",
+            "cellId": "ac98c39d2ce8",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:786e2e102c3bc3bfbcf9c9978a43f0ad0f0876ff7aa4cd736ecaeb6841cd92ec",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        }
+      ],
+      "providerBefore": {
+        "attempts": 0,
+        "events": []
+      },
+      "providerAfterDelete": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true,
+            "toolResultVerified": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true,
+            "toolResultVerified": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true,
+            "toolResultVerified": true
+          }
+        ]
+      },
+      "providerIdentityBefore": {
+        "uid": "8e132624-a2b3-44a3-8ee2-308085f10430",
+        "name": "review-provider-495-688588dc64-ts52c",
+        "containerID": "containerd://016f71f9fc2f313d63ace436da824a3d083a3b50bdc77ad744d2f5cbff029a14",
+        "imageID": "docker.io/library/hermes-celln-artifacts@sha256:933f88e8e88ea89b3373b167545e5c7c5cf64a7cc7b56176a74c42babd286a26",
+        "restartCount": 0
+      },
+      "providerIdentityAfter": {
+        "uid": "8e132624-a2b3-44a3-8ee2-308085f10430",
+        "name": "review-provider-495-688588dc64-ts52c",
+        "containerID": "containerd://016f71f9fc2f313d63ace436da824a3d083a3b50bdc77ad744d2f5cbff029a14",
+        "imageID": "docker.io/library/hermes-celln-artifacts@sha256:933f88e8e88ea89b3373b167545e5c7c5cf64a7cc7b56176a74c42babd286a26",
+        "restartCount": 0
+      },
+      "crossOwnerDenials": [
+        {
+          "operation": "read",
+          "identity": "system:serviceaccount:celln-review-b-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-a-495",
+          "targetRunUID": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": false
+        },
+        {
+          "operation": "delete",
+          "identity": "system:serviceaccount:celln-review-b-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-a-495",
+          "targetRunUID": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": true
+        },
+        {
+          "operation": "turn",
+          "identity": "system:serviceaccount:celln-review-b-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-a-495",
+          "targetRunUID": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": true
+        }
+      ],
+      "ledgerBeforeDelete": [
+        {
+          "run_uid": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "budget_id": "sha256:a4fbfd8257e560c726bedbf380c97174657de45a91a8080128fd4d87184d03ca",
+          "namespace_uid": "7e5d1165-cbc4-4fa6-9ffc-de5fcabbb99a",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "f"
+        }
+      ],
+      "ledgerAfterDelete": [
+        {
+          "run_uid": "ee0316d9-2107-49b8-b0c5-19e9123fb15f",
+          "budget_id": "sha256:a4fbfd8257e560c726bedbf380c97174657de45a91a8080128fd4d87184d03ca",
+          "namespace_uid": "7e5d1165-cbc4-4fa6-9ffc-de5fcabbb99a",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "t"
+        }
+      ],
+      "nativeRootTombstone": {
+        "id": "sha256:d07ca94a9ad295de3d0f5884e003043d850331c5c411b447278e5c21a9bebc0e",
+        "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+        "phase": "Cancelled",
+        "reason": "retained parent and descendants stopped",
+        "output": "enduring-a-852b4e01f0",
+        "receiptDigest": "blake3:293386e1503e10251ca3157f975b0da2fa9a39d3464e63615357a5065823d5b0",
+        "cleanupConfirmed": true,
+        "parentIncarnation": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+        "parentId": "blake3:e8007116a48c4a56aa5ff20447440f625aac465b5d1693f03387a1f959660eac",
+        "childId": "blake3:ca445570c97151032529cd75c53f147be757734d6778e221c7fbe3086eec066d",
+        "cellId": "c992e18cd6f4",
+        "execution": {
+          "fetch": true,
+          "lane": "agent",
+          "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+          "workspace": "none"
+        },
+        "substrate": {
+          "closure": {
+            "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+            "members": {
+              "/pilot-fetch": {
+                "dependencies": [],
+                "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+              },
+              "/worker": {
+                "dependencies": [
+                  "/pilot-fetch",
+                  "/workspace-read",
+                  "/workspace-write"
+                ],
+                "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+              },
+              "/workspace-read": {
+                "dependencies": [
+                  "/pilot-fetch"
+                ],
+                "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+              },
+              "/workspace-write": {
+                "dependencies": [
+                  "/pilot-fetch"
+                ],
+                "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+              }
+            },
+            "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+            "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+          },
+          "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+          "invocation": "blake3:0b86ca635976b9ea7e5373f325407cf194698ca8dd4d3191f8721198f384aa7f",
+          "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+          "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+        }
+      },
+      "rootAbsent": true,
+      "nativeInventoryEmpty": true
+    },
+    {
+      "namespace": "celln-review-b-495",
+      "tenantIdentity": "system:serviceaccount:celln-review-b-495:enduring-852b4e01f0",
+      "rootUID": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+      "turns": [
+        {
+          "uid": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "scoped": {
+            "cellId": "cb601d42703a",
+            "childId": "blake3:be46fa226280123fa41c44e0a22b3907b0273c17e8e3dc8fbe343d504dfd3344",
+            "decisionName": "celln-final-214cd5a0792b1675924d2507a87fe9b4166dff39096062864dce561d7f37c78d",
+            "decisionUid": "c9bf5666-089d-4bc6-8a99-6713d7e59f48",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Running",
+            "output": "enduring-b-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "preparationName": "celln-op-c4271c673a2f979a88887be88dba0ce37fe657bdbcb23f7d06cee36ecdff5b1b",
+            "preparationUid": "520d93ad-5ecb-4feb-b554-7f56fc15616c",
+            "receiptDigest": "blake3:52801fe198c5b53dcff78e2e456fabbf399c5e89d897fb35c09b7174fc82bf8e",
+            "receiverId": "sha256:a66c0ec5ccf9a9329eee2de2f0c2a4ca68665c7357e878596d1895f727a05ec2",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:52d67f2d520bfa5cad2ed3bb1e2f2589f9d79d7c432bd7372680df11b73dfdfc\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}"
+          },
+          "native": {
+            "id": "sha256:a66c0ec5ccf9a9329eee2de2f0c2a4ca68665c7357e878596d1895f727a05ec2",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Running",
+            "output": "enduring-b-852b4e01f0",
+            "receiptDigest": "blake3:52801fe198c5b53dcff78e2e456fabbf399c5e89d897fb35c09b7174fc82bf8e",
+            "cleanupConfirmed": false,
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "childId": "blake3:be46fa226280123fa41c44e0a22b3907b0273c17e8e3dc8fbe343d504dfd3344",
+            "cellId": "cb601d42703a",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:52d67f2d520bfa5cad2ed3bb1e2f2589f9d79d7c432bd7372680df11b73dfdfc",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        },
+        {
+          "uid": "abc634da-2f62-4549-a956-28d23bb80b93",
+          "scoped": {
+            "cellId": "bed82243ae32",
+            "childId": "blake3:c6f56f71a03614645621cfbedc5e8a30acd3be5f0a06817d61892b97db5f1270",
+            "cleanupConfirmed": true,
+            "decisionName": "celln-final-e62e84ec191ec7ab48c3f69ad89752bd4bcc3432b02c2fadf4682e7ad2d372cd",
+            "decisionUid": "3451e7db-14ea-4bf8-88cf-cf84c15cf39a",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Succeeded",
+            "output": "enduring-b-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "preparationName": "celln-op-829e4cb7fbbef118b506f789a44b6d2805eb5068a654c1ed65d803a9f3417b99",
+            "preparationUid": "08a4908a-7a2f-4255-b6ae-894fe5980a53",
+            "receiptDigest": "blake3:4ab6c3312cac5bb221e86db01ec5b571d2e969ea9402b74d0bb74cf45c8c2374",
+            "receiverId": "sha256:d79580ea5c282584b003ba2644078cac82ba667a1042bcb6174b31804f4ea1db",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:7711991097a829596500e5ad7f4267e6775fa9a66ac8d72daddccdbdd0108308\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}",
+            "turnId": "abc634da-2f62-4549-a956-28d23bb80b93"
+          },
+          "native": {
+            "id": "sha256:d79580ea5c282584b003ba2644078cac82ba667a1042bcb6174b31804f4ea1db",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Succeeded",
+            "output": "enduring-b-852b4e01f0",
+            "receiptDigest": "blake3:4ab6c3312cac5bb221e86db01ec5b571d2e969ea9402b74d0bb74cf45c8c2374",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "turnId": "abc634da-2f62-4549-a956-28d23bb80b93",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "childId": "blake3:c6f56f71a03614645621cfbedc5e8a30acd3be5f0a06817d61892b97db5f1270",
+            "cellId": "bed82243ae32",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:7711991097a829596500e5ad7f4267e6775fa9a66ac8d72daddccdbdd0108308",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        },
+        {
+          "uid": "0cf80fec-a96b-4e0a-ac92-85240e22a0a7",
+          "scoped": {
+            "cellId": "f808a70a08d8",
+            "childId": "blake3:09c7c853dd2afcaa2d17e09619f3601effe32777b4104d27bf464af4da029166",
+            "cleanupConfirmed": true,
+            "decisionName": "celln-final-cda653eb4530968ed7a5c78afa222b6a7429b8c6e8e2bccf81d69cd931c01c10",
+            "decisionUid": "600e4abc-b172-47ec-9697-192941c4882b",
+            "executionProvenance": "{\"fetch\":true,\"lane\":\"agent\",\"tool\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\",\"workspace\":\"none\"}",
+            "gatewayRegistered": true,
+            "gatewayRegistrationAttempted": true,
+            "nativePhase": "Succeeded",
+            "output": "enduring-b-852b4e01f0",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "preparationName": "celln-op-8e3ded51ff16657de3c530c7efe06bf87f54f66f18d176363365c46146e0a207",
+            "preparationUid": "4233ce88-466d-4b97-8512-058901723839",
+            "receiptDigest": "blake3:9a36fabb27aebe7ff9bb4d1039734c90e171f1807b52d5b6f2e733acd10bb3e3",
+            "receiverId": "sha256:9fd632f421177552179a88361834c56a686e2638ffb3f4c076e4ec2ab5fc9f92",
+            "startAttempted": true,
+            "substrateProvenance": "{\"closure\":{\"hash\":\"blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8\",\"members\":{\"/pilot-fetch\":{\"dependencies\":[],\"hash\":\"blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603\"},\"/worker\":{\"dependencies\":[\"/pilot-fetch\",\"/workspace-read\",\"/workspace-write\"],\"hash\":\"blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809\"},\"/workspace-read\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e\"},\"/workspace-write\":{\"dependencies\":[\"/pilot-fetch\"],\"hash\":\"blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e\"}},\"publisher\":\"790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"},\"initrd\":\"blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47\",\"invocation\":\"blake3:c193165e421c3d8bb8630f6a090845015923bed73fa099432aa1c05f2bb0f47c\",\"kernel\":\"blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8\",\"toolfs\":\"blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038\"}",
+            "turnId": "0cf80fec-a96b-4e0a-ac92-85240e22a0a7"
+          },
+          "native": {
+            "id": "sha256:9fd632f421177552179a88361834c56a686e2638ffb3f4c076e4ec2ab5fc9f92",
+            "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+            "phase": "Succeeded",
+            "output": "enduring-b-852b4e01f0",
+            "receiptDigest": "blake3:9a36fabb27aebe7ff9bb4d1039734c90e171f1807b52d5b6f2e733acd10bb3e3",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "turnId": "0cf80fec-a96b-4e0a-ac92-85240e22a0a7",
+            "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+            "childId": "blake3:09c7c853dd2afcaa2d17e09619f3601effe32777b4104d27bf464af4da029166",
+            "cellId": "f808a70a08d8",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/workspace-read",
+                      "/workspace-write"
+                    ],
+                    "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+                  },
+                  "/workspace-read": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+                  },
+                  "/workspace-write": {
+                    "dependencies": [
+                      "/pilot-fetch"
+                    ],
+                    "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+                  }
+                },
+                "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+                "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+              },
+              "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+              "invocation": "blake3:c193165e421c3d8bb8630f6a090845015923bed73fa099432aa1c05f2bb0f47c",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+            }
+          },
+          "nativeInventoryAfterTurn": []
+        }
+      ],
+      "providerBefore": {
+        "attempts": 0,
+        "events": []
+      },
+      "providerAfterDelete": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true,
+            "toolResultVerified": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true,
+            "toolResultVerified": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true,
+            "toolResultVerified": false
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true,
+            "toolResultVerified": true
+          }
+        ]
+      },
+      "providerIdentityBefore": {
+        "uid": "4f7f0e34-6655-410c-b7a1-271f44903fb4",
+        "name": "review-provider-495-5749bbd46f-bfn7n",
+        "containerID": "containerd://829ef0db16818932437bf93c067b199722e7d31590d780a0582201223b24626d",
+        "imageID": "docker.io/library/hermes-celln-artifacts@sha256:933f88e8e88ea89b3373b167545e5c7c5cf64a7cc7b56176a74c42babd286a26",
+        "restartCount": 0
+      },
+      "providerIdentityAfter": {
+        "uid": "4f7f0e34-6655-410c-b7a1-271f44903fb4",
+        "name": "review-provider-495-5749bbd46f-bfn7n",
+        "containerID": "containerd://829ef0db16818932437bf93c067b199722e7d31590d780a0582201223b24626d",
+        "imageID": "docker.io/library/hermes-celln-artifacts@sha256:933f88e8e88ea89b3373b167545e5c7c5cf64a7cc7b56176a74c42babd286a26",
+        "restartCount": 0
+      },
+      "crossOwnerDenials": [
+        {
+          "operation": "read",
+          "identity": "system:serviceaccount:celln-review-a-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-b-495",
+          "targetRunUID": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": false
+        },
+        {
+          "operation": "delete",
+          "identity": "system:serviceaccount:celln-review-a-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-b-495",
+          "targetRunUID": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": true
+        },
+        {
+          "operation": "turn",
+          "identity": "system:serviceaccount:celln-review-a-495:enduring-852b4e01f0",
+          "targetNamespace": "celln-review-b-495",
+          "targetRunUID": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "enforcement": "Kubernetes RBAC",
+          "reason": "Forbidden",
+          "dryRun": true
+        }
+      ],
+      "ledgerBeforeDelete": [
+        {
+          "run_uid": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "budget_id": "sha256:8451e3b9d2c436387723028722e4c60a985ae01584222b0d1813199af178695b",
+          "namespace_uid": "ce9ec69b-d91b-47c7-b2dc-7f872d22efc1",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "f"
+        }
+      ],
+      "ledgerAfterDelete": [
+        {
+          "run_uid": "65e3a488-da0e-43e9-8460-40a4fea01e91",
+          "budget_id": "sha256:8451e3b9d2c436387723028722e4c60a985ae01584222b0d1813199af178695b",
+          "namespace_uid": "ce9ec69b-d91b-47c7-b2dc-7f872d22efc1",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "t"
+        }
+      ],
+      "nativeRootTombstone": {
+        "id": "sha256:a66c0ec5ccf9a9329eee2de2f0c2a4ca68665c7357e878596d1895f727a05ec2",
+        "owner": "sha256:5a3d297df04af8a3e64c6f577adde6179916392d4c6db6359ecd57e4e884226a",
+        "phase": "Cancelled",
+        "reason": "retained parent and descendants stopped",
+        "output": "enduring-b-852b4e01f0",
+        "receiptDigest": "blake3:52801fe198c5b53dcff78e2e456fabbf399c5e89d897fb35c09b7174fc82bf8e",
+        "cleanupConfirmed": true,
+        "parentIncarnation": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+        "parentId": "blake3:d13774876426a639745322d59625dca4550127e8b4dbb32b8b2b53b121765934",
+        "childId": "blake3:be46fa226280123fa41c44e0a22b3907b0273c17e8e3dc8fbe343d504dfd3344",
+        "cellId": "cb601d42703a",
+        "execution": {
+          "fetch": true,
+          "lane": "agent",
+          "tool": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809",
+          "workspace": "none"
+        },
+        "substrate": {
+          "closure": {
+            "hash": "blake3:1d091f283e2108170ff1f013fbb9e36dab44a0c2d414f44e39ebc5abee2ed7d8",
+            "members": {
+              "/pilot-fetch": {
+                "dependencies": [],
+                "hash": "blake3:652ccd9216b43180e9f5dd3a250709de42ff7fdc129ad4678e7d299549930603"
+              },
+              "/worker": {
+                "dependencies": [
+                  "/pilot-fetch",
+                  "/workspace-read",
+                  "/workspace-write"
+                ],
+                "hash": "blake3:61dfe24a7e93a7aa09baf39aeb0595d3e58b5e36b3184dbaa778820d84553809"
+              },
+              "/workspace-read": {
+                "dependencies": [
+                  "/pilot-fetch"
+                ],
+                "hash": "blake3:a94e7893a4b61d17fa7efa8838ac1b7f34f51706855f0506420ed7f7589d892e"
+              },
+              "/workspace-write": {
+                "dependencies": [
+                  "/pilot-fetch"
+                ],
+                "hash": "blake3:df1a2f7e2f15e1b8e689956473397b2c9ea94f6cacd15119a9930e0249e8148e"
+              }
+            },
+            "publisher": "790003d99f6b32ad6282a77e9f01c85244c13fa05ad330b110a9dc3e3c65ea96",
+            "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+          },
+          "initrd": "blake3:6291e6f7401c3598cc7ce4a220dc61021bd0916f1eeaa7b12df79d20921b7a47",
+          "invocation": "blake3:52d67f2d520bfa5cad2ed3bb1e2f2589f9d79d7c432bd7372680df11b73dfdfc",
+          "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+          "toolfs": "blake3:98e42a6501eaf24727deba3a1483204776e0f7db388bde49e4c0e42854069038"
+        }
+      },
+      "rootAbsent": true,
+      "nativeInventoryEmpty": true
+    }
+  ],
+  "independentReadback": {
+    "nativeRootTombstonesMatch": true,
+    "closedLedgersMatch": true,
+    "publicRootsAbsent": true,
+    "nativeInventoryEmpty": true,
+    "tenantCount": 2,
+    "distinctCellCount": 6,
+    "distinctParentCount": 2,
+    "providerAttempts": 12,
+    "rbacDenials": 6
+  }
+}
