@@ -1,7 +1,11 @@
 # Scoped enduring artifacts: paired implementation contract
 
 This implements the additive contract proposed in Celln PR #153, pinned at
-`539c6c736e7b1effa12d6a2c614e23ea53b0fbee`, for Sympozium #495/#496/#510.
+`98994ffcdad973b6757d4c4449e3bb728127d642`, for Sympozium #495/#496/#510.
+This pin includes scoped read-only capability discovery without dispatcher-wide
+execution authority. Recorded two-tenant guest-backed development qualification
+and its limitations are in
+`test/integration/celln-installed-qualification/artifacts/README.md`.
 It does not close those issues or certify A01–A12. This branch is stacked on
 Sympozium #635 (`test/celln-enduring-context-0924`), which itself depends on #634.
 No CRD, decision wire schema, credential audience, or workspace enum changes.
