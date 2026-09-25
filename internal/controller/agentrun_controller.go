@@ -203,11 +203,41 @@ type AgentRunReconciler struct {
 
 const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
 
+// statusReader returns the uncached APIReader when one is wired, falling back
+// to the cached client. Use it for reads that must see a write the informer
+// cache may not have observed yet.
+func (r *AgentRunReconciler) statusReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
+}
+
 // updateStatusWithRetry safely updates status handling resourceVersion conflicts
 func (r *AgentRunReconciler) updateStatusWithRetry(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, mutate func(ar *sympoziumv1alpha1.AgentRun)) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &sympoziumv1alpha1.AgentRun{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(agentRun), latest); err != nil {
+			return err
+		}
+		mutate(latest)
+		return r.Status().Update(ctx, latest)
+	})
+}
+
+// updateFreshStatusWithRetry is updateStatusWithRetry for an object created
+// moments ago. The cached client's Get can miss an object the informer has not
+// observed yet, and RetryOnConflict does not retry NotFound — so a plain
+// updateStatusWithRetry straight after a Create silently loses the write. Read
+// through the uncached reader, and treat NotFound as retriable too for the
+// case where no APIReader is wired.
+func (r *AgentRunReconciler) updateFreshStatusWithRetry(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, mutate func(ar *sympoziumv1alpha1.AgentRun)) error {
+	reader := r.statusReader()
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return errors.IsConflict(err) || errors.IsNotFound(err)
+	}, func() error {
+		latest := &sympoziumv1alpha1.AgentRun{}
+		if err := reader.Get(ctx, client.ObjectKeyFromObject(agentRun), latest); err != nil {
 			return err
 		}
 		mutate(latest)
@@ -810,6 +840,15 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 
 	log.Info("Reconciling pending AgentRun")
 
+	// lifecycle.retry.backoff is expressed as an instant stamped on the
+	// successor rather than a new phase: hold in Pending until it passes.
+	if ts := agentRun.Annotations[retryNotBeforeAnnotation]; ts != "" {
+		if notBefore, err := time.Parse(time.RFC3339, ts); err == nil && time.Now().Before(notBefore) {
+			log.Info("Retry backoff not elapsed; requeueing", "notBefore", ts)
+			return ctrl.Result{RequeueAfter: time.Until(notBefore)}, nil
+		}
+	}
+
 	// Reject nil/empty task at admission. The polymorphic spec.task accepts
 	// string-form Path A and object-form Path B; both have zero value `nil`,
 	// which would otherwise render an empty TASK env var and silently FATAL
@@ -1153,11 +1192,7 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 			// status update yet) — if the run is already terminal, don't
 			// override it with "Job not found".
 			fresh := &sympoziumv1alpha1.AgentRun{}
-			reader := client.Reader(r.APIReader)
-			if reader == nil {
-				reader = r.Client
-			}
-			if getErr := reader.Get(ctx, client.ObjectKeyFromObject(agentRun), fresh); getErr == nil {
+			if getErr := r.statusReader().Get(ctx, client.ObjectKeyFromObject(agentRun), fresh); getErr == nil {
 				switch fresh.Status.Phase {
 				case sympoziumv1alpha1.AgentRunPhaseSucceeded,
 					sympoziumv1alpha1.AgentRunPhaseFailed,
@@ -2062,15 +2097,20 @@ func buildHandoffTask(sourcePersona, predecessorTask, predecessorResult, targetT
 		sourcePersona, originalTask, predecessorResult, targetTask)
 }
 
-// extractOriginalTask strips nested handoff headers from a task string. When
-// pipelines chain (A→B→C), each successor's task is itself a handoff card. This
-// function extracts the original task from the innermost "### Previous Task"
-// section so context doesn't compound across hops.
+// extractOriginalTask strips nested handoff and retry headers from a task
+// string. Chained pipelines (A→B→C) and retried runs both wrap the task in a
+// card, so without this three hops nest three cards and each one carries more
+// of its own history than of the work.
 func extractOriginalTask(task string) string {
-	if !strings.HasPrefix(task, "## Handoff from") {
+	var marker string
+	switch {
+	case strings.HasPrefix(task, "## Handoff from"):
+		marker = "### Previous Task\n"
+	case strings.HasPrefix(task, "## Retry "):
+		marker = "### Original Task\n"
+	default:
 		return task
 	}
-	const marker = "### Previous Task\n"
 	idx := strings.Index(task, marker)
 	if idx < 0 {
 		return task
@@ -6289,6 +6329,38 @@ func (r *AgentRunReconciler) resolveGate(
 		gateDefault = agentRun.Spec.Lifecycle.GateDefault
 	}
 
+	// Retry is handled before the terminal switch: neither publishGatedCompletion
+	// nor failRun may run for a superseded attempt. The first would post the
+	// rejected answer to the originating channel, the second a spurious failure.
+	//
+	// overrideLabel lets an exhausted chain record why it stopped while still
+	// taking the reject path's result handling.
+	overrideLabel := ""
+	if verdict != nil && verdict.Action == "retry" {
+		successorName, exhausted := r.tryCreateRetryRun(ctx, log, agentRun, verdict)
+		if successorName != "" {
+			return ctrl.Result{}, r.retireForRetry(ctx, agentRun, successorName)
+		}
+
+		// The chain cannot continue, so this attempt resolves as a reject: a
+		// retry the spec does not permit must not become an implicit approval.
+		//
+		// verdict.Response is not reused as the result. On a reject it is a
+		// message written for the asker; on a retry it is gate output written
+		// for the agent (a build log), which must not be published as an answer.
+		blocked := "Response blocked: the response gate rejected this response"
+		if exhausted {
+			overrideLabel = "retries-exhausted"
+			blocked = "Response blocked: the response gate rejected every attempt"
+			if spec := gateRetrySpec(agentRun); spec != nil {
+				blocked = fmt.Sprintf("Response blocked: the response gate rejected all %d attempts", spec.MaxAttempts)
+			}
+		}
+		log.Info("Gate verdict: retry could not proceed; resolving as reject",
+			"exhausted", exhausted, "reason", verdict.Reason)
+		verdict = &gateVerdict{Action: "reject", Reason: verdict.Reason, Response: blocked}
+	}
+
 	switch {
 	case verdict != nil && verdict.Action == "approve":
 		verdictLabel = "approved"
@@ -6319,6 +6391,10 @@ func (r *AgentRunReconciler) resolveGate(
 			verdictLabel = "allowed-by-default"
 			log.Info("Gate verdict missing, gateDefault=allow, passing original result")
 		}
+	}
+
+	if overrideLabel != "" {
+		verdictLabel = overrideLabel
 	}
 
 	// Persist gate verdict in status.
@@ -6375,8 +6451,8 @@ func hasResponseGateHook(agentRun *sympoziumv1alpha1.AgentRun) bool {
 // gateVerdict represents the JSON payload a gate hook writes to the
 // sympozium.ai/gate-verdict annotation on the AgentRun CR.
 type gateVerdict struct {
-	Action   string `json:"action"`             // approve, reject, rewrite
-	Response string `json:"response,omitempty"` // replacement text for reject/rewrite
+	Action   string `json:"action"`             // approve, reject, rewrite, retry
+	Response string `json:"response,omitempty"` // replacement text for reject/rewrite; gate output fed back for retry
 	Reason   string `json:"reason,omitempty"`   // audit trail
 }
 
@@ -6391,7 +6467,7 @@ func parseGateVerdict(agentRun *sympoziumv1alpha1.AgentRun) *gateVerdict {
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return nil
 	}
-	if v.Action != "approve" && v.Action != "reject" && v.Action != "rewrite" {
+	if v.Action != "approve" && v.Action != "reject" && v.Action != "rewrite" && v.Action != "retry" {
 		return nil
 	}
 	return &v

@@ -252,8 +252,144 @@ The gate hook patches the annotation `sympozium.ai/gate-verdict` with a JSON obj
 | `approve` | Passes the original response through unchanged | `{"action":"approve"}` |
 | `reject` | Replaces the response with a custom message | `{"action":"reject","response":"Blocked by policy"}` |
 | `rewrite` | Replaces the response with a sanitized version | `{"action":"rewrite","response":"cleaned output"}` |
+| `retry` | Hands the rejection back to the agent for another attempt — see [Retrying a rejected response](#retrying-a-rejected-response) | `{"action":"retry","reason":"npm run check failed","response":"<gate output>"}` |
 
 All actions accept an optional `reason` field for audit logging.
+
+### Retrying a Rejected Response
+
+`reject` and `rewrite` are terminal: the run ends and the user sees the gate's
+message. `retry` instead feeds the gate's output back to the agent as a **new
+attempt**, so the agent can fix what the gate objected to.
+
+This is not the Job's `backoffLimit` (which is disabled). That replays the pod
+with an identical task and no knowledge of why the last attempt was rejected. A
+retry attempt is a fresh AgentRun whose task carries the feedback.
+
+Enable it with `lifecycle.retry`:
+
+```yaml
+spec:
+  lifecycle:
+    gateDefault: block
+    retry:
+      maxAttempts: 3          # total attempts including the first
+      backoff: 30s            # optional delay before the next attempt starts
+      maxChainTokens: 200000  # cumulative across the chain; 0 = unlimited
+      on: [gate]              # only "gate" is wired today
+    postRun:
+      - name: build-check
+        image: my-org/build-check:latest
+        gate: true
+        command: ["sh", "-c"]
+        args:
+          - |
+            if OUT=$(npm run check 2>&1); then
+              VERDICT='{"action":"approve"}'
+            else
+              VERDICT=$(jq -nc --arg out "$OUT" \
+                '{action:"retry", reason:"npm run check failed", response:$out}')
+            fi
+            kubectl patch agentrun $AGENT_RUN_ID -n $AGENT_NAMESPACE --type=merge \
+              -p "{\"metadata\":{\"annotations\":{\"sympozium.ai/gate-verdict\":$(echo $VERDICT | jq -Rs .)}}}"
+```
+
+The successor attempt receives a structured card in place of its task:
+
+```
+## Retry 2 of 3
+
+### Original Task
+<the original task, with earlier retry cards stripped>
+
+### Your Previous Attempt
+<the rejected output>
+
+### Why It Was Rejected
+npm run check failed
+
+### Gate Output
+<the gate's stdout/stderr>
+```
+
+Gate output is clipped to 4000 characters, with the clip announced in the card.
+Set `SYMPOZIUM_RETRY_GATE_OUTPUT_MAX_CHARS` on the controller to change it — a
+test-suite dump needs more room than a lint summary.
+
+#### Inspecting a chain
+
+Each attempt is named `<run>-retry-<n>` and records its lineage in
+`status.attempt` / `status.retryOf`, plus labels for querying:
+
+```bash
+kubectl get agentruns -l sympozium.ai/retry-of=my-run
+kubectl get agentrun my-run-retry-2 -o jsonpath='{.status.retryOf}{"\n"}'
+```
+
+A superseded attempt ends in the `Failed` phase with
+`status.gateVerdict: retried` and a `Retried` condition naming its successor. It
+publishes nothing — no channel reply, no failure event — because the chain has
+not finished. When the attempts or the token budget run out, the last attempt
+resolves as `retries-exhausted` and `gateDefault` decides whether its output is
+blocked or passed through.
+
+#### What a successor inherits
+
+A successor is the same run again, so it starts from the predecessor's spec and
+keeps the context that says where the work came from and who is waiting on it:
+the reply address of the channel that triggered it, the trace, `spec.parent`,
+and the labels other controllers find live work by — `sympozium.ai/schedule`,
+`sympozium.ai/stimulus`, `sympozium.ai/request-hash`, `sympozium.ai/ensemble`.
+A schedule with `concurrencyPolicy: Forbid` therefore waits for the whole chain,
+not the first attempt.
+
+A caller blocked on the run it created — an OpenAI-compatible request on
+`/v1/chat/completions`, or an MCP tool call — is answered by whichever attempt
+passes the gate. The retired attempts publish nothing, and the proxy follows
+`status.retryOf` to recognise the successor's completion as the answer to the
+request it is holding.
+
+The gate verdict annotation is deliberately *not* carried: a successor
+inheriting it would resolve against its predecessor's verdict before running.
+
+#### Retrying a delegated run
+
+An agent's lifecycle hooks are inherited by the children it delegates to, so a
+delegate child can be gated and retried like any other run. The parent stays
+blocked in its `delegate_to_persona` call throughout: when a child retries, the
+parent's `status.delegates[]` entry is repointed at the successor before the
+retired attempt is marked `Failed`, and the successor's result answers the
+original delegation. The parent never sees the intermediate attempts.
+
+An Ensemble `relationships[].timeout` bounds the delegation, not one attempt of
+it — a chain that outlives the edge timeout is expired at whichever attempt is
+running.
+
+#### Why this is safe
+
+**The retry decision is not agent-controlled.** The gate hook is an
+operator-declared image in `lifecycle.postRun`, and the agent has no permission
+to patch the `sympozium.ai/gate-verdict` annotation for its own run. An agent
+cannot grant itself another attempt. That property is the reason retry is safe
+here and would not be if the agent could self-retry.
+
+Two further bounds on a gate that always says `retry`:
+
+- `maxAttempts` is capped at admission by the bound `SympoziumPolicy`, so an
+  operator sets the ceiling regardless of what a run requests:
+
+  ```yaml
+  apiVersion: sympozium.ai/v1alpha1
+  kind: SympoziumPolicy
+  metadata:
+    name: default-governance
+  spec:
+    lifecyclePolicy:
+      maxRetryAttempts: 3
+  ```
+
+- `maxChainTokens` caps the cumulative `status.tokenUsage.totalTokens` of every
+  attempt in the chain.
 
 ### Manual (Human-in-the-Loop) Approval
 
@@ -313,6 +449,8 @@ spec:
 | Approved | Green "approved" banner on detail page |
 | Rejected | Red "rejected" banner on detail page |
 | Rewritten | Blue "rewritten" banner on detail page |
+| Retried | Amber "retried" banner on detail page — superseded, not failed |
+| Retries exhausted | Red "retries-exhausted" banner on detail page |
 | Timeout/error | Red "timeout" or "error" banner on detail page |
 
 ## Agent Sandbox Compatibility

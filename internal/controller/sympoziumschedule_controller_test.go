@@ -636,3 +636,80 @@ func TestSympoziumScheduleReconcile_ForbidBlocksOnNonTerminalPhases(t *testing.T
 		})
 	}
 }
+
+// A gate-driven retry retires its attempt at phase Failed and continues under
+// a new name. Forbid counts this schedule's own runs, so unless the successor
+// is one of them the tick fires on top of a chain that is still working.
+//
+// The retry is performed by the AgentRun reconciler rather than hand-built, so
+// this fails if either half regresses: the labels the successor carries, or
+// the schedule's reading of them.
+func TestSympoziumScheduleReconcile_ForbidWaitsForARetryChain(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	instance := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst-forbid", Namespace: "default"},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{Model: "claude-3-5-sonnet"},
+			},
+		},
+	}
+	schedule := &sympoziumv1alpha1.SympoziumSchedule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "inst-forbid-sweep",
+			Namespace:         "default",
+			CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Minute)),
+		},
+		Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+			AgentRef:          "inst-forbid",
+			Schedule:          "* * * * *",
+			Task:              "sweep",
+			Type:              "sweep",
+			ConcurrencyPolicy: "Forbid",
+		},
+	}
+	// The schedule's first run, parked at its gate with a retry verdict.
+	run := withVerdict(
+		gatedRun("inst-forbid-sweep-1", &sympoziumv1alpha1.RetrySpec{MaxAttempts: 3}),
+		`{"action":"retry","reason":"nothing to report yet"}`)
+	run.Spec.AgentRef = "inst-forbid"
+	run.Labels["sympozium.ai/schedule"] = "inst-forbid-sweep"
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add sympozium scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&sympoziumv1alpha1.AgentRun{}).
+		WithObjects(instance, schedule, run).
+		Build()
+
+	runs := &AgentRunReconciler{Client: cl, Scheme: scheme, Log: logr.Discard(), EventBus: &recordingEventBus{}}
+	if _, err := runs.resolveGate(ctx, logr.Discard(), run, true, false); err != nil {
+		t.Fatalf("resolveGate: %v", err)
+	}
+	successor := &sympoziumv1alpha1.AgentRun{}
+	if err := cl.Get(ctx, types.NamespacedName{Name: "inst-forbid-sweep-1-retry-2", Namespace: "default"}, successor); err != nil {
+		t.Fatalf("get successor: %v", err)
+	}
+
+	schedules := &SympoziumScheduleReconciler{Client: cl, Scheme: scheme, Log: logr.Discard()}
+	if _, err := schedules.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: schedule.Name, Namespace: schedule.Namespace},
+	}); err != nil {
+		t.Fatalf("reconcile schedule: %v", err)
+	}
+
+	// The retired attempt is run 1, so the next tick would be run 2.
+	if err := cl.Get(ctx, types.NamespacedName{
+		Name: "inst-forbid-sweep-2", Namespace: "default",
+	}, &sympoziumv1alpha1.AgentRun{}); err == nil {
+		t.Errorf("Forbid fired while %s was still running (successor labels: %v)",
+			successor.Name, successor.Labels)
+	}
+}

@@ -424,6 +424,43 @@ spec:
                             - verbs
                             type: object
                           type: array
+                        retry:
+                          description: |-
+                            Retry lets a response gate hand its rejection back to the agent for
+                            another attempt instead of ending the run. Absent means a gate verdict
+                            is terminal, which is the historical behaviour.
+                          properties:
+                            backoff:
+                              description: Backoff delays the successor attempt. Absent
+                                means start immediately.
+                              type: string
+                            maxAttempts:
+                              default: 2
+                              description: |-
+                                MaxAttempts is the total number of attempts including the first, so
+                                maxAttempts: 3 permits two retries. A bound SympoziumPolicy may cap this
+                                further via lifecyclePolicy.maxRetryAttempts.
+                              minimum: 1
+                              type: integer
+                            maxChainTokens:
+                              description: |-
+                                MaxChainTokens caps the cumulative status.tokenUsage.totalTokens of every
+                                attempt in the chain. When the sum reaches it, the chain stops and the
+                                gate verdict resolves as retries-exhausted. 0 means unlimited.
+                              format: int64
+                              type: integer
+                            "on":
+                              description: |-
+                                On selects which outcomes may trigger a retry. Only "gate" is wired
+                                today; "failure" is accepted by the schema but ignored by the controller.
+                                Empty means ["gate"].
+                              items:
+                                enum:
+                                - gate
+                                - failure
+                                type: string
+                              type: array
+                          type: object
                       type: object
                     mcpServers:
                       description: |-
