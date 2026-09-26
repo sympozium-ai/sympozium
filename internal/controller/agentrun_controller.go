@@ -1051,7 +1051,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	// Build and create the Job. buildJob delegates to buildAgentPodTemplate, which
 	// applies the pod mutators; register a podMutator rather than injecting here,
 	// so the agentSandbox backend is covered too.
-	job, err := r.buildJob(ctx, agentRun, prereqs.inputs.memoryEnabled, prereqs.inputs.observability,
+	podRun, err := r.withPolicyToolGating(ctx, agentRun)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	job, err := r.buildJob(ctx, podRun, prereqs.inputs.memoryEnabled, prereqs.inputs.observability,
 		sidecars, prereqs.mcpServers, prereqs.inputs.allowedOutboundChannels)
 	if err != nil {
 		// buildJob (which calls buildContainers) rejected the spec — most
@@ -2922,6 +2926,30 @@ func agentPodLabels(agentRun *sympoziumv1alpha1.AgentRun) map[string]string {
 	}
 }
 
+// withPolicyToolGating returns agentRun unchanged when its Agent has no
+// SympoziumPolicy tool gating, or a copy whose spec.toolPolicy has the
+// policy's rules applied (toolpolicy.WithGating). There is no mutating
+// webhook, so this is where a policy's tool rules reach the pod.
+func (r *AgentRunReconciler) withPolicyToolGating(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) (*sympoziumv1alpha1.AgentRun, error) {
+	agent := &sympoziumv1alpha1.Agent{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.AgentRef}, agent); err != nil {
+		return nil, fmt.Errorf("resolving tool policy: agent %q: %w", agentRun.Spec.AgentRef, err)
+	}
+	if agent.Spec.PolicyRef == "" {
+		return agentRun, nil
+	}
+	policy := &sympoziumv1alpha1.SympoziumPolicy{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agent.Spec.PolicyRef}, policy); err != nil {
+		return nil, fmt.Errorf("resolving tool policy: policy %q: %w", agent.Spec.PolicyRef, err)
+	}
+	if policy.Spec.ToolGating == nil {
+		return agentRun, nil
+	}
+	gated := agentRun.DeepCopy()
+	gated.Spec.ToolPolicy = toolpolicy.WithGating(agentRun.Spec.ToolPolicy, policy.Spec.ToolGating)
+	return gated, nil
+}
+
 // buildAgentPodTemplate renders the pod template used by both AgentRun execution
 // backends: buildJob wraps it in a batchv1.Job, buildSandboxCR converts it into a
 // Sandbox CR.
@@ -2933,6 +2961,9 @@ func agentPodLabels(agentRun *sympoziumv1alpha1.AgentRun) map[string]string {
 // Returns an error when the spec is rejected at render time (unknown task.mode,
 // failed per-mode validation); the reconcile loop surfaces it on
 // AgentRun.status and marks the run Failed.
+//
+// Callers pass the run from withPolicyToolGating, so spec.toolPolicy already
+// carries the Agent's SympoziumPolicy tool rules; the builders stay pure.
 func (r *AgentRunReconciler) buildAgentPodTemplate(
 	ctx context.Context,
 	agentRun *sympoziumv1alpha1.AgentRun,

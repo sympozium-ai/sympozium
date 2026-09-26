@@ -99,7 +99,11 @@ func (r *AgentRunReconciler) reconcilePendingAgentSandbox(
 	// Mirror the Job path: surface the failure on AgentRun.status and return
 	// cleanly so the run reaches a terminal Failed state instead of spinning.
 	// PR #302 review (issuecomment 5033007953) — first smaller ask.
-	template, err := r.buildAgentPodTemplate(ctx, agentRun, prereqs.inputs.memoryEnabled,
+	podRun, err := r.withPolicyToolGating(ctx, agentRun)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	template, err := r.buildAgentPodTemplate(ctx, podRun, prereqs.inputs.memoryEnabled,
 		prereqs.inputs.observability, taskSidecars, prereqs.mcpServers, prereqs.inputs.allowedOutboundChannels)
 	if err != nil {
 		return ctrl.Result{}, r.failRun(ctx, agentRun,
