@@ -449,6 +449,8 @@ func TestValidateRunCompatibility_RejectsAgentRunnerOnlyControls(t *testing.T) {
 		{name: "canary", mutate: func(r *sympoziumv1alpha1.AgentRun) { r.Spec.CanaryMode = true }, want: "canaryMode"},
 		{name: "context", mutate: func(r *sympoziumv1alpha1.AgentRun) { value := false; r.Spec.UseContext = &value }, want: "useContext"},
 		{name: "thinking", mutate: func(r *sympoziumv1alpha1.AgentRun) { r.Spec.Model.Thinking = "high" }, want: "model.thinking"},
+		{name: "max tokens", mutate: func(r *sympoziumv1alpha1.AgentRun) { v := int32(4000); r.Spec.Model.MaxTokens = &v }, want: "model.maxTokens"},
+		{name: "temperature", mutate: func(r *sympoziumv1alpha1.AgentRun) { r.Spec.Model.Temperature = "0.2" }, want: "model.temperature"},
 		{name: "warm pool", mutate: func(r *sympoziumv1alpha1.AgentRun) {
 			r.Spec.AgentSandbox = &sympoziumv1alpha1.AgentSandboxSpec{Enabled: true, WarmPoolRef: "wp-test"}
 		}, want: "agentSandbox.warmPoolRef"},

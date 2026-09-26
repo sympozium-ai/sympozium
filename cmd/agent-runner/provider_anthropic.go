@@ -5,10 +5,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"math"
 	"strings"
+	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+)
+
+const (
+	// anthropicDefaultMaxTokens is the max_tokens sent when MAX_TOKENS is
+	// unset. The Messages API requires the field on every request.
+	anthropicDefaultMaxTokens = int64(8192)
+	// anthropicMinThinkingBudget is the smallest budget_tokens the API accepts.
+	anthropicMinThinkingBudget = int64(1024)
+	// anthropicThinkingHeadroom is the room left for the visible answer when
+	// the default max_tokens has to grow to fit a thinking budget.
+	anthropicThinkingHeadroom = int64(4096)
 )
 
 // anthropicProvider adapts the Anthropic Messages API to LLMProvider.
@@ -21,6 +35,77 @@ type anthropicProvider struct {
 	tools       []anthropic.ToolUnionParam
 	// toolsBytes is the serialized tool-schema size, fixed after construction.
 	toolsBytes int
+	// sampling holds THINKING_MODE / MAX_TOKENS / TEMPERATURE.
+	sampling samplingConfig
+	// warnOnce keeps the per-request sampling warnings to one log line each.
+	warnTemperature sync.Once
+	warnBudget      sync.Once
+}
+
+// anthropicThinkingBudget maps a reasoning level to an extended-thinking
+// budget_tokens value. 0 means extended thinking stays off.
+func anthropicThinkingBudget(level string) int64 {
+	switch level {
+	case "minimal":
+		return anthropicMinThinkingBudget
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	default:
+		return 0
+	}
+}
+
+// applySampling sets max_tokens, extended thinking and temperature on a
+// request. Anthropic requires budget_tokens < max_tokens, so:
+//   - with MAX_TOKENS unset, max_tokens grows to budget + headroom when the
+//     default is too small;
+//   - with MAX_TOKENS set, that explicit cap wins and the budget shrinks to at
+//     most half of it, turning thinking off if that falls under the API
+//     minimum.
+//
+// Temperature is dropped while thinking is on, because the API rejects any
+// non-default temperature alongside extended thinking.
+func (p *anthropicProvider) applySampling(params *anthropic.MessageNewParams) {
+	maxTokens := anthropicDefaultMaxTokens
+	if p.sampling.maxTokens > 0 {
+		maxTokens = p.sampling.maxTokens
+	}
+
+	budget := anthropicThinkingBudget(p.sampling.thinking)
+	if budget > 0 {
+		if p.sampling.maxTokens > 0 {
+			if limit := maxTokens / 2; budget > limit {
+				budget = limit
+			}
+			if budget < anthropicMinThinkingBudget {
+				p.warnBudget.Do(func() {
+					log.Printf("WARNING: MAX_TOKENS=%d leaves no room for an Anthropic thinking budget (minimum %d); extended thinking disabled",
+						maxTokens, anthropicMinThinkingBudget)
+				})
+				budget = 0
+			}
+		} else if budget+anthropicThinkingHeadroom > maxTokens {
+			maxTokens = budget + anthropicThinkingHeadroom
+		}
+	}
+
+	params.MaxTokens = maxTokens
+	if budget > 0 {
+		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
+	}
+	if !math.IsNaN(p.sampling.temperature) {
+		if budget > 0 {
+			p.warnTemperature.Do(func() {
+				log.Printf("WARNING: ignoring TEMPERATURE=%g: Anthropic does not accept a custom temperature with extended thinking", p.sampling.temperature)
+			})
+		} else {
+			params.Temperature = anthropic.Float(p.sampling.temperature)
+		}
+	}
 }
 
 func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, tools []ToolDef, headers map[string]string) *anthropicProvider {
@@ -64,6 +149,7 @@ func newAnthropicProvider(apiKey, baseURL, model, systemPrompt, task string, too
 		},
 		tools:      anthropicTools,
 		toolsBytes: jsonBytes(anthropicTools),
+		sampling:   samplingFromEnv(),
 	}
 }
 
@@ -72,13 +158,13 @@ func (p *anthropicProvider) Model() string { return p.model }
 
 func (p *anthropicProvider) Chat(ctx context.Context) (ChatResult, error) {
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(p.model),
-		MaxTokens: int64(8192),
+		Model: anthropic.Model(p.model),
 		System: []anthropic.TextBlockParam{
 			{Text: p.system},
 		},
 		Messages: p.messages,
 	}
+	p.applySampling(&params)
 	if len(p.tools) > 0 {
 		params.Tools = p.tools
 	}
@@ -141,10 +227,17 @@ func (p *anthropicProvider) Chat(ctx context.Context) (ChatResult, error) {
 				Input: string(tu.Input),
 			})
 		}
-		// Append the assistant message (text + tool_use) to history.
+		// Append the assistant message to history in its original order. With
+		// extended thinking on, the API requires the thinking blocks (with
+		// their signatures) to be sent back alongside the tool_use blocks, or
+		// it rejects the follow-up request carrying the tool results.
 		var assistantBlocks []anthropic.ContentBlockParamUnion
 		for _, block := range msg.Content {
 			switch v := block.AsAny().(type) {
+			case anthropic.ThinkingBlock:
+				assistantBlocks = append(assistantBlocks, anthropic.NewThinkingBlock(v.Signature, v.Thinking))
+			case anthropic.RedactedThinkingBlock:
+				assistantBlocks = append(assistantBlocks, anthropic.NewRedactedThinkingBlock(v.Data))
 			case anthropic.TextBlock:
 				assistantBlocks = append(assistantBlocks, anthropic.NewTextBlock(v.Text))
 			case anthropic.ToolUseBlock:
@@ -239,17 +332,18 @@ func (p *anthropicProvider) Prompt(ctx context.Context, prompt string, useContex
 	}
 
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(p.model),
-		MaxTokens: int64(8192),
+		Model: anthropic.Model(p.model),
 		System: []anthropic.TextBlockParam{
 			{Text: p.system},
 		},
 		Messages: p.messages,
 		// Suppress tool use so a sidecar-driven prompt returns text only.
+		// tool_choice "none" is one of the two modes extended thinking allows.
 		ToolChoice: anthropic.ToolChoiceUnionParam{
 			OfNone: &anthropic.ToolChoiceNoneParam{},
 		},
 	}
+	p.applySampling(&params)
 
 	msg, err := p.client.Messages.New(ctx, params)
 	if err != nil {

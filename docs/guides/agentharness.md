@@ -147,9 +147,10 @@ For operators, the trust boundary is unchanged:
 
 Persistent Agent memory remains platform-managed: Sympozium mounts and updates
 it through its normal result-extraction path. An adapter must not assume the
-`agent-runner` conversation-memory or thinking controls apply; `useContext:
-false` and `model.thinking` are rejected for harness runs until the adapter
-contract defines mediated equivalents. The historical/default
+`agent-runner` conversation-memory or model-tuning controls apply; `useContext:
+false`, `model.thinking`, `model.maxTokens` and `model.temperature` are rejected
+for harness runs until the adapter contract defines mediated equivalents.
+Harness runs also do not inherit these model-tuning fields from their Agent. The historical/default
 `useContext: true` remains accepted because it requests no adapter behavior.
 
 !!! warning "This is an adapter boundary, not arbitrary image execution"

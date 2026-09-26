@@ -254,9 +254,23 @@ type ModelSpec struct {
 	// +optional
 	BaseURL string `json:"baseURL,omitempty"`
 
-	// Thinking mode (off, low, medium, high).
+	// Thinking mode (off, minimal, low, medium, high). When empty on a run
+	// that uses the built-in agent-runner, the Agent's value is inherited.
 	// +optional
 	Thinking string `json:"thinking,omitempty"`
+
+	// MaxTokens caps output tokens per LLM call. When nil on a run that
+	// uses the built-in agent-runner, the Agent's value is inherited.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxTokens *int32 `json:"maxTokens,omitempty"`
+
+	// Temperature is the sampling temperature as a decimal string. When
+	// empty on a run that uses the built-in agent-runner, the Agent's value
+	// is inherited.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	// +optional
+	Temperature string `json:"temperature,omitempty"`
 
 	// AuthSecretRef references the secret containing the API key.
 	// +optional

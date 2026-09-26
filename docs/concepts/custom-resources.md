@@ -43,6 +43,34 @@ spec:
   policyRef: default-policy
 ```
 
+### Model tuning
+
+Three optional fields under `spec.agents.default` tune the LLM for runs on the built-in agent-runner:
+
+| Field | Values | Anthropic | OpenAI and compatible |
+|-------|--------|-----------|------------------------|
+| `thinking` | `off`, `minimal`, `low`, `medium`, `high` | Extended thinking, with a budget of 1024 / 2048 / 4096 / 8192 tokens | `reasoning_effort` |
+| `maxTokens` | integer ≥ 1 | `max_tokens` (default 8192) | `max_completion_tokens` on hosted OpenAI, `max_tokens` on other servers |
+| `temperature` | decimal string, e.g. `"0.2"` | 0–1 | 0–2 |
+
+```yaml
+spec:
+  agents:
+    default:
+      model: claude-sonnet-4-20250514
+      thinking: medium
+      maxTokens: 12000
+      temperature: "0.3"
+```
+
+Every AgentRun of the Agent inherits these fields at reconcile time. That covers channel messages, schedules, the API, the web proxy, sub-agents and hand-written AgentRuns. A value set on the AgentRun's own `spec.model` takes precedence. Ensemble personas accept the same three fields, next to their per-persona `model`.
+
+Provider behaviour to be aware of:
+
+- **Anthropic with thinking on.** The API requires the thinking budget to be smaller than `max_tokens`. With `maxTokens` unset, `max_tokens` grows to leave 4096 tokens for the answer. With `maxTokens` set, your cap wins and the budget is limited to half of it; if that falls under the 1024-token minimum, thinking is turned off. `temperature` is ignored while thinking is on, because the API rejects it.
+- **OpenAI models that reject `reasoning_effort`.** The runner retries once without it and stops sending it for the rest of the run, so `thinking` degrades to a hint instead of failing the run.
+- **Harness and Celln runs** do not inherit these fields. Those runtimes reject them when they are set explicitly, as with `model.thinking` today.
+
 ---
 
 ## AgentRun

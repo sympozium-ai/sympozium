@@ -887,6 +887,13 @@ spec:
                     description: CredentialProfile is the independently approved opaque
                       host mapping.
                     type: string
+                  maxTokens:
+                    description: |-
+                      MaxTokens caps output tokens per LLM call. When nil on a run that
+                      uses the built-in agent-runner, the Agent's value is inherited.
+                    format: int32
+                    minimum: 1
+                    type: integer
                   model:
                     description: Model is the model identifier.
                     type: string
@@ -923,8 +930,17 @@ spec:
                       injected as provider request headers. Values from the secret override inline
                       ProviderHeaders on key collision.
                     type: string
+                  temperature:
+                    description: |-
+                      Temperature is the sampling temperature as a decimal string. When
+                      empty on a run that uses the built-in agent-runner, the Agent's value
+                      is inherited.
+                    pattern: ^[0-9]+(\.[0-9]+)?$
+                    type: string
                   thinking:
-                    description: Thinking mode (off, low, medium, high).
+                    description: |-
+                      Thinking mode (off, minimal, low, medium, high). When empty on a run
+                      that uses the built-in agent-runner, the Agent's value is inherited.
                     type: string
                 required:
                 - model

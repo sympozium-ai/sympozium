@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,6 +32,83 @@ type openaiProvider struct {
 	// because the tool set never changes after construction. It is the static
 	// half of the request that prefix caching is meant to cover.
 	toolsBytes int
+	// sampling holds THINKING_MODE / MAX_TOKENS / TEMPERATURE.
+	sampling samplingConfig
+	// reasoningEffortUnsupported latches once the backend rejects
+	// reasoning_effort, so later requests in the run stop sending it.
+	reasoningEffortUnsupported bool
+}
+
+// openaiReasoningEffort maps a reasoning level to reasoning_effort. Empty
+// means the field is omitted. Only reasoning models accept it; others answer
+// 400, which createCompletion absorbs by retrying without it.
+func openaiReasoningEffort(level string) shared.ReasoningEffort {
+	switch level {
+	case "minimal", "low", "medium", "high":
+		return shared.ReasoningEffort(level)
+	default:
+		return ""
+	}
+}
+
+// applySampling sets reasoning_effort, the output-token cap and temperature.
+//
+// The token cap goes in one field, chosen by provider. Hosted OpenAI gets
+// max_completion_tokens, its current field and the only one its reasoning
+// models accept (they reject max_tokens). Everything else — Azure on older
+// api-versions, Ollama, LM Studio, vLLM, llama.cpp and other
+// OpenAI-compatible servers — gets the legacy max_tokens, which they accept.
+func (p *openaiProvider) applySampling(params *openai.ChatCompletionNewParams) {
+	if effort := openaiReasoningEffort(p.sampling.thinking); effort != "" && !p.reasoningEffortUnsupported {
+		params.ReasoningEffort = effort
+	}
+	if p.sampling.maxTokens > 0 {
+		if p.provider == "openai" {
+			params.MaxCompletionTokens = openai.Int(p.sampling.maxTokens)
+		} else {
+			params.MaxTokens = openai.Int(p.sampling.maxTokens)
+		}
+	}
+	if !math.IsNaN(p.sampling.temperature) {
+		params.Temperature = openai.Float(p.sampling.temperature)
+	}
+}
+
+// createCompletion sends a chat completion. If the backend rejects
+// reasoning_effort (non-reasoning models, or models that only take it on
+// /v1/responses), it latches that for the rest of the run and retries once
+// without the field, so a thinking level degrades to a hint instead of
+// failing the run.
+func (p *openaiProvider) createCompletion(ctx context.Context, params openai.ChatCompletionNewParams) (*openai.ChatCompletion, error) {
+	completion, err := p.client.Chat.Completions.New(ctx, params)
+	if err != nil && params.ReasoningEffort != "" && isReasoningEffortUnsupportedErr(err) {
+		log.Printf("openai: model %q rejected reasoning_effort; retrying without it for the rest of this run", p.model)
+		p.reasoningEffortUnsupported = true
+		params.ReasoningEffort = ""
+		completion, err = p.client.Chat.Completions.New(ctx, params)
+	}
+	return completion, err
+}
+
+// isReasoningEffortUnsupportedErr reports whether err is a 400 that names
+// reasoning_effort as the unsupported parameter. It prefers the structured
+// param field and falls back to the message for backends that leave it
+// empty.
+func isReasoningEffortUnsupportedErr(err error) bool {
+	var apiErr *openai.Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	if apiErr.Param == "reasoning_effort" {
+		return true
+	}
+	msg := strings.ToLower(apiErr.Message)
+	if msg == "" {
+		msg = strings.ToLower(apiErr.Error())
+	}
+	return strings.Contains(msg, "reasoning_effort") &&
+		(strings.Contains(msg, "not supported") || strings.Contains(msg, "unsupported") ||
+			strings.Contains(msg, "unrecognized") || strings.Contains(msg, "/v1/responses"))
 }
 
 // newOpenAIProvider constructs an openaiProvider with the given config.
@@ -107,6 +186,7 @@ func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task stri
 		},
 		tools:      oaiTools,
 		toolsBytes: jsonBytes(oaiTools),
+		sampling:   samplingFromEnv(),
 	}
 	return p, nil
 }
@@ -119,6 +199,7 @@ func (p *openaiProvider) Chat(ctx context.Context) (ChatResult, error) {
 		Model:    openai.ChatModel(p.model),
 		Messages: p.messages,
 	}
+	p.applySampling(&params)
 	if len(p.tools) > 0 {
 		params.Tools = p.tools
 	}
@@ -133,7 +214,7 @@ func (p *openaiProvider) Chat(ctx context.Context) (ChatResult, error) {
 			"messages_bytes": jsonBytes(p.messages),
 		})
 	}
-	completion, err := p.client.Chat.Completions.New(ctx, params)
+	completion, err := p.createCompletion(ctx, params)
 	if err != nil {
 		var apiErr *openai.Error
 		if errors.As(err, &apiErr) {
@@ -306,6 +387,7 @@ func (p *openaiProvider) Prompt(ctx context.Context, prompt string, useContext b
 		Model:    openai.ChatModel(p.model),
 		Messages: p.messages,
 	}
+	p.applySampling(&params)
 	if len(schema) > 0 {
 		var format struct {
 			Type   string          `json:"type"`
@@ -326,7 +408,7 @@ func (p *openaiProvider) Prompt(ctx context.Context, prompt string, useContext b
 		}
 	}
 
-	completion, err := p.client.Chat.Completions.New(ctx, params)
+	completion, err := p.createCompletion(ctx, params)
 	if err != nil {
 		var apiErr *openai.Error
 		if errors.As(err, &apiErr) {

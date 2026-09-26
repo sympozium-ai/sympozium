@@ -259,6 +259,12 @@ func ValidateRunCompatibility(run *sympoziumv1alpha1.AgentRun) error {
 	if run.Spec.Model.Thinking != "" {
 		unsupported = append(unsupported, "model.thinking")
 	}
+	if run.Spec.Model.MaxTokens != nil {
+		unsupported = append(unsupported, "model.maxTokens")
+	}
+	if run.Spec.Model.Temperature != "" {
+		unsupported = append(unsupported, "model.temperature")
+	}
 	if run.Spec.AgentSandbox != nil && run.Spec.AgentSandbox.WarmPoolRef != "" {
 		unsupported = append(unsupported, "agentSandbox.warmPoolRef")
 	}

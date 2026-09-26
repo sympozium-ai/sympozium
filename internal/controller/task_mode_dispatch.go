@@ -180,6 +180,26 @@ func taskModeReplacesAgentContainer(task *sympoziumv1alpha1.TaskSpec) bool {
 	return taskmodes.ReplacesAgentContainer(task)
 }
 
+// inheritAgentModelTuning fills the run's unset model tuning (thinking,
+// maxTokens, temperature) from its Agent, in memory, the same way the Agent's
+// runtime is inherited. Doing it once here means every entrypoint (channels,
+// schedules, API, web proxy, stimulus, sub-agents, kubectl) honours the Agent
+// without each creation site copying fields.
+//
+// Only runs the built-in agent-runner executes inherit: harness adapters and
+// the Celln backend implement none of these controls and reject runs that set
+// them (ValidateRunCompatibility, the Celln model policy), so inheriting there
+// would break runs that work today.
+func inheritAgentModelTuning(run *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) {
+	if run == nil || agent == nil {
+		return
+	}
+	if run.Spec.Backend == "celln" || taskModeReplacesAgentContainer(run.Spec.Task) {
+		return
+	}
+	agent.Spec.Agents.Default.InheritModelTuning(&run.Spec.Model)
+}
+
 // taskModeAgentVolumes returns the pod volumes an object-form task mode's
 // agent container override needs (e.g. the harness's writable HOME). Errors
 // are swallowed here and surfaced by applyAgentContainerOverride, which runs

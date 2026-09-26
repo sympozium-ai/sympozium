@@ -866,6 +866,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	} else {
 		agentRun.Spec.Task = normalized
 	}
+	// Checked after normalization because an inherited runtime can turn a
+	// string task into a harness task.
+	inheritAgentModelTuning(agentRun, &runtimeInstance)
 	// Validate against policy
 	if err := r.validatePolicy(ctx, agentRun); err != nil {
 		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("policy validation failed: %v", err))
@@ -3084,6 +3087,21 @@ func (r *AgentRunReconciler) buildContainers(
 		agentEnv = append(agentEnv, corev1.EnvVar{
 			Name:  "USE_CONTEXT",
 			Value: strconv.FormatBool(*agentRun.Spec.UseContext),
+		})
+	}
+
+	// Sampling controls for the agent-runner providers. Only emitted when set
+	// so an unset field means "provider default" rather than a zero value.
+	if agentRun.Spec.Model.MaxTokens != nil {
+		agentEnv = append(agentEnv, corev1.EnvVar{
+			Name:  "MAX_TOKENS",
+			Value: strconv.FormatInt(int64(*agentRun.Spec.Model.MaxTokens), 10),
+		})
+	}
+	if agentRun.Spec.Model.Temperature != "" {
+		agentEnv = append(agentEnv, corev1.EnvVar{
+			Name:  "TEMPERATURE",
+			Value: agentRun.Spec.Model.Temperature,
 		})
 	}
 
