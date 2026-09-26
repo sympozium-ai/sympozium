@@ -22,6 +22,35 @@ function openForm(runtime = "native", unavailable = false, catalogue: unknown[] 
 }
 
 describe("Harness in Celln run selection", () => {
+  it("submits a wizard-created profile-backed Agent with its connection and inherited limits", () => {
+    const enduring = { leaseSeconds: 600, maxTurns: 3, maxModelRequests: 18, maxOutputTokens: 9216 };
+    cy.intercept("GET", "/api/v1/**", { body: [] });
+    cy.intercept("POST", "/api/v1/celln-selection/preview*", { statusCode: 503, body: "Not part of this fixture" });
+    cy.intercept("GET", "/api/v1/agents*", { delay: 500, body: [{ metadata: { name: "own-key" }, spec: {
+      runtimeRef: "profile-runtime", agents: { default: { model: "deepseek-chat" } },
+      execution: { backend: "celln", executionLifecycle: "enduring", model: "deepseek-chat", modelConnectionRef: "own-connection", enduring, cellnSelection: { runtimeRef: "profile-runtime", toolRefs: [] } },
+    } }] });
+    cy.intercept("GET", "/api/v1/runtimes*", { body: [{ metadata: { name: "profile-runtime" }, spec: { image: "", cellnProfileRef: { name: "starter", revision: "v1" } } }] });
+    cy.intercept("GET", "/api/v1/capabilities*", { body: { celln: { available: true, reason: "legacy capability description" } } });
+    cy.intercept("POST", "/api/v1/runs*", (request) => {
+      expect(request.body).to.include({ agentRef: "own-key", backend: "celln", modelConnectionRef: "own-connection", model: "deepseek-chat", executionLifecycle: "enduring", timeout: "600s" });
+      expect(request.body.enduring).to.deep.eq(enduring);
+      expect(request.body.cellnSelection.toolRefs).to.deep.eq([]);
+      expect(request.body).not.to.have.any.keys("apiKey", "secretName", "provider");
+      request.reply({ statusCode: 201, body: { metadata: { name: "profile-run" } } });
+    }).as("profileRun");
+    cy.visit("/runs?create=1&agent=own-key");
+    cy.get('[role="dialog"]').should("contain", "own-key");
+    cy.get('[data-testid="celln-leaseSeconds"]').should("have.value", "600");
+    cy.get('textarea[placeholder="Describe the task for the agent…"]').type("Reply READY only.");
+    cy.get('[role="dialog"]').should("contain", "provider keys remain in namespace Secrets").and("not.contain", "Kubernetes model credentials are not used").and("not.contain", "legacy capability description");
+    cy.get('[data-testid="execution-environment"]').contains("button", "Kubernetes").click();
+    cy.get('[role="dialog"]').should("contain", "no OCI image");
+    cy.get('[role="dialog"]').contains("button", "Create Run").should("be.disabled");
+    cy.get('[data-testid="execution-environment"]').contains("button", "Celln cell").click();
+    cy.contains("button", "Request enduring run").should("be.enabled").click();
+    cy.wait("@profileRun");
+  });
   it("selects only explicitly approved starter revisions and shows bounded permissions", () => {
     const catalogue = ["workspace-read", "workspace-write", "https-fetch"].map((name, index) => ({
       ...tools[0], metadata: { name, namespace: "default", uid: name },
