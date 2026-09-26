@@ -149,7 +149,7 @@ Nothing new was built for this. The mode reuses what the platform already had:
 | Adapter contract | `SYMPOZIUM_HARNESS_CONTRACT_VERSION=v1alpha1`; reject versions the adapter does not understand |
 | Working directory | `/workspace`, regardless of the image's own `WORKDIR` |
 | Result | `/ipc/output/result.json` plus the `__SYMPOZIUM_RESULT__` stdout marker |
-| `/ipc` | **only** `input/` (read-only) and `output/` — see [/ipc is not a shared surface](#ipc-is-not-a-shared-surface) |
+| `/ipc` | **only** `input/` (read-only), `control/` (read-only) and `output/` — see [/ipc is not a shared surface](#ipc-is-not-a-shared-surface) |
 
 The exact contract, in both directions, is [harness-adapters.md](harness-adapters.md).
 
@@ -242,11 +242,18 @@ files only for tools it chose to register — policy and writer are one trusted
 process, which is why the skill sidecars execute what arrives without checking
 authority. Harness mode separates them.
 
-So a harness gets two `subPath` mounts and nothing else: `/ipc/input`
-(read-only) and `/ipc/output`. The other six directories are **not in its mount
-namespace** — not filtered, not checked, absent. A harness cannot spawn a child
-run or message a channel by writing a file, whatever its capability descriptor
-claims, because there is nowhere to write it.
+So a harness gets three `subPath` mounts and nothing else: `/ipc/input`
+(read-only), `/ipc/control` (read-only) and `/ipc/output`. The other six
+directories are **not in its mount namespace** — not filtered, not checked,
+absent. A harness cannot spawn a child run or message a channel by writing a
+file, whatever its capability descriptor claims, because there is nowhere to
+write it.
+
+`/ipc/control` holds the skip marker a preRun hook writes when there is no work
+to do. The bridge does not watch it. With `agent-runner`, Sympozium reads the
+marker and skips the run. A harness replaces `agent-runner`, so the adapter must
+read the marker and report `status: skipped` itself — see
+[Skipped runs](harness-adapters.md#skipped-runs).
 
 `agent-runner` is unaffected and still mounts the volume root.
 

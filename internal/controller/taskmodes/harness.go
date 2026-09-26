@@ -48,7 +48,7 @@ const (
 	harnessHomePath   = "/home/agent"
 )
 
-// The two /ipc paths a harness gets, and the only two it needs: read the task,
+// The three /ipc paths a harness gets: read the task, read the skip marker,
 // return the result.
 //
 // The agent container is normally given the whole /ipc volume, and the bridge
@@ -64,16 +64,25 @@ const (
 // file-write tool spawn children and message a Slack workspace, whatever its
 // capability descriptor claims.
 //
-// So the mount is narrowed to two subPaths instead. The other six directories
-// are not in the container's mount namespace at all: not filtered, not
-// checked, absent. Anything a harness should be able to reach has to be given
-// to it deliberately — see the skill tool server in the controller.
+// So the mount is narrowed to three subPaths instead. The other six
+// directories are not in the container's mount namespace at all: not
+// filtered, not checked, absent. Anything a harness should be able to reach
+// has to be given to it deliberately — see the skill tool server in the
+// controller.
+//
+// control/ holds ipc.SkipMarkerPath, which a preRun hook writes when there is
+// no work to do. agent-runner reads it before the LLM call; a harness replaces
+// agent-runner, so the adapter reads it instead and reports status "skipped".
+// The mount is read-only: the marker is the hook's decision, not the
+// harness's.
 const (
-	harnessIPCVolume    = "ipc"
-	harnessIPCInputDir  = "input"
-	harnessIPCOutputDir = "output"
-	harnessIPCInputPath = "/ipc/input"
-	harnessIPCOutPath   = "/ipc/output"
+	harnessIPCVolume     = "ipc"
+	harnessIPCInputDir   = "input"
+	harnessIPCControlDir = "control"
+	harnessIPCOutputDir  = "output"
+	harnessIPCInputPath  = "/ipc/input"
+	harnessIPCCtrlPath   = "/ipc/control"
+	harnessIPCOutPath    = "/ipc/output"
 )
 
 // Task parameter keys recognised by harness mode.
@@ -275,6 +284,12 @@ func (h *HarnessHandler) OverrideAgentContainer(task *sympoziumv1alpha1.TaskSpec
 				Name:      harnessIPCVolume,
 				MountPath: harnessIPCInputPath,
 				SubPath:   harnessIPCInputDir,
+				ReadOnly:  true,
+			},
+			{
+				Name:      harnessIPCVolume,
+				MountPath: harnessIPCCtrlPath,
+				SubPath:   harnessIPCControlDir,
 				ReadOnly:  true,
 			},
 			{

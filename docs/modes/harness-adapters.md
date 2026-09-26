@@ -33,11 +33,12 @@ Everything arrives as environment variables and mounted files on an ordinary con
 | `HOME` | `/home/agent`, an `emptyDir`. The only writable path besides `/workspace`, `/ipc/output` and `/tmp`. |
 | `SYMPOZIUM_RESULT_PATH` | Where to write the result. Defaults to `/ipc/output/result.json`; read it from env rather than hardcoding. |
 | `SYMPOZIUM_HARNESS_CONTRACT_VERSION` | Adapter contract version (`v1alpha1` today). Check it at startup and fail closed on unknown versions. |
+| `/ipc/control/skip` | Present when a preRun lifecycle hook [skipped the run](../concepts/lifecycle-hooks.md#skipping-a-run). Its contents are the skip reason. See [Skipped runs](#skipped-runs). |
 | `/workspace` | The run's PVC, and the container's working directory. |
 | `/skills/` | Skill files, if the Agent has any. |
 | `task.parameters.args` | Passed through as the container's `args`. Your `ENTRYPOINT` receives them as `"$@"`. |
 
-You get `/ipc/input` (read-only) and `/ipc/output`, and no other part of `/ipc`. The rest of
+You get `/ipc/input` (read-only), `/ipc/control` (read-only) and `/ipc/output`, and no other part of `/ipc`. The rest of
 that volume is a control-plane surface — a file dropped in `/ipc/spawn` creates a sub-agent
 run, one in `/ipc/messages` posts to Slack — and an adapter is not a trusted enough writer for
 it. Do not try to reach those paths; they are not in your mount namespace.
@@ -58,6 +59,29 @@ __SYMPOZIUM_END__
 ```
 
 On failure, `{"status":"error","error":"..."}` and a non-zero exit.
+
+### Skipped runs
+
+A preRun lifecycle hook can decide there is no work to do. It writes the marker file
+`/ipc/control/skip` and exits `0`. With `agent-runner`, Sympozium reads the marker and skips
+the LLM call. Your adapter replaces `agent-runner`, so **the adapter must check the marker
+itself**. Sympozium mounts `/ipc/control` read-only so you can see it. Sympozium does not
+check it for you.
+
+Check for the file before you start the harness. If it exists, do not start the harness.
+Emit a `skipped` result on both outputs, with the file's trimmed contents as `response`, and
+exit `0`:
+
+```
+__SYMPOZIUM_RESULT__
+{"status":"skipped","response":"queue empty"}
+__SYMPOZIUM_END__
+```
+
+The controller then moves the AgentRun to the `Skipped` phase. It bypasses postRun hooks, and
+a channel-triggered run sends no reply. An empty `response` is fine: the controller records
+a default reason. An adapter that ignores the marker runs the harness anyway and spends the
+tokens the hook tried to save.
 
 **Build the payload with a JSON encoder, never string interpolation.** Harness output is
 LLM-generated and adversarial; `jq --arg` encodes it as a JSON string so it cannot forge a
@@ -138,7 +162,7 @@ set -euo pipefail
 
 RESULT_PATH="${SYMPOZIUM_RESULT_PATH:-/ipc/output/result.json}"
 
-emit() {  # $1 = success|error, $2 = body
+emit() {  # $1 = success|error|skipped, $2 = body
   local payload
   payload="$(jq -cn --arg status "$1" --arg body "$2" \
     'if $status == "error" then {status:$status, error:$body}
@@ -147,6 +171,11 @@ emit() {  # $1 = success|error, $2 = body
   printf '%s' "$payload" > "$RESULT_PATH"
   printf '__SYMPOZIUM_RESULT__\n%s\n__SYMPOZIUM_END__\n' "$payload"
 }
+
+if [ -e /ipc/control/skip ]; then   # a preRun hook found no work to do
+  emit skipped "$(head -c 2000 /ipc/control/skip)"
+  exit 0
+fi
 
 TASK_TEXT="${TASK:-}"
 if [ -z "$TASK_TEXT" ] && [ -r /ipc/input/task.json ]; then
