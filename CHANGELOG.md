@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.88](https://github.com/sympozium-ai/sympozium/compare/v0.10.87...v0.10.88) (2026-09-26)
+
+
+### Features
+
+* **cli:** add `sympozium update` and `sympozium upgrade` ([664bcfe](https://github.com/sympozium-ai/sympozium/commit/664bcfe6ceda128e194bceb2af2f67f242ee5e4f))
+* **cli:** add `sympozium update` and `sympozium upgrade` ([9ecfd9a](https://github.com/sympozium-ai/sympozium/commit/9ecfd9a3302315367afa5fb9b79000090a9a9ec3))
+
+
+### Bug Fixes
+
+* **celln:** propagate dispatcher pod tolerations ([#632](https://github.com/sympozium-ai/sympozium/issues/632)) ([1dff955](https://github.com/sympozium-ai/sympozium/commit/1dff955421e2c20ba6d39e022803c7a51723d399))
+* **channel:** reply on agent failure and stop cross-instance outbound… ([#581](https://github.com/sympozium-ai/sympozium/issues/581)) ([82117f1](https://github.com/sympozium-ai/sympozium/commit/82117f14126cf3b4b856520455096ae6380292bb))
+* **controller:** measure the postRun timeout from the postRun Job, not the agent run ([#589](https://github.com/sympozium-ai/sympozium/issues/589)) ([574610a](https://github.com/sympozium-ai/sympozium/commit/574610a7b3473aeeb658d9707705f9d68fe3b564))
+
 ## [0.10.87](https://github.com/sympozium-ai/sympozium/compare/v0.10.86...v0.10.87) (2026-09-20)
 
 
