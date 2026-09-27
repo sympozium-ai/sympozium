@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -129,6 +130,12 @@ var allowedAuthSecretKeys = []string{
 	"DEEPSEEK_API_KEY",
 	"OPENROUTER_API_KEY",
 	"API_KEY",
+}
+
+// IsAllowedAuthSecretKey reports whether key is on the auth secret allowlist,
+// i.e. whether a Secret entry under that key reaches the agent container.
+func IsAllowedAuthSecretKey(key string) bool {
+	return slices.Contains(allowedAuthSecretKeys, key)
 }
 
 // deniedEnvVarKeys lists environment variable names that cannot be set via

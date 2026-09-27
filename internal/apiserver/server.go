@@ -3017,9 +3017,14 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // providerEnvKey returns the environment variable key for a provider's API key.
+// The key must be one the controller mounts (allowedAuthSecretKeys) and the
+// runner reads, or the credential never reaches the model call. The
+// OpenAI-compatible providers share OPENAI_API_KEY: the agent runner and the
+// Hermes adapter both read it, and the provider-named slots on the allowlist
+// (MISTRAL_API_KEY etc.) are read by nothing.
 func providerEnvKey(provider string) string {
 	switch provider {
-	case "openai":
+	case "openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek":
 		return "OPENAI_API_KEY"
 	case "anthropic":
 		return "ANTHROPIC_API_KEY"

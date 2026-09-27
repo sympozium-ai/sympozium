@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/controller"
 )
 
 func newInstanceTestServer(t *testing.T) (*Server, *runtime.Scheme) {
@@ -85,6 +86,61 @@ func TestCreateAgentInvalidNativeSkillsDoesNotWriteSecret(t *testing.T) {
 	var secrets corev1.SecretList
 	if err := srv.client.List(context.Background(), &secrets); err != nil || len(secrets.Items) != 0 {
 		t.Fatalf("invalid request wrote credentials: %v, count=%d", err, len(secrets.Items))
+	}
+}
+
+// TestCreateAgent_ProviderSecretKeyIsInjected pins the writer (providerEnvKey)
+// to the injector (the controller's auth secret allowlist): a credential the
+// apiserver stores under a key the controller does not mount never reaches the
+// agent container, and the provider answers 401 (#627).
+func TestCreateAgent_ProviderSecretKeyIsInjected(t *testing.T) {
+	for _, provider := range []string{"openai", "anthropic", "azure-openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek"} {
+		t.Run(provider, func(t *testing.T) {
+			srv, _ := newInstanceTestServer(t)
+			body, _ := json.Marshal(CreateInstanceRequest{
+				Name:     "keyed-" + provider,
+				Provider: provider,
+				Model:    "some-model",
+				BaseURL:  "https://models.example.com/v1",
+				APIKey:   "test-not-a-real-key",
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/agents?namespace=default", bytes.NewReader(body))
+			rec := httptest.NewRecorder()
+			srv.buildMux(nil, nil).ServeHTTP(rec, req)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			var inst sympoziumv1alpha1.Agent
+			if err := srv.client.Get(req.Context(), types.NamespacedName{Name: "keyed-" + provider, Namespace: "default"}, &inst); err != nil {
+				t.Fatal(err)
+			}
+			if len(inst.Spec.AuthRefs) != 1 {
+				t.Fatalf("AuthRefs = %#v, want the auto-created credentials secret", inst.Spec.AuthRefs)
+			}
+			var secret corev1.Secret
+			if err := srv.client.Get(req.Context(), types.NamespacedName{Name: inst.Spec.AuthRefs[0].Secret, Namespace: "default"}, &secret); err != nil {
+				t.Fatalf("get credentials secret: %v", err)
+			}
+			// The fake client does not convert stringData to data on persist.
+			keys := map[string]string{}
+			for k, v := range secret.Data {
+				keys[k] = string(v)
+			}
+			for k, v := range secret.StringData {
+				keys[k] = v
+			}
+			if len(keys) != 1 {
+				t.Fatalf("secret keys = %v, want exactly one", keys)
+			}
+			for k, v := range keys {
+				if !controller.IsAllowedAuthSecretKey(k) {
+					t.Errorf("secret key %q is not mounted by the controller, the agent would run without its credential", k)
+				}
+				if v != "test-not-a-real-key" {
+					t.Errorf("secret[%q] = %q, want the submitted API key", k, v)
+				}
+			}
+		})
 	}
 }
 
