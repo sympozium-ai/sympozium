@@ -132,5 +132,6 @@ nav:
     - Helm Chart: reference/helm.md
     - Testing: reference/testing.md
   - Sympozium vs kagent: sympozium-vs-kagent.md
+  - Sympozium vs Google AX: sympozium-vs-google-ax.md
   - Design Document: design.md
   - Roadmap: roadmap.md

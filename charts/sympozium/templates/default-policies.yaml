@@ -52,7 +52,7 @@ spec:
     defaultAction: deny
     rules:
       - tool: execute_command
-        action: ask
+        action: deny
       - tool: read_file
         action: allow
       - tool: list_directory

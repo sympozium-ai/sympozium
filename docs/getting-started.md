@@ -124,7 +124,7 @@ The wizard walks you through six steps:
 | **1 — Cluster check** | Verifies the cluster is reachable and Sympozium is installed. Offers to run `sympozium install` if CRDs are missing. |
 | **2 — Provider** | Choose your LLM provider (OpenAI, Anthropic, Azure OpenAI, Ollama, LM Studio, Unsloth, or any OpenAI-compatible endpoint). Enter a base URL if needed, then paste your API key. |
 | **3 — Channel** | Optionally connect a messaging channel (Telegram, Slack, Discord, WhatsApp) or skip for now. |
-| **4 — Policy** | Choose a policy preset: **Permissive** (everything allowed), **Default** (commands require approval), or **Restrictive** (very locked-down). |
+| **4 — Policy** | Choose a policy preset: **Permissive** (everything allowed), **Default** (every tool except `fetch_url`), or **Restrictive** (very locked-down). |
 | **5 — Heartbeat** | Pick how often the agent should wake up on its own: every 30 min, hourly (recommended), every 6 hours, daily at 9 AM, or disabled. |
 | **6 — Confirm** | Review a summary of your choices and apply. |
 
@@ -500,8 +500,8 @@ AgentRun CRs directly with kubectl.
 
 | Policy | Who it is for | Key rules |
 |--------|---------------|-----------|
-| **Permissive** | Dev clusters, demos | All tools allowed, no approval needed, generous resource limits |
-| **Default** | General use | `execute_command` requires approval, everything else allowed |
+| **Permissive** | Dev clusters, demos | All tools allowed, generous resource limits |
+| **Default** | General use | All tools allowed except `fetch_url` |
 | **Restrictive** | Production, security | All tools denied by default, must be explicitly allowed, sandbox required |
 
 ---

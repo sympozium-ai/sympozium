@@ -371,7 +371,7 @@ type ToolPolicySpec struct {
 	// Allow lists explicitly allowed tools.
 	Allow []string `json:"allow,omitempty"`
 
-	// Deny lists explicitly denied tools.
+	// Deny lists explicitly denied tools. "*" denies every tool.
 	Deny []string `json:"deny,omitempty"`
 }
 
