@@ -391,6 +391,14 @@ spec:
                               type: object
                             type: array
                         type: object
+                      maxTokens:
+                        description: |-
+                          MaxTokens caps output tokens per LLM call. When unset, the provider
+                          default applies (8192 for Anthropic, the model default for OpenAI).
+                          Inherited by every AgentRun of this Agent that runs on agent-runner.
+                        format: int32
+                        minimum: 1
+                        type: integer
                       model:
                         description: Model is the LLM model to use.
                         type: string
@@ -523,9 +531,22 @@ spec:
                               sub-agents.
                             type: integer
                         type: object
+                      temperature:
+                        description: |-
+                          Temperature is the sampling temperature as a decimal string (for
+                          example "0.2"); a string avoids float round-tripping in the CRD.
+                          Valid ranges are provider-specific: 0-2 for OpenAI, 0-1 for Anthropic.
+                          Ignored on Anthropic while extended thinking is on, since the API
+                          rejects it. Inherited by every AgentRun of this Agent that runs on
+                          agent-runner.
+                        pattern: ^[0-9]+(\.[0-9]+)?$
+                        type: string
                       thinking:
-                        description: Thinking is the thinking mode (off, low, medium,
-                          high).
+                        description: |-
+                          Thinking is the reasoning mode for the built-in agent-runner: off,
+                          minimal, low, medium, high. Anthropic enables extended thinking with a
+                          budget per level; OpenAI-compatible providers send reasoning_effort.
+                          Inherited by every AgentRun of this Agent that runs on agent-runner.
                         type: string
                       tolerations:
                         description: |-

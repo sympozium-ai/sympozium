@@ -441,6 +441,10 @@ spec:
                             type: object
                           type: array
                       type: object
+                    maxTokens:
+                      format: int32
+                      minimum: 1
+                      type: integer
                     mcpServers:
                       description: |-
                         MCPServers configures remote MCP (Model Context Protocol) servers
@@ -714,6 +718,15 @@ spec:
                     systemPrompt:
                       description: SystemPrompt is the system prompt that defines
                         the agent's role and behaviour.
+                      type: string
+                    temperature:
+                      pattern: ^[0-9]+(\.[0-9]+)?$
+                      type: string
+                    thinking:
+                      description: |-
+                        Thinking, MaxTokens and Temperature tune the LLM for this agent
+                        configuration, alongside its per-persona Model. Propagated to the
+                        generated Agent's AgentConfig; see AgentConfig for semantics.
                       type: string
                     tolerations:
                       description: |-

@@ -140,7 +140,9 @@ spec:
   agents:
     default:
       model: gpt-4o     # overridable per-persona; see Ensemble activation
-      thinking: high
+      thinking: high    # reasoning level; inherited by every agent-runner run
+      maxTokens: 12000  # optional output-token cap per LLM call
+      temperature: "0.3" # optional; ignored on Anthropic while thinking is on
       sandbox:
         enabled: true
         image: ghcr.io/sympozium-ai/sympozium/sandbox:latest

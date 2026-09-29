@@ -413,9 +413,29 @@ type AgentConfig struct {
 	// +optional
 	ProviderHeadersSecretRef string `json:"providerHeadersSecretRef,omitempty"`
 
-	// Thinking is the thinking mode (off, low, medium, high).
+	// Thinking is the reasoning mode for the built-in agent-runner: off,
+	// minimal, low, medium, high. Anthropic enables extended thinking with a
+	// budget per level; OpenAI-compatible providers send reasoning_effort.
+	// Inherited by every AgentRun of this Agent that runs on agent-runner.
 	// +optional
 	Thinking string `json:"thinking,omitempty"`
+
+	// MaxTokens caps output tokens per LLM call. When unset, the provider
+	// default applies (8192 for Anthropic, the model default for OpenAI).
+	// Inherited by every AgentRun of this Agent that runs on agent-runner.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxTokens *int32 `json:"maxTokens,omitempty"`
+
+	// Temperature is the sampling temperature as a decimal string (for
+	// example "0.2"); a string avoids float round-tripping in the CRD.
+	// Valid ranges are provider-specific: 0-2 for OpenAI, 0-1 for Anthropic.
+	// Ignored on Anthropic while extended thinking is on, since the API
+	// rejects it. Inherited by every AgentRun of this Agent that runs on
+	// agent-runner.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	// +optional
+	Temperature string `json:"temperature,omitempty"`
 
 	// Sandbox configuration.
 	// +optional
@@ -483,6 +503,28 @@ func (c AgentConfig) ParseRunTimeout() *metav1.Duration {
 		return nil
 	}
 	return &metav1.Duration{Duration: d}
+}
+
+// InheritModelTuning fills the model-tuning fields (Thinking, MaxTokens,
+// Temperature) that m leaves unset from this Agent default. Fields the run
+// sets explicitly win. The controller calls this at reconcile time for runs
+// executed by the built-in agent-runner, so every run entrypoint (channels,
+// schedules, API, web proxy, sub-agents, kubectl) honours the Agent's tuning
+// without each creation site copying it.
+func (c AgentConfig) InheritModelTuning(m *ModelSpec) {
+	if m == nil {
+		return
+	}
+	if m.Thinking == "" {
+		m.Thinking = c.Thinking
+	}
+	if m.MaxTokens == nil && c.MaxTokens != nil {
+		v := *c.MaxTokens
+		m.MaxTokens = &v
+	}
+	if m.Temperature == "" {
+		m.Temperature = c.Temperature
+	}
 }
 
 // SandboxSpec defines sandbox configuration.

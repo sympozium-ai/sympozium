@@ -328,6 +328,18 @@ type AgentConfigSpec struct {
 	// +optional
 	RunTimeout string `json:"runTimeout,omitempty"`
 
+	// Thinking, MaxTokens and Temperature tune the LLM for this agent
+	// configuration, alongside its per-persona Model. Propagated to the
+	// generated Agent's AgentConfig; see AgentConfig for semantics.
+	// +optional
+	Thinking string `json:"thinking,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxTokens *int32 `json:"maxTokens,omitempty"`
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	// +optional
+	Temperature string `json:"temperature,omitempty"`
+
 	// Workspace overrides the ensemble-level Workspace policy for this
 	// agent configuration. When non-nil, replaces (not merges with) the
 	// ensemble-level value entirely.

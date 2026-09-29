@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -43,7 +44,6 @@ import (
 // reconcile. To make one configurable, add it to AgentConfigSpec and have
 // buildAgent plumb it, rather than adding an exception here.
 var agentFieldsNotExpressibleByEnsemble = map[string]string{
-	"Agents.Default.Thinking":     "no AgentConfigSpec field; per-Agent thinking mode is not an ensemble concept",
 	"Agents.Default.Sandbox":      "no AgentConfigSpec field; ensembles configure agentSandbox instead",
 	"Agents.Default.NodeSelector": "no AgentConfigSpec field; placement is not expressible per persona",
 	"WebEndpoint":                 "superseded by the web-endpoint skill, which buildDesiredSkills adds from persona.webEndpoint",
@@ -401,6 +401,9 @@ func convergenceFixture() (*sympoziumv1alpha1.Ensemble, *sympoziumv1alpha1.Agent
 		Tolerations: []corev1.Toleration{{
 			Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "agents", Effect: corev1.TaintEffectNoSchedule,
 		}},
+		Thinking:    "medium",
+		MaxTokens:   ptr.To[int32](12000),
+		Temperature: "0.3",
 	}
 	return pack, persona
 }
