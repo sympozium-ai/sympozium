@@ -528,7 +528,9 @@ func main() {
 
 		systemPrompt += "**After completing your task**, call `memory_store` to save key findings, " +
 			"root causes, and resolution steps for future reference.\n" +
-			"Be specific in stored content — include service names, namespaces, error messages, and timestamps."
+			"Be specific in stored content — include service names, namespaces, error messages, and timestamps.\n" +
+			"If a memory you find is wrong or out of date, call `memory_update` with its ID to correct it, " +
+			"or `memory_forget` to remove it, rather than storing a conflicting entry."
 
 		log.Printf("memory tools loaded: %d tool(s)", len(memoryTools))
 	} else if memoryEnabled {
@@ -567,12 +569,14 @@ func main() {
 		systemPrompt += "\n\n## Shared Workflow Memory\n\n" +
 			"You have access to shared team memory tools (`workflow_memory_search`, `workflow_memory_list`"
 		if workflowMemoryAccess != "read-only" {
-			systemPrompt += ", `workflow_memory_store`"
+			systemPrompt += ", `workflow_memory_store`, `workflow_memory_update`, `workflow_memory_forget`"
 		}
 		systemPrompt += ") that are shared across all personas in your team.\n"
 		if workflowMemoryAccess != "read-only" {
 			systemPrompt += "**After completing your task**, use `workflow_memory_store` to share key findings " +
-				"with other team members. Your persona name is automatically attached for attribution.\n"
+				"with other team members. Your persona name is automatically attached for attribution.\n" +
+				"To correct or remove a finding you stored earlier, use `workflow_memory_update` or " +
+				"`workflow_memory_forget` with its ID.\n"
 		}
 
 		log.Printf("workflow memory tools loaded: %d tool(s) (access: %s)", len(wfMemTools), workflowMemoryAccess)

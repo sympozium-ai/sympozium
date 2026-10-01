@@ -652,14 +652,22 @@ func memoryServerContainer(spec *corev1.PodSpec) *corev1.Container {
 }
 
 // syncMemoryDeployment reconciles controller-owned settings on an existing
-// memory Deployment. The rest of the spec remains create-only, while the
-// memory-server image tracks the configured Sympozium image tag and the
-// admin-token env tracks its Secret reference. It is a no-op when both already
-// match, so steady-state reconciles issue no writes and the pod is not restarted.
+// memory Deployment. The rest of the spec remains create-only, while:
+//
+//   - the memory-server image tracks the configured Sympozium image tag;
+//   - MEMORY_ADMIN_TOKEN is added when adminDelete is switched on, repointed
+//     when the Secret name changes, and removed when the feature is switched
+//     off;
+//   - MEMORY_WRITER_TOKEN always points at the Deployment's own writer-token
+//     Secret. This is how memory servers created by an older release start
+//     requiring the writer token after an upgrade.
+//
+// It issues at most one Update, and none when everything already matches, so
+// steady-state reconciles issue no writes and the pod is not restarted.
 //
 // Shared by the per-agent memory Deployment (AgentReconciler) and the shared
 // workflow memory Deployment (EnsembleReconciler), both of which are otherwise
-// create-only and would never pick the token up after the fact.
+// create-only and would never pick the tokens up after the fact.
 //
 // Note this reacts to the Secret *reference* changing, not to the token value
 // inside the Secret. Rotating the value in place leaves the pod holding the old
@@ -677,15 +685,27 @@ func syncMemoryDeployment(ctx context.Context, c client.Client, log logr.Logger,
 		changed = true
 	}
 
-	desired := memoryAdminTokenEnv()
-	var want *corev1.EnvVar
-	if len(desired) > 0 {
-		want = &desired[0]
+	var adminWant *corev1.EnvVar
+	if desired := memoryAdminTokenEnv(); len(desired) > 0 {
+		adminWant = &desired[0]
 	}
+	writerWant := memoryWriterTokenEnv(memoryWriterTokenEnvName, deploy.Name)
 
+	changed = syncContainerEnvVar(log, deploy.Name, container, "MEMORY_ADMIN_TOKEN", adminWant) || changed
+	changed = syncContainerEnvVar(log, deploy.Name, container, memoryWriterTokenEnvName, &writerWant) || changed
+	if !changed {
+		return nil
+	}
+	return c.Update(ctx, deploy)
+}
+
+// syncContainerEnvVar makes container's env var name match want: added,
+// replaced, or removed when want is nil. It reports whether it changed
+// anything.
+func syncContainerEnvVar(log logr.Logger, deployName string, container *corev1.Container, name string, want *corev1.EnvVar) bool {
 	idx := -1
 	for i := range container.Env {
-		if container.Env[i].Name == "MEMORY_ADMIN_TOKEN" {
+		if container.Env[i].Name == name {
 			idx = i
 			break
 		}
@@ -693,31 +713,24 @@ func syncMemoryDeployment(ctx context.Context, c client.Client, log logr.Logger,
 
 	switch {
 	case want == nil && idx < 0:
-		// Disabled and absent — nothing to do.
+		return false // Disabled and absent — nothing to do.
 	case want == nil:
 		container.Env = append(container.Env[:idx], container.Env[idx+1:]...)
-		log.Info("Removing memory admin token env", "deployment", deploy.Name)
-		changed = true
+		log.Info("Removing memory server env", "deployment", deployName, "env", name)
 	case idx < 0:
 		container.Env = append(container.Env, *want)
-		log.Info("Adding memory admin token env", "deployment", deploy.Name)
-		changed = true
+		log.Info("Adding memory server env", "deployment", deployName, "env", name)
 	case equality.Semantic.DeepEqual(container.Env[idx], *want):
-		// Already correct.
+		return false // Already correct.
 	default:
 		container.Env[idx] = *want
-		log.Info("Updating memory admin token env", "deployment", deploy.Name)
-		changed = true
+		log.Info("Updating memory server env", "deployment", deployName, "env", name)
 	}
-
-	if !changed {
-		return nil
-	}
-	return c.Update(ctx, deploy)
+	return true
 }
 
 // syncMemoryAdminTokenEnv is retained for callers and focused tests that only
-// need to reconcile the admin token without changing the image.
+// need to reconcile the token env vars without changing the image.
 func syncMemoryAdminTokenEnv(ctx context.Context, c client.Client, log logr.Logger, deploy *appsv1.Deployment) error {
 	return syncMemoryDeployment(ctx, c, log, deploy, "")
 }
@@ -743,6 +756,15 @@ func (r *AgentReconciler) reconcileMemoryDeployment(ctx context.Context, log log
 	}
 	image := fmt.Sprintf("%s/skill-memory:%s", registry, tag)
 
+	// --- Writer token Secret ---
+	// Created before the Deployment, whose pod requires it to start.
+	if err := ensureMemoryWriterSecret(ctx, r.Client, r.Scheme, instance, deployName, map[string]string{
+		"sympozium.ai/component": "memory-writer-token",
+		"sympozium.ai/instance":  instance.Name,
+	}); err != nil {
+		return err
+	}
+
 	// --- Deployment ---
 	var existingDeploy appsv1.Deployment
 	err := r.Get(ctx, types.NamespacedName{Name: deployName, Namespace: instance.Namespace}, &existingDeploy)
@@ -751,8 +773,9 @@ func (r *AgentReconciler) reconcileMemoryDeployment(ctx context.Context, log log
 	}
 	if err == nil {
 		// Already exists. The rest of the spec is deliberately left alone, but the
-		// admin-token env is reconciled so enabling adminDelete (or pointing it at a
-		// different Secret) takes effect without deleting the Deployment.
+		// image and token env are reconciled so a new image tag, enabling
+		// adminDelete (or pointing it at a different Secret), and the writer
+		// token after an upgrade take effect without deleting the Deployment.
 		return syncMemoryDeployment(ctx, r.Client, log, &existingDeploy, image)
 	}
 
@@ -795,6 +818,9 @@ func (r *AgentReconciler) reconcileMemoryDeployment(ctx context.Context, log log
 								{Name: "http", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 							},
 							Env: []corev1.EnvVar{
+								// Names the pre-versioning database on purpose: the server works on
+								// memory.v2.db next to it, and an older release must keep opening
+								// memory.db after a rollback. Do not point it at memory.v2.db.
 								{Name: "MEMORY_DB_PATH", Value: "/data/memory.db"},
 								{Name: "MEMORY_PORT", Value: "8080"},
 								// OTel wiring so the memory sidecar emits
@@ -869,7 +895,10 @@ func (r *AgentReconciler) reconcileMemoryDeployment(ctx context.Context, log log
 
 	// Gate the admin-only DELETE /delete endpoint on a Secret-backed bearer
 	// token, injected into the memory-server pod only (never into agents).
+	// Writes are gated on the separate writer token.
 	deploy.Spec.Template.Spec.Containers[0].Env = append(deploy.Spec.Template.Spec.Containers[0].Env, memoryAdminTokenEnv()...)
+	deploy.Spec.Template.Spec.Containers[0].Env = append(deploy.Spec.Template.Spec.Containers[0].Env,
+		memoryWriterTokenEnv(memoryWriterTokenEnvName, deployName))
 
 	if err := controllerutil.SetControllerReference(instance, deploy, r.Scheme); err != nil {
 		return err
@@ -927,7 +956,7 @@ func (r *AgentReconciler) cleanupMemoryDeployment(ctx context.Context, instance 
 		return err
 	}
 
-	return nil
+	return deleteMemoryWriterSecret(ctx, r.Client, instance.Namespace, name)
 }
 
 // reconcileWebEndpoint ensures a server-mode AgentRun exists when the

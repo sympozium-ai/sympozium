@@ -28,6 +28,9 @@ spec:
         - **memory_store(content, tags?)** — Save a finding for future runs.
           Be specific: include root cause, resolution, service name, namespace.
         - **memory_list(tags?, limit?)** — Browse recent entries.
+        - **memory_update(id, content, tags?)** — Correct an entry. The new content
+          replaces the old entry in all future searches and lists.
+        - **memory_forget(id)** — Remove a wrong entry from future searches and lists.
 
         ## Best Practices
 
@@ -40,11 +43,16 @@ spec:
            - What was the root cause
            - What fixed it
            - What were the dead ends (so future agents skip them)
+        5. **Keep memory correct**: When a search returns an entry that is wrong or
+           out of date, fix it with `memory_update` (or remove it with
+           `memory_forget`) instead of storing a second, conflicting entry.
       requires:
         tools:
           - memory_search
           - memory_store
           - memory_list
+          - memory_update
+          - memory_forget
   runtimeRequirements:
     minMemory: 64Mi
     minCPU: 50m

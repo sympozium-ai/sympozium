@@ -65,9 +65,13 @@ var builtinToolNames = map[string]struct{}{
 	"memory_search":          {},
 	"memory_store":           {},
 	"memory_list":            {},
+	"memory_update":          {},
+	"memory_forget":          {},
 	"workflow_memory_search": {},
 	"workflow_memory_store":  {},
 	"workflow_memory_list":   {},
+	"workflow_memory_update": {},
+	"workflow_memory_forget": {},
 }
 
 // PolicyEnforcer is a validating webhook that enforces SympoziumPolicy on AgentRuns.

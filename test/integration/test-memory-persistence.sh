@@ -171,9 +171,27 @@ fi
 
 info "Test 3: Store and retrieve memories"
 
+# Writes need the memory server's writer token. The controller injects the
+# same Secret into the agent-runner container; skill sidecars never get it.
+writer_token="$(kubectl get secret -n "$NAMESPACE" "${MEM_INSTANCE}-memory-writer-token" -o jsonpath='{.data.token}' | base64 --decode)"
+if [[ -z "$writer_token" ]]; then
+  fail "Test 3: writer token Secret ${MEM_INSTANCE}-memory-writer-token not found"
+  exit 1
+fi
+
+# A write without the token is rejected.
+unauth_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${local_mem_port}/store" \
+  -H "Content-Type: application/json" -d '{"content": "should be rejected"}' 2>/dev/null || true)"
+if [[ "$unauth_code" == "401" ]]; then
+  pass "Test 3: Store without the writer token is rejected (401)"
+else
+  fail "Test 3: Store without the writer token returned ${unauth_code}, want 401"
+fi
+
 # Store memory 1.
 store_resp="$(curl -sS -X POST "http://127.0.0.1:${local_mem_port}/store" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${writer_token}" \
   -d '{"content": "The production database is PostgreSQL 15 running on db-prod-01.", "tags": ["infrastructure", "database"]}' 2>/dev/null)"
 if echo "$store_resp" | grep -qi "ok\|stored\|success\|id"; then
   pass "Test 3a: Memory 1 stored"
@@ -184,6 +202,7 @@ fi
 # Store memory 2.
 store_resp2="$(curl -sS -X POST "http://127.0.0.1:${local_mem_port}/store" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${writer_token}" \
   -d '{"content": "Alert escalation: page oncall if P1 latency exceeds 500ms for 5 minutes.", "tags": ["runbook", "alerting"]}' 2>/dev/null)"
 if echo "$store_resp2" | grep -qi "ok\|stored\|success\|id"; then
   pass "Test 3b: Memory 2 stored"
@@ -194,6 +213,7 @@ fi
 # Store memory 3.
 curl -sS -X POST "http://127.0.0.1:${local_mem_port}/store" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${writer_token}" \
   -d '{"content": "Deploy cadence: releases happen every Tuesday at 10am UTC.", "tags": ["process", "releases"]}' >/dev/null 2>&1
 
 # List all memories.
