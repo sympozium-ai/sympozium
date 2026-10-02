@@ -1,0 +1,488 @@
+{
+  "installedAcceptance": false,
+  "scope": "single-host KVM / scripted one-tool provider / live Kubernetes RBAC / Cilium network isolation",
+  "cluster": {
+    "installedAcceptance": false,
+    "cluster": "hermes-celln-qual2-0923",
+    "context": "kind-hermes-celln-qual2-0923",
+    "kubeconfig": "/home/axjns/.hermes/cache/scratch/hermes-celln-qual2-0923/kubeconfig",
+    "node": "hermes-celln-qual2-0923-control-plane",
+    "nodeImage": "kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f",
+    "ciliumVersion": "1.18.2",
+    "kubeSystemUID": "172d3968-1b6e-47fb-be30-220846811c0c",
+    "scope": "single-host development fixture; resumed after initial CNI image pull timeout"
+  },
+  "sympoziumSHA": "43f00691e720c1588d3705ed08b54a53bf1477c8",
+  "reportSHA256": "c02a64f92bf7ff003082120ab0a8b398ef484e7d83e1c3baff5affa06fad4c4a",
+  "checks": [
+    {
+      "name": "celln-review-a-495/own-provider-secret-denied",
+      "passed": true,
+      "detail": "actual tenant token, get Secret"
+    },
+    {
+      "name": "celln-review-a-495/other-provider-secret-denied",
+      "passed": true,
+      "detail": "actual tenant token, cross-namespace get Secret"
+    },
+    {
+      "name": "celln-review-a-495/namespace-label-edit-denied",
+      "passed": true,
+      "detail": "actual tenant token, server dry-run namespace patch denied"
+    },
+    {
+      "name": "celln-review-a-495/direct-execution",
+      "passed": true,
+      "detail": "actual tenant-created native run, exact namespace sentinel, receipt and cleanup"
+    },
+    {
+      "name": "celln-review-a-495/model-execution",
+      "passed": true,
+      "detail": "actual tenant-created native run, exact namespace sentinel, receipt and cleanup"
+    },
+    {
+      "name": "celln-review-b-495/own-provider-secret-denied",
+      "passed": true,
+      "detail": "actual tenant token, get Secret"
+    },
+    {
+      "name": "celln-review-b-495/other-provider-secret-denied",
+      "passed": true,
+      "detail": "actual tenant token, cross-namespace get Secret"
+    },
+    {
+      "name": "celln-review-b-495/namespace-label-edit-denied",
+      "passed": true,
+      "detail": "actual tenant token, server dry-run namespace patch denied"
+    },
+    {
+      "name": "celln-review-b-495/direct-execution",
+      "passed": true,
+      "detail": "actual tenant-created native run, exact namespace sentinel, receipt and cleanup"
+    },
+    {
+      "name": "celln-review-b-495/model-execution",
+      "passed": true,
+      "detail": "actual tenant-created native run, exact namespace sentinel, receipt and cleanup"
+    },
+    {
+      "name": "celln-review-a-495/other-run-read-denied",
+      "passed": true,
+      "detail": "same run name, different namespace and UID"
+    },
+    {
+      "name": "celln-review-a-495/other-run-list-denied",
+      "passed": true,
+      "detail": "cross-namespace result inventory denied"
+    },
+    {
+      "name": "celln-review-a-495/other-run-delete-denied",
+      "passed": true,
+      "detail": "cross-namespace server dry-run deletion denied; not a cancellation lifecycle proof"
+    },
+    {
+      "name": "celln-review-a-495/other-turn-create-denied",
+      "passed": true,
+      "detail": "cross-namespace server dry-run turn creation denied"
+    },
+    {
+      "name": "celln-review-b-495/other-run-read-denied",
+      "passed": true,
+      "detail": "same run name, different namespace and UID"
+    },
+    {
+      "name": "celln-review-b-495/other-run-list-denied",
+      "passed": true,
+      "detail": "cross-namespace result inventory denied"
+    },
+    {
+      "name": "celln-review-b-495/other-run-delete-denied",
+      "passed": true,
+      "detail": "cross-namespace server dry-run deletion denied; not a cancellation lifecycle proof"
+    },
+    {
+      "name": "celln-review-b-495/other-turn-create-denied",
+      "passed": true,
+      "detail": "cross-namespace server dry-run turn creation denied"
+    },
+    {
+      "name": "network/allowed-control-before",
+      "passed": true,
+      "detail": "existing gateway pod reaches fixture listener without credentials"
+    },
+    {
+      "name": "network/tenant-to-provider-denied",
+      "passed": true,
+      "detail": "credential-free tenant pod: curl exit 28, HTTP 000, connected=false; timeout without a connected peer required"
+    },
+    {
+      "name": "network/allowed-control-after",
+      "passed": true,
+      "detail": "positive control repeated after deny probe"
+    }
+  ],
+  "runs": [
+    {
+      "namespace": "celln-review-a-495",
+      "name": "qualification-direct-9c75d945f4",
+      "uid": "2f0746fc-cae9-4ace-8bb7-cc5ff9370263",
+      "native": {
+        "id": "sha256:357f505a22c04f2e94c3c37f27ff40981ec4c500afd9982d94afafff4388f9d2",
+        "owner": "sha256:e35c541a8325ef8d9e18e9ac25947a8a1e8089c8be772ff1f3dd12bed70486e3",
+        "phase": "Succeeded",
+        "receiptDigest": "blake3:4f50420d1cc5c6f31088caa66a61a6f1efc7fa38867582ddd2a3c5fbcf6e9227",
+        "cellId": "d7ef83d8eb65",
+        "cleanupConfirmed": true
+      },
+      "ledger": [],
+      "runAbsentAfterCleanup": true
+    },
+    {
+      "namespace": "celln-review-a-495",
+      "name": "qualification-model-9c75d945f4",
+      "uid": "2d4d259f-f0c9-4cc7-af28-9b9ef6bb4083",
+      "native": {
+        "id": "sha256:5fff7b5fad25f9e482f3a9b84e3a83bd6003218c6af0fa68641fb8de15e5a83f",
+        "owner": "sha256:e35c541a8325ef8d9e18e9ac25947a8a1e8089c8be772ff1f3dd12bed70486e3",
+        "phase": "Succeeded",
+        "receiptDigest": "blake3:bc297b7e735804cc87065521f17103db20e7ec223e16207e766f80500d8ddfde",
+        "cellId": "08a2eb8f3965",
+        "cleanupConfirmed": true
+      },
+      "ledger": [
+        {
+          "run_uid": "2d4d259f-f0c9-4cc7-af28-9b9ef6bb4083",
+          "budget_id": "sha256:df581ff6d27ef74cbffed03a8e2cb1a9f616c4b0836c3034d89f57c6d854fe74",
+          "namespace_uid": "37a72b99-f192-4b13-a71f-deedeaf0cd73",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        }
+      ],
+      "runAbsentAfterCleanup": true
+    },
+    {
+      "namespace": "celln-review-b-495",
+      "name": "qualification-direct-9c75d945f4",
+      "uid": "4007f3ba-3a5c-49ba-bc02-1ec071373b71",
+      "native": {
+        "id": "sha256:273566deeeee5547a9b1090538ae458fff235b30911fea3ebc3ba8a6c2e8f127",
+        "owner": "sha256:e35c541a8325ef8d9e18e9ac25947a8a1e8089c8be772ff1f3dd12bed70486e3",
+        "phase": "Succeeded",
+        "receiptDigest": "blake3:252f559d3ca70b6b558ed1a527b12213fc72ca2042219b3a32a1b3ed5577432e",
+        "cellId": "7aa9c703e022",
+        "cleanupConfirmed": true
+      },
+      "ledger": [],
+      "runAbsentAfterCleanup": true
+    },
+    {
+      "namespace": "celln-review-b-495",
+      "name": "qualification-model-9c75d945f4",
+      "uid": "677274a7-0550-44a6-bbe5-ad8bec5ae1ca",
+      "native": {
+        "id": "sha256:20dc6234b95b536788e240eef9734ed799f2c1a45060da4a01ba7f6f27397fd3",
+        "owner": "sha256:e35c541a8325ef8d9e18e9ac25947a8a1e8089c8be772ff1f3dd12bed70486e3",
+        "phase": "Succeeded",
+        "receiptDigest": "blake3:a8c8e7b9cc55aee504fa0801e7aed759610900984d541cdc822ea34c460e9ece",
+        "cellId": "20982eb9f68a",
+        "cleanupConfirmed": true
+      },
+      "ledger": [
+        {
+          "run_uid": "677274a7-0550-44a6-bbe5-ad8bec5ae1ca",
+          "budget_id": "sha256:12beee87799444ffcae89c1f41798c28ed0f7114511d79813bf79d8340f45ef3",
+          "namespace_uid": "46d6d4ec-0031-48a1-8884-4d8aba9779ae",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        }
+      ],
+      "runAbsentAfterCleanup": true
+    }
+  ],
+  "nativeInventoryEmpty": true,
+  "doctor": [
+    {
+      "event": "capability",
+      "detail": "KVM available with read-only memslots",
+      "fix": "",
+      "name": "kvm",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "vmx/svm present",
+      "fix": "",
+      "name": "cpu-virt",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "/boot/vmlinuz-7.1.8-100.fc43.x86_64",
+      "fix": "",
+      "name": "guest-kernel",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "",
+      "fix": "only needed to build from source",
+      "name": "cargo",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "gcc not found",
+      "fix": "install gcc or build-essential",
+      "name": "guest-c-compiler",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "/usr/bin/cpio",
+      "fix": "",
+      "name": "initramfs-packer",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "mke2fs not found",
+      "fix": "install e2fsprogs",
+      "name": "toolfs-builder",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "guest assets are missing; reinstall celln, or set CELLN_RUNTIME_DIR to its asset directory",
+      "fix": "rustup target add x86_64-unknown-linux-musl",
+      "name": "guest-pilot",
+      "ok": false
+    },
+    {
+      "event": "summary",
+      "can_seal_cells": true
+    }
+  ],
+  "images": [
+    {
+      "namespace": "celln-review-a-495",
+      "pod": "review-provider-495-5988dbc89-nk9fk",
+      "containers": [
+        {
+          "name": "fixture",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        }
+      ]
+    },
+    {
+      "namespace": "celln-review-b-495",
+      "pod": "review-provider-495-5988dbc89-dh64z",
+      "containers": [
+        {
+          "name": "fixture",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        }
+      ]
+    },
+    {
+      "namespace": "celln-review-system-495",
+      "pod": "celln-review-controller-495-6dfb85df6d-zbgz9",
+      "containers": [
+        {
+          "name": "controller",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        }
+      ]
+    },
+    {
+      "namespace": "celln-review-system-495",
+      "pod": "celln-review-gateway-495-5b6d5b9b5f-g9vrr",
+      "containers": [
+        {
+          "name": "gateway",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        }
+      ]
+    },
+    {
+      "namespace": "celln-review-system-495",
+      "pod": "celln-review-native-495-5bd989c5d-6xvr6",
+      "containers": [
+        {
+          "name": "native",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        },
+        {
+          "name": "tls-frontend",
+          "image": "localhost:5009/celln-qualification:0923",
+          "imageID": "localhost:5009/celln-qualification@sha256:6ee177d868afdd2e8aad2140669508bafb2cebc89dec4e7fbb15e2d524bdf008"
+        }
+      ]
+    },
+    {
+      "namespace": "celln-review-system-495",
+      "pod": "celln-review-postgres-495-6745844d94-rphnj",
+      "containers": [
+        {
+          "name": "postgres",
+          "image": "docker.io/library/postgres:17",
+          "imageID": "docker.io/library/postgres@sha256:d13db94ae661d517c5ed57c509a578d5ea64aae639871ba25294f4f42d83de28"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "cilium-dfjvv",
+      "containers": [
+        {
+          "name": "cilium-agent",
+          "image": "sha256:db11d8ecd98840a7bd092baee5a33a7566687111447c1082aa14d419cf87080a",
+          "imageID": "quay.io/cilium/cilium@sha256:858f807ea4e20e85e3ea3240a762e1f4b29f1cb5bbd0463b8aa77e7b097c0667"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "cilium-envoy-vn8m7",
+      "containers": [
+        {
+          "name": "cilium-envoy",
+          "image": "sha256:5b9199b8f90ccc71ba939178d08bb25db735983514472342e1304b530a9b7d3c",
+          "imageID": "quay.io/cilium/cilium-envoy@sha256:7932d656b63f6f866b6732099d33355184322123cfe1182e6f05175a3bc2e0e0"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "cilium-operator-6dd74b5c4-z5r6f",
+      "containers": [
+        {
+          "name": "cilium-operator",
+          "image": "sha256:d56c72ada0b895545b553f0522c2779cba387c802efe12bb7bc302ef17ddd3af",
+          "imageID": "quay.io/cilium/operator-generic@sha256:cb4e4ffc5789fd5ff6a534e3b1460623df61cba00f5ea1c7b40153b5efb81805"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "coredns-7d764666f9-htxl2",
+      "containers": [
+        {
+          "name": "coredns",
+          "image": "registry.k8s.io/coredns/coredns:v1.13.1",
+          "imageID": "sha256:aa5e3ebc0dfed0566805186b9e47110d8f9122291d8bad1497e78873ad291139"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "coredns-7d764666f9-t9tt4",
+      "containers": [
+        {
+          "name": "coredns",
+          "image": "registry.k8s.io/coredns/coredns:v1.13.1",
+          "imageID": "sha256:aa5e3ebc0dfed0566805186b9e47110d8f9122291d8bad1497e78873ad291139"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "etcd-hermes-celln-qual2-0923-control-plane",
+      "containers": [
+        {
+          "name": "etcd",
+          "image": "registry.k8s.io/etcd:3.6.6-0",
+          "imageID": "sha256:0a108f7189562e99793bdecab61fdf1a7c9d913af3385de9da17fb9d6ff430e2"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "kube-apiserver-hermes-celln-qual2-0923-control-plane",
+      "containers": [
+        {
+          "name": "kube-apiserver",
+          "image": "registry.k8s.io/kube-apiserver-amd64:v1.35.0",
+          "imageID": "sha256:5c6acd67e9cd10eb60a246cd233db251ef62ea97e6572f897e873f0cb648f499"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "kube-controller-manager-hermes-celln-qual2-0923-control-plane",
+      "containers": [
+        {
+          "name": "kube-controller-manager",
+          "image": "registry.k8s.io/kube-controller-manager-amd64:v1.35.0",
+          "imageID": "sha256:2c9a4b058bd7e6ec479c38f9e8a1dac2f5ee5b0a3ebda6dfac968e8720229508"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "kube-proxy-vjrjd",
+      "containers": [
+        {
+          "name": "kube-proxy",
+          "image": "registry.k8s.io/kube-proxy-amd64:v1.35.0",
+          "imageID": "sha256:32652ff1bbe6b6df16a3dc621fcad4e6e185a2852bffc5847aab79e36c54bfb8"
+        }
+      ]
+    },
+    {
+      "namespace": "kube-system",
+      "pod": "kube-scheduler-hermes-celln-qual2-0923-control-plane",
+      "containers": [
+        {
+          "name": "kube-scheduler",
+          "image": "registry.k8s.io/kube-scheduler-amd64:v1.35.0",
+          "imageID": "sha256:550794e3b12ac21ec7fd940bdfb45f7c8dae3c52acd8c70e580b882de20c3dcc"
+        }
+      ]
+    },
+    {
+      "namespace": "local-path-storage",
+      "pod": "local-path-provisioner-67b8995b4b-q5wjg",
+      "containers": [
+        {
+          "name": "local-path-provisioner",
+          "image": "docker.io/kindest/local-path-provisioner:v20251212-v0.29.0-alpha-105-g20ccfc88",
+          "imageID": "sha256:65232e320e58be04174ff3748f9f317c23e505e33cf26d398feaea1c2584881c"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Not the normal Helm install or fresh namespaces after one platform install",
+    "One tool, not the A02 two-tool plan; ledger is not an independent provider call counter",
+    "No real-provider credentials used; scripted fixture only",
+    "No browser, enduring three-turn/workspace, migration, concurrency/recovery, multi-host or complete A01-A12 evidence",
+    "Earlier admission-refused observer-held run is deliberately retained separately"
+  ],
+  "cellnSHA": "de5d0b56b9d0d9a8e6e610ddd2a10b6ed4fc2b56",
+  "executedAt": "2026-09-23",
+  "temporaryResourcesAbsentAfterCleanup": true,
+  "qualificationProcessExitCode": 0,
+  "collectionProcessExitCode": 0,
+  "binarySHA256": {
+    "celln": "e3522b96200886ddb831621d7f8ddc249e4733ee0a1aa4c6e176145d1d5fa17f",
+    "controller": "19279302b3ad5403220f198c95e84404cd951296a676003af116cea6d7e1a119",
+    "model-gateway": "9371f809ef07fc870b9b9739c5cbc85500b18e79593c78f6147a6564d0947f16",
+    "review-provider": "3e360e72f7f1280f9499bfd6b67506a6f59ba45726405c66d3ee6c5a89d1bd3f"
+  },
+  "packageSHA256": {
+    "package.json": "0ecc20733f6e7e69c73e53b793465963897d02381837f016055245f705e0f01f",
+    "MANIFEST.blake3": "21889c57af46094e9c974d1a532ccb0596e7abb2c4ded2fad454d2804a978fde",
+    "resources.yaml": "649f9b5f56dc0a57b40097cf66102f5cf2fd669e77c5ac8d9c20c89dfb0c9e14",
+    "parent-request.json": "b06ad810cfcc586b7e79eab938d57b49b87e677d9669e12a3bf6ee3ed2d23b12"
+  },
+  "fixtureNote": "Generated historical manifests were deployed and then Agent authRefs and B one-shot profile were corrected before the successful run; prepare-fixtures.py includes those corrections for fresh bootstraps."
+}

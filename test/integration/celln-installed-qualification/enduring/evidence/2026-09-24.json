@@ -1,0 +1,840 @@
+{
+  "installedAcceptance": false,
+  "A03": false,
+  "fixture": "deterministic provider, not real LLM",
+  "epoch": "10ad812c38",
+  "clusterUID": "e767874f-7e81-4086-aa07-24a4d6b86c80",
+  "providerImage": "localhost:5009/celln-enduring-qualification@sha256:c08d9a50380e06ff8236a86a295a8188f0963d08664a9077391c727ed1112c01",
+  "workspaceBlocker": "workspace=none only: platform_resolver.go and dispatch_scoped.rs reject non-none workspace; no workspace retention claim",
+  "reportSHA256": "d8a1c0cd7480af663f524af438d0ac13edcdb63e263599894c4af61b4aae7ee4",
+  "tenants": [
+    {
+      "namespace": "celln-review-a-495",
+      "rootUID": "731558a1-49b5-445b-8cca-2d303f497487",
+      "tenantIdentity": "system:serviceaccount:celln-review-a-495:enduring-10ad812c38",
+      "turns": [
+        {
+          "ordinal": 1,
+          "publicUID": "731558a1-49b5-445b-8cca-2d303f497487",
+          "initialRootSnapshot": true,
+          "liveSnapshotPhase": "Running",
+          "liveSnapshotCleanupConfirmed": false,
+          "nativeTombstone": {
+            "id": "sha256:e6e3b9b3edaeaedea9b5bc35e919daa4d98397afbe627b6af376b97ebfabd88a",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Cancelled",
+            "reason": "retained parent and descendants stopped",
+            "output": "ENDURING-A-10AD812C38-TURN-1",
+            "receiptDigest": "blake3:10a56c072f9fb932f247d400b1217cae88cd9f5d899bb8a9a5b85682e80174c6",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "parentId": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "childId": "blake3:91bda0033eca7710a6bfcfe43bef0abbae8859ccce705b4a86d41f171f5882fb",
+            "cellId": "d0e23c1c87bf",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:784b5680e4c3f3158e592f503f17b2bae14e40a084204cd2c96633584254f8a7",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        },
+        {
+          "ordinal": 2,
+          "publicUID": "ac1e433b-d638-48f1-8fcd-b3e9b2d1548e",
+          "initialRootSnapshot": false,
+          "liveSnapshotPhase": "Succeeded",
+          "liveSnapshotCleanupConfirmed": true,
+          "nativeTombstone": {
+            "id": "sha256:e7a7768ca64b9270919ab054da6546453f3d592597701ea845965ca7df84d72a",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Succeeded",
+            "output": "ENDURING-A-10AD812C38-TURN-2",
+            "receiptDigest": "blake3:67cd9ff4d1c419fe670f2d4665e7fb2ae74b32a7ad5a6868a5532d3d681664b7",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "turnId": "ac1e433b-d638-48f1-8fcd-b3e9b2d1548e",
+            "parentId": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "childId": "blake3:da53d951d817c50c98847866b3afcb67bb8d7130d4993025760ccb0477a7228d",
+            "cellId": "a4c96d9c80ec",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:284608dd3b6062df39487cbc94e126ec60b6c12152974d842b88f8dc5346e103",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        },
+        {
+          "ordinal": 3,
+          "publicUID": "43ba2287-ab90-4d5a-8b54-1a50f154557a",
+          "initialRootSnapshot": false,
+          "liveSnapshotPhase": "Succeeded",
+          "liveSnapshotCleanupConfirmed": true,
+          "nativeTombstone": {
+            "id": "sha256:7ec6d5d2f66242197a607ebc06f1a5bde77e1153783a296c1908f91bdb8eda5c",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Succeeded",
+            "output": "ENDURING-A-10AD812C38-TURN-3",
+            "receiptDigest": "blake3:a4d8373a023bb5327ae6107ebf7828f76446f0f22f08d67f58478449e5eb7977",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "turnId": "43ba2287-ab90-4d5a-8b54-1a50f154557a",
+            "parentId": "blake3:c6a399904c2111182a6d48d6ca161f039d1e7c3b38a962620a625c595818a97d",
+            "childId": "blake3:f258a82a07553e07538908006c7fc35f31926d832a58ec0b7dbcf6958a3ea7d0",
+            "cellId": "a382667e25b6",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:f3c7981e33b960b46b0bcbf8029c8459a2e14d6153d2185ed5f73904dc2847d7",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        }
+      ],
+      "providerBefore": {
+        "attempts": 0,
+        "events": []
+      },
+      "providerSnapshot": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true
+          }
+        ]
+      },
+      "providerAfterDelete": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true
+          }
+        ]
+      },
+      "providerIdentityBefore": {
+        "uid": "e8ec6882-1193-4704-9ea6-4d15a1a0dadd",
+        "name": "review-provider-495-f4d95c7cd-648nj",
+        "containerID": "containerd://fa0770d7d2f2188049064346c2ec199799c96ec652b52a541ffbf5dcfe7d2e44",
+        "imageID": "localhost:5009/celln-enduring-qualification@sha256:c08d9a50380e06ff8236a86a295a8188f0963d08664a9077391c727ed1112c01",
+        "restartCount": 0
+      },
+      "providerIdentityAfter": {
+        "uid": "e8ec6882-1193-4704-9ea6-4d15a1a0dadd",
+        "name": "review-provider-495-f4d95c7cd-648nj",
+        "containerID": "containerd://fa0770d7d2f2188049064346c2ec199799c96ec652b52a541ffbf5dcfe7d2e44",
+        "imageID": "localhost:5009/celln-enduring-qualification@sha256:c08d9a50380e06ff8236a86a295a8188f0963d08664a9077391c727ed1112c01",
+        "restartCount": 0
+      },
+      "ledger": [
+        {
+          "run_uid": "731558a1-49b5-445b-8cca-2d303f497487",
+          "budget_id": "sha256:c83895921fa68b4bb7e9ea29bf881fd8a7cc5782beb468401a772cefda5dac99",
+          "namespace_uid": "c874587a-8098-46dc-85f6-d4480962eec0",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "t"
+        }
+      ],
+      "turnLedgers": [
+        {
+          "turn_id": "43ba2287-ab90-4d5a-8b54-1a50f154557a",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        },
+        {
+          "turn_id": "731558a1-49b5-445b-8cca-2d303f497487",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        },
+        {
+          "turn_id": "ac1e433b-d638-48f1-8fcd-b3e9b2d1548e",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        }
+      ],
+      "reservations": [
+        {
+          "turn_id": "43ba2287-ab90-4d5a-8b54-1a50f154557a",
+          "request_id": "celln:sha256:b2c019e75306b4a28c0769b7009aacdc685df0572f064b6ffbed49220e59a492:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "43ba2287-ab90-4d5a-8b54-1a50f154557a",
+          "request_id": "celln:sha256:b2c019e75306b4a28c0769b7009aacdc685df0572f064b6ffbed49220e59a492:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "731558a1-49b5-445b-8cca-2d303f497487",
+          "request_id": "celln:sha256:6121ad630683a06997f15485072c2437de05a5bba30edb60aba0baecb63bc04d:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "731558a1-49b5-445b-8cca-2d303f497487",
+          "request_id": "celln:sha256:6121ad630683a06997f15485072c2437de05a5bba30edb60aba0baecb63bc04d:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "ac1e433b-d638-48f1-8fcd-b3e9b2d1548e",
+          "request_id": "celln:sha256:e76b7d56c75683a74bc96d89230e7364ac83276bea59b32bba2df5db3ca2e1f8:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "ac1e433b-d638-48f1-8fcd-b3e9b2d1548e",
+          "request_id": "celln:sha256:e76b7d56c75683a74bc96d89230e7364ac83276bea59b32bba2df5db3ca2e1f8:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        }
+      ],
+      "rootAbsent": true
+    },
+    {
+      "namespace": "celln-review-b-495",
+      "rootUID": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+      "tenantIdentity": "system:serviceaccount:celln-review-b-495:enduring-10ad812c38",
+      "turns": [
+        {
+          "ordinal": 1,
+          "publicUID": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+          "initialRootSnapshot": true,
+          "liveSnapshotPhase": "Running",
+          "liveSnapshotCleanupConfirmed": false,
+          "nativeTombstone": {
+            "id": "sha256:de5f59d6d7c80964a2f74514dc2bf3503bcb61541d057be17e5c16d002926d8f",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Cancelled",
+            "reason": "retained parent and descendants stopped",
+            "output": "ENDURING-B-10AD812C38-TURN-1",
+            "receiptDigest": "blake3:1bb450800e8c298bfe20264eb7f1d62697e5f22d2ba00b124c06d9df09a04a59",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "parentId": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "childId": "blake3:8081632569d93c0e16c86a5e2bbcabf4059661402181d25d13cafad80953f994",
+            "cellId": "fce47040eb02",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:1e4397ee7f2779dc0fb1f302aa309fd00917c70012fa2d549b324a3dd8aab217",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        },
+        {
+          "ordinal": 2,
+          "publicUID": "92e7c91d-e959-4281-a902-aaf806fbff2e",
+          "initialRootSnapshot": false,
+          "liveSnapshotPhase": "Succeeded",
+          "liveSnapshotCleanupConfirmed": true,
+          "nativeTombstone": {
+            "id": "sha256:0f6d852dee3728afba3054829bd3b65ffc3aab2d12549570500212f0dadb1f44",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Succeeded",
+            "output": "ENDURING-B-10AD812C38-TURN-2",
+            "receiptDigest": "blake3:6e975e386b475788e35634b7cfa7800d4542e2db2d52805c44abeae8502db301",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "turnId": "92e7c91d-e959-4281-a902-aaf806fbff2e",
+            "parentId": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "childId": "blake3:a6ad658282c8060c84ff9aae3c8babd6d9d4774a9da94c1a212a619852a6aaa5",
+            "cellId": "29a825ee09f2",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:56dec13620ba4ad7179805a854d6c7bd802bcb00342500ff3fe9495c82f1fbbd",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        },
+        {
+          "ordinal": 3,
+          "publicUID": "ba2c7713-e774-47bb-a9d6-243197973d00",
+          "initialRootSnapshot": false,
+          "liveSnapshotPhase": "Succeeded",
+          "liveSnapshotCleanupConfirmed": true,
+          "nativeTombstone": {
+            "id": "sha256:7bbf1802abedffe790fe63e5f78e1ae68ae7746ac0b387f9dc5db136ae77e04f",
+            "owner": "sha256:a95a6cb69ec207c40d0211775882473d4f098f3928a4464795bb49f85f34caf6",
+            "phase": "Succeeded",
+            "output": "ENDURING-B-10AD812C38-TURN-3",
+            "receiptDigest": "blake3:9530175fbaf70d6ffa14ca96f708fd9fc03628a99e1fd44a8223c71ccbbbe56a",
+            "cleanupConfirmed": true,
+            "parentIncarnation": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "turnId": "ba2c7713-e774-47bb-a9d6-243197973d00",
+            "parentId": "blake3:015636440f98ec6ff57b936023d35e75046e1847bfb4b8200f378fb7362c95ef",
+            "childId": "blake3:7418fd5e5ecbee3c60026fb36fb2bbb026a6050e276d8fb42ef0744348d94a4a",
+            "cellId": "6e4d94c50f2a",
+            "execution": {
+              "fetch": true,
+              "lane": "agent",
+              "tool": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f",
+              "workspace": "none"
+            },
+            "substrate": {
+              "closure": {
+                "hash": "blake3:6ec8b5a58bdcf552f83b8afaf953be50adf5e79caab5c723e51e9fe6aebaeef3",
+                "members": {
+                  "/pilot-fetch": {
+                    "dependencies": [],
+                    "hash": "blake3:f8c0b8fa602e9e21edceed98269235281a9eb51f213efa0a9e4868b054912a5f"
+                  },
+                  "/uppercase": {
+                    "dependencies": [],
+                    "hash": "blake3:042bba9e77df22c04415ba1e8f69e6a443cd96035855dcfe3905a6a7a4edfea0"
+                  },
+                  "/worker": {
+                    "dependencies": [
+                      "/pilot-fetch",
+                      "/uppercase"
+                    ],
+                    "hash": "blake3:82141a5b931a36f639a9ffe1cf75810391a9039bbca2251e99b0ed87d93abf2f"
+                  }
+                },
+                "publisher": "193529bd8539fe8d2fb8e442ed48cbbda6dbf2e5633edd6429441a3cc0927d2a",
+                "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+              },
+              "initrd": "blake3:e4723ba7c07d68d2a6330f7b4e0dfc8d6e8ebce6e5d5431660b2a5e6c1f80d80",
+              "invocation": "blake3:0bc5fb6c3df7917df64e736dee267ff60fba0e35a2f80aeb462c250d7651a5dd",
+              "kernel": "blake3:4dde8f6a51067d17d35f4130fb50fe71efc904e3f2ed3f953a18c8af8a8cabe8",
+              "toolfs": "blake3:d4f0f14cb7cd580aab91f3287e6c7851ef46a9044d14e62cfcde1e4d084b82cd"
+            }
+          },
+          "nativeChildInventoryAfterTurn": []
+        }
+      ],
+      "providerBefore": {
+        "attempts": 0,
+        "events": []
+      },
+      "providerSnapshot": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true
+          }
+        ]
+      },
+      "providerAfterDelete": {
+        "attempts": 6,
+        "events": [
+          {
+            "turn": 1,
+            "stage": "tool-call",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 1,
+            "stage": "answer",
+            "historyExchanges": 0,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "tool-call",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 2,
+            "stage": "answer",
+            "historyExchanges": 1,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "tool-call",
+            "historyExchanges": 2,
+            "accepted": true
+          },
+          {
+            "turn": 3,
+            "stage": "answer",
+            "historyExchanges": 2,
+            "accepted": true
+          }
+        ]
+      },
+      "providerIdentityBefore": {
+        "uid": "80111767-32db-468d-aad6-85e1f07d0474",
+        "name": "review-provider-495-8fbf58b55-b8655",
+        "containerID": "containerd://a72ac55070352369c8551d9efaa41a68d29da72c015ae30a002f5c5dc8c29178",
+        "imageID": "localhost:5009/celln-enduring-qualification@sha256:c08d9a50380e06ff8236a86a295a8188f0963d08664a9077391c727ed1112c01",
+        "restartCount": 0
+      },
+      "providerIdentityAfter": {
+        "uid": "80111767-32db-468d-aad6-85e1f07d0474",
+        "name": "review-provider-495-8fbf58b55-b8655",
+        "containerID": "containerd://a72ac55070352369c8551d9efaa41a68d29da72c015ae30a002f5c5dc8c29178",
+        "imageID": "localhost:5009/celln-enduring-qualification@sha256:c08d9a50380e06ff8236a86a295a8188f0963d08664a9077391c727ed1112c01",
+        "restartCount": 0
+      },
+      "ledger": [
+        {
+          "run_uid": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+          "budget_id": "sha256:24ba7f55bade44675d392d4c8a3173b037e90718a527192b1326da2115839000",
+          "namespace_uid": "16fbf9c5-f8ce-4e97-8bf8-386b12f71797",
+          "max_requests": "6",
+          "max_output_tokens": "3072",
+          "max_turns": "3",
+          "reserved_requests": "6",
+          "reserved_output_tokens": "3072",
+          "observed_output_tokens": "48",
+          "closed": "t"
+        }
+      ],
+      "turnLedgers": [
+        {
+          "turn_id": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        },
+        {
+          "turn_id": "92e7c91d-e959-4281-a902-aaf806fbff2e",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        },
+        {
+          "turn_id": "ba2c7713-e774-47bb-a9d6-243197973d00",
+          "max_requests": "2",
+          "max_output_tokens": "1024",
+          "reserved_requests": "2",
+          "reserved_output_tokens": "1024",
+          "observed_output_tokens": "16",
+          "closed": "t"
+        }
+      ],
+      "reservations": [
+        {
+          "turn_id": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+          "request_id": "celln:sha256:9c44bfb4bf8221aa66143f71b0fcfb8c4039df89ef945b0e075d72565fec2f25:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "686f9f85-739f-4d73-999a-b9b19ea97ca3",
+          "request_id": "celln:sha256:9c44bfb4bf8221aa66143f71b0fcfb8c4039df89ef945b0e075d72565fec2f25:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "92e7c91d-e959-4281-a902-aaf806fbff2e",
+          "request_id": "celln:sha256:e14ca53a95571768e5245690c34230190ac0e74ef8b1a38bb5c46e05183338c9:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "92e7c91d-e959-4281-a902-aaf806fbff2e",
+          "request_id": "celln:sha256:e14ca53a95571768e5245690c34230190ac0e74ef8b1a38bb5c46e05183338c9:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "ba2c7713-e774-47bb-a9d6-243197973d00",
+          "request_id": "celln:sha256:91a421eb09648fab46d9b3f4b7b44b40cbe70e71e9501ead20ec17ea70b09d51:1",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        },
+        {
+          "turn_id": "ba2c7713-e774-47bb-a9d6-243197973d00",
+          "request_id": "celln:sha256:91a421eb09648fab46d9b3f4b7b44b40cbe70e71e9501ead20ec17ea70b09d51:2",
+          "reserved_output_tokens": "512",
+          "observed_output_tokens": "8",
+          "state": "terminal",
+          "outcome": "provider-http-200",
+          "provider_attempted": "t"
+        }
+      ],
+      "rootAbsent": true
+    }
+  ],
+  "limitations": [
+    "No guest workspace retention: scoped contract supports workspace=none only",
+    "No browser journey, real LLM, migration or full A01-A12 acceptance",
+    "Fourth-turn exhaustion was not attempted",
+    "celln ps has no entries even while enduring parent is ready; it is supplementary child inventory, not independent proof that a retained parent is absent",
+    "Root teardown is native root tombstone confirmation plus public absence and closed ledger; no controller finalizer was stripped"
+  ],
+  "doctor": [
+    {
+      "event": "capability",
+      "detail": "KVM available with read-only memslots",
+      "fix": "",
+      "name": "kvm",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "vmx/svm present",
+      "fix": "",
+      "name": "cpu-virt",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "/boot/vmlinuz-7.1.8-100.fc43.x86_64",
+      "fix": "",
+      "name": "guest-kernel",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "",
+      "fix": "only needed to build from source",
+      "name": "cargo",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "gcc not found",
+      "fix": "install gcc or build-essential",
+      "name": "guest-c-compiler",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "/usr/bin/cpio",
+      "fix": "",
+      "name": "initramfs-packer",
+      "ok": true
+    },
+    {
+      "event": "capability",
+      "detail": "mke2fs not found",
+      "fix": "install e2fsprogs",
+      "name": "toolfs-builder",
+      "ok": false
+    },
+    {
+      "event": "capability",
+      "detail": "guest assets are missing; reinstall celln, or set CELLN_RUNTIME_DIR to its asset directory",
+      "fix": "rustup target add x86_64-unknown-linux-musl",
+      "name": "guest-pilot",
+      "ok": false
+    },
+    {
+      "event": "summary",
+      "can_seal_cells": true
+    }
+  ],
+  "distinctChildren": 6,
+  "distinctCells": 6,
+  "distinctParents": 2,
+  "nativeChildInventoryEmpty": true,
+  "fixturesRestored": true,
+  "remainingQualificationResources": [],
+  "sourceSHA256": {
+    "collect.py": "dc68301881b6f934b80b14a8796c530cf8060086b2082e954edf8df863829e29",
+    "provider/main.go": "46b7afb2d89497e59bc258da7a03e69f5c9f783d7022e8e405b4265e33362c9d",
+    "provider/main_test.go": "536a41b94cca6041cc5a5b913a5133cc97db12628d043e032d0ec486410075a5",
+    "run.py": "56e41b19d1e7fc302f6c5af3879e0e2db5f35e8fc4e65096e8da88f50c197000",
+    "test_run.py": "3d80b307ac045d7379eae3960b5c2175f6fc238529bdc8d2686dca89e28392f0"
+  },
+  "providerBinarySHA256": "bdd0cc600d7b5df07b8a35bb57fed7dce547448f10ed94dc305f68e1c81569d9",
+  "sympoziumSHA": "43f00691e720c1588d3705ed08b54a53bf1477c8"
+}
