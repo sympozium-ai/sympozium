@@ -7,6 +7,7 @@ TAG ?= latest
 
 # Tool versions
 CONTROLLER_GEN_VERSION ?= v0.17.2
+ENVTEST_VERSION ?= v0.25.1
 
 # Go parameters
 GOCMD = go
@@ -188,7 +189,7 @@ $(ENVTEST):
 	@mkdir -p $(LOCALBIN)
 	@# Retry: proxy.golang.org intermittently resets streams in CI.
 	@for i in 1 2 3 4 5; do \
-		GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest && break; \
+		GOBIN=$(LOCALBIN) $(GOCMD) install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) && break; \
 		[ "$$i" = 5 ] && exit 1; \
 		echo "setup-envtest install failed (attempt $$i/5); retrying in $$((i*5))s" >&2; sleep $$((i*5)); \
 	done
