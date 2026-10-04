@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.88](https://github.com/sympozium-ai/sympozium/compare/v0.10.87...v0.10.88) (2026-10-04)
+
+
+### Features
+
+* **cli:** add `sympozium update` and `sympozium upgrade` ([664bcfe](https://github.com/sympozium-ai/sympozium/commit/664bcfe6ceda128e194bceb2af2f67f242ee5e4f))
+* **cli:** add `sympozium update` and `sympozium upgrade` ([9ecfd9a](https://github.com/sympozium-ai/sympozium/commit/9ecfd9a3302315367afa5fb9b79000090a9a9ec3))
+
+
+### Bug Fixes
+
+* **apiserver:** write OpenAI-compatible provider keys as OPENAI_API_KEY ([#638](https://github.com/sympozium-ai/sympozium/issues/638)) ([f0f514c](https://github.com/sympozium-ai/sympozium/commit/f0f514cdb30c967e6cd363b0d2dc3a50defbd7b5)), closes [#627](https://github.com/sympozium-ai/sympozium/issues/627)
+* **celln:** propagate dispatcher pod tolerations ([#632](https://github.com/sympozium-ai/sympozium/issues/632)) ([1dff955](https://github.com/sympozium-ai/sympozium/commit/1dff955421e2c20ba6d39e022803c7a51723d399))
+* **channel:** reject empty Discord chatId and log every delivery ([#644](https://github.com/sympozium-ai/sympozium/issues/644)) ([b8bd12d](https://github.com/sympozium-ai/sympozium/commit/b8bd12db65e9ca9c6a62601a3ee9973b99e9fb44)), closes [#330](https://github.com/sympozium-ai/sympozium/issues/330)
+* **channel:** reply on agent failure and stop cross-instance outbound… ([#581](https://github.com/sympozium-ai/sympozium/issues/581)) ([82117f1](https://github.com/sympozium-ai/sympozium/commit/82117f14126cf3b4b856520455096ae6380292bb))
+* **controller:** measure the postRun timeout from the postRun Job, not the agent run ([#589](https://github.com/sympozium-ai/sympozium/issues/589)) ([574610a](https://github.com/sympozium-ai/sympozium/commit/574610a7b3473aeeb658d9707705f9d68fe3b564))
+* **harness:** mount /ipc/control read-only so adapters can honour preRun skips ([#633](https://github.com/sympozium-ai/sympozium/issues/633)) ([2483f43](https://github.com/sympozium-ai/sympozium/commit/2483f433555785ab57e99c4d49828a56807e1447))
+
 ## [0.10.87](https://github.com/sympozium-ai/sympozium/compare/v0.10.86...v0.10.87) (2026-09-20)
 
 
