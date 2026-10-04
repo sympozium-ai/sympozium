@@ -46,6 +46,9 @@ func ForAgent(ctx context.Context, c client.Reader, inst *sympoziumv1alpha1.Agen
 // defaultAction deny, only tools a policy rule allows remain (narrowed further
 // by the run's own allow list), and when none remain every tool is denied.
 // A nil result means no filtering, as for a nil spec.toolPolicy.
+//
+// Any action other than allow counts as deny, so a policy stored before `ask`
+// was removed from the enum fails closed instead of silently allowing.
 func WithGating(run *sympoziumv1alpha1.ToolPolicySpec, gating *sympoziumv1alpha1.ToolGatingSpec) *sympoziumv1alpha1.ToolPolicySpec {
 	if gating == nil {
 		return run
@@ -59,7 +62,7 @@ func WithGating(run *sympoziumv1alpha1.ToolPolicySpec, gating *sympoziumv1alpha1
 		switch rule.Action {
 		case "allow":
 			ruleAllow = append(ruleAllow, rule.Tool)
-		case "deny":
+		default:
 			ruleDeny = append(ruleDeny, rule.Tool)
 		}
 	}
@@ -67,7 +70,7 @@ func WithGating(run *sympoziumv1alpha1.ToolPolicySpec, gating *sympoziumv1alpha1
 		Allow: runAllow,
 		Deny:  appendUnique(append([]string(nil), runDeny...), ruleDeny...),
 	}
-	if gating.DefaultAction == "deny" {
+	if gating.DefaultAction != "" && gating.DefaultAction != "allow" {
 		permitted := ruleAllow
 		if len(runAllow) > 0 {
 			permitted = intersect(runAllow, ruleAllow)

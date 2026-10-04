@@ -37,6 +37,9 @@ func TestWithGating(t *testing.T) {
 		{"default deny with nothing allowed denies every tool", &sympoziumv1alpha1.ToolPolicySpec{Allow: []string{"execute_command"}},
 			&sympoziumv1alpha1.ToolGatingSpec{DefaultAction: "deny", Rules: rules},
 			&sympoziumv1alpha1.ToolPolicySpec{Deny: []string{"fetch_url", sidecartools.DenyAllTools}}},
+		{"a legacy ask rule and default fail closed", nil,
+			&sympoziumv1alpha1.ToolGatingSpec{DefaultAction: "ask", Rules: []sympoziumv1alpha1.ToolGatingRule{{Tool: "read_file", Action: "allow"}, {Tool: "execute_command", Action: "ask"}}},
+			&sympoziumv1alpha1.ToolPolicySpec{Allow: []string{"read_file"}, Deny: []string{"execute_command"}}},
 		{"an empty default-allow policy leaves no filter", nil,
 			&sympoziumv1alpha1.ToolGatingSpec{DefaultAction: "allow"}, nil},
 	}
