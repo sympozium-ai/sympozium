@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/sympozium-ai/sympozium/internal/channel"
@@ -24,8 +26,14 @@ import (
 type DiscordChannel struct {
 	channel.BaseChannel
 	session *discordgo.Session
+	log     logr.Logger
 	healthy bool
 }
+
+// errEmptyChatID is returned when an outbound message has no target channel.
+// Sending it anyway makes discordgo POST to /channels//messages, which Discord
+// answers with an opaque "405 Method Not Allowed".
+var errEmptyChatID = errors.New("outbound message has no chatId")
 
 func main() {
 	var instanceName string
@@ -67,6 +75,7 @@ func main() {
 			EventBus:     bus,
 		},
 		session: dg,
+		log:     log,
 	}
 
 	// Set intents — we need guild messages and DMs
@@ -170,15 +179,28 @@ func (dc *DiscordChannel) handleOutbound(ctx context.Context) {
 			if msg.Channel != "discord" {
 				continue
 			}
-			if err := dc.sendMessage(msg); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to send discord message: %v\n", err)
-			}
+			dc.deliver(msg)
 		}
 	}
 }
 
+// deliver sends one outbound message and logs the attempt and its result, so
+// a delivery failure is visible in the pod logs rather than hidden behind the
+// channel's CONNECTED status.
+func (dc *DiscordChannel) deliver(msg channel.OutboundMessage) {
+	dc.log.Info("delivering discord message", "chatId", msg.ChatID, "length", len(msg.Text))
+	if err := dc.sendMessage(msg); err != nil {
+		dc.log.Error(err, "failed to deliver discord message", "chatId", msg.ChatID)
+		return
+	}
+	dc.log.Info("delivered discord message", "chatId", msg.ChatID)
+}
+
 // sendMessage sends a message to a Discord channel.
 func (dc *DiscordChannel) sendMessage(msg channel.OutboundMessage) error {
+	if msg.ChatID == "" {
+		return errEmptyChatID
+	}
 	_, err := dc.session.ChannelMessageSend(msg.ChatID, msg.Text)
 	return err
 }
