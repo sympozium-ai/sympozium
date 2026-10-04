@@ -430,9 +430,6 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 				return nil, deny(ReasonToolUnknown, "policy %q does not permit tool %q at the selected revision", policy.Name, tool.Name)
 			}
 		}
-		if limits.Artifacts != nil && lifecycle != "enduring" {
-			return nil, deny(ReasonLifecycle, "scoped artifacts require mediated enduring execution")
-		}
 		tools = append(tools, decisionTool(tool, limits))
 	}
 
@@ -440,9 +437,21 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 	if err != nil {
 		return nil, err
 	}
-	for _, tool := range tools {
-		if tool.Limits.Artifacts != nil && route.Auth == "host-profile" {
-			return nil, deny(ReasonRouteMismatch, "scoped artifacts require a mediated model route")
+	// A host-profile route runs on the node's own broker, which serves every
+	// run-artifact operation for any lifecycle. The scoped artifact contract
+	// (celln.scoped-artifacts/v1) behind a mediated route is narrower.
+	if route.Auth != "host-profile" {
+		for _, tool := range tools {
+			a := tool.Limits.Artifacts
+			if a == nil {
+				continue
+			}
+			if lifecycle != "enduring" {
+				return nil, deny(ReasonLifecycle, "scoped artifacts require mediated enduring execution")
+			}
+			if a.Operation != "read" && a.Operation != "write" {
+				return nil, deny(ReasonToolUnknown, "scoped artifacts support only read and write, not %q", a.Operation)
+			}
 		}
 	}
 	policyBinding, err := bindPolicies(s.Policies)
@@ -889,7 +898,8 @@ func validToolLimits(limits api.CellnToolLimits) bool {
 		return false
 	}
 	if a := limits.Artifacts; a != nil {
-		return (a.Operation == "read" && limits.Effects == "none") || (a.Operation == "write" && limits.Effects == "external-side-effects")
+		// Changing run data is an effect; reading it is not.
+		return ArtifactWrites[a.Operation] == (limits.Effects == "external-side-effects")
 	}
 	return true
 }

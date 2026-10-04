@@ -76,7 +76,7 @@ func TestScopedArtifactValidationAndAttenuation(t *testing.T) {
 		"total-bytes":   func(l *api.CellnToolLimits) { l.Artifacts.MaxTotalBytes = 1048577 },
 		"write-effects": func(l *api.CellnToolLimits) { l.Effects = "none" },
 		"read-effects":  func(l *api.CellnToolLimits) { l.Artifacts.Operation = "read" },
-		"append":        func(l *api.CellnToolLimits) { l.Artifacts.Operation = "append" },
+		"list-effects":  func(l *api.CellnToolLimits) { l.Artifacts.Operation = "list" },
 		"both-brokers":  func(l *api.CellnToolLimits) { l.HTTPS = &api.CellnHTTPSLimits{} },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -86,6 +86,13 @@ func TestScopedArtifactValidationAndAttenuation(t *testing.T) {
 				t.Fatal("invalid authority accepted")
 			}
 		})
+	}
+	for op, effects := range map[string]string{"append": "external-side-effects", "delete": "external-side-effects", "list": "none", "search": "none"} {
+		l := artifactLimits()
+		l.Artifacts.Operation, l.Effects = op, effects
+		if !validToolLimits(l) {
+			t.Fatalf("catalogue %s tool refused; the mediated route narrows it, not the catalogue", op)
+		}
 	}
 	base := artifactLimits()
 	requested := *base.DeepCopy()

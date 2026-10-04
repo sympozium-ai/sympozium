@@ -8,7 +8,7 @@ import (
 )
 
 func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
-	for _, mode := range []string{"catalogue-ceiling", "attenuated", "omitted-capability", "different-operation", "one-shot", "argv", "invalid-effects"} {
+	for _, mode := range []string{"catalogue-ceiling", "attenuated", "omitted-capability", "different-operation", "one-shot", "argv", "invalid-effects", "mediated-append"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newPlatformFixture(t, "artifact-tenant", true)
 			var run api.AgentRun
@@ -29,6 +29,9 @@ func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
 			tool.Spec.Limits = artifactLimits()
 			if mode == "argv" {
 				tool.Spec.InvocationABI = "celln.argv/v1"
+			}
+			if mode == "mediated-append" {
+				tool.Spec.Limits.Artifacts.Operation = "append"
 			}
 			if mode == "invalid-effects" {
 				tool.Spec.Limits.Effects = "none"

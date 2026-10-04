@@ -45,7 +45,7 @@ func platformObjects(namespace string) []client.Object {
 	}}
 	tool := &api.ClusterCellnTool{ObjectMeta: metav1.ObjectMeta{Name: "workspace-write", UID: "tool-uid", Generation: 1}, Spec: api.CellnToolSpec{
 		Revision: "v1", Description: "write", SupportOwner: "platform", PublisherKey: strings.Repeat("b", 64), Executable: hash("4"), Closure: hash("5"), EntryPoint: "/workspace-write", InvocationABI: "celln.json-stdio/v1", ArgumentsSchema: hash("6"), ResultSchema: hash("7"), Platform: "linux/amd64", Lane: "tool",
-		Limits: api.CellnToolLimits{TimeoutMillis: 30000, MemoryBytes: 268435456, ArgumentBytes: 8192, OutputBytes: 32768, Workspace: "none", Effects: "none", Artifacts: &api.CellnArtifactLimits{Operation: "write", MaxOperations: 4, MaxFiles: 8, MaxFileBytes: 4096, MaxTotalBytes: 16384}},
+		Limits: api.CellnToolLimits{TimeoutMillis: 30000, MemoryBytes: 268435456, ArgumentBytes: 8192, OutputBytes: 32768, Workspace: "none", Effects: "external-side-effects", Artifacts: &api.CellnArtifactLimits{Operation: "write", MaxOperations: 4, MaxFiles: 8, MaxFileBytes: 4096, MaxTotalBytes: 16384}},
 	}}
 	policy := &api.CellnExecutionPolicy{ObjectMeta: metav1.ObjectMeta{Name: "celln-fleet-trial", UID: "policy-uid", Generation: 1}, Spec: api.CellnExecutionPolicySpec{
 		NamespaceSelector: metav1.LabelSelector{MatchLabels: map[string]string{"celln.sympozium.ai/scope": "trial"}},
@@ -357,5 +357,31 @@ func TestPlatformPlanCarriesAContinuedConversationsSeed(t *testing.T) {
 	}
 	if len(lastPlan.History) != 1 || lastPlan.History[0].User != "Remember the word saffron." || lastPlan.History[0].Assistant != "Noted: saffron." {
 		t.Fatalf("plan must carry the seed as history: %+v", lastPlan.History)
+	}
+}
+
+// The fleet's host-profile routes run on the node's own broker, so every
+// starter workspace operation stays admissible for one-shot and enduring runs;
+// the narrower scoped artifact contract applies only to mediated routes.
+func TestPlatformHostProfileKeepsEveryWorkspaceOperation(t *testing.T) {
+	for _, op := range []string{"read", "write", "list", "append", "search", "delete"} {
+		for _, oneShot := range []bool{false, true} {
+			objects := platformObjects("tenant-a")
+			tool := objects[4].(*api.ClusterCellnTool)
+			tool.Spec.Limits.Artifacts.Operation = op
+			if !cellnauthority.ArtifactWrites[op] {
+				tool.Spec.Limits.Effects = "none"
+			}
+			run := objects[len(objects)-1].(*api.AgentRun)
+			if oneShot {
+				run.Spec.ExecutionLifecycle, run.Spec.Enduring = "", nil
+			}
+			store := platformStore(t, objects...)
+			incarnation, _ := cellnauthority.ScopedParentIncarnation("cluster", "tenant-a-uid", "tenant-a-run")
+			request := cellnauthority.PlatformResolveRequest{ClusterID: "cluster", Now: time.Now().UTC(), AdmissionWindow: platformAdmissionWindow, Operation: "execution.start", ParentIncarnation: incarnation}
+			if _, err := (cellnauthority.PlatformResolver{Reader: store}).Resolve(context.Background(), types.NamespacedName{Namespace: "tenant-a", Name: "conversation"}, request); err != nil {
+				t.Errorf("%s (one-shot=%v) refused on a host-profile route: %v", op, oneShot, err)
+			}
+		}
 	}
 }
