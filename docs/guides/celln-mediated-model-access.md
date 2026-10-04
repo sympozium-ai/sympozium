@@ -42,19 +42,31 @@ talks to an HTTPS receiver with an explicit CA. The sidecar (`/celln-parent-prox
 `POST /v1/scoped/{prepare,start,read,cleanup}` to the dispatcher on loopback.
 The operator bearer and the signed permits remain the authority.
 
-## 1. PostgreSQL (not bundled)
+## 1. PostgreSQL
 
 The gateway keeps budgets and registrations in PostgreSQL and refuses to start
-without it. Apply `migrations/002_celln_model_budget.sql` then
-`migrations/003_celln_model_gateway.sql`, and publish the connection URL:
+without it.
+
+**Bundled (default).** With `modelGateway.database.secretName` left empty, the
+chart runs its own single-pod PostgreSQL (`<release>-model-gateway-db`, a
+StatefulSet on a 1 Gi PVC, digest-pinned `postgres:17-alpine`). Its password
+is generated on first install and kept across upgrades; the Secret is kept on
+uninstall because the PVC is. Before each gateway start, a `migrate` init
+container waits for the database and applies migrations 002 and 003, which
+are idempotent. A NetworkPolicy admits only the gateway, and the connection
+stays in-cluster without TLS. It holds accounting, never provider keys. Size
+and storage class are under `modelGateway.database.bundled`.
+
+**Your own, for production.** Apply `migrations/002_celln_model_budget.sql`
+then `migrations/003_celln_model_gateway.sql`, publish the connection URL, and
+set `modelGateway.database.secretName=model-gateway-database`. The chart then
+renders no database and runs no migrations. Add your database's address to
+`modelGateway.egress`.
 
 ```bash
 kubectl -n sympozium-system create secret generic model-gateway-database \
   --from-literal=database-url='postgres://gateway:...@postgres.databases.svc:5432/gateway?sslmode=require'
 ```
-
-A throwaway single-pod PostgreSQL is fine for evaluation. It holds accounting,
-so do not use one for anything you need to keep.
 
 ## 2. Bootstrap the trust
 
@@ -100,10 +112,9 @@ and the object names. Add the gateway's operator inputs
 ```yaml
 modelGateway:
   image: ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:<digest>   # digest-pinned
-  database:
-    secretName: model-gateway-database
+  # database: {secretName: model-gateway-database}   # omit for the bundled PostgreSQL
   namespaces: [team-a]        # optional, see "Gateway RBAC"
-  egress: [...]               # reviewed: DNS, Kubernetes API, PostgreSQL, providers
+  egress: [...]               # reviewed: DNS, Kubernetes API, providers (and your own PostgreSQL)
 ```
 
 ```bash
@@ -113,7 +124,7 @@ helm upgrade sympozium charts/sympozium -n sympozium-system --reuse-values \
 
 Rendering fails, naming the value, when anything is missing or contradictory:
 no fleet, no `clusterId`/`issuer.keyId`, another issuer name, an empty object
-name, no database Secret, an unpinned image, no egress list, a configuration
+name, an unpinned gateway or bundled database image, no egress list, a configuration
 claim as well, or a receiver URL that is not an HTTPS origin.
 
 Enabling (or disabling) mediation changes the `celln-node` pod template, so the

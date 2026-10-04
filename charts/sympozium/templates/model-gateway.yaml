@@ -16,6 +16,13 @@
 {{- $name := printf "%s-model-gateway" (include "sympozium.fullname" .) }}
 {{- $m := .Values.celln.mediation | default dict }}
 {{- $database := .Values.modelGateway.database | default dict }}
+{{- $bundledDatabase := include "sympozium.modelGatewayBundledDatabase" . }}
+{{- $databaseSecret := $database.secretName }}
+{{- $databaseKey := $database.key }}
+{{- if $bundledDatabase }}
+{{- $databaseSecret = include "sympozium.modelGatewayDatabaseName" . }}
+{{- $databaseKey = "database-url" }}
+{{- end }}
 {{- $tenantNamespaces := .Values.modelGateway.namespaces | default list }}
 {{- $seenNamespaces := dict }}
 {{- range $ns := $tenantNamespaces }}
@@ -186,6 +193,54 @@ spec:
               readOnly: true
             - name: private
               mountPath: /private
+        {{- if $bundledDatabase }}
+        # The chart's own database: wait for it, then apply the gateway's
+        # migrations (idempotent) before the gateway checks its schema.
+        - name: migrate
+          image: {{ .Values.modelGateway.database.bundled.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              url="$(cat /private/database-url)"
+              tries=0
+              until pg_isready -q -d "$url"; do
+                tries=$((tries + 1))
+                [ "$tries" -lt 60 ] || { echo "the bundled PostgreSQL did not become ready in 5 minutes" >&2; exit 1; }
+                sleep 5
+              done
+              for file in /migrations/*.sql; do
+                psql -q -v ON_ERROR_STOP=1 -d "$url" -f "$file"
+              done
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: private
+              mountPath: /private
+              readOnly: true
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+            - name: migrate-tmp
+              mountPath: /tmp
+        {{- end }}
       {{- end }}
       containers:
         - name: model-gateway
@@ -260,20 +315,43 @@ spec:
                     - key: registration-token
                       path: registration-token
               - secret:
-                  name: {{ $database.secretName | quote }}
+                  name: {{ $databaseSecret | quote }}
                   items:
-                    - key: {{ $database.key | quote }}
+                    - key: {{ $databaseKey | quote }}
                       path: database-url
         - name: private
           emptyDir:
             medium: Memory
             sizeLimit: 1Mi
+        {{- if $bundledDatabase }}
+        - name: migrations
+          configMap:
+            name: {{ printf "%s-migrations" $name | quote }}
+        - name: migrate-tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        {{- end }}
         {{- else }}
         - name: configuration
           persistentVolumeClaim:
             claimName: {{ $claim | quote }}
             readOnly: true
         {{- end }}
+{{- if $bundledDatabase }}
+---
+# The gateway's schema, applied by the migrate init container. Synced from
+# migrations/ by `make helm-sync`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-migrations" $name | quote }}
+  namespace: {{ include "sympozium.namespace" . }}
+data:
+{{- range $path, $_ := .Files.Glob "files/model-gateway-migrations/*.sql" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+{{- end }}
 {{- if $mediated }}
 ---
 # Paths only; every credential stays in the operator's Secrets.
@@ -342,4 +420,13 @@ spec:
           port: 8443
   egress:
 {{ toYaml .Values.modelGateway.egress | indent 4 }}
+    {{- if $bundledDatabase }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "sympozium.modelGatewayDatabaseName" . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
 {{- end }}

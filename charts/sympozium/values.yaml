@@ -17,12 +17,31 @@ modelGateway:
   # Explicit reviewed DNS, Kubernetes API and provider egress peers/ports.
   egress: []
   # -- Used with celln.mediation.enabled, which deploys this gateway from
-  # Secret/ConfigMap volumes instead of configurationClaim. Operator-provided
-  # Secret in the control-plane namespace holding the PostgreSQL connection URL
-  # (migrations 002 and 003 applied). The chart bundles no database.
+  # Secret/ConfigMap volumes instead of configurationClaim. Set secretName to
+  # an operator-provided Secret in the control-plane namespace holding the
+  # PostgreSQL connection URL (migrations 002 and 003 applied). Left empty,
+  # the chart runs its own single-pod PostgreSQL (`bundled` below).
   database:
     secretName: ""
     key: database-url
+    # -- The chart's own PostgreSQL, used only with celln.mediation and no
+    # secretName. One pod on a PVC; it holds budget accounting and gateway
+    # registrations, never provider keys. Its password is generated once and
+    # kept across upgrades. Traffic stays in-cluster without TLS, and a
+    # NetworkPolicy admits only the gateway. Use your own database for
+    # production. The gateway applies migrations 002 and 003 on each start.
+    bundled:
+      image: docker.io/library/postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24 # 17.11-alpine
+      storage: 1Gi
+      # -- Empty uses the cluster's default StorageClass.
+      storageClassName: ""
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
   # -- Tenant namespaces whose ModelConnections and provider Secrets the
   # gateway may read. Empty keeps the cluster-wide `get` ClusterRole; a list
   # replaces it with one Role/RoleBinding per namespace (least privilege).

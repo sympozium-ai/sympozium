@@ -53,12 +53,13 @@ type mediationRender struct {
 	roles           map[string]rbacv1.Role
 	roleBindings    map[string]rbacv1.RoleBinding
 	clusterBindings map[string]bool
+	statefulSets    map[string]appsv1.StatefulSet
 }
 
 func decodeMediation(t *testing.T, raw []byte) mediationRender {
 	t.Helper()
 	out := mediationRender{fleetRender: decodeFleet(t, raw), configMaps: map[string]corev1.ConfigMap{}, secrets: map[string]bool{}, policies: map[string]networkingv1.NetworkPolicy{},
-		clusterRoles: map[string]rbacv1.ClusterRole{}, roles: map[string]rbacv1.Role{}, roleBindings: map[string]rbacv1.RoleBinding{}, clusterBindings: map[string]bool{}}
+		clusterRoles: map[string]rbacv1.ClusterRole{}, roles: map[string]rbacv1.Role{}, roleBindings: map[string]rbacv1.RoleBinding{}, clusterBindings: map[string]bool{}, statefulSets: map[string]appsv1.StatefulSet{}}
 	for _, document := range bytes.Split(raw, []byte("\n---")) {
 		var meta struct {
 			Kind     string `json:"kind"`
@@ -85,6 +86,10 @@ func decodeMediation(t *testing.T, raw []byte) mediationRender {
 			strict(&appsv1.Deployment{})
 		case "DaemonSet":
 			strict(&appsv1.DaemonSet{})
+		case "StatefulSet":
+			var o appsv1.StatefulSet
+			strict(&o)
+			out.statefulSets[key] = o
 		case "Secret":
 			out.secrets[key] = true
 		case "NetworkPolicy":
@@ -481,7 +486,7 @@ func TestMediationRefusesIncompleteOrInconsistentInput(t *testing.T) {
 		"no gateway secret":   {append(slices.Clone(full), "celln.mediation.gatewaySecret="), "celln.mediation.gatewaySecret must name"},
 		"no node secret":      {append(slices.Clone(full), "celln.mediation.nodeSecret="), "celln.mediation.nodeSecret must name"},
 		"no trust":            {append(slices.Clone(full), "celln.mediation.trustConfigMap="), "celln.mediation.trustConfigMap must name"},
-		"no database":         {without(full, "modelGateway.database.secretName"), "celln.mediation requires modelGateway.database.secretName"},
+		"tagged bundled db":   {append(without(full, "modelGateway.database.secretName"), "modelGateway.database.bundled.image=postgres:17"), "modelGateway.database.bundled.image must be pinned by sha256 digest"},
 		"no database key":     {append(slices.Clone(full), "modelGateway.database.key="), "modelGateway.database.key must name"},
 		"no gateway image":    {without(full, "modelGateway.image"), "modelGateway.image requires an immutable image digest"},
 		"tagged image":        {append(without(full, "modelGateway.image"), "modelGateway.image=registry.example/model-gateway:latest"), "modelGateway.image must be pinned by sha256 digest"},
@@ -622,6 +627,90 @@ func TestMediationPassesTheParentRequestOnlyWhenTheNodeHasOne(t *testing.T) {
 		}
 		if out := run(); !strings.Contains(out, "--scoped-parent-request-file\n"+file+"\n") {
 			t.Fatalf("%s: flag not passed for a present file:\n%s", name, out)
+		}
+	}
+}
+
+// Without an operator database the chart runs its own PostgreSQL, reachable
+// only from the gateway, and the gateway migrates it before starting.
+func TestMediationBundlesADatabaseWhenNoneIsNamed(t *testing.T) {
+	const db = "test-sympozium-model-gateway-db"
+	r := decodeMediation(t, mustRender(t, without(mediationValues(), "modelGateway.database.secretName")))
+
+	set, ok := r.statefulSets["sympozium-system/"+db]
+	if !ok {
+		t.Fatal("no bundled PostgreSQL StatefulSet")
+	}
+	pod := set.Spec.Template.Spec
+	if pod.SecurityContext == nil || pod.SecurityContext.RunAsNonRoot == nil || !*pod.SecurityContext.RunAsNonRoot || pod.SecurityContext.SeccompProfile == nil {
+		t.Fatal("the database pod must run non-root with a seccomp profile")
+	}
+	postgres := container(t, pod.Containers, "postgres")
+	// The alpine image's postgres user owns the data directory, so uid 70
+	// rather than the control plane's 65532; otherwise as restricted.
+	if sc := postgres.SecurityContext; sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot || sc.RunAsUser == nil || *sc.RunAsUser != 70 || sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation ||
+		sc.ReadOnlyRootFilesystem == nil || !*sc.ReadOnlyRootFilesystem || sc.Capabilities == nil || len(sc.Capabilities.Drop) != 1 || sc.Capabilities.Drop[0] != "ALL" {
+		t.Fatalf("postgres is not non-root, read-only, drop ALL: %+v", sc)
+	}
+	if !strings.Contains(postgres.Image, "@sha256:") {
+		t.Fatalf("database image not digest-pinned: %s", postgres.Image)
+	}
+	if len(set.Spec.VolumeClaimTemplates) != 1 {
+		t.Fatal("the database must keep its data on a PVC")
+	}
+	if !r.secrets["sympozium-system/"+db] {
+		t.Fatal("no generated database Secret")
+	}
+
+	gateway := r.deployments["test-sympozium-model-gateway"].Spec.Template.Spec
+	if v := volume(t, gateway, "operator"); !slices.ContainsFunc(v.Projected.Sources, func(p corev1.VolumeProjection) bool {
+		return p.Secret != nil && p.Secret.Name == db && p.Secret.Items[0].Key == "database-url"
+	}) {
+		t.Fatal("the gateway does not read the bundled database URL")
+	}
+	migrate := container(t, gateway.InitContainers, "migrate")
+	restricted(t, migrate)
+	if gateway.InitContainers[0].Name != "private-files" {
+		t.Fatal("migrate must run after the private files are copied")
+	}
+	migrations := r.configMaps["sympozium-system/test-sympozium-model-gateway-migrations"].Data
+	for _, file := range []string{"002_celln_model_budget.sql", "003_celln_model_gateway.sql"} {
+		want, err := os.ReadFile(filepath.Join("..", "migrations", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Splitting the render on "\n---" drops the last key's final newline.
+		if strings.TrimRight(migrations[file], "\n") != strings.TrimRight(string(want), "\n") {
+			t.Fatalf("chart migration %s differs from migrations/; run make helm-sync", file)
+		}
+	}
+
+	reaches := func(policy networkingv1.NetworkPolicy, name string) bool {
+		for _, rule := range policy.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app.kubernetes.io/name"] == name {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !reaches(r.policies["sympozium-system/test-sympozium-model-gateway"], db) {
+		t.Fatal("the gateway's egress does not reach the bundled database")
+	}
+	dbPolicy := r.policies["sympozium-system/"+db]
+	if len(dbPolicy.Spec.Ingress) != 1 || dbPolicy.Spec.Ingress[0].From[0].PodSelector.MatchLabels["app.kubernetes.io/name"] != "test-sympozium-model-gateway" || len(dbPolicy.Spec.Egress) != 0 {
+		t.Fatalf("the database must admit only the gateway and reach nothing: %+v", dbPolicy.Spec)
+	}
+
+	// An operator database replaces all of it.
+	own := decodeMediation(t, mustRender(t, mediationValues()))
+	if len(own.statefulSets) != 0 || own.secrets["sympozium-system/"+db] {
+		t.Fatal("a bundled database rendered beside the operator's")
+	}
+	for _, c := range own.deployments["test-sympozium-model-gateway"].Spec.Template.Spec.InitContainers {
+		if c.Name == "migrate" {
+			t.Fatal("the chart migrates an operator database")
 		}
 	}
 }

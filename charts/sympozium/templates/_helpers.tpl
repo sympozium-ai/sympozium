@@ -266,14 +266,33 @@ template that wires one of the three includes this.
 {{- if .Values.modelGateway.configurationClaim -}}
 {{- fail "celln.mediation deploys the model gateway from Secret/ConfigMap volumes; unset modelGateway.configurationClaim" -}}
 {{- end -}}
-{{- if not ((.Values.modelGateway.database | default dict).secretName) -}}
-{{- fail "celln.mediation requires modelGateway.database.secretName: an operator-provided Secret holding the PostgreSQL URL (the chart bundles no database)" -}}
-{{- end -}}
-{{- if not ((.Values.modelGateway.database | default dict).key) -}}
+{{- $database := .Values.modelGateway.database | default dict -}}
+{{- if and $database.secretName (not $database.key) -}}
 {{- fail "modelGateway.database.key must name the Secret key holding the PostgreSQL URL" -}}
+{{- end -}}
+{{- if not $database.secretName -}}
+{{- $bundled := $database.bundled | default dict -}}
+{{- if not (regexMatch "^.+@sha256:[0-9a-f]{64}$" ($bundled.image | default "")) -}}
+{{- fail "modelGateway.database.bundled.image must be pinned by sha256 digest (or set modelGateway.database.secretName to use your own PostgreSQL)" -}}
+{{- end -}}
 {{- end -}}
 true
 {{- end -}}
+{{- end -}}
+
+{{/*
+"true" when celln.mediation runs the chart's own PostgreSQL: mediation is on
+and no operator database Secret is named.
+*/}}
+{{- define "sympozium.modelGatewayBundledDatabase" -}}
+{{- if and (include "sympozium.cellnMediation" .) (not ((.Values.modelGateway.database | default dict).secretName)) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/* Name shared by the bundled PostgreSQL's StatefulSet, Service and Secret. */}}
+{{- define "sympozium.modelGatewayDatabaseName" -}}
+{{- printf "%s-model-gateway-db" (include "sympozium.fullname" .) -}}
 {{- end -}}
 
 {{/* HTTPS origin of the chart's model gateway Service. */}}

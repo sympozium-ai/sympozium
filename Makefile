@@ -531,6 +531,9 @@ db-migrate: ## Run database migrations
 
 ##@ Helm
 
+# The model gateway's schema, which the chart applies to its bundled database.
+MODEL_GATEWAY_MIGRATIONS := migrations/002_celln_model_budget.sql migrations/003_celln_model_gateway.sql
+
 helm-sync: ## Sync CRDs, appVersion, and generated defaults into the Helm charts
 	@echo "Syncing CRDs to charts/sympozium/crds/..."
 	@mkdir -p charts/sympozium/crds
@@ -539,11 +542,18 @@ helm-sync: ## Sync CRDs, appVersion, and generated defaults into the Helm charts
 	@mkdir -p charts/sympozium-crds/templates
 	@rm -f charts/sympozium-crds/templates/sympozium.ai_*.yaml
 	cp config/crd/bases/*.yaml charts/sympozium-crds/templates/
+	@echo "Syncing the model gateway's migrations into charts/sympozium/files/..."
+	@mkdir -p charts/sympozium/files/model-gateway-migrations
+	cp $(MODEL_GATEWAY_MIGRATIONS) charts/sympozium/files/model-gateway-migrations/
 	@echo "Syncing harness-examples.yaml reuse-values fallback from values.yaml..."
 	go run hack/sync-harness-defaults.go
 	@echo "Done."
 
 helm-sync-check: ## Check that Helm charts are in sync (CI use)
+	@for f in $(MODEL_GATEWAY_MIGRATIONS); do \
+		cmp -s $$f charts/sympozium/files/model-gateway-migrations/$$(basename $$f) \
+			|| { echo "ERROR: $$f differs from the chart's copy. Run 'make helm-sync'"; exit 1; }; \
+	done
 	@diff -qr config/crd/bases/ charts/sympozium/crds/ > /dev/null 2>&1 \
 		|| (echo "ERROR: Helm chart CRDs are out of sync. Run 'make helm-sync'" && exit 1)
 	@tmp=$$(mktemp -d); \
