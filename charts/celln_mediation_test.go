@@ -338,7 +338,22 @@ func TestMediationWiresControllerDispatchersAndGatewayConsistently(t *testing.T)
 	if v := volume(t, owner, "scoped-trust"); v.ConfigMap == nil || v.ConfigMap.Name != "celln-mediation-trust" {
 		t.Fatalf("node trust: %+v", v)
 	}
-	edge := container(t, owner.Containers, "scoped-receiver")
+	for _, c := range owner.Containers {
+		if c.Name == "scoped-receiver" {
+			t.Fatal("the scoped TLS edge belongs on the router, which forwards to the owning node")
+		}
+	}
+	// Router: forwards /v1/scoped/* to the node that prepared each operation,
+	// with the same operator token the dispatchers verify, behind its TLS edge.
+	router := r.deployments["celln-router"].Spec.Template.Spec
+	routerArgs := strings.Join(container(t, router.Containers, "router").Args, " ")
+	if !strings.Contains(routerArgs, "--scoped-token-file /etc/celln/scoped/operator-token") {
+		t.Fatalf("router does not forward scoped requests: %s", routerArgs)
+	}
+	if v := volume(t, router, "scoped-operator"); v.Secret == nil || v.Secret.SecretName != "celln-mediation-node" || len(v.Secret.Items) != 1 || v.Secret.Items[0].Key != "operator-token" {
+		t.Fatalf("router operator token volume: %+v", v.Secret)
+	}
+	edge := container(t, router.Containers, "scoped-receiver")
 	restricted(t, edge)
 	if edge.SecurityContext.SeccompProfile == nil || edge.SecurityContext.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
 		t.Fatal("receiver edge lacks the RuntimeDefault seccomp profile")
@@ -347,7 +362,7 @@ func TestMediationWiresControllerDispatchersAndGatewayConsistently(t *testing.T)
 		t.Fatalf("receiver edge image/command: %s %v", edge.Image, edge.Command)
 	}
 	edgeArgs := strings.Join(edge.Args, " ")
-	for _, arg := range []string{"--scoped-receiver", "--listen 0.0.0.0:9443", "--backend http://127.0.0.1:8787", "--tls-cert /etc/celln/receiver-tls/tls.crt", "--tls-key /etc/celln/receiver-tls/tls.key"} {
+	for _, arg := range []string{"--scoped-receiver", "--listen 0.0.0.0:9443", "--backend http://127.0.0.1:8788", "--tls-cert /etc/celln/receiver-tls/tls.crt", "--tls-key /etc/celln/receiver-tls/tls.key"} {
 		if !strings.Contains(edgeArgs, arg) {
 			t.Fatalf("receiver edge lacks %q: %s", arg, edgeArgs)
 		}
@@ -356,7 +371,7 @@ func TestMediationWiresControllerDispatchersAndGatewayConsistently(t *testing.T)
 		t.Fatalf("receiver edge mounts more than its certificate: %+v", edge.VolumeMounts)
 	}
 	service := r.services["celln-scoped-receiver"]
-	if service.Namespace != "celln-system" || service.Spec.Selector["app.kubernetes.io/name"] != "celln-node" || service.Spec.Ports[0].Port != 9443 || service.Spec.Ports[0].TargetPort.StrVal != "scoped-https" || edge.Ports[0].Name != "scoped-https" {
+	if service.Namespace != "celln-system" || service.Spec.Selector["app.kubernetes.io/name"] != "celln-router" || service.Spec.Ports[0].Port != 9443 || service.Spec.Ports[0].TargetPort.StrVal != "scoped-https" || edge.Ports[0].Name != "scoped-https" {
 		t.Fatalf("receiver Service: %+v", service.Spec)
 	}
 
@@ -426,8 +441,12 @@ func TestMediationWiresControllerDispatchersAndGatewayConsistently(t *testing.T)
 		t.Fatal("gateway does not admit the fleet dispatchers and the controller")
 	}
 	nodePolicy := r.policies["celln-system/celln-node-ingress"]
-	if !admits(nodePolicy, "sympozium-system", "control-plane", "controller-manager", 9443) || admits(nodePolicy, "sympozium-system", "control-plane", "controller-manager", 8787) {
-		t.Fatal("the controller must reach the receiver's TLS edge and not the plaintext dispatcher")
+	if admits(nodePolicy, "sympozium-system", "control-plane", "controller-manager", 9443) || admits(nodePolicy, "sympozium-system", "control-plane", "controller-manager", 8787) {
+		t.Fatal("the controller reaches the nodes only through the router")
+	}
+	routerPolicy := r.policies["celln-system/celln-router-ingress"]
+	if !admits(routerPolicy, "sympozium-system", "control-plane", "controller-manager", 9443) {
+		t.Fatal("the controller must reach the router's scoped TLS edge")
 	}
 	if !admits(nodePolicy, "celln-system", "app.kubernetes.io/name", "celln-router", 8787) || admits(nodePolicy, "celln-system", "app.kubernetes.io/name", "celln-router", 9443) {
 		t.Fatal("router ingress changed")

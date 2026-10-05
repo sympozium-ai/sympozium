@@ -78,3 +78,22 @@ func TestNativeStartSeparatesOperatorAndCapabilityCredentials(t *testing.T) {
 		t.Fatal("transport or scoped permits leaked into the native request body")
 	}
 }
+
+// The router answers a node that has left the cluster with the dispatcher's
+// own refusal shape; the client must read it as context loss, not as an
+// uncertain outcome to retry forever.
+func TestRouterNodeLossIsContextLost(t *testing.T) {
+	for body, lost := range map[string]bool{
+		`{"error":"scoped admission refused","reason":"AUTH_CONTEXT_LOST"}`:         true,
+		`{"error":"scoped admission refused","reason":"AUTH_PROTOCOL_UNSUPPORTED"}`: false,
+		`{"error":"original parent backend removed"}`:                               false,
+	} {
+		host := &hostClient{origin: "https://router.invalid", token: "operator", http: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusConflict, Header: make(http.Header), Body: io.NopCloser(bytes.NewBufferString(body))}, nil
+		})}}
+		_, err := (&NativeClient{host: host}).Start(context.Background(), "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", cap.NewToken("e"), cap.NewToken("m"))
+		if err == nil || IsContextLost(err) != lost {
+			t.Fatalf("%s: IsContextLost(%v) = %v, want %v", body, err, IsContextLost(err), lost)
+		}
+	}
+}

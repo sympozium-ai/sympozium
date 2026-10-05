@@ -48,9 +48,9 @@ data:
   mediation.json: {{ toJson (dict "mediateBackends" ($m.mediateBackends | default false) "routes" $routes) | quote }}
 {{- if not $receiver.url }}
 ---
-# The router does not forward /v1/scoped/*, and scoped state lives on the node
-# that prepared it, so this Service is a correct receiver only while one
-# celln-node pod exists. Set celln.mediation.receiver.url otherwise.
+# The router's TLS edge. Scoped state lives on the node that prepared it, and
+# the router forwards each /v1/scoped/* request to that node, so any router
+# replica is a correct receiver on any number of nodes.
 apiVersion: v1
 kind: Service
 metadata:
@@ -61,7 +61,7 @@ metadata:
     app.kubernetes.io/part-of: sympozium
 spec:
   selector:
-    app.kubernetes.io/name: celln-node
+    app.kubernetes.io/name: celln-router
   ports:
     - name: https
       port: {{ int ($receiver.port | default 9443) }}

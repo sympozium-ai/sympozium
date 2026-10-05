@@ -27,20 +27,31 @@ A `secret` run on a controller without mediation is held with the reason
 
 ## What the one switch wires
 
-`celln.mediation.enabled=true` (requires `celln.fleet.enabled`) configures three
+`celln.mediation.enabled=true` (requires `celln.fleet.enabled`) configures four
 things against the same issuer, keyset, CA and tokens, or refuses to render:
 
 | Component | What changes |
 |---|---|
 | Controller | `CELLN_SCOPED_CONFIG` points at a chart-rendered `config.json` (paths and names only). The issuer signing key and both transport tokens come from `controllerSecret`. |
-| Fleet dispatchers (`celln-node`) | `--scoped-operator-token-file`, `--scoped-jwks-file`, `--scoped-issuer`, `--scoped-gateway-origin`, `--scoped-gateway-ca`, and `--scoped-parent-request-file` when the node has one. A small unprivileged `scoped-receiver` sidecar terminates TLS in front of the dispatcher. |
+| Fleet dispatchers (`celln-node`) | `--scoped-operator-token-file`, `--scoped-jwks-file`, `--scoped-issuer`, `--scoped-gateway-origin`, `--scoped-gateway-ca`, and `--scoped-parent-request-file` when the node has one. |
+| Router (`celln-router`) | `--scoped-token-file` (the dispatchers' operator token): it forwards each `/v1/scoped/*` request to the node that prepared that operation. A small unprivileged `scoped-receiver` sidecar terminates TLS in front of it, behind the `celln-scoped-receiver` Service. |
 | Model gateway | Deployed from Secret/ConfigMap volumes; no configuration PVC. |
 
-Why a TLS sidecar: the dispatcher speaks plaintext HTTP, and the controller only
+Why a TLS sidecar: the router speaks plaintext HTTP, and the controller only
 talks to an HTTPS receiver with an explicit CA. The sidecar (`/celln-parent-proxy
 --scoped-receiver`, shipped in the controller image) forwards nothing but
-`POST /v1/scoped/{prepare,start,read,cleanup}` to the dispatcher on loopback.
-The operator bearer and the signed permits remain the authority.
+`POST /v1/scoped/{prepare,start,read,cleanup}` to the router on loopback. The
+operator bearer and the signed permits remain the authority, checked by the
+dispatcher on the owning node.
+
+**Any number of nodes.** A prepared operation lives on the node that prepared
+it. The router places each new operation on the node with the most spare
+capacity (an enduring conversation's turns follow its parent) and records that
+binding before forwarding, so an operation never reaches two nodes. If that
+node leaves the cluster, the router answers `AUTH_CONTEXT_LOST`. The controller
+then ends the run, closes its gateway registration, and never re-creates it on
+another node; start a new run. A node that is briefly not ready stays listed,
+so a readiness blip does not end its conversations.
 
 ## 1. PostgreSQL
 
@@ -401,12 +412,8 @@ to the list before its Agents use mediation.
 
 ## Current limits
 
-- **One receiver node.** The router does not forward `/v1/scoped/*`, and a
-  prepared operation lives on the node that prepared it. The default receiver is
-  the `celln-scoped-receiver` Service, correct only while one `celln-node` pod
-  exists. With several KVM nodes set `celln.mediation.receiver.url` to an HTTPS
-  origin that reaches exactly one of them and bootstrap with its
-  `--receiver-host`. No HA.
+- **Node loss ends a mediated run.** Its native state lived on that node;
+  there is no automatic continuation on the mediated path yet.
 - **Chat only.** Borrowed workspace and HTTPS tools are refused on the mediated
   path.
 - **A dispatcher restart loses live scoped parents**, including the roll caused

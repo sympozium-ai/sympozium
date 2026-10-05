@@ -33,6 +33,14 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("scoped host request failed (HTTP %d, reason %s)", e.Status, e.Reason)
 }
 
+// IsContextLost reports the owning node's refusal (or the router's, when that
+// node has left the cluster): the operation's native state is gone and is
+// never re-created elsewhere.
+func IsContextLost(err error) bool {
+	var target *HTTPError
+	return errors.As(err, &target) && target.Reason == "AUTH_CONTEXT_LOST"
+}
+
 func IsNotFound(err error) bool {
 	var target *HTTPError
 	return errors.As(err, &target) && target.Status == http.StatusNotFound
@@ -152,6 +160,9 @@ type OperationStatus struct {
 	Output           string `json:"output,omitempty"`
 	ReceiptDigest    string `json:"receiptDigest,omitempty"`
 	CleanupConfirmed bool   `json:"cleanupConfirmed,omitempty"`
+	// ContextLost is set locally, never decoded: cleanup found the owning
+	// node gone, so there was nothing left on it to stop.
+	ContextLost bool `json:"-"`
 	// Correlation and provenance are receiver-produced native evidence. The
 	// controller never derives these identifiers from a synthetic status hash.
 	ParentIncarnation string          `json:"parentIncarnation,omitempty"`

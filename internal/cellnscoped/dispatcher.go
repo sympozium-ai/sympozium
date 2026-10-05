@@ -233,6 +233,11 @@ func (d *Dispatcher) Cleanup(ctx context.Context, id string, final *cellnauthori
 		return OperationStatus{}, err
 	}
 	status, err := d.Receiver.Cleanup(ctx, id, decision, token)
+	if IsContextLost(err) {
+		// The owning node is gone, and its cells with it. Still close the
+		// gateway registration below so no model allowance outlives it.
+		status, err = OperationStatus{ID: id, Phase: "ContextLost", CleanupConfirmed: true, ContextLost: true}, nil
+	}
 	if err != nil || !status.CleanupConfirmed {
 		return status, err
 	}

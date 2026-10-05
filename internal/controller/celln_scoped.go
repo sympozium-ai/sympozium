@@ -361,6 +361,11 @@ func (r *AgentRunReconciler) reconcileRunningScoped(ctx context.Context, log log
 }
 
 func (r *AgentRunReconciler) scopedUncertain(ctx context.Context, run *api.AgentRun, reason string, cause error) (ctrl.Result, error) {
+	if cellnscoped.IsContextLost(cause) {
+		// The node that held this run's native state is gone. Nothing is
+		// re-placed elsewhere; the run ends and cleanup fences its allowance.
+		return ctrl.Result{}, r.failRun(ctx, run, "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.")
+	}
 	if cellnscoped.IsUnsupported(cause) {
 		if err := r.scopedProgress(ctx, run, metav1.ConditionFalse, "Unsupported", "AUTH_PROTOCOL_UNSUPPORTED: the native backend does not advertise the required scoped artifact contract; no fallback was submitted"); err != nil {
 			return ctrl.Result{}, err
@@ -607,7 +612,7 @@ func (r *AgentRunReconciler) cleanupScoped(ctx context.Context, run *api.AgentRu
 	if err != nil {
 		return false, err
 	}
-	if status.ID != run.Status.CellnScoped.ReceiverID || status.Owner != run.Status.CellnScoped.Owner || !status.CleanupConfirmed {
+	if status.ID != run.Status.CellnScoped.ReceiverID || (!status.ContextLost && status.Owner != run.Status.CellnScoped.Owner) || !status.CleanupConfirmed {
 		return false, errors.New("scoped receiver has not confirmed cleanup for the prepared owner")
 	}
 	if err := r.updateScopedStatus(ctx, run, func(s *api.CellnScopedStatus) error {

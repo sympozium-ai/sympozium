@@ -230,9 +230,12 @@ metadata:
     app.kubernetes.io/name: celln-node
     app.kubernetes.io/part-of: sympozium
 spec:
-  # Headless: the router resolves every ready owner's address itself and keeps
-  # each parent bound to the address that issued it.
+  # Headless: the router resolves every owner's address itself and keeps each
+  # parent bound to the address that issued it. Not-ready owners stay listed
+  # (the router health-checks them), so a brief readiness blip is not read as
+  # node loss, which would end that node's conversations.
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app.kubernetes.io/name: celln-node
   ports:
@@ -669,51 +672,6 @@ spec:
               mountPath: /etc/celln/scoped-trust
               readOnly: true
             {{- end }}
-        {{- if $mediated }}
-        # The dispatcher speaks plaintext HTTP and the controller only talks to
-        # an HTTPS receiver with a pinned CA. This unprivileged edge terminates
-        # TLS and forwards nothing but POST /v1/scoped/* to the dispatcher on
-        # loopback; the operator bearer and signed permits remain the authority.
-        - name: scoped-receiver
-          image: {{ include "sympozium.controllerImage" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/celln-parent-proxy"]
-          args:
-            - --scoped-receiver
-            - --listen
-            - {{ printf "0.0.0.0:%d" (int (($mediation.receiver | default dict).port | default 9443)) | quote }}
-            - --backend
-            - http://127.0.0.1:8787
-            - --tls-cert
-            - /etc/celln/receiver-tls/tls.crt
-            - --tls-key
-            - /etc/celln/receiver-tls/tls.key
-          ports:
-            - name: scoped-https
-              containerPort: {{ int (($mediation.receiver | default dict).port | default 9443) }}
-              protocol: TCP
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 65532
-            runAsGroup: 65532
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              memory: "32Mi"
-              cpu: "10m"
-            limits:
-              memory: "128Mi"
-              cpu: "500m"
-          volumeMounts:
-            - name: scoped-receiver-tls
-              mountPath: /etc/celln/receiver-tls
-              readOnly: true
-        {{- end }}
       volumes:
         {{- if $mediated }}
         - name: scoped-operator
@@ -727,17 +685,6 @@ spec:
         - name: scoped-trust
           configMap:
             name: {{ $mediation.trustConfigMap | quote }}
-        # Readable by the non-root edge (UID 65532), which alone mounts it; a
-        # Secret volume cannot be owned by that user.
-        - name: scoped-receiver-tls
-          secret:
-            secretName: {{ $mediation.nodeSecret | quote }}
-            defaultMode: 0444
-            items:
-              - key: tls.crt
-                path: tls.crt
-              - key: tls.key
-                path: tls.key
         {{- end }}
         - name: backend
           secret:

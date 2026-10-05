@@ -780,12 +780,11 @@ celln:
     # signed both TLS certificates). Public material only, so a ConfigMap.
     trustConfigMap: celln-mediation-trust
     receiver:
-      # -- HTTPS origin of the ONE scoped receiver the controller uses. Empty
-      # uses the chart's celln-scoped-receiver Service, which is correct only
-      # while a single celln-node pod exists: scoped state lives on the node
-      # that prepared it and the router does not forward /v1/scoped/*. With
-      # several nodes, set an origin that reaches exactly one of them (its
-      # host name must be in the receiver certificate).
+      # -- HTTPS origin of the scoped receiver the controller uses. Empty uses
+      # the chart's celln-scoped-receiver Service: the router's TLS edge,
+      # which forwards each operation to the node that prepared it, on any
+      # number of nodes. Set this only to reach it another way (its host name
+      # must be in the receiver certificate).
       url: ""
       port: 9443
     # -- Also offer every HTTPS fleet backend's provider, protocol, origin and

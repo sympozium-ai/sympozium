@@ -465,6 +465,9 @@ spec:
 {{- if not .Values.celln.router.external }}
 ---
 # Every replica sees the same backend identities and durable owner ledger.
+{{- $mediated := include "sympozium.cellnMediation" . }}
+{{- $mediation := .Values.celln.mediation | default dict }}
+{{- $receiverPort := int (($mediation.receiver | default dict).port | default 9443) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -519,6 +522,12 @@ spec:
         - --parent-token-file
         - /etc/celln/parent/token
         {{- end }}
+        {{- if $mediated }}
+        # Mediated runs: forward /v1/scoped/* to the node that prepared each
+        # operation. The same operator token the dispatchers verify.
+        - --scoped-token-file
+        - /etc/celln/scoped/operator-token
+        {{- end }}
         - --ownership-dir
         - /var/lib/celln/ownership
         - --mode
@@ -549,6 +558,11 @@ spec:
         - name: capability-token
           mountPath: /etc/celln/capability
           readOnly: true
+        {{- if $mediated }}
+        - name: scoped-operator
+          mountPath: /etc/celln/scoped
+          readOnly: true
+        {{- end }}
         resources:
           requests:
             memory: "16Mi"
@@ -556,6 +570,52 @@ spec:
           limits:
             memory: "64Mi"
             cpu: "200m"
+      {{- if $mediated }}
+      # The router speaks plaintext HTTP and the controller only talks to an
+      # HTTPS receiver with a pinned CA. This unprivileged edge terminates TLS
+      # and forwards nothing but POST /v1/scoped/* to the router on loopback;
+      # the operator bearer and signed permits remain the authority, checked
+      # by the dispatcher on the owning node.
+      - name: scoped-receiver
+        image: {{ include "sympozium.controllerImage" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/celln-parent-proxy"]
+        args:
+          - --scoped-receiver
+          - --listen
+          - {{ printf "0.0.0.0:%d" $receiverPort | quote }}
+          - --backend
+          - http://127.0.0.1:8788
+          - --tls-cert
+          - /etc/celln/receiver-tls/tls.crt
+          - --tls-key
+          - /etc/celln/receiver-tls/tls.key
+        ports:
+          - name: scoped-https
+            containerPort: {{ $receiverPort }}
+            protocol: TCP
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        volumeMounts:
+          - name: scoped-receiver-tls
+            mountPath: /etc/celln/receiver-tls
+            readOnly: true
+      {{- end }}
       volumes:
       {{- if .Values.celln.router.parentTokenSecret }}
       - name: parent-token
@@ -578,6 +638,26 @@ spec:
         secret:
           secretName: {{ .Values.celln.router.capabilityTokenSecret | quote }}
           defaultMode: 0440
+      {{- if $mediated }}
+      - name: scoped-operator
+        secret:
+          secretName: {{ $mediation.nodeSecret | quote }}
+          defaultMode: 0440
+          items:
+            - key: operator-token
+              path: operator-token
+      # Readable by the non-root edge (UID 65532), which alone mounts it; a
+      # Secret volume cannot be owned by that user.
+      - name: scoped-receiver-tls
+        secret:
+          secretName: {{ $mediation.nodeSecret | quote }}
+          defaultMode: 0444
+          items:
+            - key: tls.crt
+              path: tls.crt
+            - key: tls.key
+              path: tls.key
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
