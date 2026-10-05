@@ -1,5 +1,7 @@
 package controller
 
+import "strings"
+
 // Only a closed set of public reason codes is copied to tenant-visible status.
 // Arbitrary native diagnostics can include topology or guest-controlled text.
 func scopedFailureSummary(phase, reason string) string {
@@ -14,4 +16,14 @@ func scopedFailureSummary(phase, reason string) string {
 		return "AUTH_POLICY_WITHDRAWN: the original execution is no longer approved by operator policy."
 	}
 	return "Celln scoped execution " + phase
+}
+
+// scopedEndedSummary explains a run whose original owner kept reporting its
+// parent context unavailable. Native reasons are free text, so only a
+// recognised cause is mapped to its public code; nothing else is exposed.
+func scopedEndedSummary(reason string) string {
+	if strings.Contains(strings.ToLower(reason), "budget exhausted") {
+		return "Celln parent ended: " + scopedFailureSummary("Failed", "AUTH_BUDGET_EXHAUSTED") + " Raise spec.enduring.maxOutputTokens or maxModelRequests for longer conversations, and start a new run."
+	}
+	return "Celln parent ended: its node reports the conversation's context unavailable. No replacement execution is permitted; start a new run."
 }

@@ -21,6 +21,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// scopedUncertainExpired reports a run whose owner has reported its context
+// unavailable for longer than scopedUncertainGrace.
+func scopedUncertainExpired(run *api.AgentRun, now time.Time) bool {
+	c := meta.FindStatusCondition(run.Status.Conditions, "CellnScopedExecution")
+	return c != nil && c.Status == metav1.ConditionUnknown && c.Reason == "NativeOwnerUncertain" && now.Sub(c.LastTransitionTime.Time) > scopedUncertainGrace
+}
+
+// scopedUncertainGrace is how long an owner may report its context
+// unavailable before the run ends.
+var scopedUncertainGrace = 2 * time.Minute
+
 const scopedOutcomeUnconfirmed = "Scoped execution outcome is uncertain. The controller will only read or clean up the original prepared owner; it will not create replacement authority. Ask an administrator to inspect the configured receiver and gateway."
 
 var scopedReceiptPattern = regexp.MustCompile(`^(?:sha256:|blake3:)?[0-9a-f]{64}$`)
@@ -510,6 +521,13 @@ func (r *AgentRunReconciler) applyScopedStatus(ctx context.Context, log logr.Log
 		return ctrl.Result{}, err
 	}
 	if observed.Phase == "Uncertain" {
+		// The owner keeps reporting its context unavailable: the parent ended
+		// on its node (its budget ran out, or it exited). Past a grace period
+		// for blips, end the run so it stops looking alive. Nothing is
+		// re-created elsewhere, and cleanup still stops the original owner.
+		if scopedUncertainExpired(run, time.Now()) {
+			return ctrl.Result{}, r.failRun(ctx, run, scopedEndedSummary(observed.Reason))
+		}
 		return r.scopedUncertain(ctx, run, "NativeOwnerUncertain", errors.New("original native owner context is unavailable; no replacement execution is permitted"))
 	}
 	if slices.Contains(active, observed.Phase) {

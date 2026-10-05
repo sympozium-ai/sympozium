@@ -223,15 +223,15 @@ fi
 # The gateway reserves each model request's full output bound (2048 tokens by
 # default) against the run's maxOutputTokens, so a conversation needs room
 # for every turn's requests or its parent ends with its budget exhausted.
-start_conversation() { # task -> run name
+start_conversation() { # task [maxOutputTokens] -> run name
 	kc -n "$starter_ns" get agent "$CONVO_AGENT" -o json | python3 -c '
 import json, sys
 a = json.load(sys.stdin)["spec"]
 e = a["execution"]
 print(json.dumps({"agentRef": sys.argv[2], "task": sys.argv[1], "backend": "celln", "executionLifecycle": "enduring",
-  "enduring": {"leaseSeconds": 1800, "maxTurns": 8, "maxModelRequests": 24, "maxOutputTokens": 24576},
+  "enduring": {"leaseSeconds": 1800, "maxTurns": 8, "maxModelRequests": 24, "maxOutputTokens": int(sys.argv[3])},
   "model": e["model"], "modelConnectionRef": e["modelConnectionRef"],
-  "cellnSelection": {"runtimeRef": e["cellnSelection"]["runtimeRef"], "toolRefs": []}}))' "$1" "$CONVO_AGENT" |
+  "cellnSelection": {"runtimeRef": e["cellnSelection"]["runtimeRef"], "toolRefs": []}}))' "$1" "$CONVO_AGENT" "${2:-24576}" |
 		api -X POST -H 'Content-Type: application/json' --data-binary @- "http://127.0.0.1:$api_port/api/v1/runs?namespace=$starter_ns" |
 		python3 -c 'import json,sys; print(json.load(sys.stdin)["metadata"]["name"])'
 }
@@ -355,6 +355,15 @@ send_turn "$run_b" "$run_b-after-loss" "Which word did I ask you to remember? Re
 wait_for "turn $run_b-after-loss" 300 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $run_b-after-loss -o json | grep -qiE '\"phase\": \"(Succeeded|Failed|Completed)\"|\"status\": \"True\"'"
 turn_json "$run_b-after-loss" | grep -qi saffron || fail "B did not carry on after A's node was lost"
 pass "A ended with AUTH_CONTEXT_LOST; B on $node_b still recalled saffron"
+
+log "A conversation that exhausts its budget ends instead of looking alive"
+small="$(start_conversation "Reply with only OK." 6144)" || fail "API refused the small-budget conversation"
+wait_for "first answer of $small" 420 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $small -o jsonpath='{.status.result}')\" ]"
+send_turn "$small" "$small-2" "Reply with only OK."
+send_turn "$small" "$small-3" "Reply with only OK."
+wait_for "the exhausted conversation to end" 420 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $small -o jsonpath='{.status.phase}' | grep -q Failed"
+kc -n "$starter_ns" get agentrun "$small" -o jsonpath='{.status.error}' | grep -q 'AUTH_BUDGET_EXHAUSTED' || fail "$small did not end with AUTH_BUDGET_EXHAUSTED: $(kc -n "$starter_ns" get agentrun "$small" -o jsonpath='{.status.error}')"
+pass "$small ended with AUTH_BUDGET_EXHAUSTED once its parent's budget ran out"
 
 log "Deleting the lost conversation does not hang on its finalizer"
 kc -n "$starter_ns" delete agentrun "$run_a" --wait=false >/dev/null
