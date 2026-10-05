@@ -10,9 +10,6 @@
 {{- if not $mediated }}
 {{- $claim = required "modelGateway.configurationClaim must contain reviewed TLS/JWKS/PostgreSQL configuration" .Values.modelGateway.configurationClaim }}
 {{- end }}
-{{- if not .Values.modelGateway.egress }}
-{{- fail "modelGateway.egress must explicitly declare reviewed DNS/API/PostgreSQL/provider paths" }}
-{{- end }}
 {{- $name := printf "%s-model-gateway" (include "sympozium.fullname" .) }}
 {{- $m := .Values.celln.mediation | default dict }}
 {{- $database := .Values.modelGateway.database | default dict }}
@@ -419,7 +416,14 @@ spec:
         - protocol: TCP
           port: 8443
   egress:
+  {{- if .Values.modelGateway.egress }}
 {{ toYaml .Values.modelGateway.egress | indent 4 }}
+  {{- else }}
+    # No list: any destination. Each call is still bound to the Agent's own
+    # route and key, and private addresses still need gateway approval
+    # (privateOrigins).
+    - {}
+  {{- end }}
     {{- if $bundledDatabase }}
     - to:
         - podSelector:

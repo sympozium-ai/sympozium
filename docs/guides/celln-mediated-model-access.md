@@ -60,8 +60,8 @@ and storage class are under `modelGateway.database.bundled`.
 **Your own, for production.** Apply `migrations/002_celln_model_budget.sql`
 then `migrations/003_celln_model_gateway.sql`, publish the connection URL, and
 set `modelGateway.database.secretName=model-gateway-database`. The chart then
-renders no database and runs no migrations. Add your database's address to
-`modelGateway.egress`.
+renders no database and runs no migrations. If you restrict
+`modelGateway.egress`, include your database's address.
 
 ```bash
 kubectl -n sympozium-system create secret generic model-gateway-database \
@@ -114,7 +114,7 @@ modelGateway:
   image: ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:<digest>   # digest-pinned
   # database: {secretName: model-gateway-database}   # omit for the bundled PostgreSQL
   namespaces: [team-a]        # optional, see "Gateway RBAC"
-  egress: [...]               # reviewed: DNS, Kubernetes API, providers (and your own PostgreSQL)
+  # egress: [...]             # optional: omit to allow any provider; a list restricts it
 ```
 
 ```bash
@@ -124,7 +124,7 @@ helm upgrade sympozium charts/sympozium -n sympozium-system --reuse-values \
 
 Rendering fails, naming the value, when anything is missing or contradictory:
 no fleet, no `clusterId`/`issuer.keyId`, another issuer name, an empty object
-name, an unpinned gateway or bundled database image, no egress list, a configuration
+name, an unpinned gateway or bundled database image, a configuration
 claim as well, or a receiver URL that is not an HTTPS origin.
 
 Enabling (or disabling) mediation changes the `celln-node` pod template, so the
@@ -363,7 +363,7 @@ Merge these settings into the existing mediation values, upgrade with
 Keep the existing routes in the values list if they are still needed. The
 equivalent installer route is
 `--celln-mediated-route provider=llama-server,protocol=openai-chat,auth=none,allowInsecure=true,origin=http://192.168.1.237:8080,models=local-model`;
-the gateway allow-list and network egress must also permit that destination.
+the gateway allow-list (`modelGateway.privateOrigins`) must also permit that destination, and so must `modelGateway.egress` if you restrict it.
 
 Create Agent → Celln offers the declared local provider and explains that no
 key is required. Its ModelConnection sets `allowInsecure: true` and has neither

@@ -490,7 +490,6 @@ func TestMediationRefusesIncompleteOrInconsistentInput(t *testing.T) {
 		"no database key":     {append(slices.Clone(full), "modelGateway.database.key="), "modelGateway.database.key must name"},
 		"no gateway image":    {without(full, "modelGateway.image"), "modelGateway.image requires an immutable image digest"},
 		"tagged image":        {append(without(full, "modelGateway.image"), "modelGateway.image=registry.example/model-gateway:latest"), "modelGateway.image must be pinned by sha256 digest"},
-		"no egress":           {without(full, "modelGateway.egress"), "modelGateway.egress must explicitly declare"},
 		"claim as well":       {append(slices.Clone(full), "modelGateway.configurationClaim=reviewed"), "unset modelGateway.configurationClaim"},
 		"plaintext receiver":  {append(slices.Clone(full), "celln.mediation.receiver.url=http://node-a:8787"), "celln.mediation.receiver.url must be an origin-only HTTPS URL"},
 		"receiver with path":  {append(slices.Clone(full), "celln.mediation.receiver.url=https://node-a:9443/v1/scoped"), "celln.mediation.receiver.url must be an origin-only HTTPS URL"},
@@ -712,5 +711,18 @@ func TestMediationBundlesADatabaseWhenNoneIsNamed(t *testing.T) {
 		if c.Name == "migrate" {
 			t.Fatal("the chart migrates an operator database")
 		}
+	}
+}
+
+// With no egress list the gateway may reach any provider; a list restricts it.
+func TestGatewayEgressIsOpenUnlessRestricted(t *testing.T) {
+	const key = "sympozium-system/test-sympozium-model-gateway"
+	open := decodeMediation(t, mustRender(t, without(mediationValues(), "modelGateway.egress"))).policies[key]
+	if len(open.Spec.Egress) != 1 || len(open.Spec.Egress[0].To) != 0 || len(open.Spec.Egress[0].Ports) != 0 {
+		t.Fatalf("an empty egress list must allow any destination: %+v", open.Spec.Egress)
+	}
+	listed := decodeMediation(t, mustRender(t, mediationValues())).policies[key]
+	if len(listed.Spec.Egress) != 1 || len(listed.Spec.Egress[0].Ports) != 1 || listed.Spec.Egress[0].Ports[0].Port.IntVal != 443 {
+		t.Fatalf("a declared egress list must be used as given: %+v", listed.Spec.Egress)
 	}
 }

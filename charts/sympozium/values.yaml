@@ -14,7 +14,10 @@ modelGateway:
   enabled: false
   image: "" # required immutable repository@sha256:digest
   configurationClaim: "" # files readable by UID 65532; secret files mode 0600
-  # Explicit reviewed DNS, Kubernetes API and provider egress peers/ports.
+  # -- NetworkPolicy egress rules for the gateway. Empty allows any
+  # destination: an Agent may use any provider, and the gateway still binds
+  # each call to that Agent's route and key. Set a list (DNS, Kubernetes API,
+  # providers) to restrict it.
   egress: []
   # -- Used with celln.mediation.enabled, which deploys this gateway from
   # Secret/ConfigMap volumes instead of configurationClaim. Set secretName to
