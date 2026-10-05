@@ -21,6 +21,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const agentRunTurnFinalizer = "sympozium.ai/agentrunturn-finalizer"
@@ -563,5 +565,27 @@ func (r *AgentRunTurnReconciler) recordTurnObservationReason(ctx context.Context
 }
 
 func (r *AgentRunTurnReconciler) SetupWithManager(manager ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(manager).For(&api.AgentRunTurn{}).Complete(r)
+	return ctrl.NewControllerManagedBy(manager).
+		For(&api.AgentRunTurn{}).
+		// A turn waits on its run: when the run fails, is cleaned up or is
+		// deleted, its turns must re-check at once. Without this a turn that
+		// never acquired authority sits in error backoff while the run's
+		// finalizer waits for it.
+		Watches(&api.AgentRun{}, handler.EnqueueRequestsFromMapFunc(r.turnsOfRun)).
+		Complete(r)
+}
+
+// turnsOfRun maps a run to its turns.
+func (r *AgentRunTurnReconciler) turnsOfRun(ctx context.Context, obj client.Object) []reconcile.Request {
+	var turns api.AgentRunTurnList
+	if err := r.List(ctx, &turns, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, turn := range turns.Items {
+		if turn.Spec.RunName == obj.GetName() {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&turn)})
+		}
+	}
+	return requests
 }
