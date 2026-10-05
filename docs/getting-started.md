@@ -61,9 +61,18 @@ to upgrade.
 If `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set (or you
 answer the prompt in a terminal), the same command installs the **Celln
 fleet**: every node with `/dev/kvm` and a kernel under `/boot` runs
-long-running, hardware-isolated agents for every namespace, one model backend
-per key. On Kind, copy the host kernel into each node first — see
+long-running, hardware-isolated agents for every namespace, on any number of
+nodes. On Kind, copy the host kernel into each node first — see
 [Celln Fleet Installation](guides/celln-fleet-installation.md#prerequisites).
+
+Model access is **mediated** by default: a model gateway (with its own small
+PostgreSQL) holds provider keys, and Celln nodes never do. The key you gave
+becomes the own key of a `starter` Agent in the install namespace; every other
+Agent brings its own key (OpenAI, Anthropic and DeepSeek work out of the box),
+and no two Agents may share one — see
+[Model keys](concepts/security.md#model-keys) and
+[Mediated Model Access](guides/celln-mediated-model-access.md). Pass
+`--no-celln-mediation` to publish the key to the nodes instead.
 
 ---
 

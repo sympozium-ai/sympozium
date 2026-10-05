@@ -74,9 +74,10 @@ to a running fleet with the installer, `POST /api/v1/celln-platform/backends`
 or the UI, without restarting any conversation, and each may carry model
 parameters and its own output-token cap per request.
 
-An Agent can instead use **its own** provider key: with
+Every Agent uses **its own** provider key: with
 [mediated model access](../guides/celln-mediated-model-access.md)
-(`celln.mediation.enabled`, off by default) a `ModelConnection` with a
+(on by default since `sympozium install` mediates; opt out with
+`--no-celln-mediation`) a `ModelConnection` with a
 `secretRef` in the Agent's namespace sends model requests through the model
 gateway, which adds the key, so the nodes never hold it. Fleet backends and
 mediated connections run side by side. Which providers an Agent may bring a

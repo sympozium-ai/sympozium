@@ -499,8 +499,14 @@ to the list before its Agents use mediation.
 
 - **Node loss ends a mediated run.** Its native state lived on that node;
   there is no automatic continuation on the mediated path yet.
-- **Chat only.** Borrowed workspace and HTTPS tools are refused on the mediated
-  path.
+- **Few tools.** An enduring conversation may use workspace read and write
+  through the scoped artifact contract; the other workspace operations
+  (list, append, search, delete) and the HTTPS web tools are refused on the
+  mediated path. Fleet-keyed backends keep the full toolbox.
+- **A parent that ends on a healthy node** (for example its run's
+  `maxOutputTokens` is exhausted; the gateway reserves each request's full
+  output bound) reports `Uncertain` and the run does not end by itself.
+  Size `spec.enduring` for the turns you expect.
 - **A dispatcher restart loses live scoped parents**, including the roll caused
   by toggling mediation or upgrading the fleet package.
 - **Rotation is manual** (delete, bootstrap or rerun the install, restart);

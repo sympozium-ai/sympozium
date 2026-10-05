@@ -138,7 +138,10 @@ graph TB
     CM -- "creates" --> HS
     CM -- "provisions parents<br/>POST /v1/parents/provision" --> ROUTER
     POL[("CellnExecutionPolicy<br/>CellnRuntimeProfile<br/>ClusterCellnTool")] -. "admits" .-> CM
-    KEYS[("celln-fleet-model-credentials<br/><small>one key per backend</small>")] -. "mounted into" .-> OWN
+    GW["Model gateway<br/><small>holds each Agent's own key</small>"]
+    AKEYS[("Agent key Secrets<br/><small>one owner each</small>")] -. "read per call" .-> GW
+    OWN -- "model calls<br/>(mediated, default)" --> GW
+    KEYS[("celln-fleet-model-credentials<br/><small>only with --no-celln-mediation</small>")] -. "mounted into" .-> OWN
 
     style K8S stroke:#53354a,stroke-width:2px
     style CELLN stroke:#0ea5e9,stroke-width:2px
