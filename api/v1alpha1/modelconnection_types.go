@@ -114,12 +114,18 @@ func (s ModelConnectionSpec) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, model := range s.Models {
-		if len(model) == 0 || len(model) > 128 || strings.TrimSpace(model) != model || strings.ContainsAny(model, "\x00\r\n") || seen[model] {
+		if !ValidModelIdentifier(model) || seen[model] {
 			return fmt.Errorf("model identifiers must be unique, nonempty and at most 128 bytes")
 		}
 		seen[model] = true
 	}
 	return nil
+}
+
+// ValidModelIdentifier is the shape of one model name: nonempty, at most 128
+// bytes, no surrounding whitespace and no NUL, CR or LF.
+func ValidModelIdentifier(model string) bool {
+	return len(model) != 0 && len(model) <= 128 && strings.TrimSpace(model) == model && !strings.ContainsAny(model, "\x00\r\n")
 }
 
 // RequestParameters is the validated parameters object, numbers in their

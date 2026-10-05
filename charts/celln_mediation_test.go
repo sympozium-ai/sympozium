@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -164,10 +165,21 @@ func TestMediationRecordsTheDeclaredRoutes(t *testing.T) {
 		}
 		return record
 	}
-	// Enabled with nothing declared: the record exists (mediation is on) and
-	// offers nothing. No provider is on by default.
-	if got := read(t, mediationValues()); got.MediateBackends || len(got.Routes) != 0 {
-		t.Fatalf("a provider is on by default: %+v", got)
+	// Enabled with nothing declared: the record carries the built-in routes
+	// (any model of the well-known hosted providers, the Agent's own key),
+	// exactly the ones cellninstall.DefaultMediatedRoutes names.
+	if got := read(t, mediationValues()); got.MediateBackends || !reflect.DeepEqual(got.Routes, cellninstall.DefaultMediatedRoutes()) {
+		t.Fatalf("defaults = %+v, want %+v", got.Routes, cellninstall.DefaultMediatedRoutes())
+	}
+	// Switched off, the record exists (mediation is on) and offers nothing.
+	if got := read(t, append(mediationValues(), "celln.mediation.defaultRoutes=false")); got.MediateBackends || len(got.Routes) != 0 {
+		t.Fatalf("defaultRoutes=false still offers %+v", got)
+	}
+	// A declared route replaces the defaults entirely, and the any-model
+	// token is recorded as declared.
+	anyModel := append(mediationValues(), route(0, "anthropic", "anthropic-messages", "*", "https://api.anthropic.com")...)
+	if got := read(t, anyModel); len(got.Routes) != 1 || !slices.Equal(got.Routes[0].Models, []string{"*"}) || got.Routes[0].Provider != "anthropic" {
+		t.Fatalf("any-model route recorded as %+v", got.Routes)
 	}
 	declared := []cellninstall.MediatedRoute{
 		{Provider: "anthropic", Protocol: "anthropic-messages", Models: []string{"claude-sonnet-5", "claude.opus:5"}, EndpointOrigins: []string{"https://api.anthropic.com"}},
@@ -518,24 +530,28 @@ func TestMediationRefusesIncompleteOrInconsistentInput(t *testing.T) {
 		"duplicate namespace": {append(slices.Clone(full), "modelGateway.namespaces[0]=team-a", "modelGateway.namespaces[1]=team-a"), "modelGateway.namespaces must be unique namespace names"},
 		// Declared routes are inert without mediation, and saying so beats
 		// silently admitting nothing.
-		"routes while disabled":         {append(without(append(slices.Clone(full), route(0, "anthropic", "anthropic-messages", "claude-a", "https://api.anthropic.com")...), "celln.mediation.enabled"), "celln.mediation.enabled=false"), "require celln.mediation.enabled"},
-		"backends while disabled":       {append(fleetValues(), "celln.mediation.mediateBackends=true"), "require celln.mediation.enabled"},
-		"routes without any fleet":      {route(0, "anthropic", "anthropic-messages", "claude-a", "https://api.anthropic.com"), "require celln.mediation.enabled"},
-		"route: no provider":            {append(slices.Clone(full), route(0, "", "openai-chat", "gpt", "https://api.openai.com")...), "routes[0].provider must be"},
-		"route: unknown protocol":       {append(slices.Clone(full), route(0, "google", "gemini", "g", "https://g.example")...), "routes[0].protocol must be openai-chat or anthropic-messages"},
-		"route: no model":               {append(slices.Clone(full), "celln.mediation.routes[0].provider=openai", "celln.mediation.routes[0].protocol=openai-chat", "celln.mediation.routes[0].endpointOrigins[0]=https://api.openai.com"), "routes[0].models must list 1-32 exact model names"},
-		"route: empty model":            {append(slices.Clone(full), route(0, "openai", "openai-chat", "", "https://api.openai.com")...), "must be an exact model name"},
-		"route: wildcard model":         {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt-*", "https://api.openai.com")...), "there is no wildcard"},
-		"route: repeated model":         {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), "celln.mediation.routes[0].models[1]=gpt"), "must not repeat a model"},
-		"route: no origin":              {append(slices.Clone(full), "celln.mediation.routes[0].provider=openai", "celln.mediation.routes[0].protocol=openai-chat", "celln.mediation.routes[0].models[0]=gpt"), "routes[0].endpointOrigins must list 1-16 HTTPS origins"},
-		"route: plain HTTP origin":      {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "http://api.openai.com")...), "a Secret never crosses plain HTTP"},
-		"route: origin with a port":     {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com:8443")...), "without port, path or credentials"},
-		"route: origin with a path":     {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com/v1")...), "without port, path or credentials"},
-		"route: origin with a user":     {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://key@api.openai.com")...), "without port, path or credentials"},
-		"route: wildcard origin":        {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "*")...), "without port, path or credentials"},
-		"route: second one is checked":  {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), route(1, "anthropic", "anthropic-messages", "*", "https://api.anthropic.com")...), "routes[1].models"},
-		"route: misspelled field":       {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), "celln.mediation.routes[0].origins[0]=https://api.openai.com"), "routes[0].origins is not a route field"},
-		"mediateBackends: not a switch": {append(slices.Clone(full), "celln.mediation.mediateBackends=some"), "celln.mediation.mediateBackends must be true or false"},
+		"routes while disabled":          {append(without(append(slices.Clone(full), route(0, "anthropic", "anthropic-messages", "claude-a", "https://api.anthropic.com")...), "celln.mediation.enabled"), "celln.mediation.enabled=false"), "require celln.mediation.enabled"},
+		"backends while disabled":        {append(fleetValues(), "celln.mediation.mediateBackends=true"), "require celln.mediation.enabled"},
+		"routes without any fleet":       {route(0, "anthropic", "anthropic-messages", "claude-a", "https://api.anthropic.com"), "require celln.mediation.enabled"},
+		"route: no provider":             {append(slices.Clone(full), route(0, "", "openai-chat", "gpt", "https://api.openai.com")...), "routes[0].provider must be"},
+		"route: unknown protocol":        {append(slices.Clone(full), route(0, "google", "gemini", "g", "https://g.example")...), "routes[0].protocol must be openai-chat or anthropic-messages"},
+		"route: no model":                {append(slices.Clone(full), "celln.mediation.routes[0].provider=openai", "celln.mediation.routes[0].protocol=openai-chat", "celln.mediation.routes[0].endpointOrigins[0]=https://api.openai.com"), "routes[0].models must list 1-32 exact model names"},
+		"route: empty model":             {append(slices.Clone(full), route(0, "openai", "openai-chat", "", "https://api.openai.com")...), "must be an exact model name"},
+		"route: wildcard model":          {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt-*", "https://api.openai.com")...), "the only pattern is a lone"},
+		"route: any model beside a name": {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "*", "https://api.openai.com")...), "celln.mediation.routes[0].models[1]=gpt-5"), "the only pattern is a lone"},
+		"route: name beside any model":   {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt-5", "https://api.openai.com")...), "celln.mediation.routes[0].models[1]=*"), "the only pattern is a lone"},
+		"route: any model, any origin":   {append(slices.Clone(full), route(0, "openai", "openai-chat", "*", "*")...), "without port, path or credentials"},
+		"defaultRoutes: not a switch":    {append(slices.Clone(full), "celln.mediation.defaultRoutes=some"), "celln.mediation.defaultRoutes must be true or false"},
+		"route: repeated model":          {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), "celln.mediation.routes[0].models[1]=gpt"), "must not repeat a model"},
+		"route: no origin":               {append(slices.Clone(full), "celln.mediation.routes[0].provider=openai", "celln.mediation.routes[0].protocol=openai-chat", "celln.mediation.routes[0].models[0]=gpt"), "routes[0].endpointOrigins must list 1-16 HTTPS origins"},
+		"route: plain HTTP origin":       {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "http://api.openai.com")...), "a Secret never crosses plain HTTP"},
+		"route: origin with a port":      {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com:8443")...), "without port, path or credentials"},
+		"route: origin with a path":      {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com/v1")...), "without port, path or credentials"},
+		"route: origin with a user":      {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://key@api.openai.com")...), "without port, path or credentials"},
+		"route: wildcard origin":         {append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "*")...), "without port, path or credentials"},
+		"route: second one is checked":   {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), route(1, "anthropic", "anthropic-messages", "claude-*", "https://api.anthropic.com")...), "routes[1].models"},
+		"route: misspelled field":        {append(append(slices.Clone(full), route(0, "openai", "openai-chat", "gpt", "https://api.openai.com")...), "celln.mediation.routes[0].origins[0]=https://api.openai.com"), "routes[0].origins is not a route field"},
+		"mediateBackends: not a switch":  {append(slices.Clone(full), "celln.mediation.mediateBackends=some"), "celln.mediation.mediateBackends must be true or false"},
 	} {
 		raw, err := renderNativeParent(t, tc.values)
 		if err == nil {

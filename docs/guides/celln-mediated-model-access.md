@@ -160,10 +160,28 @@ curl --cacert ca.crt -X POST https://celln-scoped-receiver.celln-system.svc:9443
 
 ## 5. Declare which providers Agents may bring a key for
 
-Enabling mediation admits **nothing** by itself. The resolver matches an Agent's
-`ModelConnection` against the `auth: secret` routes of the scope's
-`CellnExecutionPolicy`, and refuses everything else with `AUTH_ROUTE_MISMATCH`.
-No provider is on by default; the operator declares each one.
+The resolver matches an Agent's `ModelConnection` against the `auth: secret`
+routes of the scope's `CellnExecutionPolicy`, and refuses everything else with
+`AUTH_ROUTE_MISMATCH`.
+
+**Built-in routes.** When mediation is enabled and you declare no route, the
+chart records three, so an Agent can bring its own key for any model of a
+well-known hosted provider without further setup:
+
+| provider    | protocol             | endpoint origin             | models |
+|-------------|----------------------|-----------------------------|--------|
+| `openai`    | `openai-chat`        | `https://api.openai.com`    | `["*"]` (any) |
+| `anthropic` | `anthropic-messages` | `https://api.anthropic.com` | `["*"]` (any) |
+| `deepseek`  | `openai-chat`        | `https://api.deepseek.com`  | `["*"]` (any) |
+
+They grant no key of the cluster's: each Agent still brings its own Secret, and
+that Secret only ever goes to the listed origin. Declaring **any** route
+(`celln.mediation.routes` or `--celln-mediated-route`) replaces the built-in
+routes entirely, so declaring one provider is also how you restrict to it. Set
+`celln.mediation.defaultRoutes=false` to record no route at all until you
+declare one. Like every route, they reach the policy on the next
+`sympozium install --celln-fleet`, added backend or
+`sympozium celln-mediation apply-routes`.
 
 Why the operator, and not the Agent's owner: a `ModelConnection` is written by a
 tenant, and a tenant-authored endpoint is not authorisation. If the connection
@@ -172,10 +190,16 @@ alone decided where a namespace's Secret may be sent, anything that can write a
 point a key, or the gateway's egress, at a host of its choosing. The route list
 is the operator's allow-list of destinations; the tenant only picks from it.
 
-Matching is **exact** on all four of provider, protocol, model and endpoint
-origin. There is no wildcard model or origin prefix. Secret routes use
-`https://host` without a port: a cluster Secret never crosses plain HTTP.
-Explicitly keyless local routes can approve HTTP and ports as described below.
+Matching is **exact** on provider, protocol and endpoint origin: there is no
+wildcard origin or origin prefix, so a key is only ever sent to an origin the
+operator named. Models are exact names, or the **any-model token** `["*"]`,
+which admits any model name of that provider at those origins. `*` must be the
+route's only model: `[gpt-5, "*"]`, `gpt-*` and other patterns are refused. To
+restrict Agents to particular models, list them instead of `*`. Whatever the
+route, the signed decision binds the run's concrete model, and the gateway
+refuses a request for any other. Secret routes use `https://host` without a
+port: a cluster Secret never crosses plain HTTP. Explicitly keyless local
+routes can approve HTTP and ports as described below.
 
 With the installer (the flags only declare routes; mediation itself must be
 enabled by this install's values, or they are refused before anything changes):
@@ -184,10 +208,11 @@ enabled by this install's values, or they are refused before anything changes):
 sympozium install --celln-fleet ... \
   --set celln.mediation.enabled=true --set celln.mediation.clusterId=my-cluster ... \
   --celln-mediated-route provider=anthropic,protocol=anthropic-messages,origin=https://api.anthropic.com,models=claude-sonnet-5+claude-opus-5 \
-  --celln-mediated-route provider=openai,protocol=openai-chat,origin=https://api.openai.com,models=gpt-5
+  --celln-mediated-route provider=openai,protocol=openai-chat,origin=https://api.openai.com,models=*
 ```
 
-`models` and `origin` take several values joined with `+` (or repeat the key).
+`models` and `origin` take several values joined with `+` (or repeat the key);
+`models=*` alone admits any model (quote it in a shell that globs).
 `--celln-mediate-backends` additionally offers every HTTPS backend of the fleet
 (its provider, protocol, origin and model) to an Agent's own key; plain-HTTP and
 port-bearing backends are never offered. A model name that itself contains `+`
@@ -204,8 +229,12 @@ celln:
     routes:
       - provider: anthropic
         protocol: anthropic-messages     # or openai-chat
-        models: [claude-sonnet-5, claude-opus-5]
+        models: [claude-sonnet-5, claude-opus-5]   # exact names, or ["*"] alone for any model
         endpointOrigins: [https://api.anthropic.com]
+      - provider: openai
+        protocol: openai-chat
+        models: ["*"]
+        endpointOrigins: [https://api.openai.com]
 ```
 
 ```bash
@@ -241,7 +270,9 @@ one is not in the policy yet. The console reads the same through
 ```
 
 `routes` are the ones the namespace's policies carry now (what a run is matched
-against); `pending` are declared routes no policy carries yet.
+against); `pending` are declared routes no policy carries yet. A route with
+`models: ["*"]` also carries `"anyModel": true`, and the console then asks for
+the model name (prefilled with a well-known one) instead of offering a list.
 
 ## 6. Give an Agent its own key
 
@@ -263,8 +294,9 @@ stringData:
   ANTHROPIC_API_KEY: "<your key>"
 ```
 
-**The ModelConnection.** Provider, protocol, the endpoint's origin and every
-model you intend to run must match one declared route exactly. `parameters`
+**The ModelConnection.** Provider, protocol and the endpoint's origin must
+match one declared route exactly, and every model you intend to run must be one
+of its models (any model, on a `["*"]` route). `parameters`
 and `maxOutputTokens` (256-4096 per request, default 512) are optional.
 
 ```yaml

@@ -35,8 +35,11 @@ func TestMediatedRoutePolicyRoute(t *testing.T) {
 		}, refuse: "unique"},
 		{name: "no origin", mutate: func(r *MediatedRoute) { r.EndpointOrigins = nil }, refuse: "required"},
 		{name: "no model", mutate: func(r *MediatedRoute) { r.Models = nil }, refuse: "required"},
-		{name: "wildcard model", mutate: func(r *MediatedRoute) { r.Models = []string{"*"} }, refuse: "no wildcard"},
-		{name: "prefix wildcard model", mutate: func(r *MediatedRoute) { r.Models = []string{"claude-*"} }, refuse: "no wildcard"},
+		{name: "prefix wildcard model", mutate: func(r *MediatedRoute) { r.Models = []string{"claude-*"} }, refuse: "no other pattern"},
+		{name: "any model beside a name", mutate: func(r *MediatedRoute) { r.Models = []string{"*", "claude-a"} }, refuse: "no other pattern"},
+		{name: "repeated any model", mutate: func(r *MediatedRoute) { r.Models = []string{"*", "*"} }, refuse: "no other pattern"},
+		{name: "model with surrounding space", mutate: func(r *MediatedRoute) { r.Models = []string{" claude-a"} }, refuse: "exact identifiers"},
+		{name: "any model at a wildcard origin", mutate: func(r *MediatedRoute) { r.Models, r.EndpointOrigins = []string{"*"}, []string{"*"} }, refuse: "origin"},
 		{name: "duplicate model", mutate: func(r *MediatedRoute) { r.Models = []string{"claude-a", "claude-a"} }, refuse: "unique"},
 		{name: "unknown protocol", mutate: func(r *MediatedRoute) { r.Protocol = "gemini" }, refuse: "protocol"},
 		{name: "empty provider", mutate: func(r *MediatedRoute) { r.Provider = "" }, refuse: "provider"},
@@ -62,6 +65,50 @@ func TestMediatedRoutePolicyRoute(t *testing.T) {
 				t.Fatal("the operator's route was reordered in place")
 			}
 		})
+	}
+}
+
+func TestMediatedRouteAnyModel(t *testing.T) {
+	got, err := MediatedRoute{Provider: "openai", Protocol: "openai-chat", Models: []string{"*"}, EndpointOrigins: []string{"https://api.openai.com"}}.PolicyRoute()
+	want := api.CellnExecutionPolicyRoute{Provider: "openai", Protocol: "openai-chat", Models: []string{"*"}, EndpointOrigins: []string{"https://api.openai.com"}, Auth: "secret"}
+	if err != nil || !reflect.DeepEqual(got, want) || !got.AnyModel() {
+		t.Fatalf("any-model route = %+v %v", got, err)
+	}
+}
+
+func TestDefaultMediatedRoutes(t *testing.T) {
+	routes := DefaultMediatedRoutes()
+	if err := ValidateMediatedRoutes(routes); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{
+		ModelProviderOpenAI:    {"openai-chat", "https://api.openai.com"},
+		ModelProviderAnthropic: {"anthropic-messages", "https://api.anthropic.com"},
+		ModelProviderDeepSeek:  {"openai-chat", "https://api.deepseek.com"},
+	}
+	if len(routes) != len(want) {
+		t.Fatalf("routes = %+v", routes)
+	}
+	for _, route := range routes {
+		policy, err := route.PolicyRoute()
+		w, ok := want[route.Provider]
+		if err != nil || !ok || policy.Protocol != w[0] || !reflect.DeepEqual(policy.EndpointOrigins, []string{w[1]}) || policy.Auth != "secret" || !policy.AnyModel() || policy.AllowInsecure {
+			t.Fatalf("default route %+v -> %+v %v", route, policy, err)
+		}
+		// Each provider's own fleet preset sends its requests to that origin.
+		resolved, err := FleetModel{Provider: route.Provider, Name: "m"}.Resolve("s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		origin, err := api.ModelEndpointOrigin(resolved.Endpoint)
+		if err != nil || origin != w[1] || resolved.Protocol != w[0] {
+			t.Fatalf("%s preset %s (%s) does not match the default route: %v", route.Provider, resolved.Endpoint, resolved.Protocol, err)
+		}
+	}
+	// A caller mutating the result does not change the next one.
+	routes[0].Models[0] = "gpt-5"
+	if DefaultMediatedRoutes()[0].Models[0] != "*" {
+		t.Fatal("DefaultMediatedRoutes shares its slices")
 	}
 }
 

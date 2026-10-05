@@ -598,9 +598,11 @@ func resolveDecisionRoute(s platformSnapshot, required bool) (DecisionRouteBindi
 		allowed := false
 		for _, candidate := range policy.Spec.Routes {
 			// A plain-HTTP origin needs the operator's approval on the policy
-			// route itself, not only on the tenant's connection.
+			// route itself, not only on the tenant's connection. Origins are
+			// always exact; the model is exact unless the route admits any
+			// model (["*"]), and the decision binds the concrete model either way.
 			insecureApproved := strings.HasPrefix(strings.ToLower(origin), "https://") || candidate.AllowInsecure
-			if candidate.Provider == c.Spec.Provider && candidate.Protocol == c.Spec.Protocol && candidate.Auth == auth && insecureApproved && slices.Contains(candidate.Models, s.Run.Spec.Model.Model) && slices.Contains(candidate.EndpointOrigins, origin) {
+			if candidate.Provider == c.Spec.Provider && candidate.Protocol == c.Spec.Protocol && candidate.Auth == auth && insecureApproved && candidate.AllowsModel(s.Run.Spec.Model.Model) && slices.Contains(candidate.EndpointOrigins, origin) {
 				allowed = true
 				break
 			}

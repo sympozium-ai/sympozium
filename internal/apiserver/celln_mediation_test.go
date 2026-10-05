@@ -49,6 +49,9 @@ func TestCellnMediationReportsWhatAnAgentMayBringAKeyFor(t *testing.T) {
 	pending := CellnMediatedRoute{Provider: "openai", Protocol: "openai-chat", Models: []string{"gpt"}, EndpointOrigins: []string{"https://api.openai.com"}, SecretKey: "OPENAI_API_KEY"}
 	keyless := sympoziumv1alpha1.CellnExecutionPolicyRoute{Provider: "llama-server", Protocol: "openai-chat", Models: []string{"local"}, EndpointOrigins: []string{"http://framework:8080"}, Auth: "none", AllowInsecure: true}
 	keylessAPI := CellnMediatedRoute{Provider: "llama-server", Protocol: "openai-chat", Models: []string{"local"}, EndpointOrigins: []string{"http://framework:8080"}, Auth: "none", AllowInsecure: true, Policy: "celln-fleet-trial"}
+	anyAnthropic := sympoziumv1alpha1.CellnExecutionPolicyRoute{Provider: "anthropic", Protocol: "anthropic-messages", Models: []string{"*"}, EndpointOrigins: []string{"https://api.anthropic.com"}, Auth: "secret"}
+	anyAnthropicAPI := CellnMediatedRoute{Provider: "anthropic", Protocol: "anthropic-messages", Models: []string{"*"}, AnyModel: true, EndpointOrigins: []string{"https://api.anthropic.com"}, Policy: "celln-fleet-trial", SecretKey: "ANTHROPIC_API_KEY"}
+	anyOpenAIPending := CellnMediatedRoute{Provider: "openai", Protocol: "openai-chat", Models: []string{"*"}, AnyModel: true, EndpointOrigins: []string{"https://api.openai.com"}, SecretKey: "OPENAI_API_KEY"}
 	for _, tc := range []struct {
 		name      string
 		namespace string
@@ -68,7 +71,11 @@ func TestCellnMediationReportsWhatAnAgentMayBringAKeyFor(t *testing.T) {
 		{name: "a namespace no policy admits is offered nothing", namespace: "sympozium-system", record: record(declared), routes: []sympoziumv1alpha1.CellnExecutionPolicyRoute{anthropic}, status: http.StatusOK,
 			want: CellnMediation{Enabled: true, MediateBackends: true, Routes: []CellnMediatedRoute{}, Pending: []CellnMediatedRoute{pending}}},
 		{name: "unknown namespace", namespace: "nowhere", status: http.StatusNotFound},
-		{name: "unusable record", namespace: "team-a", record: record(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*"],"endpointOrigins":["https://api.openai.com"]}]}`), status: http.StatusServiceUnavailable},
+		{name: "unusable record", namespace: "team-a", record: record(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*","gpt"],"endpointOrigins":["https://api.openai.com"]}]}`), status: http.StatusServiceUnavailable},
+		// An any-model route says so, published or pending, so a client asks
+		// for a model name instead of offering a list.
+		{name: "any-model route", namespace: "team-a", record: record(`{"routes":[{"provider":"anthropic","protocol":"anthropic-messages","models":["*"],"endpointOrigins":["https://api.anthropic.com"]},{"provider":"openai","protocol":"openai-chat","models":["*"],"endpointOrigins":["https://api.openai.com"]}]}`), routes: []sympoziumv1alpha1.CellnExecutionPolicyRoute{anyAnthropic}, status: http.StatusOK,
+			want: CellnMediation{Enabled: true, Routes: []CellnMediatedRoute{anyAnthropicAPI}, Pending: []CellnMediatedRoute{anyOpenAIPending}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			profile, policy, objects := mediationFixture()

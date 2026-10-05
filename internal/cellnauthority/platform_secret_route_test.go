@@ -368,3 +368,84 @@ func TestRequestOutputTokensIsOnlySentOnGatewayMediatedRoutes(t *testing.T) {
 		t.Fatalf("credential-free mediated connection bound = %d", got)
 	}
 }
+
+// An operator route declaring models ["*"] admits any model name of its
+// provider and protocol at its exact origins; the decision still binds the
+// run's concrete model, and nothing else about the route is relaxed.
+func TestAnyModelSecretRoute(t *testing.T) {
+	setRouteModels := func(ctx context.Context, t *testing.T, f platformFixture, models []string) {
+		var policies api.CellnExecutionPolicyList
+		if err := f.client.List(ctx, &policies); err != nil {
+			t.Fatal(err)
+		}
+		for i := range policies.Items {
+			policies.Items[i].Spec.Routes[1].Models = models
+			if err := f.client.Update(ctx, &policies.Items[i]); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	runModel := func(ctx context.Context, t *testing.T, f platformFixture, model string) {
+		updateConnection(t, ctx, f, func(c *api.ModelConnection) { c.Spec.Models = []string{"gpt-test", model} })
+		var run api.AgentRun
+		if err := f.client.Get(ctx, f.runKey, &run); err != nil {
+			t.Fatal(err)
+		}
+		run.Spec.Model.Model = model
+		if err := f.client.Update(ctx, &run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		models []string
+		change func(ctx context.Context, t *testing.T, f platformFixture)
+		model  string // the bound model when admitted
+	}{
+		{name: "exact list admits a listed model", models: []string{"gpt-test", "gpt-other"}, model: "gpt-test"},
+		{name: "exact list refuses another model", models: []string{"gpt-test"}, change: func(ctx context.Context, t *testing.T, f platformFixture) { runModel(ctx, t, f, "gpt-new") }},
+		{name: "any model admits a model nobody listed", models: []string{"*"}, change: func(ctx context.Context, t *testing.T, f platformFixture) { runModel(ctx, t, f, "gpt-new-2026") }, model: "gpt-new-2026"},
+		{name: "any model is not any origin", models: []string{"*"}, change: func(ctx context.Context, t *testing.T, f platformFixture) {
+			runModel(ctx, t, f, "gpt-new")
+			updateConnection(t, ctx, f, func(c *api.ModelConnection) { c.Spec.Endpoint = "https://attacker.example/v1/chat/completions" })
+		}},
+		{name: "any model is not any provider", models: []string{"*"}, change: func(ctx context.Context, t *testing.T, f platformFixture) {
+			updateAgent(t, ctx, f, func(a *api.Agent) { a.Spec.AuthRefs = []api.SecretRef{{Secret: "model-secret"}} })
+			updateConnection(t, ctx, f, func(c *api.ModelConnection) { c.Spec.Provider = "anthropic" })
+		}},
+		{name: "any model is not the literal token", models: []string{"*"}, change: func(ctx context.Context, t *testing.T, f platformFixture) { runModel(ctx, t, f, "*") }},
+		{name: "a token beside a name is no any-model route", models: []string{"*", "gpt-test"}, change: func(ctx context.Context, t *testing.T, f platformFixture) { runModel(ctx, t, f, "gpt-new") }},
+		{name: "empty model", models: []string{"*"}, change: func(ctx context.Context, t *testing.T, f platformFixture) {
+			var run api.AgentRun
+			if err := f.client.Get(ctx, f.runKey, &run); err != nil {
+				t.Fatal(err)
+			}
+			run.Spec.Model.Model = ""
+			if err := f.client.Update(ctx, &run); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, request := secretRouteFixture(t, func(ctx context.Context, f platformFixture) {
+				setRouteModels(ctx, t, f, tc.models)
+				if tc.change != nil {
+					tc.change(ctx, t, f)
+				}
+			})
+			resolution, err := f.resolver.Resolve(t.Context(), f.runKey, request)
+			if tc.model == "" {
+				if PlatformReason(err) != ReasonRouteMismatch {
+					t.Fatalf("reason = %q, want %q; error %v", PlatformReason(err), ReasonRouteMismatch, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if route := resolution.Decision.Route; route.Model != tc.model || route.EndpointOrigin != "https://model.example" || route.Auth != "secret" {
+				t.Fatalf("route = %+v, want model %q", route, tc.model)
+			}
+		})
+	}
+}

@@ -121,13 +121,13 @@ func (d *doctor) checkMediation(ctx context.Context, rel *releaseInfo) doctorFin
 	for _, declared := range record.Routes {
 		route, err := declared.PolicyRoute()
 		if err == nil && !slices.ContainsFunc(published, func(have sympoziumv1alpha1.CellnExecutionPolicyRoute) bool { return reflect.DeepEqual(have, route) }) {
-			pending = append(pending, fmt.Sprintf("%s/%s", route.Provider, strings.Join(route.Models, "+")))
+			pending = append(pending, fmt.Sprintf("%s/%s", route.Provider, modelsLabel(route.Models)))
 		}
 	}
 	switch {
 	case len(published) == 0 && len(pending) == 0 && !record.MediateBackends:
 		raise(statusWarn)
-		f.Warning = "no auth \"secret\" route is declared or published: Agents with their own key will be refused AUTH_ROUTE_MISMATCH; declare a route with --celln-mediated-route"
+		f.Warning = "no auth \"secret\" route is declared or published (celln.mediation.defaultRoutes=false and no routes): Agents with their own key will be refused AUTH_ROUTE_MISMATCH; declare a route with --celln-mediated-route"
 		f.Remedy = append(f.Remedy, mediatedRouteRemedy)
 	case len(pending) != 0 || (len(published) == 0 && record.MediateBackends):
 		raise(statusWarn)
@@ -140,7 +140,7 @@ func (d *doctor) checkMediation(ctx context.Context, rel *releaseInfo) doctorFin
 	}
 	routes := make([]string, 0, len(published))
 	for _, route := range published {
-		routes = append(routes, fmt.Sprintf("%s/%s (%s, auth=%s) at %s", route.Provider, strings.Join(route.Models, "+"), route.Protocol, route.Auth, strings.Join(route.EndpointOrigins, "+")))
+		routes = append(routes, fmt.Sprintf("%s/%s (%s, auth=%s) at %s", route.Provider, modelsLabel(route.Models), route.Protocol, route.Auth, strings.Join(route.EndpointOrigins, "+")))
 	}
 	switch {
 	case f.Status == statusFail:

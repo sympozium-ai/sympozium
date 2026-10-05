@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"slices"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -175,6 +177,10 @@ type CellnExecutionPolicyTool struct {
 
 // CellnExecutionPolicyRoute is explicit model endpoint authority. A tenant
 // ModelConnection may choose only a route contained by one of these entries.
+// Models are exact names, or exactly ["*"] (CellnAnyModel) for any model name
+// of the route's provider at its exact endpoint origins; origins are never a
+// pattern, so a key only ever goes to the origins listed here.
+// +kubebuilder:validation:XValidation:rule="!self.models.exists(m, m == '*') || (self.models.size() == 1 && self.auth != 'host-profile')",message="the any-model token '*' must be a route's only model and is not allowed on a host-profile route"
 // +kubebuilder:validation:XValidation:rule="self.endpointOrigins.all(x, x.startsWith('https://') || (x.startsWith('http://') && self.auth in ['none', 'host-profile'] && has(self.allowInsecure) && self.allowInsecure))",message="Secret routes require https; http requires auth none or host-profile and explicit allowInsecure"
 type CellnExecutionPolicyRoute struct {
 	// +kubebuilder:validation:MinLength=1
@@ -197,6 +203,29 @@ type CellnExecutionPolicyRoute struct {
 	// A cluster Secret route can never use plain HTTP.
 	// +optional
 	AllowInsecure bool `json:"allowInsecure,omitempty"`
+}
+
+// CellnAnyModel is the only model pattern a route may declare, and only as its
+// sole model: any model name the route's provider serves at the route's exact
+// origins. A decision still binds the run's concrete model.
+const CellnAnyModel = "*"
+
+// AnyModel reports that the route admits any model name (models ["*"]).
+func (r CellnExecutionPolicyRoute) AnyModel() bool {
+	return len(r.Models) == 1 && r.Models[0] == CellnAnyModel
+}
+
+// AllowsModel reports whether the route admits a concrete model: one of its
+// exact names, or, for an any-model route, any valid model identifier other
+// than the token itself (the rules ModelConnectionSpec.Validate applies).
+func (r CellnExecutionPolicyRoute) AllowsModel(model string) bool {
+	if model == "" || model == CellnAnyModel {
+		return false
+	}
+	if r.AnyModel() {
+		return ValidModelIdentifier(model)
+	}
+	return slices.Contains(r.Models, model)
 }
 
 type CellnExecutionPolicyCeilings struct {

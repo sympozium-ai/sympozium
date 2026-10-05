@@ -40,7 +40,9 @@ func TestReadMediationRecord(t *testing.T) {
 		{name: "declared", record: mediationRecord(`{"mediateBackends":true,"routes":[{"provider":"anthropic","protocol":"anthropic-messages","models":["claude-a"],"endpointOrigins":["https://api.anthropic.com"]}]}`), want: MediationRecord{Enabled: true, MediateBackends: true, Routes: []MediatedRoute{anthropic}}},
 		{name: "unknown field", record: mediationRecord(`{"routes":[{"provider":"anthropic","protocol":"anthropic-messages","models":["claude-a"],"origins":["https://api.anthropic.com"]}]}`), refused: "unreadable"},
 		{name: "plain HTTP origin", record: mediationRecord(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["gpt"],"endpointOrigins":["http://api.openai.com"]}]}`), refused: "plain HTTP"},
-		{name: "wildcard model", record: mediationRecord(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*"],"endpointOrigins":["https://api.openai.com"]}]}`), refused: "no wildcard"},
+		{name: "any model", record: mediationRecord(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*"],"endpointOrigins":["https://api.openai.com"]}]}`), want: MediationRecord{Enabled: true, Routes: []MediatedRoute{{Provider: "openai", Protocol: "openai-chat", Models: []string{"*"}, EndpointOrigins: []string{"https://api.openai.com"}}}}},
+		{name: "any model beside a name", record: mediationRecord(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*","gpt-5"],"endpointOrigins":["https://api.openai.com"]}]}`), refused: "no other pattern"},
+		{name: "prefix wildcard model", record: mediationRecord(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["gpt-*"],"endpointOrigins":["https://api.openai.com"]}]}`), refused: "no other pattern"},
 		{name: "more routes than a policy carries", record: mediationRecord(string(tooMany)), refused: "at most 32"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -9,8 +9,10 @@ celln:
     clusterId: evaluation-cluster
     issuer:
       keyId: mediation-2026-09
-    # The providers an Agent may bring its own key for; none unless declared.
-    # Exact provider, protocol, model and https://host origin, no wildcard.
+    # The providers an Agent may bring its own key for; declaring any route
+    # replaces the built-in ones (any model of openai, anthropic, deepseek).
+    # Exact provider, protocol and https://host origin (never a wildcard);
+    # exact model names, or ["*"] alone for any model.
     routes:
       - provider: anthropic
         protocol: anthropic-messages

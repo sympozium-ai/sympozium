@@ -164,6 +164,9 @@ template that wires one of the three includes this.
 */}}
 {{- define "sympozium.cellnMediation" -}}
 {{- $m := .Values.celln.mediation | default dict -}}
+{{- if not (kindIs "bool" (ternary $m.defaultRoutes true (hasKey $m "defaultRoutes"))) -}}
+{{- fail "celln.mediation.defaultRoutes must be true or false" -}}
+{{- end -}}
 {{- if and (not $m.enabled) (or $m.mediateBackends $m.routes) -}}
 {{- fail "celln.mediation.routes and celln.mediation.mediateBackends require celln.mediation.enabled: without mediation an Agent's own key is never used, so the declared routes would admit nothing; enable mediation or remove them" -}}
 {{- end -}}
@@ -192,11 +195,13 @@ template that wires one of the three includes this.
 {{- end -}}
 {{- $models := $route.models | default list -}}
 {{- if or (not (kindIs "slice" $models)) (lt (len $models) 1) (gt (len $models) 32) -}}
-{{- fail (printf "celln.mediation.routes[%d].models must list 1-32 exact model names: a route without a model admits nothing" $i) -}}
+{{- fail (printf "celln.mediation.routes[%d].models must list 1-32 exact model names, or exactly [\"*\"] for any model: a route without a model admits nothing" $i) -}}
 {{- end -}}
+{{- if not (and (eq (len $models) 1) (eq (toString (index $models 0)) "*")) -}}
 {{- range $model := $models -}}
 {{- if not (regexMatch "^[^*[:space:]]([^*\\r\\n]{0,126}[^*[:space:]])?$" (toString $model)) -}}
-{{- fail (printf "celln.mediation.routes[%d].models: %q must be an exact model name of at most 128 bytes; there is no wildcard" $i (toString $model)) -}}
+{{- fail (printf "celln.mediation.routes[%d].models: %q must be an exact model name of at most 128 bytes; the only pattern is a lone \"*\" (any model), never beside a name or inside one" $i (toString $model)) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if ne (len ($models | uniq)) (len $models) -}}
@@ -318,3 +323,18 @@ else
   echo "celln scoped receiver: no parent request at $SCOPED_PARENT_REQUEST; enduring scoped runs stay disabled (one-shot only) until it exists and this pod restarts" >&2
 fi
 {{- end -}}
+
+{{/*
+The mediated routes recorded when celln.mediation is enabled, the operator
+declares no routes and celln.mediation.defaultRoutes is true (the default):
+any model ("*") of the well-known hosted providers at their exact public API
+origins, each with the Agent's own key. Mirrors cellninstall.DefaultMediatedRoutes
+(TestDefaultMediatedRoutesMatchChart keeps them equal). Renders a JSON list.
+*/}}
+{{- define "sympozium.cellnDefaultMediatedRoutes" -}}
+{{- toJson (list
+  (dict "provider" "openai" "protocol" "openai-chat" "models" (list "*") "endpointOrigins" (list "https://api.openai.com"))
+  (dict "provider" "anthropic" "protocol" "anthropic-messages" "models" (list "*") "endpointOrigins" (list "https://api.anthropic.com"))
+  (dict "provider" "deepseek" "protocol" "openai-chat" "models" (list "*") "endpointOrigins" (list "https://api.deepseek.com"))
+) -}}
+{{- end }}

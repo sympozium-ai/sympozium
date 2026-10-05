@@ -18,12 +18,15 @@ import (
 // the declaration, so a client never offers a route a run would be refused.
 
 // CellnMediatedRoute is one auth "secret" or "none" route. A ModelConnection matches it
-// only with exactly this provider and protocol, one of these models and an
-// endpoint on one of these origins.
+// only with exactly this provider and protocol, one of these models (any
+// model when AnyModel) and an endpoint on one of these origins.
 type CellnMediatedRoute struct {
-	Provider        string   `json:"provider"`
-	Protocol        string   `json:"protocol"`
-	Models          []string `json:"models"`
+	Provider string   `json:"provider"`
+	Protocol string   `json:"protocol"`
+	Models   []string `json:"models"`
+	// AnyModel reports models ["*"]: any model name of this provider at
+	// these exact origins, so a client asks for the name instead of listing.
+	AnyModel        bool     `json:"anyModel,omitempty"`
 	EndpointOrigins []string `json:"endpointOrigins"`
 	// Policy is the execution policy carrying the route; empty on a pending one.
 	Policy string `json:"policy,omitempty"`
@@ -34,7 +37,7 @@ type CellnMediatedRoute struct {
 }
 
 func mediatedAPIRoute(route api.CellnExecutionPolicyRoute, policy string) CellnMediatedRoute {
-	out := CellnMediatedRoute{Provider: route.Provider, Protocol: route.Protocol, Models: route.Models, EndpointOrigins: route.EndpointOrigins, Policy: policy, AllowInsecure: route.AllowInsecure}
+	out := CellnMediatedRoute{Provider: route.Provider, Protocol: route.Protocol, Models: route.Models, EndpointOrigins: route.EndpointOrigins, Policy: policy, AllowInsecure: route.AllowInsecure, AnyModel: route.AnyModel()}
 	if route.Auth == "none" {
 		out.Auth = "none"
 	} else {

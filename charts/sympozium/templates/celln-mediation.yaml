@@ -26,8 +26,10 @@ data:
 # key for, recorded once where every platform installer reads it (the CLI, the
 # API server completing an added backend, `sympozium celln-mediation
 # apply-routes`). Names and public origins only. Its presence also tells the
-# API server and `sympozium doctor` that mediation is enabled. Declaring
-# nothing renders an empty record: no provider is ever on by default.
+# API server and `sympozium doctor` that mediation is enabled. Declaring no
+# route records the built-in defaults (any model of openai, anthropic and
+# deepseek at their public API origins, each with the Agent's own key) unless
+# celln.mediation.defaultRoutes is false, which records no route at all.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -44,6 +46,9 @@ data:
   {{- if $route.auth }}{{ $_ := set $entry "auth" $route.auth }}{{ end }}
   {{- if $route.allowInsecure }}{{ $_ := set $entry "allowInsecure" true }}{{ end }}
   {{- $routes = append $routes $entry }}
+  {{- end }}
+  {{- if and (eq (len $routes) 0) (ternary $m.defaultRoutes true (hasKey $m "defaultRoutes")) }}
+  {{- $routes = include "sympozium.cellnDefaultMediatedRoutes" . | fromJsonArray }}
   {{- end }}
   mediation.json: {{ toJson (dict "mediateBackends" ($m.mediateBackends | default false) "routes" $routes) | quote }}
 {{- if not $receiver.url }}

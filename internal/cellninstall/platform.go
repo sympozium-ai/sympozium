@@ -81,8 +81,10 @@ type PlatformOptions struct {
 	// Secret-backed ModelConnection may use through the model gateway; they
 	// need not match any fleet backend (for example anthropic,
 	// anthropic-messages, https://api.anthropic.com). They are the operator's
-	// allow-list, never derived from anything a tenant wrote, and are matched
-	// exactly: there is no wildcard model or origin.
+	// allow-list, never derived from anything a tenant wrote. Provider,
+	// protocol and origins match exactly; models match exactly unless a route
+	// declares models ["*"] (any model of that provider at those origins).
+	// There is never a wildcard origin.
 	MediatedRoutes []MediatedRoute
 }
 
@@ -100,8 +102,11 @@ type MediatedRoute struct {
 
 var mediatedProviderPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
-// PolicyRoute validates exact models and origins. Secret routes require HTTPS;
-// keyless routes may explicitly approve HTTP and ports with AllowInsecure.
+// PolicyRoute validates the models and exact origins. Models are unique exact
+// names, or exactly ["*"] (api.CellnAnyModel) for any model of the provider;
+// "*" mixed with names and patterns such as "gpt-*" are refused. Secret routes
+// require HTTPS; keyless routes may explicitly approve HTTP and ports with
+// AllowInsecure.
 func (r MediatedRoute) PolicyRoute() (api.CellnExecutionPolicyRoute, error) {
 	auth := r.Auth
 	if auth == "" {
@@ -125,9 +130,11 @@ func (r MediatedRoute) PolicyRoute() (api.CellnExecutionPolicyRoute, error) {
 	models, origins := slices.Clone(r.Models), slices.Clone(r.EndpointOrigins)
 	slices.Sort(models)
 	slices.Sort(origins)
-	for i, model := range models {
-		if model == "" || len(model) > 128 || strings.TrimSpace(model) != model || strings.ContainsAny(model, "*\x00\r\n") || (i > 0 && models[i-1] == model) {
-			return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: models must be unique exact identifiers of at most 128 bytes (no wildcard)", r.Provider)
+	if !(len(models) == 1 && models[0] == api.CellnAnyModel) {
+		for i, model := range models {
+			if !api.ValidModelIdentifier(model) || strings.Contains(model, "*") || (i > 0 && models[i-1] == model) {
+				return api.CellnExecutionPolicyRoute{}, fmt.Errorf("mediated route %s: models must be unique exact identifiers of at most 128 bytes, or exactly [\"*\"] for any model; no other pattern and no \"*\" beside a name", r.Provider)
+			}
 		}
 	}
 	for i, origin := range origins {
@@ -140,6 +147,26 @@ func (r MediatedRoute) PolicyRoute() (api.CellnExecutionPolicyRoute, error) {
 		}
 	}
 	return api.CellnExecutionPolicyRoute{Provider: r.Provider, Protocol: r.Protocol, Models: models, EndpointOrigins: origins, Auth: auth, AllowInsecure: r.AllowInsecure}, nil
+}
+
+// DefaultMediatedRoutes are the routes recorded when mediation is enabled
+// and the operator declares none (chart celln.mediation.defaultRoutes, on by
+// default): any model of the well-known hosted providers at their public API
+// origins, each with the Agent's own key (auth secret, left empty). They admit no key of
+// the cluster's: an Agent still brings its own, and only to these origins.
+// The chart renders the same list (sympozium.cellnDefaultMediatedRoutes);
+// TestDefaultMediatedRoutesMatchChart keeps the two equal.
+func DefaultMediatedRoutes() []MediatedRoute {
+	// Auth is left empty, which PolicyRoute reads as secret, exactly as the
+	// chart records a route that declares no auth.
+	route := func(provider, protocol, origin string) MediatedRoute {
+		return MediatedRoute{Provider: provider, Protocol: protocol, Models: []string{api.CellnAnyModel}, EndpointOrigins: []string{origin}}
+	}
+	return []MediatedRoute{
+		route(ModelProviderOpenAI, "openai-chat", "https://api.openai.com"),
+		route(ModelProviderAnthropic, "anthropic-messages", "https://api.anthropic.com"),
+		route(ModelProviderDeepSeek, "openai-chat", "https://api.deepseek.com"),
+	}
 }
 
 // mediatedPolicyRoutes are the auth "secret" routes a scope's policy carries

@@ -141,6 +141,9 @@ spec:
                   description: |-
                     CellnExecutionPolicyRoute is explicit model endpoint authority. A tenant
                     ModelConnection may choose only a route contained by one of these entries.
+                    Models are exact names, or exactly ["*"] (CellnAnyModel) for any model name
+                    of the route's provider at its exact endpoint origins; origins are never a
+                    pattern, so a key only ever goes to the origins listed here.
                   properties:
                     allowInsecure:
                       description: |-
@@ -185,6 +188,10 @@ spec:
                   - provider
                   type: object
                   x-kubernetes-validations:
+                  - message: the any-model token '*' must be a route's only model
+                      and is not allowed on a host-profile route
+                    rule: '!self.models.exists(m, m == ''*'') || (self.models.size()
+                      == 1 && self.auth != ''host-profile'')'
                   - message: Secret routes require https; http requires auth none
                       or host-profile and explicit allowInsecure
                     rule: self.endpointOrigins.all(x, x.startsWith('https://') ||

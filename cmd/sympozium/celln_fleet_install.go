@@ -37,7 +37,8 @@ type cellnFleetFlags struct {
 	authorise      string
 	// mediateBackends and mediatedRouteSpecs declare which providers an Agent
 	// may bring its own key for (chart values celln.mediation.mediateBackends
-	// and celln.mediation.routes). Nothing is declared by default.
+	// and celln.mediation.routes). Declaring none leaves the chart's built-in
+	// routes (celln.mediation.defaultRoutes) in place.
 	mediateBackends    bool
 	mediatedRouteSpecs []string
 	// defaulted is set when a bare `sympozium install` chose the fleet.
@@ -72,7 +73,7 @@ func (f *cellnFleetFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.modelParametersFile, "celln-fleet-model-parameters-file", "", "Absolute path of a JSON object the Celln host merges into every provider request of the default backend, e.g. {\"chat_template_kwargs\":{\"enable_thinking\":false}} for a reasoning model on llama-server (needs a Celln newer than "+cellninstall.ModelParametersMinCelln+" on the nodes; cannot change once the backend is published)")
 	cmd.Flags().StringArrayVar(&f.backendSpecs, "celln-fleet-backend", nil, "A model backend of this fleet, repeatable: name=NAME,provider=PROVIDER,model=MODEL[,endpoint=URL][,protocol=openai-chat|anthropic-messages][,credential-file=/path][,allow-insecure=true][,parameters-file=/abs/path.json][,max-output-tokens=N] (parameters-file: a JSON object the Celln host merges into every provider request of the backend; max-output-tokens: most output tokens per model request, 256–4096, default 512). Every node configures every backend and a namespace may run parents on any of them side by side. Without this flag the --celln-fleet-model-* flags define the single backend named native")
 	cmd.Flags().BoolVar(&f.mediateBackends, "celln-mediate-backends", false, "With mediated model access (--set celln.mediation.enabled=true ...): also let an Agent use its own key, from a Secret in its namespace, for every HTTPS backend of this fleet. Plain-HTTP and port-bearing backends are never offered")
-	cmd.Flags().StringArrayVar(&f.mediatedRouteSpecs, "celln-mediated-route", nil, "A provider route an Agent may bring its own key for, repeatable: provider=PROVIDER,protocol=openai-chat|anthropic-messages,origin=https://HOST,models=MODEL[+MODEL...] (origin and models take several values joined with +, or repeat the key). Matching is exact on provider, protocol, model and origin; there is no wildcard and none is declared by default. Needs mediated model access enabled in this install's values; routes are only ever added to a scope's policy")
+	cmd.Flags().StringArrayVar(&f.mediatedRouteSpecs, "celln-mediated-route", nil, "A provider route an Agent may bring its own key for, repeatable: provider=PROVIDER,protocol=openai-chat|anthropic-messages,origin=https://HOST,models=MODEL[+MODEL...] (origin and models take several values joined with +, or repeat the key; models=* alone admits any model of that provider). Matching is exact on provider, protocol and origin (no wildcard origin) and on the model unless models=*. Declaring any route replaces the chart's built-in defaults (any model of openai, anthropic and deepseek at their public API origins). Needs mediated model access enabled in this install's values; routes are only ever added to a scope's policy")
 	cmd.Flags().StringArrayVar(&f.options.HTTPSHosts, "celln-fleet-https-host", nil, "Restrict the https-fetch and https-post-json starter tools to this exact host, repeatable (lowercase DNS name). Unset, they may reach any public HTTPS host; private addresses are always refused. Every backend's nodes configure the same list")
 	cmd.Flags().BoolVar(&f.skipPreflight, "celln-fleet-skip-preflight", false, "Skip the one-token chat probe of every backend with its key (use when only the nodes can reach the endpoint)")
 	cmd.Flags().BoolVar(&f.replacePackage, "celln-fleet-replace-package", false, "Approve moving an installed fleet to this package or scope (e.g. after upgrading to a sympozium release whose starter package inputs changed; most releases keep the package): nodes publish the new configuration, the scope's catalogue is replaced and every namespace's platform wrappers are rebound. Every live parent on the fleet is lost")
@@ -521,17 +522,26 @@ func parseMediatedRoutes(specs []string) ([]cellninstall.MediatedRoute, error) {
 	return out, nil
 }
 
+// modelsLabel names a route's models for people: "+"-joined names, or
+// "any model" for the any-model token.
+func modelsLabel(models []string) string {
+	if len(models) == 1 && models[0] == sympoziumv1alpha1.CellnAnyModel {
+		return "any model"
+	}
+	return strings.Join(models, "+")
+}
+
 // mediationSummary says what the scope's policy was offered for Agents' own keys.
 func mediationSummary(record cellninstall.MediationRecord) string {
 	if !record.MediateBackends && len(record.Routes) == 0 {
-		return "Mediated model access is enabled, but no provider route is declared: an Agent with its own key is refused AUTH_ROUTE_MISMATCH until you declare one with --celln-mediated-route."
+		return "Mediated model access is enabled, but no provider route is declared (celln.mediation.defaultRoutes=false): an Agent with its own key is refused AUTH_ROUTE_MISMATCH until you declare one with --celln-mediated-route."
 	}
 	names := make([]string, 0, len(record.Routes)+1)
 	if record.MediateBackends {
 		names = append(names, "every HTTPS backend of this fleet")
 	}
 	for _, route := range record.Routes {
-		names = append(names, fmt.Sprintf("%s/%s (%s) at %s", route.Provider, strings.Join(route.Models, "+"), route.Protocol, strings.Join(route.EndpointOrigins, "+")))
+		names = append(names, fmt.Sprintf("%s/%s (%s) at %s", route.Provider, modelsLabel(route.Models), route.Protocol, strings.Join(route.EndpointOrigins, "+")))
 	}
 	return "Agents may bring their own key for: " + strings.Join(names, "; ") + "."
 }

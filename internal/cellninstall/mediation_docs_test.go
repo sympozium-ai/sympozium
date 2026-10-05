@@ -107,7 +107,7 @@ func TestMediationGuideExamplesAreValid(t *testing.T) {
 	admitted := false
 	for _, declared := range record.Routes {
 		route, _ := declared.PolicyRoute()
-		admitted = admitted || (route.Provider == spec.Provider && route.Protocol == spec.Protocol && slices.Contains(route.EndpointOrigins, origin) && !slices.ContainsFunc(spec.Models, func(m string) bool { return !slices.Contains(route.Models, m) }))
+		admitted = admitted || (route.Provider == spec.Provider && route.Protocol == spec.Protocol && slices.Contains(route.EndpointOrigins, origin) && !slices.ContainsFunc(spec.Models, func(m string) bool { return !route.AllowsModel(m) }))
 	}
 	if !admitted {
 		t.Fatalf("the declared routes do not admit the connection example %+v", spec)

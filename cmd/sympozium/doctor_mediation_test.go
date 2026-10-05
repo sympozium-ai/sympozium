@@ -71,7 +71,7 @@ func TestDoctorMediation(t *testing.T) {
 			release: &releaseInfo{Config: map[string]interface{}{"celln": map[string]interface{}{"mediation": map[string]interface{}{"controllerSecret": "own-controller", "gatewaySecret": "own-gateway", "nodeSecret": "own-node", "trustConfigMap": "own-trust"}}}}, status: statusPass, want: []string{"enabled"}},
 		{name: "no gateway", objects: with([]client.Object{configureDaemonSet(), record(declared), policy(anthropic)}, defaults), status: statusFail, want: []string{"deploys no model gateway"}},
 		{name: "gateway not ready", objects: with([]client.Object{configureDaemonSet(), record(declared), gateway(0), policy(anthropic)}, defaults), status: statusFail, want: []string{"sympozium-model-gateway", "not ready", "logs deploy/sympozium-model-gateway"}},
-		{name: "unusable record", objects: with([]client.Object{configureDaemonSet(), record(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*"],"endpointOrigins":["https://api.openai.com"]}]}`)}, defaults), status: statusFail, want: []string{"no wildcard", "celln.mediation.routes"}},
+		{name: "unusable record", objects: with([]client.Object{configureDaemonSet(), record(`{"routes":[{"provider":"openai","protocol":"openai-chat","models":["*","gpt"],"endpointOrigins":["https://api.openai.com"]}]}`)}, defaults), status: statusFail, want: []string{"no other pattern", "celln.mediation.routes"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := testDoctor(t, append([]client.Object{kvmNode("node-a")}, tc.objects...)...)

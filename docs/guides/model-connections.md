@@ -119,9 +119,10 @@ receiver the run is held with condition `CellnScopedExecution` /
 `ScopedDispatchDisabled`; it never falls back. Three things must all hold:
 
 - The operator's `CellnExecutionPolicy` lists an `auth: secret` route with the
-  connection's exact provider, protocol, HTTPS origin and model. Routes are the
-  operator's allow-list and are matched exactly (no wildcards); a connection is
-  never its own authorisation.
+  connection's exact provider, protocol and HTTPS origin, and the model: one of
+  the route's exact names, or any model when the route declares `["*"]`. Routes
+  are the operator's allow-list; origins are never a wildcard, and a connection
+  is never its own authorisation.
 - The Agent grants the Secret: it is listed in the Agent's `spec.authRefs` (an
   empty `provider` grants it for any provider), or the Agent's
   `spec.execution.modelConnectionRef` names this connection. A run cannot borrow
