@@ -28,8 +28,9 @@ this CLI. Run 'sympozium update' first to get the latest CLI.
 Unlike 'install', upgrade keeps the configuration the installation was made
 with: it reuses the deployed release's values (Celln plane, fleet backends,
 --set overrides) and only moves the version-bound pins forward — the
-control-plane image tag, the Celln installer image tag and the Celln router
-image tag, where they still point at the default images. It then applies the
+control-plane image tag, the Celln installer image tag, the Celln router
+image tag and, with mediated model access, the model gateway image digest,
+where they still point at the default images. It then applies the
 chart's CRDs and upgrades the Helm release, and upgrades ergoz if installed.
 
 Use --set to change values on top of the reused ones, and --image-tag to pin
@@ -74,6 +75,7 @@ func runUpgrade(imageTag string, setValues []string, noErgoz, dryRun bool) error
 		vals = map[string]interface{}{}
 	}
 	notes := refreshUpgradeValues(vals, imageTag, releaseTag, defaultCellnStarter())
+	notes = append(notes, refreshModelGatewayImage(vals, pinnedModelGatewayImage())...)
 	for _, kv := range setValues {
 		if !strings.Contains(kv, "=") {
 			return fmt.Errorf("invalid --set value %q (expected key=value)", kv)
@@ -157,6 +159,25 @@ func refreshUpgradeValues(vals map[string]interface{}, imageTag, releaseTag stri
 		}
 	}
 	return notes
+}
+
+// refreshModelGatewayImage moves a mediated release's model gateway to the
+// image this build pins, when the release runs the default repository's
+// gateway; an operator's own repository stays as it is. A build without a pin
+// changes nothing.
+func refreshModelGatewayImage(vals map[string]interface{}, pinned string) []string {
+	if pinned == "" {
+		return nil
+	}
+	if enabled, _ := nestedValue(vals, "celln", "mediation", "enabled").(bool); !enabled {
+		return nil
+	}
+	old, _ := nestedString(vals, "modelGateway", "image")
+	if old == pinned || (old != "" && !strings.HasPrefix(old, defaultModelGatewayRepo+"@")) {
+		return nil
+	}
+	setNested(vals, pinned, "modelGateway", "image")
+	return []string{fmt.Sprintf("Model gateway image: %s → %s", orDefault(old), pinned)}
 }
 
 // helmReleaseExists reports whether a release has any history in namespace.

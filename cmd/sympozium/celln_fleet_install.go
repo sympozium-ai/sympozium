@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/cellninstall"
 	"github.com/sympozium-ai/sympozium/internal/cellnplatform"
@@ -41,6 +44,14 @@ type cellnFleetFlags struct {
 	// routes (celln.mediation.defaultRoutes) in place.
 	mediateBackends    bool
 	mediatedRouteSpecs []string
+	// noMediation opts out of mediated model access, which a fleet install
+	// otherwise switches on whenever a model gateway image is known.
+	noMediation bool
+	// gatewayImage overrides the model gateway image this build pins.
+	gatewayImage string
+	// starterNamespace holds the starter Agent that receives the installer's
+	// key under mediation (default: the -n namespace).
+	starterNamespace string
 	// defaulted is set when a bare `sympozium install` chose the fleet.
 	defaulted bool
 	wait      time.Duration
@@ -74,6 +85,9 @@ func (f *cellnFleetFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.backendSpecs, "celln-fleet-backend", nil, "A model backend of this fleet, repeatable: name=NAME,provider=PROVIDER,model=MODEL[,endpoint=URL][,protocol=openai-chat|anthropic-messages][,credential-file=/path][,allow-insecure=true][,parameters-file=/abs/path.json][,max-output-tokens=N] (parameters-file: a JSON object the Celln host merges into every provider request of the backend; max-output-tokens: most output tokens per model request, 256–4096, default 512). Every node configures every backend and a namespace may run parents on any of them side by side. Without this flag the --celln-fleet-model-* flags define the single backend named native")
 	cmd.Flags().BoolVar(&f.mediateBackends, "celln-mediate-backends", false, "With mediated model access (--set celln.mediation.enabled=true ...): also let an Agent use its own key, from a Secret in its namespace, for every HTTPS backend of this fleet. Plain-HTTP and port-bearing backends are never offered")
 	cmd.Flags().StringArrayVar(&f.mediatedRouteSpecs, "celln-mediated-route", nil, "A provider route an Agent may bring its own key for, repeatable: provider=PROVIDER,protocol=openai-chat|anthropic-messages,origin=https://HOST,models=MODEL[+MODEL...] (origin and models take several values joined with +, or repeat the key; models=* alone admits any model of that provider). Matching is exact on provider, protocol and origin (no wildcard origin) and on the model unless models=*. Declaring any route replaces the chart's built-in defaults (any model of openai, anthropic and deepseek at their public API origins). Needs mediated model access enabled in this install's values; routes are only ever added to a scope's policy")
+	cmd.Flags().BoolVar(&f.noMediation, "no-celln-mediation", false, "Do not mediate model access. By default a fleet install runs the model gateway: the installer's provider key becomes the starter Agent's own key (a Secret in --celln-starter-namespace), every other Agent brings its own, and Celln nodes hold none. With this flag the key is published to every fleet node instead and any Agent in an admitted namespace runs on it")
+	cmd.Flags().StringVar(&f.gatewayImage, "model-gateway-image", "", "Digest-pinned model gateway image (repository@sha256:...) for mediated model access (default: the image this release pins; a source build pins none, and then mediation stays off unless this is given)")
+	cmd.Flags().StringVar(&f.starterNamespace, "celln-starter-namespace", "", "Namespace of the starter Agent that owns the installer's provider key under mediated model access (default: the -n namespace)")
 	cmd.Flags().StringArrayVar(&f.options.HTTPSHosts, "celln-fleet-https-host", nil, "Restrict the https-fetch and https-post-json starter tools to this exact host, repeatable (lowercase DNS name). Unset, they may reach any public HTTPS host; private addresses are always refused. Every backend's nodes configure the same list")
 	cmd.Flags().BoolVar(&f.skipPreflight, "celln-fleet-skip-preflight", false, "Skip the one-token chat probe of every backend with its key (use when only the nodes can reach the endpoint)")
 	cmd.Flags().BoolVar(&f.replacePackage, "celln-fleet-replace-package", false, "Approve moving an installed fleet to this package or scope (e.g. after upgrading to a sympozium release whose starter package inputs changed; most releases keep the package): nodes publish the new configuration, the scope's catalogue is replaced and every namespace's platform wrappers are rebound. Every live parent on the fleet is lost")
@@ -89,11 +103,35 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	if !approve && !f.defaulted {
 		return fmt.Errorf("--celln-fleet requires --celln-native-approve-starter-tools: grants include %s", starterToolGrants)
 	}
-	// The declaration is checked, and refused with the reason, before
-	// anything is written locally or in the cluster.
-	mediationValues, err := f.mediationValues(setValues)
+	if err := initClient(); err != nil {
+		return err
+	}
+	// Mediation and the route declaration are decided, and refused with the
+	// reason, before anything is written locally or in the cluster.
+	record, err := cellninstall.ReadMediationRecord(ctx, k8sClient)
 	if err != nil {
 		return err
+	}
+	plan, err := planMediation(mediationInputs{fleet: true, optOut: f.noMediation, flagImage: f.gatewayImage, setValues: setValues, pinned: pinnedModelGatewayImage(), deployedImage: deployedModelGatewayImage(), clusterMediated: record.Enabled})
+	if err != nil {
+		return err
+	}
+	if plan.notice != "" {
+		fmt.Println("  " + plan.notice)
+	}
+	mediationValues, err := f.mediationValues(setValues, plan.auto)
+	if err != nil {
+		return err
+	}
+	starterNamespace := f.starterNamespace
+	if starterNamespace == "" {
+		starterNamespace = namespace
+	}
+	if plan.auto {
+		var ns corev1.Namespace
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: starterNamespace}, &ns); err != nil {
+			return fmt.Errorf("starter Agent namespace %s: %w (pass --celln-starter-namespace)", starterNamespace, err)
+		}
 	}
 	if err := f.applyBackendFlags(); err != nil {
 		return err
@@ -131,9 +169,6 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	if err := os.MkdirAll(f.outputDir, 0700); err != nil {
 		return err
 	}
-	if err := initClient(); err != nil {
-		return err
-	}
 	// A scope carries one package at a time. Moving it is an explicit,
 	// disruptive decision, checked before anything in the cluster changes.
 	publication, err := cellninstall.ReadFleetPublication(ctx, k8sClient)
@@ -152,13 +187,36 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	if notice := fleetPackageUnchangedNotice(publication, f.options.Scope, f.options.PackageHash); notice != "" {
 		fmt.Println("  " + notice)
 	}
+	// Under mediation a keyed backend's key goes to its starter Agent, never
+	// to the fleet; the nodes configure the backend with a placeholder.
+	keys := cellninstall.MediatedBackendPlan{Mediated: map[string]bool{}}
+	if plan.auto {
+		if keys, err = cellninstall.PlanMediatedBackends(ctx, k8sClient, resolved); err != nil {
+			return err
+		}
+		if len(keys.FleetKeyed) != 0 {
+			fmt.Printf("  Backend(s) %s keep the key an earlier install published to the fleet (Secret %s/%s); the installer never removes it. Remove the backend deliberately to retire that fleet-wide key.\n", strings.Join(keys.FleetKeyed, ", "), "celln-system", cellninstall.FleetModelCredentialSecret)
+		}
+		if len(keys.Unmediable) != 0 {
+			fmt.Printf("  Backend(s) %s keep their key on the fleet: a Secret never crosses plain HTTP or an explicit port.\n", strings.Join(keys.Unmediable, ", "))
+		}
+	}
 	// Every backend answers a one-token chat request with its key before the
 	// cluster changes, so a dead provider or bad key is reported here rather
-	// than as a lost parent on the first run.
+	// than as a lost parent on the first run. A mediated backend's key is
+	// only ever in memory here.
 	if !f.skipPreflight {
 		for _, b := range resolved {
-			credential, err := cellninstall.PreflightCredential(ctx, k8sClient, b)
-			if err != nil {
+			var credential string
+			if keys.Mediated[b.Name] && b.CredentialFile == "" {
+				if credential, err = cellninstall.StarterAgentCredential(ctx, k8sClient, starterNamespace, b); err != nil {
+					return err
+				}
+				if credential == "" {
+					fmt.Printf("  Backend %s: no key given and no starter Agent key yet; probe skipped.\n", b.Name)
+					continue
+				}
+			} else if credential, err = cellninstall.PreflightCredential(ctx, k8sClient, b); err != nil {
 				return err
 			}
 			if err := cellninstall.PreflightBackend(ctx, nil, b, credential); err != nil {
@@ -167,14 +225,39 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 			fmt.Printf("  Backend %s answered a probe at %s\n", b.Name, b.Model.Endpoint)
 		}
 	}
-	values := append(append(append([]string{}, setValues...), fleetValues...), mediationValues...)
-	publishCredentials := func() error {
-		for _, b := range resolved {
-			if err := cellninstall.PublishFleetBackendCredential(ctx, k8sClient, b); err != nil {
-				return fmt.Errorf("backend %s: %w", b.Name, err)
+	// The trust's identity is settled before the first install renders it:
+	// an existing bootstrap keeps its key id (verified, never rotated), a
+	// new one gets an id chosen here and is published right after the chart
+	// creates the namespaces. The values are derived again on every run.
+	var trustOptions cellninstall.MediationOptions
+	if plan.auto {
+		gatewayHosts, receiverHosts, systemNamespace, err := mediationHosts(setValues)
+		if err != nil {
+			return err
+		}
+		keyID, found, err := cellninstall.ExistingMediationKeyID(ctx, k8sClient, systemNamespace)
+		if err != nil {
+			return err
+		}
+		if !found {
+			if keyID, err = cellninstall.NewMediationKeyID(time.Now()); err != nil {
+				return err
 			}
 		}
-		return nil
+		clusterID, err := cellninstall.ClusterIdentity(ctx, k8sClient)
+		if err != nil {
+			return err
+		}
+		auto, err := cellninstall.AutoMediationValues(clusterID, keyID, plan.image)
+		if err != nil {
+			return err
+		}
+		mediationValues = append(auto, mediationValues...)
+		trustOptions = cellninstall.MediationOptions{ClusterID: clusterID, SystemNamespace: systemNamespace, GatewayHosts: gatewayHosts, ReceiverHosts: receiverHosts, KeyID: keyID}
+	}
+	values := append(append(append([]string{}, setValues...), fleetValues...), mediationValues...)
+	publishCredentials := func() error {
+		return cellninstall.PublishBackendCredentials(ctx, k8sClient, resolved, keys.Mediated)
 	}
 	// A rerun keeps the controller wired to the fleet through this upgrade and
 	// publishes a new backend's key before the nodes configure it.
@@ -206,6 +289,17 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	}
 	if err := cellninstall.PrepareFleetTrust(ctx, k8sClient, f.options.Principal); err != nil {
 		return err
+	}
+	if plan.auto {
+		trust, err := cellninstall.PrepareMediationTrust(ctx, k8sClient, trustOptions)
+		if err != nil {
+			return err
+		}
+		state := "verified the existing"
+		if trust.Created {
+			state = "published new"
+		}
+		fmt.Printf("  Mediated model access: %s trust (issuer key id %s, cluster %s); certificates for %s and %s.\n", state, trust.KeyID, trust.ClusterID, trustOptions.GatewayHosts[0], trustOptions.ReceiverHosts[0])
 	}
 	fmt.Println("  Fleet plane deployed. Nodes with /dev/kvm and a boot kernel are labelled celln.dev/kvm=true by the node probe; label others by hand.")
 	fmt.Printf("  Waiting up to %s for the first node to admit the package and publish the starter configuration...\n", f.wait)
@@ -305,12 +399,25 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 	if err := runInstall(imageTag, append(values, wiring...)); err != nil {
 		return err
 	}
+	var starters []string
+	if plan.auto {
+		if starters, err = ensureStarterAgents(ctx, f.options.Scope, starterNamespace, resolved, keys); err != nil {
+			return err
+		}
+	}
 	names := make([]string, 0, len(resolved))
 	for _, b := range resolved {
-		names = append(names, b.Name+" ("+b.Model.Provider+"/"+b.Model.Name+")")
+		name := b.Name + " (" + b.Model.Provider + "/" + b.Model.Name + ")"
+		if keys.Mediated[b.Name] {
+			name += " [own keys only]"
+		}
+		names = append(names, name)
 	}
 	if mediation.Enabled {
 		fmt.Println("  " + mediationSummary(mediation))
+	}
+	if len(starters) != 0 {
+		fmt.Printf("  Your provider key is the own key of Agent(s) %s in namespace %s (Secret, ModelConnection, Agent); no Celln node holds it and no other Agent may use it. Every other Agent brings its own key.\n", strings.Join(starters, ", "), starterNamespace)
 	}
 	fmt.Printf("  Model backends on this fleet: %s. Each backend is an AgentRuntime wrapper in every namespace (celln-<backend>; the default backend keeps celln-native).\n", strings.Join(names, ", "))
 	if f.authorise == cellnplatform.AuthoriseLabeled {
@@ -455,7 +562,7 @@ func parseFleetBackends(specs []string) ([]cellninstall.FleetBackend, error) {
 // that record them. The flags declare routes only; they never switch mediation
 // on, because that needs the bootstrapped trust and the gateway's inputs, so
 // they are refused unless this install's values enable it.
-func (f *cellnFleetFlags) mediationValues(setValues []string) ([]string, error) {
+func (f *cellnFleetFlags) mediationValues(setValues []string, auto bool) ([]string, error) {
 	routes, err := parseMediatedRoutes(f.mediatedRouteSpecs)
 	if err != nil {
 		return nil, err
@@ -467,6 +574,9 @@ func (f *cellnFleetFlags) mediationValues(setValues []string) ([]string, error) 
 	if len(values) == 0 {
 		return nil, nil
 	}
+	if auto {
+		return values, f.refuseTwoRouteSources(setValues)
+	}
 	helmValues, err := buildHelmValues("", setValues)
 	if err != nil {
 		return nil, err
@@ -474,12 +584,65 @@ func (f *cellnFleetFlags) mediationValues(setValues []string) ([]string, error) 
 	celln, _ := helmValues["celln"].(map[string]interface{})
 	mediation, _ := celln["mediation"].(map[string]interface{})
 	if enabled, _ := mediation["enabled"].(bool); !enabled {
-		return nil, fmt.Errorf("--celln-mediated-route and --celln-mediate-backends declare routes for mediated model access, which this install does not enable: pass the values from 'sympozium celln-mediation bootstrap' and the gateway's inputs with --set (celln.mediation.enabled=true, ...); see docs/guides/celln-mediated-model-access.md")
+		return nil, fmt.Errorf("--celln-mediated-route and --celln-mediate-backends declare routes for mediated model access, which this install does not enable: drop --no-celln-mediation (mediation is on by default when the model gateway image is known; a source build needs --model-gateway-image); see docs/guides/celln-mediated-model-access.md")
 	}
-	if set, declared := mediation["routes"]; declared && set != nil && len(f.mediatedRouteSpecs) != 0 {
-		return nil, fmt.Errorf("declare mediated routes with --celln-mediated-route or with --set celln.mediation.routes, not both")
+	return values, f.refuseTwoRouteSources(setValues)
+}
+
+// refuseTwoRouteSources refuses routes declared both by flag and by value.
+func (f *cellnFleetFlags) refuseTwoRouteSources(setValues []string) error {
+	if len(f.mediatedRouteSpecs) == 0 {
+		return nil
 	}
-	return values, nil
+	helmValues, err := buildHelmValues("", setValues)
+	if err != nil {
+		return err
+	}
+	if set := nestedValue(helmValues, "celln", "mediation", "routes"); set != nil {
+		return fmt.Errorf("declare mediated routes with --celln-mediated-route or with --set celln.mediation.routes, not both")
+	}
+	return nil
+}
+
+// deployedModelGatewayImage is the deployed release's modelGateway.image, or
+// "" when there is none (or it cannot be read).
+func deployedModelGatewayImage() string {
+	rel, err := helmReleaseInfo()
+	if err != nil || rel == nil {
+		return ""
+	}
+	image, _ := nestedString(rel.Config, "modelGateway", "image")
+	return image
+}
+
+// ensureStarterAgents gives every mediated backend's key to its starter
+// Agent: the runtime wrapper for the backend's profile, then the Agent's
+// Secret, ModelConnection and Agent. A rerun given no key keeps what exists.
+func ensureStarterAgents(ctx context.Context, scope, starterNamespace string, resolved []cellninstall.FleetBackend, keys cellninstall.MediatedBackendPlan) ([]string, error) {
+	var starters []string
+	for _, b := range resolved {
+		if !keys.Mediated[b.Name] {
+			continue
+		}
+		names := cellninstall.StarterAgentNamesFor(b.Name)
+		if b.CredentialFile == "" {
+			starters = append(starters, names.Agent)
+			continue
+		}
+		credential, err := cellninstall.PreflightCredential(ctx, nil, b)
+		if err != nil {
+			return nil, fmt.Errorf("backend %s: %w", b.Name, err)
+		}
+		runtime, err := cellnplatform.EnsureRuntimeWrapper(ctx, k8sClient, starterNamespace, cellninstall.PlatformProfileName(scope, b.Name))
+		if err != nil {
+			return nil, fmt.Errorf("starter Agent for backend %s: %w", b.Name, err)
+		}
+		if _, err := cellninstall.EnsureStarterAgent(ctx, k8sClient, cellninstall.StarterAgentOptions{Namespace: starterNamespace, Backend: b, Credential: credential, Runtime: runtime}); err != nil {
+			return nil, err
+		}
+		starters = append(starters, names.Agent)
+	}
+	return starters, nil
 }
 
 // parseMediatedRoutes parses repeated --celln-mediated-route values, in the

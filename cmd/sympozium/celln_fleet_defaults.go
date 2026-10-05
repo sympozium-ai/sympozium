@@ -112,7 +112,8 @@ func backendsFromEnvironment() ([]cellninstall.FleetBackend, string, error) {
 // promptFleetBackend asks an interactive operator for one backend. An empty
 // answer, or "skip", installs without the fleet.
 func promptFleetBackend(reader *bufio.Reader) (*cellninstall.FleetBackend, string, error) {
-	fmt.Println("\n  Celln agents run against a model backend whose key stays on the fleet nodes.")
+	fmt.Println("\n  Celln agents run against a model backend. With mediated model access (the default) its key becomes")
+	fmt.Println("  the starter Agent's own key and no node holds it; with --no-celln-mediation the fleet nodes hold it.")
 	fmt.Println("  Set DEEPSEEK_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY (each present key becomes a backend) or")
 	fmt.Println("  SYMPOZIUM_CELLN_BACKEND (specs separated by semicolons) to skip this prompt.")
 	provider := strings.ToLower(prompt(reader, "  Model provider (deepseek, openai, anthropic, llama-server, or skip)", cellninstall.ModelProviderDeepSeek))

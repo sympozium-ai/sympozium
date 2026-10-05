@@ -7,8 +7,53 @@ key for such runs. The controller signs a short-lived permit per run; the node
 dispatcher's *scoped receiver* and the gateway both verify it against the same
 public keyset.
 
-It is **off by default**. With `celln.mediation.enabled=false` the chart renders
-exactly what it rendered before this feature existed.
+It is **on by default** for every fleet installed by `sympozium install`:
+the installer bootstraps the trust, sets every value below, and turns the key
+you install with into one Agent's own key (the starter Agent, see
+[the default install](#the-default-install)). Opt out with
+`--no-celln-mediation`. The chart's own default stays
+`celln.mediation.enabled=false`, and then it renders exactly what it rendered
+before this feature existed.
+
+## The default install
+
+```sh
+export OPENAI_API_KEY=...     # or DEEPSEEK_API_KEY / ANTHROPIC_API_KEY
+sympozium install
+```
+
+With a released binary (which pins the model gateway image digest) this:
+
+- mints the trust described in [section 2](#2-bootstrap-the-trust) right
+  after the chart creates its namespaces, under a key id the installer chose
+  and rendered into the values beforehand; the cluster id is the
+  `kube-system` namespace UID and the certificate names follow the release's
+  actual full name and namespace;
+- sets `celln.mediation.enabled`, `clusterId`, `issuer.keyId`,
+  `mediateBackends=true` and `modelGateway.image` (the bundled PostgreSQL
+  needs a default StorageClass);
+- gives the key to a **starter Agent** in the `-n` namespace (default
+  `default`, or `--celln-starter-namespace`): Secret `starter-model-key`
+  (key `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, owner-annotated for Agent
+  `starter`), ModelConnection `starter`, the backend's runtime wrapper and
+  Agent `starter` with that Secret in `spec.authRefs`, exactly the objects
+  of [section 6](#6-give-an-agent-its-own-key). A second keyed backend gets
+  `starter-<backend>`;
+- publishes only a placeholder for that backend in
+  `celln-fleet-model-credentials`, so no Celln node holds the key; the
+  backend's profile is labelled `celln.sympozium.ai/mediation-only`, its
+  route is `auth: secret` only, and no namespace gets a shared Agent for it.
+
+Every rerun reads the existing trust's key id back (it is verified, never
+rotated) and derives the same values again, so a rerun never switches
+mediation off; a rerun from a build that knows no gateway image keeps the
+deployed one, or stops if there is none. A source build without
+`--model-gateway-image` installs without mediation and says so. Values passed
+with `--set celln.mediation.enabled=true` select the operator-managed path
+below, in which the installer bootstraps and derives nothing.
+
+The rest of this guide is the operator-managed path, and the reference for
+what the default sets up.
 
 Mediation leaves the fleet's own configuration alone: `celln.fleet.backends`,
 the host profiles and `celln.fleet.modelCredentialsSecret` are rendered and
@@ -106,8 +151,11 @@ from Helm values, and the chart generates no keys.
 
 A rerun verifies the five objects still belong together and changes nothing. It
 never repairs or rotates by replacement: to rotate, delete all five
-deliberately, bootstrap again and restart the three components. Certificates
-last `--validity` (default one year). If your release is not named `sympozium`,
+deliberately, bootstrap again (or rerun `sympozium install`) and restart the
+three components. Certificates last `--validity`, by default **ten years**:
+the CA key is discarded after signing, so nothing renews them in place, and
+rotation is the renewal. `sympozium doctor` warns in the last 60 days and
+fails once they have expired. If your release is not named `sympozium`,
 pass `--release-fullname`; if you set `celln.mediation.receiver.url`, pass its
 host with `--receiver-host`.
 
@@ -183,6 +231,9 @@ declare one. Like every route, they reach the policy on the next
 `sympozium install --celln-fleet`, added backend or
 `sympozium celln-mediation apply-routes`.
 
+The default install also sets `mediateBackends`, which admits each HTTPS fleet
+backend's provider and exact model (the starter Agent's among them).
+
 Why the operator, and not the Agent's owner: a `ModelConnection` is written by a
 tenant, and a tenant-authored endpoint is not authorisation. If the connection
 alone decided where a namespace's Secret may be sent, anything that can write a
@@ -253,8 +304,9 @@ run `apply-routes`; the installer does the same step itself.
 A policy only ever grows. Removing a route from the values stops later installs
 from adding it, but never removes a published route from under running Agents;
 to withdraw one, edit the `CellnExecutionPolicy` deliberately. Note that
-`sympozium install` does not reuse the previous release's values: pass the
-mediation values (`--set`) again on a rerun, or mediation is switched off.
+`sympozium install` does not reuse the previous release's values: by default
+it derives the mediation values again on every run; on the operator-managed
+path pass them (`--set`) again on a rerun, or the default takes over.
 
 `sympozium doctor` reports the state ("Mediated model access"): disabled, or
 enabled with the five bootstrap objects present, the gateway ready and the
@@ -450,8 +502,12 @@ to the list before its Agents use mediation.
   path.
 - **A dispatcher restart loses live scoped parents**, including the roll caused
   by toggling mediation or upgrading the fleet package.
-- **Rotation is manual** (delete, bootstrap, restart); there is no overlap
-  window tooling yet, although the verifiers accept a multi-key JWKS.
+- **Rotation is manual** (delete, bootstrap or rerun the install, restart);
+  there is no overlap window tooling yet, although the verifiers accept a
+  multi-key JWKS. The default ten-year certificates make this rare.
+- **A backend added from the API or the console** still publishes its key to
+  the fleet (`auth: host-profile`); only installer backends are mediated by
+  default.
 - Secret volumes cannot be owned by a non-root user, and the controller and
   gateway refuse key or token files that are not owner-only. A non-root init
   step in each pod therefore copies the operator's files into an in-memory

@@ -27,7 +27,9 @@ sympozium upgrade --dry-run      # show what would change (also --image-tag, --s
 ```
 
 Run `sympozium update` first, then `sympozium upgrade`, so the cluster moves
-to the chart embedded in the new CLI.
+to the chart embedded in the new CLI. With mediated model access, `upgrade`
+also moves the model gateway to the digest the new CLI pins (unless the
+release runs a gateway from another repository).
 
 ### Celln
 
@@ -38,6 +40,12 @@ present key becomes a backend), or explicit specs in
 `--celln-fleet-backend`). In a terminal with none set it asks for a provider
 and key; without a terminal it installs only the one-shot router. See
 [Celln Fleet Installation](../guides/celln-fleet-installation.md).
+
+Every fleet install mediates model access by default: the installer
+bootstraps the model gateway's trust, your key becomes the own key of the
+`starter` Agent (Secret `starter-model-key`, ModelConnection and Agent
+`starter` in the `-n` namespace) and no Celln node holds it. See
+[Mediated model access](../guides/celln-mediated-model-access.md).
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -54,6 +62,10 @@ and key; without a terminal it installs only the one-shot router. See
 | `--celln-fleet-skip-preflight` | `false` | Skip the one-token chat probe of each backend |
 | `--celln-fleet-output-dir` | `~/.sympozium/celln-fleet/<scope>` | Private directory for configuration and install records |
 | `--celln-fleet-wait` | `15m` | How long to wait for the first labeled node |
+| `--no-celln-mediation` | `false` | Opt out of mediated model access: publish the installer's key to every fleet node instead of the starter Agent |
+| `--model-gateway-image` | the release's pin | Digest-pinned model gateway image; a source build pins none and installs without mediation unless this is given |
+| `--celln-starter-namespace` | the `-n` namespace | Namespace of the starter Agent that owns the installer's key |
+| `--celln-mediated-route`, `--celln-mediate-backends` | — | Further providers (or every HTTPS backend) Agents may bring their own key for |
 | `--celln-native-approve-starter-tools` | `false` | Approve the starter tool grants |
 | `--celln-host-installer` | `false` | Legacy bare-metal host dispatcher (with `--celln-backend URL`) |
 | `--celln-native`, `--celln-native-*` | — | The single-node [native installation](../guides/celln-native-installation.md) |

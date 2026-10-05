@@ -1297,6 +1297,11 @@ sideloaded images into Kind with a custom tag.
 
 Use --set to override arbitrary Helm values (e.g. --set controller.replicas=2).
 
+A Celln fleet install mediates model access by default: the model gateway
+holds provider keys, the installer's key becomes the starter Agent's own key
+and Celln nodes hold none. --no-celln-mediation opts out; a source build
+needs --model-gateway-image (repository@sha256:...) to turn it on.
+
 Use --celln-native to also install the native Celln starter catalogue and grant
 layers (enduring native parents); it requires the operator-reviewed
 --celln-native-* inputs and --celln-native-approve-starter-tools.`,

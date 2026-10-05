@@ -18,7 +18,7 @@ func newCellnMediationCmd() *cobra.Command {
 	)
 	bootstrap := &cobra.Command{
 		Use: "bootstrap", Args: cobra.NoArgs, SilenceUsage: true,
-		Short: "Mint the issuer key, JWKS, transport tokens and private CA once, and publish them as Secrets/ConfigMaps",
+		Short: "Mint the issuer key, JWKS, transport tokens and private CA once, and publish them as Secrets/ConfigMaps ('sympozium install' does this itself by default)",
 		Long: "Creates celln-mediation-controller and celln-mediation-gateway (Secrets, control-plane namespace), celln-mediation-node (Secret, celln-system) and celln-mediation-trust (public ConfigMap, both namespaces). " +
 			"Private keys and tokens exist only in those Secrets; the CA key is discarded. An existing installation is verified and never replaced. " +
 			"Prints the credential-free chart values to enable celln.mediation; modelGateway.image, .egress and .database remain operator inputs.",
@@ -51,7 +51,7 @@ func newCellnMediationCmd() *cobra.Command {
 	bootstrap.Flags().StringVar(&release, "release-fullname", "sympozium", "Chart full name; the gateway Service is <fullname>-model-gateway")
 	bootstrap.Flags().StringSliceVar(&gatewayHosts, "gateway-host", nil, "Gateway certificate names (default: the chart's gateway Service)")
 	bootstrap.Flags().StringSliceVar(&receiverHosts, "receiver-host", nil, "Receiver certificate names or IPs; must include the host of celln.mediation.receiver.url (default: the chart's celln-scoped-receiver Service)")
-	bootstrap.Flags().DurationVar(&validity, "validity", 365*24*time.Hour, "Lifetime of the CA and both certificates")
+	bootstrap.Flags().DurationVar(&validity, "validity", cellninstall.DefaultMediationValidity, "Lifetime of the CA and both certificates (default ten years: the CA key is discarded, so they are renewed only by rotating; 'sympozium doctor' warns 60 days before expiry)")
 	bootstrap.Flags().StringVar(&valuesOut, "values-out", "", "Write the chart values to this file instead of stdout")
 	_ = bootstrap.MarkFlagRequired("cluster-id")
 	cmd.AddCommand(bootstrap)

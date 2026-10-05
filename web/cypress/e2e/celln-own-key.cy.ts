@@ -88,7 +88,7 @@ describe("Create Agent → Celln: the Agent's own model backend", () => {
       expect([...$steps].map((el) => el.getAttribute("data-step"))).to.deep.equal(["name", "plane", "provider", "apikey", "model", "confirm"]);
     });
     cy.get('[data-testid="celln-mediation-disabled"]').should("contain", "Mediated model access is not enabled").and("contain", "celln.mediation.enabled");
-    cy.get('[data-testid="celln-route-command"]').should("contain", "sympozium install").and("contain", "--set celln.mediation.enabled=true").and("contain", "--celln-mediated-route provider=").and("contain", "protocol=").and("contain", "origin=https://").and("contain", "models=");
+    cy.get('[data-testid="celln-route-command"]').should("contain", "sympozium install").and("not.contain", "--set celln.mediation.enabled=true").and("contain", "--celln-mediated-route provider=").and("contain", "protocol=").and("contain", "origin=https://").and("contain", "models=");
     cy.get('[data-testid="celln-mediation-disabled"] a').should("have.attr", "href").and("contain", "celln-mediated-model-access.md");
     // Nothing else is offered in its place.
     cy.get('[data-testid="celln-route-select"]').should("not.exist");

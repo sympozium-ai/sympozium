@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,8 @@ import (
 const (
 	mediatedRouteRemedy = "sympozium install --celln-fleet ... --celln-mediated-route provider=anthropic,protocol=anthropic-messages,origin=https://api.anthropic.com,models=<model>   # or set celln.mediation.routes and run: sympozium celln-mediation apply-routes"
 	applyRoutesRemedy   = "sympozium celln-mediation apply-routes   # appends the declared routes to the scope's policy; removes nothing"
+	// The CA key was discarded, so certificates are renewed by rotating.
+	mediationRotateRemedy = "delete the five mediation objects (docs/guides/celln-mediated-model-access.md, Rotation), run sympozium install, then restart the controller, model gateway and celln-node pods"
 )
 
 // mediationObjectNames are the bootstrap objects' names: the chart's
@@ -67,14 +70,15 @@ func (d *doctor) checkMediation(ctx context.Context, rel *releaseInfo) doctorFin
 		}
 	}
 	controller, gateway, node, trust := mediationObjectNames(rel)
+	gatewaySecret, nodeSecret, trustConfigMap := &corev1.Secret{}, &corev1.Secret{}, &corev1.ConfigMap{}
 	for _, object := range []struct {
 		kind, namespace, name string
 		into                  client.Object
 	}{
 		{"Secret", helmNamespace, controller, &corev1.Secret{}},
-		{"Secret", helmNamespace, gateway, &corev1.Secret{}},
-		{"Secret", cellnSystemNamespace, node, &corev1.Secret{}},
-		{"ConfigMap", helmNamespace, trust, &corev1.ConfigMap{}},
+		{"Secret", helmNamespace, gateway, gatewaySecret},
+		{"Secret", cellnSystemNamespace, node, nodeSecret},
+		{"ConfigMap", helmNamespace, trust, trustConfigMap},
 		{"ConfigMap", cellnSystemNamespace, trust, &corev1.ConfigMap{}},
 	} {
 		if err := d.client.Get(ctx, types.NamespacedName{Namespace: object.namespace, Name: object.name}, object.into); apierrors.IsNotFound(err) {
@@ -85,7 +89,16 @@ func (d *doctor) checkMediation(ctx context.Context, rel *releaseInfo) doctorFin
 		}
 	}
 	if f.Status == statusFail {
-		f.Remedy = append(f.Remedy, "sympozium celln-mediation bootstrap --cluster-id <the release's celln.mediation.clusterId>   # verifies or publishes all five objects; never replaces one")
+		f.Remedy = append(f.Remedy, "sympozium install   # bootstraps the mediation trust and derives its values; verifies existing objects and never replaces one")
+	} else if expiry, ok := cellninstall.MediationCertificateExpiry([]byte(trustConfigMap.Data["ca.crt"]), gatewaySecret.Data["tls.crt"], nodeSecret.Data["tls.crt"]); ok {
+		switch left := expiry.Sub(d.now()); {
+		case left <= 0:
+			f.Details = append(f.Details, doctorDetail{Object: fmt.Sprintf("ConfigMap %s/%s", helmNamespace, trust), Problem: fmt.Sprintf("the mediation CA or a server certificate expired %s; the controller, receiver and gateway refuse each other", expiry.UTC().Format(time.DateOnly)), Remedy: mediationRotateRemedy})
+			raise(statusFail)
+		case left <= cellninstall.MediationExpiryWarning:
+			raise(statusWarn)
+			f.Details = append(f.Details, doctorDetail{Object: fmt.Sprintf("ConfigMap %s/%s", helmNamespace, trust), Problem: fmt.Sprintf("the mediation certificates expire %s (in %d days); rotate them before then", expiry.UTC().Format(time.DateOnly), int(left.Hours()/24)), Remedy: mediationRotateRemedy})
+		}
 	}
 	var deployments appsv1.DeploymentList
 	if err := d.client.List(ctx, &deployments, client.InNamespace(helmNamespace)); err != nil {

@@ -40,6 +40,48 @@ wrapper in every namespace (`celln-<name>`) and each Agent picks its
 backend in the wizard. Rerunning the install with one more backend adds it
 to the running fleet without restarting anyone's conversation.
 
+### Model keys: mediated by default
+
+A released binary also pins the model gateway image it published, and with
+it the install turns on [mediated model access](celln-mediated-model-access.md)
+with no further input. Your provider key then becomes **one Agent's own
+key**, never the fleet's:
+
+- In the `-n` namespace (`default`, or `--celln-starter-namespace`) the
+  installer creates a Secret `starter-model-key` holding the key (as
+  `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, by protocol), a `ModelConnection`
+  `starter` naming it, and an Agent `starter` that grants it in
+  `spec.authRefs` and runs on the backend's runtime through the gateway.
+  Further backends get `starter-<backend>`. The Secret records the Agent as
+  its owner, so no other Agent can use it.
+- The fleet still configures the backend (its starter configuration is the
+  runtime every mediated run executes on), but `celln-fleet-model-credentials`
+  holds a placeholder for it, the scope's policy offers it only as an
+  `auth: secret` route, and no namespace gets a shared `celln-agent` or
+  host-profile connection for it. No Celln node holds the key; the
+  installer probes the provider with it in memory only.
+- Every other Agent brings its own key (Create Agent → Celln). The policy
+  admits each HTTPS backend's provider and model for Agents' own keys
+  (`celln.mediation.mediateBackends`); declare further providers with
+  `--celln-mediated-route`.
+
+The installer bootstraps the mediation trust itself (cluster id = the
+`kube-system` namespace UID, certificate names from the release's actual
+full name and namespace, valid ten years), and derives every
+`celln.mediation.*` value and `modelGateway.image` again on each run, so a
+rerun keeps mediation on and never rotates the trust. The gateway's
+PostgreSQL is the chart's bundled one, which needs a default StorageClass.
+
+Opt out with `--no-celln-mediation`: the key is then published to every fleet
+node as below, and any Agent in an admitted namespace runs on it. A source
+build pins no gateway image; it installs without mediation and says so,
+unless you pass `--model-gateway-image ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:<digest>`.
+A cluster that already mediates is never switched off by a rerun that cannot
+find an image: the install stops and asks for the flag or the opt-out.
+Keyless backends (llama-server), backends on plain HTTP or an explicit port,
+and backends whose key an earlier unmediated install already published keep
+the fleet path; the installer says which.
+
 In a terminal with none of those set, the install asks for a provider and a
 key; without a terminal it installs the one-shot router only and says what to
 set. The default picks scope `starter`, keeps its records under
@@ -64,12 +106,14 @@ The same command installs [ergoz](https://github.com/sympozium-ai/ergoz)
   BLAKE3 hash as the client policy every node installs. Owners never see the
   token; the controller never sees the policy. Rerunning the installer verifies
   the pair and refuses to rotate it by replacement.
-- **Model credentials.** Each backend's model profile references an absolute
-  file path. In fleet mode that is one Secret (`celln-fleet-model-credentials`,
-  one key per backend) mounted read-only into each dispatcher; guests and the
-  controller cannot read it.
-  This keeps the key inside the cluster trust boundary until the dedicated
-  model gateway (#502) is attached to native parents; treat it as interim.
+- **Model credentials.** By default (mediated model access) a keyed
+  backend's key is the starter Agent's own Secret and only the model gateway
+  reads it; the fleet holds a placeholder (see above). With
+  `--no-celln-mediation`, and for keyless or plain-HTTP backends, each
+  backend's model profile references an absolute file path: one Secret
+  (`celln-fleet-model-credentials`, one key per backend) mounted read-only
+  into each dispatcher; guests and the controller cannot read it, but every
+  Agent in an admitted namespace runs on it.
 - **Configuration publication.** Only the DaemonSet's init step holds a
   projected ServiceAccount token, scoped to creating and reading one ConfigMap
   in `celln-system`. The dispatcher container has no API credential.
@@ -150,7 +194,19 @@ parent. Pass `--celln-fleet-skip-preflight` when only the nodes can reach
 the endpoint (for example a LAN llama-server the operator's machine cannot
 see).
 
-The command runs two phases and is safe to rerun:
+The command runs two phases and is safe to rerun. With mediated model access
+(the default) the exact sequence is: decide mediation (gateway image from
+`--model-gateway-image`, `--set modelGateway.image`, the release pin, or the
+deployed release); read an existing mediation trust's key id or choose a new
+one; probe each backend with its key in memory; install the chart with
+`celln.fleet.*` and the derived `celln.mediation.*` values (no wait); publish
+the fleet credentials (placeholders for mediated backends) and the parent
+principal; bootstrap or verify the mediation trust under that key id (the
+pods that mount it start once it exists); wait for the nodes and the
+controller; install the platform (policy with `auth: secret` routes for
+mediated backends); upgrade the release again with the same values plus the
+controller wiring; and finally create the starter Agent's runtime wrapper,
+Secret, ModelConnection and Agent.
 
 1. Publishes the parent principal and model credential, then installs the
    chart with `celln.fleet.*` set. Labeled nodes pull the package by digest,
@@ -210,9 +266,11 @@ provider name plus `endpoint` and `protocol`. Without `--celln-fleet-backend`
 the `--celln-fleet-model-*` flags and `--celln-fleet-model-credential-file`
 define the single backend named `native`.
 
-- Each backend's key is published once as its entry in the
-  `celln-fleet-model-credentials` Secret in `celln-system` (key = backend
-  name) and mounted read-only into every dispatcher as
+- Under mediated model access (the default) each keyed backend's key becomes
+  its starter Agent's Secret and the backend's entry in the
+  `celln-fleet-model-credentials` Secret is a placeholder. With
+  `--no-celln-mediation` the key is published once as that entry (key =
+  backend name) and mounted read-only into every dispatcher as
   `/etc/celln-native/credentials/<name>`. Omit `credential-file` to keep an
   existing entry; keyless backends get a placeholder.
 - Every node configures every backend from the same package, so all backends
@@ -670,8 +728,11 @@ shared catalogue for them and uses the namespace's host-profile
 
 The `ModelConnection`'s `credentialProfile` names the owner-installed model
 credential (the scope); `CellnExecutionPolicy` routes with `auth: host-profile`
-are the interim boundary until the model gateway (P1) attaches to native
-parents and routes switch to `auth: secret`.
+serve those fleet-keyed backends. A mediated backend (the default for keyed
+providers) has no such route and no shared wrappers: a namespace gets its
+runtime wrapper alone (`{"runtimeOnly": true}`; the profiles list marks it
+`"mediationOnly": true`) and its Agents bring their own key through an
+`auth: secret` route.
 
 ## Verify
 
@@ -885,8 +946,8 @@ new run"); the incarnation is never retried and the run deletes cleanly.
 
 Single active turn per parent, no live parent migration (a lost parent is
 [continued](#conversations-survive-their-node) as a new run from its recorded
-exchanges, not restored), and no live lease extension. Fleet backends'
-credentials live in a Secret mounted into every dispatcher; an Agent that
-needs its own key, kept off the nodes, uses
-[mediated model access](celln-mediated-model-access.md) instead. All backends
+exchanges, not restored), and no live lease extension. Only fleet-keyed
+backends (`--no-celln-mediation`, keyless, plain-HTTP or pre-existing ones)
+keep a key in a Secret mounted into every dispatcher; by default every Agent
+uses its own key through [mediated model access](celln-mediated-model-access.md). All backends
 of a scope share the package's persona and tool set (#535).

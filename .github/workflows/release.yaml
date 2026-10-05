@@ -170,8 +170,39 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: celln-starter.json
 
+  # The model gateway runs only by digest (the chart refuses a tag), so the CLI
+  # pins the digest this release published, the way it pins the starter
+  # package; `sympozium install` then turns mediated model access on by default.
+  release-model-gateway-digest:
+    needs: release-images
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.digest.outputs.image }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Resolve the published model-gateway digest
+        id: digest
+        run: |
+          repo="${{ env.REGISTRY }}/model-gateway"
+          digest="$(docker buildx imagetools inspect "${repo}:${RELEASE_TAG}" --format '{{json .Manifest}}' | jq -r .digest)"
+          case "$digest" in
+            sha256:[0-9a-f]*) ;;
+            *) echo "::error::no digest for ${repo}:${RELEASE_TAG}: ${digest}"; exit 1 ;;
+          esac
+          [ "${#digest}" -eq 71 ] || { echo "::error::malformed digest ${digest}"; exit 1; }
+          echo "image=${repo}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "model gateway: ${repo}@${digest}"
+
   release-cli:
-    needs: release-starter-package
+    needs: [release-starter-package, release-model-gateway-digest]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -208,7 +239,9 @@ jobs:
           jq -e '.image | test("@sha256:[a-f0-9]{64}$")' "$starter"
           jq -e '.packageHash | test("^blake3:[a-f0-9]{64}$")' "$starter"
           VERSION="${RELEASE_TAG}"
-          pin="-X main.cellnStarterImage=$(jq -r .image "$starter") -X main.cellnStarterHash=$(jq -r .packageHash "$starter") -X main.cellnStarterPublisher=$(jq -r .publisher "$starter") -X main.cellnStarterCellnVersion=$(jq -r .cellnVersion "$starter")"
+          gateway="${{ needs.release-model-gateway-digest.outputs.image }}"
+          echo "$gateway" | grep -Eq '^[^@[:space:],=]+@sha256:[a-f0-9]{64}$'
+          pin="-X main.cellnStarterImage=$(jq -r .image "$starter") -X main.cellnStarterHash=$(jq -r .packageHash "$starter") -X main.cellnStarterPublisher=$(jq -r .publisher "$starter") -X main.cellnStarterCellnVersion=$(jq -r .cellnVersion "$starter") -X main.modelGatewayImage=${gateway}"
           go build -ldflags="-s -w -X main.version=${VERSION} ${pin}" \
             -o sympozium ./cmd/sympozium
 

@@ -28,7 +28,7 @@ function NoRoutes({ mediation }: { mediation: CellnMediation }) {
         {!mediation.enabled ? "Mediated model access is not enabled on this cluster" : pending ? "The declared providers are not published yet" : "No provider is declared for this namespace"}
       </p>
       {!mediation.enabled ? (
-        <p>A Celln Agent brings its own provider key, which the model gateway adds to its requests. That needs mediated model access, which is off (<code>celln.mediation.enabled=false</code>). An operator enables it and declares each provider an Agent may bring a key for:</p>
+        <p>A Celln Agent brings its own provider key, which the model gateway adds to its requests. That needs mediated model access, which <code>sympozium install</code> turns on by default but is off on this cluster (<code>celln.mediation.enabled=false</code>: installed with <code>--no-celln-mediation</code>, or by a source build without a gateway image). An operator reruns the install without the opt-out (a source build adds <code>--model-gateway-image</code>); routes for further providers are optional:</p>
       ) : pending ? (
         <p>The operator declared {mediation.pending.map((route) => route.provider).join(", ")}, but no execution policy carries {mediation.pending.length === 1 ? "it" : "them"} yet, so a run would be refused <code>AUTH_ROUTE_MISMATCH</code>. An operator publishes {mediation.pending.length === 1 ? "it" : "them"} with:</p>
       ) : (
@@ -37,7 +37,7 @@ function NoRoutes({ mediation }: { mediation: CellnMediation }) {
       <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px] text-foreground" data-testid="celln-route-command">
         {mediation.enabled && pending
           ? "sympozium celln-mediation apply-routes"
-          : `sympozium install --celln-fleet … ${mediation.enabled ? "" : "--set celln.mediation.enabled=true --set celln.mediation.clusterId=<id> … "}\\\n  ${ROUTE_FLAG}`}
+          : `sympozium install${mediation.enabled ? " --celln-fleet …" : ""} \\\n  ${ROUTE_FLAG}`}
       </pre>
       <p>
         Repeat the flag per provider; <code>models</code> and <code>origin</code> take several values joined with <code>+</code>. See <a className="underline" href={GUIDE_URL} target="_blank" rel="noreferrer">Mediated model access for native Celln Agents</a> (sections 5 and 6). <code>sympozium doctor</code> reports what is declared and published.
