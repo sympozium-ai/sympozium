@@ -189,6 +189,42 @@ describe("Create Agent → Celln: the Agent's own model backend", () => {
     });
   });
 
+  it("takes a typed model name on an any-model route, prefilled and validated, with the origin still fixed", () => {
+    const anyOpenAI = { provider: "openai", protocol: "openai-chat", models: ["*"], anyModel: true, endpointOrigins: ["https://api.openai.com"], policy: "celln-fleet-starter", secretKey: "OPENAI_API_KEY" };
+    stub({ enabled: true, mediateBackends: false, routes: [anyOpenAI, anthropic], pending: [] });
+    cy.intercept("POST", "**/api/v1/model-connections*", (request) => {
+      expect(request.body.spec).to.deep.equal({ provider: "openai", protocol: "openai-chat", endpoint: "https://api.openai.com/v1/chat/completions", models: ["gpt-new-2026"] });
+      request.reply({ statusCode: 201, body: { metadata: { name: "mine-connection", namespace: "default" }, spec: { ...request.body.spec, secretRef: "mine-connection-openai-key" } } });
+    }).as("connection");
+    cy.intercept("POST", "**/api/v1/celln-platform/wrappers*", { body: { runtime: "celln-native", created: [] } });
+    cy.intercept("POST", "**/api/v1/agents*", (request) => {
+      expect(request.body.execution.model).to.equal("gpt-new-2026");
+      request.reply({ statusCode: 201, body: { metadata: { name: "mine" }, spec: {} } });
+    }).as("agent");
+    openProviderStep();
+    chooseProvider("OpenAI");
+    cy.get('[data-testid="celln-route-summary"]').should("contain", "any model").and("not.contain", "*");
+    next();
+    cy.get('[data-testid="celln-api-key"]').type(KEY, { log: false });
+    next();
+    // No list to choose from: a model name, prefilled with a well-known one.
+    cy.get('[data-testid="celln-models"]').should("not.exist");
+    cy.get('[data-testid="celln-model-name"]').should("have.value", "gpt-4o");
+    dialog().contains("button", "Next").should("not.be.disabled");
+    for (const bad of ["gpt 4o", "*"]) {
+      cy.get('[data-testid="celln-model-name"]').clear().type(bad);
+      dialog().contains("button", "Next").should("be.disabled");
+    }
+    cy.get('[data-testid="celln-model-name"]').clear();
+    dialog().contains("button", "Next").should("be.disabled");
+    cy.get('[data-testid="celln-model-name"]').type("gpt-new-2026");
+    cy.get('[data-testid="celln-model-name-error"]').should("not.exist");
+    cy.get('[data-testid="celln-origin"]').should("have.text", "https://api.openai.com");
+    next();
+    dialog().contains("button", /Create\s*$/).click();
+    cy.wait(["@connection", "@agent"]);
+  });
+
   it("links an existing Secret that already holds the protocol's key, with a kubectl prompt and a refresh", () => {
     stub({ enabled: true, mediateBackends: false, routes: [anthropic], pending: [] });
     let listed = 0;

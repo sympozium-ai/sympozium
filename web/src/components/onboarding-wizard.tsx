@@ -49,7 +49,7 @@ import { CellnKeyStep, CellnModelStep, CellnRouteStep, OwnKeyProgress } from "@/
 import { useCapabilities, useModels, useCellnMediation, useCellnPlatformProfiles } from "@/hooks/use-api";
 import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
 import { modelConnectionName, modelConnectionEndpoint, describeEnduringLimits } from "@/lib/agent-execution";
-import { OwnKeyError, ownKeyConnectionSpec, defaultEndpointPath, enduringForOutputTokens, keyChoiceReady, managedSecretName, prepareOwnKeyBackend, profileForRoute, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
+import { OwnKeyError, ownKeyConnectionSpec, defaultEndpointPath, initialModelFor, routeAllowsModel, enduringForOutputTokens, keyChoiceReady, managedSecretName, prepareOwnKeyBackend, profileForRoute, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
 import { parseMaxOutputTokens, parseModelParameters } from "@/lib/model-parameters";
 import { api } from "@/lib/api";
 import type { WizardExecution } from "@/lib/agent-execution";
@@ -693,7 +693,7 @@ export function OnboardingWizard({
     // A key or Secret chosen for another provider is not carried over.
     setCellnKey({ mode: "create", apiKey: "" });
     setCellnFailure(null);
-    setForm((current) => ({ ...current, provider: route.provider, model: route.models.length === 1 ? route.models[0] : "" }));
+    setForm((current) => ({ ...current, provider: route.provider, model: initialModelFor(route) }));
   }
   const compatibleRuntime = celln ? !!cellnProfile : !form.runtimeRef || !!selectedRuntime?.spec.image;
   // Provider choices come from the shared creation model so the Run dialog and
@@ -814,7 +814,7 @@ export function OnboardingWizard({
           return !!form.secretName || !!form.awsRegion;
         return !!form.secretName || !!form.apiKey;
       case "model":
-        if (celln) return !!cellnRoute && cellnRoute.models.includes(form.model) && cellnRoute.endpointOrigins.includes(cellnOrigin) && cellnPath.startsWith("/") && !cellnParsedParameters.error && !cellnParsedTokens.error;
+        if (celln) return !!cellnRoute && routeAllowsModel(cellnRoute, form.model) && cellnRoute.endpointOrigins.includes(cellnOrigin) && cellnPath.startsWith("/") && !cellnParsedParameters.error && !cellnParsedTokens.error;
         return !!form.model;
       case "skills":
         return !form.runtimeRef || !form.skills.some((skill) => harnessIncompatibleSkills.includes(skill));

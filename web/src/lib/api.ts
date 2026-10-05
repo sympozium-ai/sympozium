@@ -206,6 +206,8 @@ export interface CellnMediatedRoute {
   provider: string;
   protocol: "openai-chat" | "anthropic-messages";
   models: string[];
+  /** The route declares models ["*"]: any model name of this provider at these exact origins. */
+  anyModel?: boolean;
   endpointOrigins: string[];
   /** The execution policy carrying the route; absent on a pending one. */
   policy?: string;

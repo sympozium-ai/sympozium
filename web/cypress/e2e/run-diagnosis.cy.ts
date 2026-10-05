@@ -194,6 +194,14 @@ describe("diagnoseRun", () => {
     expect(diagnoseRun(scopedRefused)!.cause).to.contain("claude-opus-5").and.contain("must all match one declared route").and.contain("Secret");
   });
 
+  it("AUTH_ROUTE_MISMATCH counts an any-model route as declared for any model at its origin, never at another", () => {
+    const anyModel: CellnMediation = { ...mediation(["*"]), routes: mediation(["*"]).routes.map((route) => ({ ...route, anyModel: true })) };
+    const diagnosis = diagnoseRun(scopedRefused, [], { mediation: anyModel })!;
+    expect(diagnosis.cause).to.contain("an operator declared").and.contain("mine-connection");
+    const elsewhere = run({ phase: "Failed", error: SCOPED_REFUSAL, conditions: [condition("CellnScopedExecution", "AdmissionRefused", SCOPED_REFUSAL)] }, { model: { ...ownKeyModel, baseURL: "https://proxy.example/v1/messages" } });
+    expect(diagnoseRun(elsewhere, [], { mediation: anyModel })!.cause).to.contain("no route an operator declared").and.contain("any model");
+  });
+
   it("the authRefs refusal says the run named a connection whose Secret the Agent was not given", () => {
     // platform_resolver.go resolveDecisionRoute; shared verbatim on the fleet parent path.
     const message = `Platform policy refused admission (AUTH_ROUTE_MISMATCH): Agent "hermes" does not grant the model connection's Secret; add it to the Agent's authRefs or select the connection in the Agent's execution defaults. ${REFUSAL_TAIL}`;

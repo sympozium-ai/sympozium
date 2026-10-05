@@ -3,6 +3,7 @@
 // and browser-only — it reads nothing the API has not already returned, and it
 // is the single source for failure wording in the console.
 import type { AgentRun, AgentRunTurn, CellnMediation, CellnPlatformProfile, Condition } from "@/lib/api";
+import { routeAllowsModel, routeModelsLabel } from "./celln-routes";
 
 export type DiagnosisSeverity = "error" | "warning" | "info";
 
@@ -354,8 +355,8 @@ function routeFacts(run: AgentRun, mediation: CellnMediation | undefined): Route
   return {
     ...facts,
     mediationEnabled: mediation.enabled,
-    declared: mediation.routes.some((route) => route.provider === facts.provider && route.protocol === facts.protocol && route.models.includes(facts.model) && route.endpointOrigins.includes(origin)),
-    offered: mediation.routes.map((route) => `${route.provider} (${route.protocol}) ${route.models.join(", ")} on ${route.endpointOrigins.join(", ")}`),
+    declared: mediation.routes.some((route) => route.provider === facts.provider && route.protocol === facts.protocol && routeAllowsModel(route, facts.model) && route.endpointOrigins.includes(origin)),
+    offered: mediation.routes.map((route) => `${route.provider} (${route.protocol}) ${routeModelsLabel(route)} on ${route.endpointOrigins.join(", ")}`),
   };
 }
 

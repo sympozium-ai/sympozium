@@ -2,7 +2,7 @@ import { useState, type ComponentType } from "react";
 import { Bot, Check, Copy, Loader2, RefreshCw } from "lucide-react";
 import { getNamespace, type CellnMediatedRoute, type CellnMediation } from "@/lib/api";
 import { useCellnKeySecrets } from "@/hooks/use-api";
-import { GUIDE_URL, offersThinkingSwitch, routeId, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
+import { GUIDE_URL, offersThinkingSwitch, routeId, routeModelsLabel, validModelName, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
 import { CellnModelParametersField } from "@/components/celln-model-parameters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ export interface ProviderChoice {
   icon: ComponentType<{ className?: string }>;
 }
 
-const ROUTE_FLAG = "--celln-mediated-route provider=anthropic,protocol=anthropic-messages,origin=https://api.anthropic.com,models=claude-sonnet-5";
+const ROUTE_FLAG = "--celln-mediated-route provider=anthropic,protocol=anthropic-messages,origin=https://api.anthropic.com,models=*";
 
 /** Why no provider can be chosen, and what the operator runs to change that. */
 function NoRoutes({ mediation }: { mediation: CellnMediation }) {
@@ -32,7 +32,7 @@ function NoRoutes({ mediation }: { mediation: CellnMediation }) {
       ) : pending ? (
         <p>The operator declared {mediation.pending.map((route) => route.provider).join(", ")}, but no execution policy carries {mediation.pending.length === 1 ? "it" : "them"} yet, so a run would be refused <code>AUTH_ROUTE_MISMATCH</code>. An operator publishes {mediation.pending.length === 1 ? "it" : "them"} with:</p>
       ) : (
-        <p>Mediation is enabled, but enabling it admits nothing by itself: an operator declares each provider, model and endpoint origin an Agent in <code>{getNamespace()}</code> may bring a key for. Until then every run would be refused <code>AUTH_ROUTE_MISMATCH</code>.</p>
+        <p>Mediation is enabled, but no provider route reaches <code>{getNamespace()}</code>: the built-in routes (any model of OpenAI, Anthropic and DeepSeek) are switched off with <code>celln.mediation.defaultRoutes=false</code>, or this namespace's policy carries none. An operator declares each provider and endpoint origin an Agent may bring a key for (<code>models=*</code> allows any model). Until then every run would be refused <code>AUTH_ROUTE_MISMATCH</code>.</p>
       )}
       <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px] text-foreground" data-testid="celln-route-command">
         {mediation.enabled && pending
@@ -89,10 +89,10 @@ export function CellnRouteStep({ mediation, isLoading, error, providers, selecte
       </div>
       {selected && (
         <p className="break-words text-xs text-muted-foreground" data-testid="celln-route-summary">
-          Declared by the operator in policy <code>{selected.policy}</code>: {selected.protocol} on {selected.endpointOrigins.join(", ")}, models {selected.models.join(", ")}. {selected.auth === "none" ? "No key is required. This Agent gets its own model connection." : "This Agent gets its own key and its own model connection; nothing is shared with another Agent."}
+          Declared by the operator in policy <code>{selected.policy}</code>: {selected.protocol} on {selected.endpointOrigins.join(", ")}, {selected.anyModel ? "any model" : <>models {routeModelsLabel(selected)}</>}. {selected.auth === "none" ? "No key is required. This Agent gets its own model connection." : "This Agent gets its own key and its own model connection; nothing is shared with another Agent."}
         </p>
       )}
-      <p className="text-xs text-muted-foreground">Only providers an operator declared for this namespace are listed. Another provider, model or endpoint needs a declared route first (<a className="underline" href={GUIDE_URL} target="_blank" rel="noreferrer">guide</a>).</p>
+      <p className="text-xs text-muted-foreground">Only providers an operator declared for this namespace are listed. Another provider or endpoint (or a model outside an exact list) needs a declared route first (<a className="underline" href={GUIDE_URL} target="_blank" rel="noreferrer">guide</a>).</p>
     </div>
   );
 }
@@ -186,9 +186,10 @@ export function CellnKeyStep({ route, value, onChange, managedSecretName }: {
 }
 
 /**
- * The Model step: exactly the models and endpoint origins of the chosen route
- * (admission matches them exactly, so nothing is free text), and this Agent's
- * own model parameters and output-token limit.
+ * The Model step: the models and endpoint origins of the chosen route, and
+ * this Agent's own model parameters and output-token limit. An exact list is
+ * a choice (admission matches it exactly); an any-model route takes the model
+ * name as text. The origin is never free text.
  */
 export function CellnModelStep({ route, model, onModel, origin, onOrigin, path, onPath, parameters, onParameters, maxOutputTokens, onMaxOutputTokens }: {
   route: CellnMediatedRoute;
@@ -205,6 +206,17 @@ export function CellnModelStep({ route, model, onModel, origin, onOrigin, path, 
 }) {
   return (
     <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1" data-testid="celln-model-step">
+      {route.anyModel ? (
+        <div className="space-y-2">
+          <Label htmlFor="celln-model-name">Model</Label>
+          <Input id="celln-model-name" data-testid="celln-model-name" className="font-mono text-xs" spellCheck={false} autoComplete="off" maxLength={128} value={model} onChange={(e) => onModel(e.target.value)} placeholder="Model name, e.g. gpt-4o" aria-invalid={model !== "" && !validModelName(model)} />
+          {model !== "" && !validModelName(model) ? (
+            <p role="alert" className="text-xs text-red-400" data-testid="celln-model-name-error">A model name is 1–128 bytes with no spaces or control characters, and not “*” itself.</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">The operator allows any {route.provider} model on this route; type the provider's model name. The request still goes only to the origin below.</p>
+          )}
+        </div>
+      ) : (
       <div className="space-y-2">
         <Label>Model</Label>
         <div className="space-y-0.5 rounded-md border border-border/50 p-1" data-testid="celln-models">
@@ -224,6 +236,7 @@ export function CellnModelStep({ route, model, onModel, origin, onOrigin, path, 
         </div>
         <p className="text-xs text-muted-foreground">The operator declared these models for {route.provider}. A run on any other model is refused, so there is no free-text model here.</p>
       </div>
+      )}
       <div className="space-y-2">
         <Label>Endpoint</Label>
         <div className="flex flex-wrap items-center gap-2">
