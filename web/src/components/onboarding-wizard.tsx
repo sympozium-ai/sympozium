@@ -49,7 +49,7 @@ import { CellnKeyStep, CellnModelStep, CellnRouteStep, OwnKeyProgress } from "@/
 import { useCapabilities, useModels, useCellnMediation, useCellnPlatformProfiles } from "@/hooks/use-api";
 import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-harness";
 import { modelConnectionName, modelConnectionEndpoint, describeEnduringLimits } from "@/lib/agent-execution";
-import { OwnKeyError, ownKeyConnectionSpec, defaultEndpointPath, initialModelFor, routeAllowsModel, enduringForOutputTokens, keyChoiceReady, managedSecretName, prepareOwnKeyBackend, profileForRoute, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
+import { OwnKeyError, ownKeyConnectionSpec, defaultEndpointPath, initialModelFor, routeAllowsModel, enduringForOutputTokens, keyChoiceReady, managedSecretName, prepareOwnKeyBackend, profileForRoute, ownKeySelection, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
 import { parseMaxOutputTokens, parseModelParameters } from "@/lib/model-parameters";
 import { api, getNamespace } from "@/lib/api";
 import { Link } from "react-router-dom";
@@ -914,10 +914,13 @@ export function OnboardingWizard({
         runtimeRef: prepared.runtime,
         executionLifecycle: "enduring",
         borrowedTools: [],
-        // The starter toolbox the policy lends to this profile, exactly as a
-        // fleet wrapper Agent selects it: the mediated path serves the
-        // workspace operations and the public-only web tools.
-        clusterTools: cellnProfile.tools.length ? cellnProfile.tools.map((tool) => ({ ...tool })) : undefined,
+        // The starter toolbox, exactly as the backend's toolbox runtime
+        // lends it (every tool, in order); nothing when the scope's package
+        // has no toolbox, since the mediated path then serves no tools.
+        clusterTools: (() => {
+          const { tools } = ownKeySelection(cellnProfile);
+          return tools.length ? tools : undefined;
+        })(),
         enduringDefaults: cellnEnduring,
       });
     } catch (err) {
@@ -2088,14 +2091,14 @@ export function OnboardingWizard({
                     ? <>a new Secret <code>{cellnSecretName}</code> holding <code>{cellnRoute.secretKey}</code></>
                     : <>existing Secret <code>{cellnKey.secretName}</code> (<code>{cellnRoute.secretKey}</code>)</>}</p>
                   <p>Model connection: <code>{modelConnectionName(form.name)}</code>{cellnParsedTokens.maxOutputTokens ? `, up to ${cellnParsedTokens.maxOutputTokens} output tokens per request` : ""}{cellnParsedParameters.parameters ? ", with model parameters" : ""}</p>
-                  <p>Runtime: <code>{cellnProfile?.wrapper}</code> (the fleet's; created in this namespace if missing)</p>
-                  {cellnEnduring && <p className="text-muted-foreground">One conversation: {describeEnduringLimits(cellnEnduring)}. Starter tools: {cellnProfile?.tools.map((tool) => tool.name).join(", ") || "none"}. Context and workspace files are lost with the parent.</p>}
+                  <p>Runtime: <code>{cellnProfile && ownKeySelection(cellnProfile).wrapper}</code> (the fleet's; created in this namespace if missing)</p>
+                  {cellnEnduring && <p className="text-muted-foreground">One conversation: {describeEnduringLimits(cellnEnduring)}. Starter tools: {(cellnProfile ? ownKeySelection(cellnProfile).tools : []).map((tool) => tool.name).join(", ") || "none"}. Context and workspace files are lost with the parent.</p>}
                 </div>}
               </div>}
               {mode === "agent" && (
                 <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">Execution</span>
-                  <span className="font-mono text-right">{celln ? cellnProfile?.wrapper || "Celln fleet runtime" : form.runtimeRef || "Built-in Agent runner"}</span>
+                  <span className="font-mono text-right">{celln ? (cellnProfile && ownKeySelection(cellnProfile).wrapper) || "Celln fleet runtime" : form.runtimeRef || "Built-in Agent runner"}</span>
                 </div>
               )}
               {mode === "persona" && targetName && (
@@ -2239,7 +2242,7 @@ export function OnboardingWizard({
                   ? celln && cellnRoute
                     // Names only: the Secret is referenced, the key never appears.
                     ? instanceYamlFromWizard(
-                        { ...form, runtimeRef: cellnProfile?.wrapper, secretName: cellnSecretName, enduringDefaults: cellnEnduring },
+                        { ...form, runtimeRef: cellnProfile && ownKeySelection(cellnProfile).wrapper, secretName: cellnSecretName, enduringDefaults: cellnEnduring },
                         ownKeyConnectionSpec({ route: cellnRoute, origin: cellnOrigin, path: cellnPath, model: form.model, parameters: cellnParsedParameters.parameters, maxOutputTokens: cellnParsedTokens.maxOutputTokens }, cellnSecretName),
                       )
                     : instanceYamlFromWizard(form)

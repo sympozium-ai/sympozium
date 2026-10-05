@@ -133,8 +133,21 @@ export class OwnKeyError extends Error {
 }
 
 /**
+ * What an Agent with its own key runs on and lends: the backend's toolbox and
+ * exactly its tools, in order, when the scope publishes one; otherwise the
+ * backend's own runtime and no tools (on the gateway-mediated path that
+ * runtime lends none).
+ */
+export function ownKeySelection(profile: CellnPlatformProfile): { profile: string; wrapper: string; tools: { name: string; revision: string }[] } {
+  if (profile.toolboxProfile && profile.toolboxWrapper && profile.toolboxTools?.length) {
+    return { profile: profile.toolboxProfile, wrapper: profile.toolboxWrapper, tools: profile.toolboxTools.map((tool) => ({ ...tool })) };
+  }
+  return { profile: profile.name, wrapper: profile.wrapper, tools: [] };
+}
+
+/**
  * Saves the Agent's Secret (when pasted) and ModelConnection, then makes sure
- * the namespace has the fleet's runtime wrapper. Every call is idempotent, so
+ * the namespace has the fleet's runtime wrapper (ownKeySelection's). Every call is idempotent, so
  * a retry after a failure repeats nothing harmful. Throws OwnKeyError naming
  * what exists and what does not.
  */
@@ -146,7 +159,7 @@ export async function prepareOwnKeyBackend(input: { connectionName: string; sele
   const steps: OwnKeyStep[] = [
     ...(!keyless ? [{ step: "secret" as const, object: `Secret ${secretName}`, state: creating ? "not-started" as const : "done" as const, note: creating ? undefined : "existing Secret, linked" }] : []),
     { step: "connection", object: `ModelConnection ${connectionName}`, state: "not-started" },
-    { step: "runtime", object: `AgentRuntime ${profile.wrapper}`, state: "not-started" },
+    { step: "runtime", object: `AgentRuntime ${ownKeySelection(profile).wrapper}`, state: "not-started" },
     ...(input.agentName ? [{ step: "agent" as const, object: `Agent ${input.agentName}`, state: "not-started" as const }] : []),
   ];
   const mark = (step: OwnKeyStepName, state: OwnKeyStepState, note?: string) => {
@@ -183,7 +196,7 @@ export async function prepareOwnKeyBackend(input: { connectionName: string; sele
   input.onConnectionSaved?.(connection);
 
   try {
-    const wrappers = await api.cellnPlatform.ensureRuntime(profile.name);
+    const wrappers = await api.cellnPlatform.ensureRuntime(ownKeySelection(profile).profile);
     const entry = steps.find((candidate) => candidate.step === "runtime");
     if (entry) entry.object = `AgentRuntime ${wrappers.runtime}`;
     mark("runtime", "done", wrappers.created.includes(wrappers.runtime) ? "created" : "already there");

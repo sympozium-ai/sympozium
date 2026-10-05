@@ -49,6 +49,24 @@ const (
 	// gets its runtime wrapper alone, never a shared Agent or connection.
 	MediationOnlyLabel = "celln.sympozium.ai/mediation-only"
 
+	// ToolboxLabel marks a backend's toolbox runtime profile and its runtime
+	// wrappers. The profile runs the backend's runtime composed with every
+	// tool of the starter toolbox (Celln's signed toolbox closure), so an
+	// Agent with its own key may lend the whole toolbox on the mediated path
+	// while a cell still never carries an executable its run did not select.
+	// Its run must select exactly ToolboxTools, in that order; a tool-free
+	// Agent keeps the backend's own (tool-free) profile.
+	ToolboxLabel = "celln.sympozium.ai/toolbox"
+	// ToolboxToolsAnnotation records, on a toolbox profile, the cluster
+	// tool revisions its closure lends, in closure order (a JSON list of
+	// {name, revision}). Celln enforces the order; this is the record
+	// clients select from.
+	ToolboxToolsAnnotation = "celln.sympozium.ai/toolbox-tools"
+	// toolboxSuffix names a toolbox profile and wrapper after the backend's
+	// own. Backend and scope names are DNS labels, so a dotted suffix can
+	// never collide with another backend's names.
+	toolboxSuffix = ".toolbox"
+
 	// The wrapper names of the default backend; a run selects them by name.
 	WrapperRuntimeName    = "celln-native"
 	WrapperAgentName      = "celln-agent"
@@ -118,6 +136,47 @@ func WrapperNames(backend string) Wrappers {
 	return Wrappers{Backend: backend, Runtime: "celln-" + backend, Agent: "celln-agent-" + backend, Connection: "celln-" + backend}
 }
 
+// Toolbox reports whether a profile is a backend's toolbox profile.
+func Toolbox(profile *api.CellnRuntimeProfile) bool {
+	return profile.Labels[ToolboxLabel] == "true"
+}
+
+// ToolboxProfileName is the toolbox profile published beside a backend's
+// runtime profile.
+func ToolboxProfileName(profile string) string { return profile + toolboxSuffix }
+
+// RuntimeWrapperName is the AgentRuntime a namespace holds for a profile: the
+// backend's wrapper name, with the toolbox suffix for its toolbox profile.
+func RuntimeWrapperName(profile *api.CellnRuntimeProfile) string {
+	name := WrapperNames(Backend(profile)).Runtime
+	if Toolbox(profile) {
+		name += toolboxSuffix
+	}
+	return name
+}
+
+// ToolboxTools are the tools a toolbox profile's closure lends, in the order
+// a run must select them.
+func ToolboxTools(profile *api.CellnRuntimeProfile) ([]api.ClusterCellnToolRef, error) {
+	var tools []api.ClusterCellnToolRef
+	raw := profile.Annotations[ToolboxToolsAnnotation]
+	if !Toolbox(profile) || raw == "" || json.Unmarshal([]byte(raw), &tools) != nil || len(tools) == 0 || len(tools) > 24 {
+		return nil, fmt.Errorf("runtime profile %q records no toolbox tools", profile.Name)
+	}
+	for _, tool := range tools {
+		if tool.Name == "" || tool.Revision == "" {
+			return nil, fmt.Errorf("runtime profile %q records an invalid toolbox tool", profile.Name)
+		}
+	}
+	return tools, nil
+}
+
+// ToolboxAnnotation encodes a toolbox profile's tools for ToolboxToolsAnnotation.
+func ToolboxAnnotation(tools []api.ClusterCellnToolRef) string {
+	raw, _ := json.Marshal(tools)
+	return string(raw)
+}
+
 // Authorised is one profile a namespace may run and the policy admitting it.
 type Authorised struct {
 	Profile api.CellnRuntimeProfile
@@ -183,11 +242,38 @@ func AuthorisedProfiles(ctx context.Context, reader client.Reader, namespace str
 // that owns its backend (its own Secret-backed ModelConnection, executed
 // gateway-mediated) exactly as it serves the backend's own wrappers.
 func RuntimeWrapper(namespace string, profile *api.CellnRuntimeProfile) *api.AgentRuntime {
-	names := WrapperNames(Backend(profile))
+	labels := map[string]string{ManagedByLabel: ManagedByValue, BackendLabel: Backend(profile)}
+	if Toolbox(profile) {
+		labels[ToolboxLabel] = "true"
+	}
 	return &api.AgentRuntime{
-		ObjectMeta: metav1.ObjectMeta{Name: names.Runtime, Namespace: namespace, Labels: map[string]string{ManagedByLabel: ManagedByValue, BackendLabel: names.Backend}},
+		ObjectMeta: metav1.ObjectMeta{Name: RuntimeWrapperName(profile), Namespace: namespace, Labels: labels},
 		Spec:       api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: profile.Name, Revision: profile.Spec.Revision}, SupportOwner: "celln-platform"},
 	}
+}
+
+// OwnKeySelection is what an Agent bringing its own key (gateway-mediated)
+// selects on a backend's profile: the backend's toolbox profile and exactly
+// its tools in closure order when the namespace's policies admit one, else
+// the backend's tool-free profile and no tools (its runtime lends none on
+// the mediated path).
+func OwnKeySelection(ctx context.Context, reader client.Reader, namespace, profileName string) (string, []api.ClusterCellnToolRef, error) {
+	authorised, err := AuthorisedProfiles(ctx, reader, namespace)
+	if err != nil {
+		return "", nil, err
+	}
+	if !slices.ContainsFunc(authorised, func(a Authorised) bool { return a.Profile.Name == profileName }) {
+		return "", nil, fmt.Errorf("no execution policy admits profile %q in namespace %q", profileName, namespace)
+	}
+	index := slices.IndexFunc(authorised, func(a Authorised) bool { return a.Profile.Name == ToolboxProfileName(profileName) })
+	if index < 0 {
+		return profileName, nil, nil
+	}
+	tools, err := ToolboxTools(&authorised[index].Profile)
+	if err != nil {
+		return "", nil, err
+	}
+	return authorised[index].Profile.Name, tools, nil
 }
 
 // EnsureRuntimeWrapper creates the runtime wrapper a namespace lacks for an
@@ -294,6 +380,12 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 	native := profile.Spec.Native
 	if native == nil || native.CredentialProfile == "" {
 		return nil, fmt.Errorf("runtime profile %q carries no native credential profile", profile.Name)
+	}
+	if Toolbox(profile) {
+		// The fleet's shared Agent runs on the backend's own profile; the
+		// toolbox serves Agents with their own key and gets its runtime
+		// wrapper alone.
+		return nil, fmt.Errorf("runtime profile %q is a toolbox profile: it has a runtime wrapper only", profile.Name)
 	}
 	route, endpoint, model, err := ProfileRoute(profile, policy, "host-profile")
 	if err != nil {

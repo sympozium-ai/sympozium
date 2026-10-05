@@ -70,12 +70,13 @@ type StarterAgentOptions struct {
 	// written to the Agent's Secret.
 	Credential string
 	// Runtime is the runtime wrapper (AgentRuntime) in Namespace binding the
-	// backend's runtime profile.
+	// backend's runtime profile: its toolbox profile when it lends Tools.
 	Runtime string
-	// Tools are the shared catalogue revisions the scope's policy lends to
-	// the profile (cellnplatform.ProfileTools): the starter toolbox a fleet
-	// wrapper Agent selects. The Agent lends them to its runs; the mediated
-	// path serves them (workspace operations and public-only web tools).
+	// Tools are what an Agent with its own key lends on that runtime
+	// (cellnplatform.OwnKeySelection): the backend's toolbox tools, exactly
+	// and in closure order, which the mediated path serves (workspace
+	// operations, public-only web tools and borrowed commands); none on the
+	// backend's tool-free runtime.
 	Tools []api.ClusterCellnToolRef
 }
 
@@ -102,7 +103,7 @@ func StarterAgentObjects(o StarterAgentOptions) (*corev1.Secret, *api.ModelConne
 			Backend:            "celln",
 			ModelConnectionRef: names.Connection,
 			Model:              m.Name,
-			// The same starter toolbox as the backend's fleet wrappers: the
+			// The starter toolbox on the backend's toolbox runtime: the
 			// mediated path serves it through the node's broker.
 			CellnSelection: &api.CellnCatalogueSelection{RuntimeRef: o.Runtime, ToolRefs: []api.CellnCatalogueToolRef{}, ClusterToolRefs: slices.Clone(o.Tools)},
 		},

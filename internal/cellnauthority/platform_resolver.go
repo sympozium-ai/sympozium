@@ -11,6 +11,7 @@ import (
 	"time"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/cellnplatform"
 	"github.com/sympozium-ai/sympozium/internal/modelconnection"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -402,6 +403,18 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 		return nil, deny(ReasonLimitRange, "task exceeds effective runtime limit")
 	}
 
+	// A toolbox runtime's closure lends exactly its recorded tools in that
+	// order, and Celln runs it only for that exact selection; say so here
+	// rather than as a node's closure mismatch after admission.
+	if cellnplatform.Toolbox(&s.Profile) {
+		want, err := cellnplatform.ToolboxTools(&s.Profile)
+		if err != nil {
+			return nil, deny(ReasonPolicyContracted, "%v", err)
+		}
+		if !slices.Equal(want, s.Run.Spec.CellnSelection.ClusterToolRefs) {
+			return nil, deny(ReasonToolOrder, "runtime profile %q is a toolbox: a run on it selects exactly its %d tools in catalogue order (a run lending no tools uses the backend's own runtime)", s.Profile.Name, len(want))
+		}
+	}
 	tools := make([]DecisionToolBinding, 0, len(s.Tools))
 	for _, tool := range s.Tools {
 		if err := validateClusterTool(tool); err != nil {

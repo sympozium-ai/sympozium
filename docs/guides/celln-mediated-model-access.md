@@ -367,34 +367,44 @@ spec:
 ```
 
 **The runtime wrapper.** The Agent's `runtimeRef` names an `AgentRuntime` in its
-namespace that binds a fleet runtime profile by `cellnProfileRef`. A namespace
-that has used a fleet backend before already has one (`celln-native` for the
-default backend, `celln-<backend>` otherwise). Otherwise ask the API server for
-the runtime alone; it is created only for a profile the namespace's policy
-admits, and neither the backend's shared Agent nor its host-profile connection
-is added:
+namespace that binds a fleet runtime profile by `cellnProfileRef`. An Agent
+that lends the starter toolbox runs on the backend's *toolbox* profile
+(`celln-native-starter.toolbox`, wrapper `celln-native.toolbox`; for another
+backend `<its profile>.toolbox` and `celln-<backend>.toolbox`). Its signed
+closure is the runtime composed with every starter tool and borrowed command,
+so the node runs it only for exactly those tools in that order: a cell never
+carries an executable its run did not select. A chat-only Agent uses the
+backend's tool-free profile and wrapper (`celln-native-starter`,
+`celln-native`). Ask the API server for the runtime alone; it is created only
+for a profile the namespace's policy admits, and neither the backend's shared
+Agent nor its host-profile connection is added:
 
 ```bash
 curl -X POST "$SYMPOZIUM_API/api/v1/celln-platform/wrappers?namespace=team-a" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"profile": "celln-native-starter", "runtimeOnly": true}'
-# {"backend":"native","runtime":"celln-native","agent":"","connection":"","created":["celln-native"]}
+  -d '{"profile": "celln-native-starter.toolbox", "runtimeOnly": true}'
+# {"backend":"native","runtime":"celln-native.toolbox","agent":"","connection":"","created":["celln-native.toolbox"]}
 ```
 
-`GET /api/v1/celln-platform/profiles?namespace=team-a` lists the profile names.
-What it creates is this object (shown for reference; the revision must be the
-profile's exact one, so prefer the API):
+`GET /api/v1/celln-platform/profiles?namespace=team-a` lists each backend's
+profile with its toolbox (`toolboxProfile`, `toolboxWrapper` and the exact
+`toolboxTools`). A scope installed from a starter package without a toolbox
+(Celln v0.5.33 and earlier) publishes none, and an Agent with its own key then
+lends no tools; move the fleet to a current package with
+`--celln-fleet-replace-package`. What the API creates is this object (shown
+for reference; the revision must be the profile's exact one, so prefer the
+API):
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
 kind: AgentRuntime
 metadata:
-  name: celln-native
+  name: celln-native.toolbox
   namespace: team-a
 spec:
   image: ""                     # required by the API; a fleet profile supplies the executable
   cellnProfileRef:
-    name: celln-native-starter
+    name: celln-native-starter.toolbox
     revision: "<the profile's spec.revision>"
   supportOwner: celln-platform
 ```
@@ -402,11 +412,12 @@ spec:
 **The Agent.** `authRefs` is the Agent owner's grant that this Secret may be
 used for this Agent (selecting the connection in `spec.execution` grants it
 too); `spec.execution.modelConnectionRef` makes its runs use the connection.
-`cellnSelection.clusterToolRefs` lends the scope's starter toolbox, the same
-revisions a fleet wrapper Agent selects (`kubectl get cellnexecutionpolicy
-celln-fleet-starter -o jsonpath='{.spec.tools}'` lists them; the installer's
-starter Agent and the console's Celln Agents fill this in for you). Omit it for
-a chat-only Agent.
+`cellnSelection.clusterToolRefs` lends the scope's starter toolbox: exactly the
+toolbox profile's tools in its order (`kubectl get cellnruntimeprofile
+celln-native-starter.toolbox -o jsonpath='{.metadata.annotations.celln\.sympozium\.ai/toolbox-tools}'`
+lists them; the installer's starter Agent and the console's Celln Agents fill
+this in for you). A different order or a subset is refused
+`AUTH_TOOL_ORDER_MISMATCH`. Omit it, on `celln-native`, for a chat-only Agent.
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -418,7 +429,7 @@ spec:
   agents:
     default:
       model: claude-sonnet-5    # required by the API; the run's model is spec.execution.model
-  runtimeRef: celln-native
+  runtimeRef: celln-native.toolbox
   authRefs:
     - provider: anthropic
       secret: my-anthropic-key
@@ -427,17 +438,18 @@ spec:
     modelConnectionRef: my-anthropic
     model: claude-sonnet-5
     cellnSelection:
-      runtimeRef: celln-native
+      runtimeRef: celln-native.toolbox
       toolRefs: []
-      clusterToolRefs:
+      clusterToolRefs:          # exactly the toolbox's tools, in its order
         - {name: celln-starter-workspace-read, revision: v1}
         - {name: celln-starter-workspace-write, revision: v1}
+        - {name: celln-starter-https-fetch, revision: v1}
         - {name: celln-starter-workspace-list, revision: v1}
         - {name: celln-starter-workspace-append, revision: v1}
         - {name: celln-starter-workspace-search, revision: v1}
         - {name: celln-starter-workspace-delete, revision: v1}
-        - {name: celln-starter-https-fetch, revision: v1}
         - {name: celln-starter-https-post-json, revision: v1}
+        # ...then each borrowed command (grep, jq, ...) in catalogue order
 ```
 
 ### Tools on the mediated path
@@ -460,6 +472,9 @@ them; nothing about a tool depends on the model route:
   Private, loopback, link-local and reserved addresses, plain HTTP, other
   ports and redirects to any of them are refused. A route's `allowInsecure`
   never applies to tool requests.
+- **Borrowed commands** (`celln.argv/v1`, such as `grep` or `jq`): run in the
+  cell with the argv binding the node itself recorded from the reviewed
+  starter package, never one carried by the run or decision.
 
 Before admitting a run that selects these tools, the controller asks the node
 which contracts it serves (`scopedArtifactContracts`, `scopedHttpsContracts`

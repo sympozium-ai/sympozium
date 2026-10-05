@@ -150,3 +150,56 @@ func TestCellnPlatformListsMediationOnlyProfiles(t *testing.T) {
 		t.Fatalf("mediation-only profile: %+v", p)
 	}
 }
+
+// A backend's toolbox is offered with the backend's own profile, not as a
+// profile of its own: what an Agent with its own key selects to lend the
+// starter toolbox (the toolbox profile, its wrapper and exactly its tools in
+// closure order). Asked for with runtimeOnly, the namespace gets that wrapper.
+func TestCellnPlatformOffersEachBackendsToolboxWithItsProfile(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = sympoziumv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	template := apiextensionsv1.JSON{Raw: []byte(`{"model":"deepseek-chat","url":"https://api.deepseek.com/chat/completions"}`)}
+	base := &sympoziumv1alpha1.CellnRuntimeProfile{ObjectMeta: metav1.ObjectMeta{Name: "celln-native-trial"}, Spec: sympoziumv1alpha1.CellnRuntimeProfileSpec{Revision: "v1", Native: &sympoziumv1alpha1.CellnNativeProvisioning{CredentialProfile: "trial", SystemPrompt: "host persona", Template: template}}}
+	ordered := []sympoziumv1alpha1.ClusterCellnToolRef{{Name: "celln-trial-workspace-read", Revision: "v1"}, {Name: "celln-trial-grep", Revision: "v1"}}
+	toolbox := base.DeepCopy()
+	toolbox.Name = cellnplatform.ToolboxProfileName(base.Name)
+	toolbox.Labels = map[string]string{cellnplatform.ToolboxLabel: "true"}
+	toolbox.Annotations = map[string]string{cellnplatform.ToolboxToolsAnnotation: cellnplatform.ToolboxAnnotation(ordered)}
+	policy := &sympoziumv1alpha1.CellnExecutionPolicy{ObjectMeta: metav1.ObjectMeta{Name: "celln-fleet-trial"}, Spec: sympoziumv1alpha1.CellnExecutionPolicySpec{
+		NamespaceSelector: cellnplatform.OpenSelector(cellnplatform.SystemNamespaces("sympozium-system")),
+		RuntimeProfiles:   []sympoziumv1alpha1.CellnExecutionPolicyRuntime{{Ref: sympoziumv1alpha1.CellnRuntimeProfileRef{Name: base.Name, Revision: "v1"}}, {Ref: sympoziumv1alpha1.CellnRuntimeProfileRef{Name: toolbox.Name, Revision: "v1"}}},
+		// The policy lends them in another order; the toolbox's is the one.
+		Tools:    []sympoziumv1alpha1.CellnExecutionPolicyTool{{Ref: ordered[1]}, {Ref: ordered[0]}},
+		Routes:   []sympoziumv1alpha1.CellnExecutionPolicyRoute{{Provider: "deepseek", Protocol: "openai-chat", Models: []string{"deepseek-chat"}, EndpointOrigins: []string{"https://api.deepseek.com"}, Auth: "host-profile"}},
+		Ceilings: sympoziumv1alpha1.CellnExecutionPolicyCeilings{MaxTurns: 256, MaxModelRequests: 1536, MaxOutputTokens: 786432, MaxParentLeaseSeconds: 86400, MaxTurnSeconds: 60},
+	}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(base, toolbox, policy, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "team-a", Labels: map[string]string{cellnplatform.NamespaceNameLabel: "team-a"}}}).Build()
+	srv := NewServer(cl, nil, nil, logr.Discard())
+	res := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/celln-platform/profiles?namespace=team-a", nil))
+	var got []CellnPlatformProfile
+	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &got) != nil {
+		t.Fatalf("profiles: %d %s", res.Code, res.Body.String())
+	}
+	if len(got) != 1 || got[0].Name != base.Name || got[0].Wrapper != "celln-native" || got[0].ToolboxProfile != toolbox.Name || got[0].ToolboxWrapper != "celln-native.toolbox" || len(got[0].ToolboxTools) != 2 || got[0].ToolboxTools[0] != ordered[0] || got[0].ToolboxTools[1] != ordered[1] {
+		t.Fatalf("toolbox not offered with its backend: %+v", got)
+	}
+	post := func(body string) *httptest.ResponseRecorder {
+		res := httptest.NewRecorder()
+		srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/v1/celln-platform/wrappers?namespace=team-a", strings.NewReader(body)))
+		return res
+	}
+	var wrappers cellnplatform.Wrappers
+	if res := post(`{"profile":"celln-native-trial.toolbox","runtimeOnly":true}`); res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &wrappers) != nil || wrappers.Runtime != "celln-native.toolbox" || len(wrappers.Created) != 1 {
+		t.Fatalf("toolbox runtime wrapper: %d %s", res.Code, res.Body.String())
+	}
+	var wrapper sympoziumv1alpha1.AgentRuntime
+	if err := cl.Get(t.Context(), types.NamespacedName{Namespace: "team-a", Name: "celln-native.toolbox"}, &wrapper); err != nil || wrapper.Spec.CellnProfileRef.Name != toolbox.Name {
+		t.Fatalf("toolbox wrapper: %v %+v", err, wrapper.Spec)
+	}
+	// The toolbox has no shared Agent or host-profile connection.
+	if res := post(`{"profile":"celln-native-trial.toolbox"}`); res.Code == http.StatusOK {
+		t.Fatalf("toolbox offered the full wrapper set: %s", res.Body.String())
+	}
+}

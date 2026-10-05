@@ -556,6 +556,14 @@ type CellnPlatformProfile struct {
 	// absent when there is none. Names only: the key is never lent.
 	StarterAgent     string `json:"starterAgent,omitempty"`
 	StarterNamespace string `json:"starterNamespace,omitempty"`
+	// ToolboxProfile, ToolboxWrapper and ToolboxTools are what an Agent with
+	// its own key selects to lend the starter toolbox: the backend's toolbox
+	// profile, its namespace wrapper (ask for it with runtimeOnly) and
+	// exactly its tools in this order. Absent when the scope's package
+	// exports no toolbox; such an Agent then lends no tools.
+	ToolboxProfile string                                  `json:"toolboxProfile,omitempty"`
+	ToolboxWrapper string                                  `json:"toolboxWrapper,omitempty"`
+	ToolboxTools   []sympoziumv1alpha1.ClusterCellnToolRef `json:"toolboxTools,omitempty"`
 }
 
 // platformPersona returns the system prompt a fleet runtime profile binds
@@ -592,7 +600,16 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	out := make([]CellnPlatformProfile, 0, len(authorised))
+	toolboxes := map[string]*sympoziumv1alpha1.CellnRuntimeProfile{}
+	for i := range authorised {
+		if cellnplatform.Toolbox(&authorised[i].Profile) {
+			toolboxes[authorised[i].Profile.Name] = &authorised[i].Profile
+		}
+	}
 	for _, a := range authorised {
+		if cellnplatform.Toolbox(&a.Profile) {
+			continue // offered with its backend's profile, below
+		}
 		names := cellnplatform.WrapperNames(cellnplatform.Backend(&a.Profile))
 		entry := CellnPlatformProfile{Name: a.Profile.Name, Revision: a.Profile.Spec.Revision, Policy: a.Policy.Name, SystemPrompt: a.Profile.Spec.Native.SystemPrompt, Backend: names.Backend, Wrapper: names.Runtime}
 		if objects, err := cellnplatform.TenantWrappers(ns, &a.Profile, &a.Policy); err == nil {
@@ -611,6 +628,11 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 		c := a.Policy.Spec.Ceilings
 		ceilings := sympoziumv1alpha1.EnduringRunSpec{LeaseSeconds: int32(min(c.MaxParentLeaseSeconds, 86400)), MaxTurns: int32(min(c.MaxTurns, 1024)), MaxModelRequests: int32(min(c.MaxModelRequests, 6144)), MaxOutputTokens: c.MaxOutputTokens}
 		entry.Tools, entry.Ceilings, entry.SessionDefaults = cellnplatform.LentTools(&a.Policy), ceilings, *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)
+		if toolbox := toolboxes[cellnplatform.ToolboxProfileName(a.Profile.Name)]; toolbox != nil {
+			if tools, err := cellnplatform.ToolboxTools(toolbox); err == nil {
+				entry.ToolboxProfile, entry.ToolboxWrapper, entry.ToolboxTools = toolbox.Name, cellnplatform.RuntimeWrapperName(toolbox), tools
+			}
+		}
 		out = append(out, entry)
 	}
 	writeJSON(w, out)
@@ -662,9 +684,9 @@ func (s *Server) ensureCellnRuntimeWrapper(ctx context.Context, namespace, profi
 		return cellnplatform.Wrappers{}, err
 	}
 	names := cellnplatform.WrapperNames(cellnplatform.Backend(&profile))
-	out := cellnplatform.Wrappers{Backend: names.Backend, Runtime: names.Runtime, Created: []string{}}
+	out := cellnplatform.Wrappers{Backend: names.Backend, Runtime: cellnplatform.RuntimeWrapperName(&profile), Created: []string{}}
 	var existing sympoziumv1alpha1.AgentRuntime
-	missing := k8serrors.IsNotFound(s.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: names.Runtime}, &existing))
+	missing := k8serrors.IsNotFound(s.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: out.Runtime}, &existing))
 	runtime, err := cellnplatform.EnsureRuntimeWrapper(ctx, s.client, namespace, profileName)
 	if err != nil {
 		return cellnplatform.Wrappers{}, err

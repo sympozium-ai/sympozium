@@ -261,6 +261,15 @@ export interface CellnPlatformProfile {
    */
   starterAgent?: string;
   starterNamespace?: string;
+  /**
+   * What an Agent with its own key selects to lend the starter toolbox: the
+   * backend's toolbox profile and wrapper, and exactly these tools in this
+   * order (Celln runs the toolbox for no other selection). Absent when the
+   * scope's package exports no toolbox: such an Agent then lends no tools.
+   */
+  toolboxProfile?: string;
+  toolboxWrapper?: string;
+  toolboxTools?: { name: string; revision: string }[];
 }
 
 export interface EnduringLimits {

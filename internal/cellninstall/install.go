@@ -34,7 +34,10 @@ type Options struct {
 type catalogue struct {
 	SystemPrompt string                       `json:"systemPrompt"`
 	Worker       api.AgentRuntimeCellnProfile `json:"worker"`
-	Tools        []struct {
+	// Toolbox is the runtime composed with every tool below, in this order
+	// (a package built by a Celln that exports it); absent in older ones.
+	Toolbox *api.AgentRuntimeCellnProfile `json:"toolbox,omitempty"`
+	Tools   []struct {
 		Name string            `json:"name"`
 		Spec api.CellnToolSpec `json:"spec"`
 	} `json:"tools"`

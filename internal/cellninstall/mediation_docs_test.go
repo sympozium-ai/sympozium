@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/cellnplatform"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
@@ -122,7 +123,7 @@ func TestMediationGuideExamplesAreValid(t *testing.T) {
 	if len(agent.Spec.AuthRefs) != 1 || agent.Spec.AuthRefs[0].Secret != secret.Name || !strings.EqualFold(agent.Spec.AuthRefs[0].Provider, spec.Provider) {
 		t.Fatalf("authRefs must grant the connection's Secret: %+v", agent.Spec.AuthRefs)
 	}
-	if runtime.Spec.CellnProfileRef == nil || runtime.Spec.CellnProfileRef.Name != PlatformProfileName("starter", "native") {
+	if runtime.Spec.CellnProfileRef == nil || runtime.Spec.CellnProfileRef.Name != cellnplatform.ToolboxProfileName(PlatformProfileName("starter", "native")) {
 		t.Fatalf("runtime wrapper example: %+v", runtime.Spec)
 	}
 }

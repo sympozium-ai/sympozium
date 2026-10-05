@@ -367,7 +367,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	for _, b := range backends[1:] {
 		worker := b.cat.Worker
 		worker.Limits.TimeoutMillis = 0
-		if !reflect.DeepEqual(b.cat.Tools, first.cat.Tools) || !reflect.DeepEqual(worker, firstWorker) || b.cat.SystemPrompt != first.cat.SystemPrompt || b.configured.HostLimits != first.configured.HostLimits || !sameJSON(b.native.Parent, first.native.Parent) || !sameWorkerMaterial(b.native.Worker, first.native.Worker) {
+		if !reflect.DeepEqual(b.cat.Tools, first.cat.Tools) || !reflect.DeepEqual(worker, firstWorker) || !sameToolbox(b.cat.Toolbox, first.cat.Toolbox) || b.cat.SystemPrompt != first.cat.SystemPrompt || b.configured.HostLimits != first.configured.HostLimits || !sameJSON(b.native.Parent, first.native.Parent) || !sameWorkerMaterial(b.native.Worker, first.native.Worker) {
 			return fmt.Errorf("backend %s differs from %s in reviewed package material; one scope carries one package", b.name, first.name)
 		}
 	}
@@ -381,7 +381,14 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	}
 	var objects []client.Object
 	profiles := map[string]*api.CellnRuntimeProfile{}
+	toolboxes := map[string]*api.CellnRuntimeProfile{}
 	runtimeRefs := make([]api.CellnExecutionPolicyRuntime, 0, len(backends))
+	// The catalogue's tools in catalogue order: the order a toolbox closure
+	// lends them in and a toolbox run must select them in.
+	clusterRefs := make([]api.ClusterCellnToolRef, 0, len(first.cat.Tools))
+	for _, entry := range first.cat.Tools {
+		clusterRefs = append(clusterRefs, api.ClusterCellnToolRef{Name: toolName(entry.Name), Revision: entry.Spec.Revision})
+	}
 	routes := make([]api.CellnExecutionPolicyRoute, 0, len(backends))
 	for _, b := range backends {
 		credentialProfile := b.configured.Model.CredentialProfile
@@ -403,6 +410,11 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		profiles[b.name] = profile
 		objects = append(objects, profile)
 		runtimeRefs = append(runtimeRefs, api.CellnExecutionPolicyRuntime{Ref: api.CellnRuntimeProfileRef{Name: profileName, Revision: cat.Worker.Revision}})
+		if toolbox := toolboxProfile(profile, cat.Toolbox, clusterRefs); toolbox != nil {
+			toolboxes[b.name] = toolbox
+			objects = append(objects, toolbox)
+			runtimeRefs = append(runtimeRefs, api.CellnExecutionPolicyRuntime{Ref: api.CellnRuntimeProfileRef{Name: toolbox.Name, Revision: toolbox.Spec.Revision}})
+		}
 		if mediatedOnly[b.name] {
 			continue
 		}
@@ -419,11 +431,9 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		return fmt.Errorf("a scope's policy carries at most 32 routes; %d backends and %d mediated routes were requested", len(backends), len(mediated))
 	}
 	policyTools := make([]api.CellnExecutionPolicyTool, 0, len(first.cat.Tools))
-	clusterRefs := make([]api.ClusterCellnToolRef, 0, len(first.cat.Tools))
 	for _, entry := range first.cat.Tools {
 		objects = append(objects, &api.ClusterCellnTool{ObjectMeta: meta(toolName(entry.Name), nil), Spec: entry.Spec})
 		policyTools = append(policyTools, api.CellnExecutionPolicyTool{Ref: api.ClusterCellnToolRef{Name: toolName(entry.Name), Revision: entry.Spec.Revision}})
-		clusterRefs = append(clusterRefs, api.ClusterCellnToolRef{Name: toolName(entry.Name), Revision: entry.Spec.Revision})
 	}
 	limits := first.configured.HostLimits
 	selector, err := cellnplatform.Selector(o.Authorise, o.Scope, cellnplatform.SystemNamespaces(o.ControllerNamespace, "celln-system"))
@@ -458,7 +468,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		if err := retirePlatformCatalogue(ctx, store, o.Replacing, o.Scope, objects, policyName); err != nil {
 			return err
 		}
-		if err := rebindTenantWrappers(ctx, store, profiles, policy, mediatedOnly); err != nil {
+		if err := rebindTenantWrappers(ctx, store, profiles, toolboxes, policy, mediatedOnly); err != nil {
 			return err
 		}
 	}
@@ -482,6 +492,14 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		wrappers, err := platformWrappers(o.Namespace, profiles[b.name], policy, mediatedOnly[b.name])
 		if err != nil {
 			return err
+		}
+		if toolbox := toolboxes[b.name]; toolbox != nil {
+			// An Agent with its own key lends the whole toolbox on this one.
+			more, err := platformWrappers(o.Namespace, toolbox, policy, mediatedOnly[b.name])
+			if err != nil {
+				return err
+			}
+			wrappers = append(wrappers, more...)
 		}
 		for _, object := range wrappers {
 			annotations := object.GetAnnotations()
@@ -544,9 +562,14 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	if mediatedOnly[sample.name] {
 		// The backend has no shared Agent: the sample runs as the starter
 		// Agent on its own key, through the model gateway, with the same
-		// starter toolbox and task as a fleet-keyed backend's sample.
+		// starter toolbox and task as a fleet-keyed backend's sample, on the
+		// backend's toolbox runtime (the mediated path serves tools only
+		// there).
 		starter := StarterAgentNamesFor(sample.name)
 		run.Spec.AgentRef, run.Spec.Model.ConnectionRef = starter.Agent, starter.Connection
+		if toolbox := toolboxes[sample.name]; toolbox != nil {
+			run.Spec.CellnSelection.RuntimeRef = cellnplatform.RuntimeWrapperName(toolbox)
+		}
 	}
 	if err := write("run.json", run); err != nil {
 		return err
@@ -554,14 +577,45 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	profileNames := make([]string, 0, len(backends))
 	for _, b := range backends {
 		profileNames = append(profileNames, PlatformProfileName(o.Scope, b.name))
+		if toolbox := toolboxes[b.name]; toolbox != nil {
+			profileNames = append(profileNames, toolbox.Name)
+		}
 	}
 	return write("installed.json", map[string]any{"namespace": o.Namespace, "scope": o.Scope, "packageHash": first.configured.PackageHash, "backends": names, "profiles": profileNames, "policy": policyName, "runSubmitted": false, "readiness": "not_established"})
 }
 
+// toolboxProfile is the backend's toolbox profile: the backend's own profile
+// with the catalogue's toolbox runtime artifacts, lending exactly tools in
+// catalogue order. nil when the package exports no toolbox.
+func toolboxProfile(profile *api.CellnRuntimeProfile, toolbox *api.AgentRuntimeCellnProfile, tools []api.ClusterCellnToolRef) *api.CellnRuntimeProfile {
+	if toolbox == nil || len(tools) == 0 {
+		return nil
+	}
+	out := profile.DeepCopy()
+	out.Name = cellnplatform.ToolboxProfileName(profile.Name)
+	out.Labels[cellnplatform.ToolboxLabel] = "true"
+	out.Annotations[cellnplatform.ToolboxToolsAnnotation] = cellnplatform.ToolboxAnnotation(tools)
+	out.Spec.Revision, out.Spec.Executable, out.Spec.Closure, out.Spec.Mote = toolbox.Revision, toolbox.Executable, toolbox.Closure, toolbox.Mote
+	out.Spec.PublisherKey, out.Spec.EntryPoint = toolbox.PublisherKey, toolbox.EntryPoint
+	return out
+}
+
+// sameToolbox compares two backends' toolbox runtimes apart from the turn
+// lifetime, which follows each backend's output-token cap.
+func sameToolbox(a, b *api.AgentRuntimeCellnProfile) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	left, right := *a, *b
+	left.Limits.TimeoutMillis, right.Limits.TimeoutMillis = 0, 0
+	return reflect.DeepEqual(left, right)
+}
+
 // platformWrappers are a namespace's wrapper objects for one backend: the
-// full set, or for a mediation-only backend the runtime wrapper alone.
+// full set, or for a mediation-only backend or a toolbox the runtime wrapper
+// alone.
 func platformWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy, mediatedOnly bool) ([]client.Object, error) {
-	if mediatedOnly {
+	if mediatedOnly || cellnplatform.Toolbox(profile) {
 		return []client.Object{cellnplatform.RuntimeWrapper(namespace, profile)}, nil
 	}
 	return cellnplatform.TenantWrappers(namespace, profile, policy)
