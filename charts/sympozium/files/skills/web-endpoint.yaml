@@ -101,5 +101,5 @@ spec:
         resources: ["agents"]
         verbs: ["get", "list", "watch"]
       - apiGroups: [""]
-        resources: ["configmaps", "secrets"]
+        resources: ["configmaps"]
         verbs: ["get", "list", "watch"]

@@ -423,6 +423,13 @@ type AgentRunStatus struct {
 	// +optional
 	Phase AgentRunPhase `json:"phase,omitempty"`
 
+	// ServiceAccountName is the run's own ServiceAccount, chosen once by the
+	// controller. Runs whose policy allows skill Secret access use the
+	// sympozium-trusted-run- prefix, which the chart's admission policy does
+	// not restrict; all others use sympozium-run-.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
 	// PodName is the name of the pod running this agent.
 	// +optional
 	PodName string `json:"podName,omitempty"`

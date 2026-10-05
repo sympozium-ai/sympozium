@@ -215,6 +215,18 @@ spec:
                 required:
                 - required
                 type: object
+              skillPolicy:
+                description: SkillPolicy governs what skill sidecars of this policy's
+                  Agents may do.
+                properties:
+                  allowSecretAccess:
+                    description: |-
+                      AllowSecretAccess keeps the secrets, pods/exec and pods/attach
+                      permissions a SkillPack requests, and lets the run create workloads
+                      that reference Secrets. Off by default: with it, an agent driving such
+                      a skill can read every model key in its namespace.
+                    type: boolean
+                type: object
               subagentPolicy:
                 description: SubagentPolicy defines sub-agent depth and concurrency
                   limits.

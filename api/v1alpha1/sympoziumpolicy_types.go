@@ -24,6 +24,10 @@ type SympoziumPolicySpec struct {
 	// +optional
 	FeatureGates map[string]bool `json:"featureGates,omitempty"`
 
+	// SkillPolicy governs what skill sidecars of this policy's Agents may do.
+	// +optional
+	SkillPolicy *SkillPolicySpec `json:"skillPolicy,omitempty"`
+
 	// NetworkPolicy defines network isolation settings.
 	// +optional
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
@@ -205,6 +209,16 @@ type LifecyclePolicySpec struct {
 	// hooks may not request RBAC access to (e.g. "secrets", "clusterroles").
 	// +optional
 	DeniedResources []string `json:"deniedResources,omitempty"`
+}
+
+// SkillPolicySpec governs skill sidecar permissions.
+type SkillPolicySpec struct {
+	// AllowSecretAccess keeps the secrets, pods/exec and pods/attach
+	// permissions a SkillPack requests, and lets the run create workloads
+	// that reference Secrets. Off by default: with it, an agent driving such
+	// a skill can read every model key in its namespace.
+	// +optional
+	AllowSecretAccess bool `json:"allowSecretAccess,omitempty"`
 }
 
 // SympoziumPolicyStatus defines the observed state of SympoziumPolicy.

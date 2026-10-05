@@ -29,7 +29,7 @@ rules:
       - pods
       - replicationcontrollers
       - resourcequotas
-      - secrets
+      # No secrets: an agent driving this server could read every model key.
       - serviceaccounts
       - services
     verbs: ["get", "list", "watch"]

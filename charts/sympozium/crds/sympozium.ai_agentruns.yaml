@@ -3758,6 +3758,13 @@ spec:
                 description: SandboxName is the name of the Sandbox CR created for
                   this run (agent-sandbox mode).
                 type: string
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName is the run's own ServiceAccount, chosen once by the
+                  controller. Runs whose policy allows skill Secret access use the
+                  sympozium-trusted-run- prefix, which the chart's admission policy does
+                  not restrict; all others use sympozium-run-.
+                type: string
               serviceName:
                 description: ServiceName is the name of the Service created for server-mode
                   runs.
