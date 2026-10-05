@@ -83,74 +83,27 @@ jobs:
       - name: Run API smoke tests
         run: bash ./test/integration/test-api-smoke.sh
 
-      - name: Start the in-cluster test model
-        run: |
-          set -euo pipefail
-          kubectl apply -f - <<'EOF'
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: ollama
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: ollama
-            template:
-              metadata:
-                labels:
-                  app: ollama
-              spec:
-                containers:
-                  - name: ollama
-                    image: docker.io/ollama/ollama:0.12.10@sha256:e8c3d1f6ad16323bc40dc63eff0701d4fc32113f75a86b54b3e836eef8290de6
-                    env:
-                      - name: OLLAMA_HOST
-                        value: 0.0.0.0:8080
-                    ports:
-                      - containerPort: 8080
-                    resources:
-                      requests:
-                        cpu: 500m
-                        memory: 1Gi
-                      limits:
-                        memory: 3Gi
-                    volumeMounts:
-                      - name: models
-                        mountPath: /root/.ollama
-                volumes:
-                  - name: models
-                    emptyDir: {}
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: ollama
-          spec:
-            selector:
-              app: ollama
-            ports:
-              - name: http
-                port: 8080
-                targetPort: 8080
-          EOF
-          kubectl rollout status deployment/ollama --timeout=300s
-          kubectl exec deployment/ollama -- ollama pull qwen2.5:1.5b
-          kubectl exec deployment/ollama -- ollama pull llama3.2:1b
+      - name: Start the deterministic test model
+        # A deterministic OpenAI-compatible fixture (test/integration/fake-model)
+        # replaces a 1B local LLM (issue #471): it answers a recall only from
+        # the history the harness sends, so the exact-token assertions test
+        # Sympozium's persistence rather than a small model's memory, and it
+        # holds SLOW:<n> requests open so disconnect cancellation never races
+        # a finished reply. Real-model qualification runs separately.
+        run: bash ./test/integration/deploy-fake-model.sh
 
-      - name: Run persistent Pi and Hermes real-model smoke tests
+      - name: Run persistent Pi and Hermes session lifecycle tests
         env:
           TEST_PROVIDER: openai
-          TEST_BASE_URL: http://ollama.default.svc.cluster.local:8080/v1
-          TEST_API_KEY: ollama
+          TEST_BASE_URL: http://fake-model.default.svc.cluster.local:8080/v1
+          TEST_API_KEY: fixture
+          TEST_MODEL: fixture-model
+          TEST_MODEL_FIXTURE: fake
         run: |
           set -euo pipefail
-          TEST_MODEL=qwen2.5:1.5b PERSISTENT_HARNESS_RUNTIME=pi-session-v0-84-4 \
+          PERSISTENT_HARNESS_RUNTIME=pi-session-v0-84-4 \
             bash ./test/integration/test-persistent-harness-session.sh
-          # Hermes Agent refuses models advertising under 64K context and
-          # qwen2.5:1.5b advertises 32K (issue #471). llama3.2:1b advertises
-          # 128K at ~1.3GB, inside the 3Gi ollama limit.
-          TEST_MODEL=llama3.2:1b PERSISTENT_HARNESS_RUNTIME=hermes-session-v0-20-6 \
+          PERSISTENT_HARNESS_RUNTIME=hermes-session-v0-20-6 \
             bash ./test/integration/test-persistent-harness-session.sh
 
       - name: Dump cluster state on failure
@@ -165,6 +118,8 @@ jobs:
           kubectl logs -n sympozium-system deploy/sympozium-controller-manager --tail=400
           echo "== Apiserver logs =="
           kubectl logs -n sympozium-system deploy/sympozium-apiserver --tail=400
+          echo "== Deterministic model fixture logs =="
+          kubectl logs -n default deploy/fake-model --tail=400
 
       - name: Upload sanitized persistence evidence
         # Retains the per-assertion evidence files written by

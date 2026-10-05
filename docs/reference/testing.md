@@ -90,16 +90,42 @@ The repository includes a scheduled Kind-based workflow:
 
 ### What the workflow does
 
-1. Checks out the repository
-2. Sets up Go
-3. Creates a Kind cluster
-4. Builds Sympozium images (`make docker-build`)
-5. Loads images into Kind
-6. Installs CRDs and built-ins (`make install`)
-7. Applies control-plane manifests
-8. Waits for core deployments
-9. Runs `make integration-tests`
-10. On failure, dumps key cluster diagnostics and logs
+1. Creates a Kind cluster and builds and loads the Sympozium images
+2. Installs CRDs and the `sympozium` Helm chart (webhook and cert-manager off)
+3. Runs `test/integration/test-api-smoke.sh`
+4. Starts the deterministic model fixture (`test/integration/deploy-fake-model.sh`)
+5. Runs `test/integration/test-persistent-harness-session.sh` for the Pi and
+   Hermes session runtimes: restart, stop/resume, SSE, client-disconnect
+   cancellation, idle timeout, actionable failure status and owned-resource cleanup
+6. On failure, dumps cluster diagnostics and uploads the sanitized
+   persistence evidence
+
+### Deterministic model fixture
+
+The lane tests Sympozium, not a model. A 1B local LLM made it fail most days
+by misremembering an exact token after restart even when the stored history
+was intact, and by finishing a reply before the cancellation check could
+disconnect it (issue #471). The lane therefore uses
+`test/integration/fake-model`, a small OpenAI-compatible server
+(`/v1/chat/completions` with and without streaming, and `/v1/models`
+advertising a 128K context window because Hermes refuses less than 64K):
+
+- A recall question is answered with the token from an earlier
+  "Remember this exact token" turn **in the request history the harness sends**.
+  If the history does not carry it, the fixture replies
+  `FIXTURE-NO-TOKEN-IN-HISTORY`, so lost conversation state still fails the
+  unchanged exact-token assertions. Unit tests prove a request without the
+  token in its history never returns it.
+- A final prompt containing `SLOW:<seconds>` streams one byte per second for
+  that long, so the one-second client disconnect always lands while model work
+  is in flight.
+
+To run the same scripts against a real model, leave `TEST_MODEL_FIXTURE` unset
+and set `TEST_PROVIDER`, `TEST_BASE_URL`, `TEST_MODEL` and `TEST_API_KEY`
+(any OpenAI-compatible provider, including a local `llama-server` or Ollama).
+Real-model qualification of the harnesses lives in those explicit runs on an
+installed cluster and in the KVM [Celln journeys](#celln-journeys), not in the
+scheduled Kind lane.
 
 ### Repository secrets
 
