@@ -543,11 +543,10 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	}}
 	if mediatedOnly[sample.name] {
 		// The backend has no shared Agent: the sample runs as the starter
-		// Agent on its own key, and the mediated path is chat only.
+		// Agent on its own key, through the model gateway, with the same
+		// starter toolbox and task as a fleet-keyed backend's sample.
 		starter := StarterAgentNamesFor(sample.name)
 		run.Spec.AgentRef, run.Spec.Model.ConnectionRef = starter.Agent, starter.Connection
-		run.Spec.CellnSelection.ClusterToolRefs = nil
-		run.Spec.Task = api.NewStringTask("Reply with the single word ready.")
 	}
 	if err := write("run.json", run); err != nil {
 		return err

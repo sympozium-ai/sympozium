@@ -8,14 +8,15 @@ import (
 )
 
 func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
-	for _, mode := range []string{"catalogue-ceiling", "attenuated", "omitted-capability", "different-operation", "one-shot", "argv", "invalid-effects", "mediated-append"} {
+	for _, mode := range []string{"catalogue-ceiling", "attenuated", "omitted-capability", "different-operation", "one-shot", "argv", "invalid-effects", "mediated-append", "one-shot-list", "mediated-https", "one-shot-https", "https-effects"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newPlatformFixture(t, "artifact-tenant", true)
 			var run api.AgentRun
 			if err := f.client.Get(t.Context(), f.runKey, &run); err != nil {
 				t.Fatal(err)
 			}
-			if mode != "one-shot" {
+			oneShot := strings.HasPrefix(mode, "one-shot")
+			if !oneShot {
 				run.Spec.ExecutionLifecycle = "enduring"
 				run.Spec.Enduring = &api.EnduringRunSpec{LeaseSeconds: 240, MaxTurns: 4, MaxModelRequests: 8, MaxOutputTokens: 4096}
 			}
@@ -32,6 +33,16 @@ func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
 			}
 			if mode == "mediated-append" {
 				tool.Spec.Limits.Artifacts.Operation = "append"
+			}
+			if mode == "one-shot-list" {
+				tool.Spec.Limits.Artifacts.Operation, tool.Spec.Limits.Effects = "list", "none"
+			}
+			if strings.HasSuffix(mode, "https") || mode == "https-effects" {
+				tool.Spec.Limits = httpsLimits()
+				tool.Spec.EntryPoint = "/https-fetch"
+			}
+			if mode == "https-effects" {
+				tool.Spec.Limits.Effects = "none"
 			}
 			if mode == "invalid-effects" {
 				tool.Spec.Limits.Effects = "none"
@@ -62,13 +73,28 @@ func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
 				}
 			}
 			request := platformRequest(f)
-			if mode != "one-shot" {
+			if !oneShot {
 				request.ParentIncarnation = "blake3:" + strings.Repeat("f", 64)
 			}
 			resolution, err := f.resolver.Resolve(t.Context(), f.runKey, request)
-			allowed := mode == "catalogue-ceiling" || mode == "attenuated"
+			// A mediated route now carries the fleet's whole starter toolbox:
+			// all six run-data operations and the web tools, for one-shot and
+			// enduring runs alike. Effects pairing and explicit policy stay.
+			allowed := map[string]bool{"catalogue-ceiling": true, "attenuated": true, "one-shot": true, "mediated-append": true, "one-shot-list": true, "mediated-https": true, "one-shot-https": true}[mode]
 			if (err == nil) != allowed {
 				t.Fatalf("allowed=%v error=%v", allowed, err)
+			}
+			if allowed && resolution.Decision.Tools[0].Limits.HTTPS != nil {
+				if !AnyPublicHost(resolution.Decision.Tools[0].Limits.HTTPS.AllowHosts) || resolution.Decision.Tools[0].Limits.Artifacts != nil {
+					t.Fatal("web tool authority changed")
+				}
+				return
+			}
+			if allowed && (mode == "one-shot" || mode == "mediated-append" || mode == "one-shot-list") {
+				if resolution.Decision.Tools[0].Limits.Artifacts.Operation != tool.Spec.Limits.Artifacts.Operation {
+					t.Fatal("operation changed")
+				}
+				return
 			}
 			if allowed {
 				want := int64(4)
@@ -84,4 +110,8 @@ func TestScopedArtifactResolverExplicitPolicySemantics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func httpsLimits() api.CellnToolLimits {
+	return api.CellnToolLimits{TimeoutMillis: 30000, MemoryBytes: 64 << 20, ArgumentBytes: 8192, OutputBytes: 8192, Workspace: "none", Effects: "external-side-effects", HTTPS: &api.CellnHTTPSLimits{AllowHosts: []string{AnyHost}, MaxRequests: 4, MaxResponseBytes: 4096, TimeoutMillis: 10000}}
 }

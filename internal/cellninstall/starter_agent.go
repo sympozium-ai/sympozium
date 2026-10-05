@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -71,6 +72,11 @@ type StarterAgentOptions struct {
 	// Runtime is the runtime wrapper (AgentRuntime) in Namespace binding the
 	// backend's runtime profile.
 	Runtime string
+	// Tools are the shared catalogue revisions the scope's policy lends to
+	// the profile (cellnplatform.ProfileTools): the starter toolbox a fleet
+	// wrapper Agent selects. The Agent lends them to its runs; the mediated
+	// path serves them (workspace operations and public-only web tools).
+	Tools []api.ClusterCellnToolRef
 }
 
 // StarterAgentObjects builds the Secret, ModelConnection and Agent.
@@ -96,8 +102,9 @@ func StarterAgentObjects(o StarterAgentOptions) (*corev1.Secret, *api.ModelConne
 			Backend:            "celln",
 			ModelConnectionRef: names.Connection,
 			Model:              m.Name,
-			// The mediated path is chat only: the selection lends no tools.
-			CellnSelection: &api.CellnCatalogueSelection{RuntimeRef: o.Runtime, ToolRefs: []api.CellnCatalogueToolRef{}},
+			// The same starter toolbox as the backend's fleet wrappers: the
+			// mediated path serves it through the node's broker.
+			CellnSelection: &api.CellnCatalogueSelection{RuntimeRef: o.Runtime, ToolRefs: []api.CellnCatalogueToolRef{}, ClusterToolRefs: slices.Clone(o.Tools)},
 		},
 	}}
 	secretMeta := meta(names.Secret)

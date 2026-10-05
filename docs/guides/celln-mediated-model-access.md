@@ -402,7 +402,11 @@ spec:
 **The Agent.** `authRefs` is the Agent owner's grant that this Secret may be
 used for this Agent (selecting the connection in `spec.execution` grants it
 too); `spec.execution.modelConnectionRef` makes its runs use the connection.
-The mediated path is chat only, so the selection lends no tools.
+`cellnSelection.clusterToolRefs` lends the scope's starter toolbox, the same
+revisions a fleet wrapper Agent selects (`kubectl get cellnexecutionpolicy
+celln-fleet-starter -o jsonpath='{.spec.tools}'` lists them; the installer's
+starter Agent and the console's Celln Agents fill this in for you). Omit it for
+a chat-only Agent.
 
 ```yaml
 apiVersion: sympozium.ai/v1alpha1
@@ -425,7 +429,43 @@ spec:
     cellnSelection:
       runtimeRef: celln-native
       toolRefs: []
+      clusterToolRefs:
+        - {name: celln-starter-workspace-read, revision: v1}
+        - {name: celln-starter-workspace-write, revision: v1}
+        - {name: celln-starter-workspace-list, revision: v1}
+        - {name: celln-starter-workspace-append, revision: v1}
+        - {name: celln-starter-workspace-search, revision: v1}
+        - {name: celln-starter-workspace-delete, revision: v1}
+        - {name: celln-starter-https-fetch, revision: v1}
+        - {name: celln-starter-https-post-json, revision: v1}
 ```
+
+### Tools on the mediated path
+
+A mediated Agent gets the same starter toolbox as a fleet-keyed one. The
+signed decision carries each tool's limits and the node's broker enforces
+them; nothing about a tool depends on the model route:
+
+- **Workspace** (`celln.scoped-artifacts/v2`): read, write, list, append,
+  search and delete. Write, append and delete are approved effects; read, list
+  and search are not. An enduring conversation keeps its files across turns in
+  one store owned by that parent (bounded by the tools' `maxFiles`,
+  `maxFileBytes` and `maxTotalBytes`, the smallest across the selected tools)
+  and loses them with the parent. A one-shot run ("Answer once") gets a
+  private, empty store that lives only as long as its cell.
+- **Web** (`celln.scoped-https/v1`): `https-fetch` (GET) and `https-post-json`
+  (POST, never redirected) reach any public HTTPS host on port 443 by default
+  (`allowHosts: ["*"]`, or the scope's `--celln-fleet-https-host` list), within
+  each tool's `maxRequests`, `maxResponseBytes` and `timeoutMillis` per turn.
+  Private, loopback, link-local and reserved addresses, plain HTTP, other
+  ports and redirects to any of them are refused. A route's `allowInsecure`
+  never applies to tool requests.
+
+Before admitting a run that selects these tools, the controller asks the node
+which contracts it serves (`scopedArtifactContracts`, `scopedHttpsContracts`
+in `GET /v1/capabilities`). A node running an older Celln refuses the run with
+`AUTH_PROTOCOL_UNSUPPORTED` before any model request or native work; upgrade
+the fleet package, or remove the tools from the selection to chat only.
 
 A run of this Agent is resolved against the policy's `secret` routes. If it is
 refused `AUTH_ROUTE_MISMATCH`, compare the connection's provider, protocol,
@@ -499,10 +539,9 @@ to the list before its Agents use mediation.
 
 - **Node loss ends a mediated run.** Its native state lived on that node;
   there is no automatic continuation on the mediated path yet.
-- **Few tools.** An enduring conversation may use workspace read and write
-  through the scoped artifact contract; the other workspace operations
-  (list, append, search, delete) and the HTTPS web tools are refused on the
-  mediated path. Fleet-keyed backends keep the full toolbox.
+- **Workspace files live with the parent.** A mediated conversation's files
+  do not survive a dispatcher restart or node loss, and a one-shot run's
+  files end with its cell.
 - **A parent that ends on a healthy node** (for example its run's
   `maxOutputTokens` is exhausted; the gateway reserves each request's full
   output bound) reports `Uncertain` and the run does not end by itself.

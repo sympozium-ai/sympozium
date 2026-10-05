@@ -1,0 +1,27 @@
+{
+  "apiVersion": "celln.scoped-https/v1",
+  "toolTimeoutMillis": 30000,
+  "effects": "external-side-effects",
+  "declared": {"allowHosts":["*"],"maxRequests":4,"maxResponseBytes":4096,"timeoutMillis":10000},
+  "vectors": [
+    {"name":"any-public-exact","patch":{},"accepted":true},
+    {"name":"explicit-host-under-any","patch":{"allowHosts":["docs.example.com"]},"accepted":true},
+    {"name":"attenuated","patch":{"maxRequests":2,"maxResponseBytes":1024,"timeoutMillis":5000},"accepted":true},
+    {"name":"requests-widened","patch":{"maxRequests":5},"accepted":false},
+    {"name":"response-widened","patch":{"maxResponseBytes":4097},"accepted":false},
+    {"name":"timeout-widened","patch":{"timeoutMillis":10001},"accepted":false},
+    {"name":"zero-requests","patch":{"maxRequests":0},"accepted":false},
+    {"name":"empty-hosts","patch":{"allowHosts":[]},"accepted":false},
+    {"name":"wildcard-mixed","patch":{"allowHosts":["*","docs.example.com"]},"accepted":false},
+    {"name":"uppercase-host","patch":{"allowHosts":["Docs.example.com"]},"accepted":false},
+    {"name":"single-label-host","patch":{"allowHosts":["localhost"]},"accepted":false},
+    {"name":"glob-host","patch":{"allowHosts":["*.example.com"]},"accepted":false},
+    {"name":"host-with-port","patch":{"allowHosts":["docs.example.com:8443"]},"accepted":false},
+    {"name":"noninteger","patch":{"maxRequests":"4"},"accepted":false},
+    {"name":"no-insecure-opt-in","patch":{"allowInsecure":true},"accepted":false},
+    {"name":"without-effects","effects":"none","patch":{},"accepted":false},
+    {"name":"explicit-exact","declared":{"allowHosts":["docs.example.com"],"maxRequests":4,"maxResponseBytes":4096,"timeoutMillis":10000},"patch":{},"accepted":true},
+    {"name":"explicit-widened-to-any","declared":{"allowHosts":["docs.example.com"],"maxRequests":4,"maxResponseBytes":4096,"timeoutMillis":10000},"patch":{"allowHosts":["*"]},"accepted":false},
+    {"name":"explicit-other-host","declared":{"allowHosts":["docs.example.com"],"maxRequests":4,"maxResponseBytes":4096,"timeoutMillis":10000},"patch":{"allowHosts":["evil.example.com"]},"accepted":false}
+  ]
+}

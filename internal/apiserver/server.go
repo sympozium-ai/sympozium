@@ -610,11 +610,7 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 		}
 		c := a.Policy.Spec.Ceilings
 		ceilings := sympoziumv1alpha1.EnduringRunSpec{LeaseSeconds: int32(min(c.MaxParentLeaseSeconds, 86400)), MaxTurns: int32(min(c.MaxTurns, 1024)), MaxModelRequests: int32(min(c.MaxModelRequests, 6144)), MaxOutputTokens: c.MaxOutputTokens}
-		tools := make([]sympoziumv1alpha1.ClusterCellnToolRef, 0, len(a.Policy.Spec.Tools))
-		for _, t := range a.Policy.Spec.Tools {
-			tools = append(tools, t.Ref)
-		}
-		entry.Tools, entry.Ceilings, entry.SessionDefaults = tools, ceilings, *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)
+		entry.Tools, entry.Ceilings, entry.SessionDefaults = cellnplatform.LentTools(&a.Policy), ceilings, *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)
 		out = append(out, entry)
 	}
 	writeJSON(w, out)

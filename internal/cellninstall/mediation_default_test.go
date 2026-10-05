@@ -258,7 +258,7 @@ func TestInstallPlatformMediationOnlyBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	var run api.AgentRun
-	if err := json.Unmarshal(raw, &run); err != nil || run.Spec.AgentRef != StarterAgentName || run.Spec.Model.ConnectionRef != StarterAgentName || len(run.Spec.CellnSelection.ClusterToolRefs) != 0 {
+	if err := json.Unmarshal(raw, &run); err != nil || run.Spec.AgentRef != StarterAgentName || run.Spec.Model.ConnectionRef != StarterAgentName || len(run.Spec.CellnSelection.ClusterToolRefs) == 0 {
 		t.Fatalf("sample run: %+v %v", run.Spec, err)
 	}
 	// A starter Agent created elsewhere before the profile existed (as the API
@@ -289,7 +289,8 @@ func TestStarterAgentObjects(t *testing.T) {
 		{resolvedBackend(t, "native", FleetModel{Provider: ModelProviderDeepSeek}), "OPENAI_API_KEY", StarterAgentNames{"starter", "starter-model-key", "starter"}},
 		{resolvedBackend(t, "claude", FleetModel{Provider: ModelProviderAnthropic, Name: "claude-test", MaxOutputTokens: 2048, Parameters: map[string]any{"temperature": 0.2}}), "ANTHROPIC_API_KEY", StarterAgentNames{"starter-claude", "starter-claude-model-key", "starter-claude"}},
 	} {
-		secret, connection, agent, err := StarterAgentObjects(StarterAgentOptions{Namespace: "default", Backend: tc.backend, Credential: key, Runtime: "celln-native"})
+		lent := []api.ClusterCellnToolRef{{Name: "starter-https-fetch", Revision: "v1"}, {Name: "starter-workspace-list", Revision: "v1"}}
+		secret, connection, agent, err := StarterAgentObjects(StarterAgentOptions{Namespace: "default", Backend: tc.backend, Credential: key, Runtime: "celln-native", Tools: lent})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,6 +307,14 @@ func TestStarterAgentObjects(t *testing.T) {
 		e := agent.Spec.Execution
 		if agent.Name != tc.names.Agent || !modelkey.Grants(agent, m.Provider, secret.Name) || agent.Spec.RuntimeRef != "celln-native" || e == nil || e.Backend != "celln" || e.ModelConnectionRef != connection.Name || e.Model != m.Name || e.CellnSelection == nil || e.CellnSelection.ToolRefs == nil || len(e.CellnSelection.ToolRefs) != 0 || e.Validate() != "" {
 			t.Fatalf("agent %+v", agent.Spec)
+		}
+		// The mediated starter Agent lends the fleet wrappers' toolbox, as a copy.
+		if !slices.Equal(e.CellnSelection.ClusterToolRefs, lent) {
+			t.Fatalf("starter toolbox not lent: %+v", e.CellnSelection)
+		}
+		lent[0].Name = "changed"
+		if e.CellnSelection.ClusterToolRefs[0].Name == "changed" {
+			t.Fatal("starter toolbox aliases the caller's slice")
 		}
 	}
 	native := resolvedBackend(t, "native", FleetModel{Provider: ModelProviderDeepSeek})

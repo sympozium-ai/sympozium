@@ -301,8 +301,8 @@ function stepsForMode(
         "plane",
         // A Celln Agent owns its model backend: the operator's declared
         // provider, this Agent's key and one of the route's models. Its runtime
-        // is the fleet's, and the mediated path is chat only, so there is no
-        // runtime, tool or SkillPack to choose.
+        // and starter toolbox are the fleet's (lent by the policy), so there is
+        // no runtime, tool or SkillPack to choose.
         ...(celln
           ? ["provider", "apikey", "model"]
           : [...(runtimeImplicit ? [] : ["runtime"]), "skills", "provider", "apikey", "model", "heartbeat", "channels"]),
@@ -914,7 +914,10 @@ export function OnboardingWizard({
         runtimeRef: prepared.runtime,
         executionLifecycle: "enduring",
         borrowedTools: [],
-        clusterTools: undefined,
+        // The starter toolbox the policy lends to this profile, exactly as a
+        // fleet wrapper Agent selects it: the mediated path serves the
+        // workspace operations and the public-only web tools.
+        clusterTools: cellnProfile.tools.length ? cellnProfile.tools.map((tool) => ({ ...tool })) : undefined,
         enduringDefaults: cellnEnduring,
       });
     } catch (err) {
@@ -1212,7 +1215,7 @@ export function OnboardingWizard({
                 <div className="space-y-2 rounded-md border p-3">
                   <Label>Enduring Celln parent</Label>
                   <p className="text-xs text-muted-foreground">
-                    This Agent owns its model backend: next you choose a provider the operator declared for this namespace, give the Agent its own key, and pick one of the declared models. Nothing is shared with another Agent. The conversation is chat only: SkillPacks, borrowed tools, channels and heartbeats are not part of a Celln Agent. {capabilities?.celln?.available ? capabilities.celln.reason : `Celln readiness: ${capabilities?.celln?.state || "unknown"} — ${capabilities?.celln?.reason || "not confirmed"}.`}
+                    This Agent owns its model backend: next you choose a provider the operator declared for this namespace, give the Agent its own key, and pick one of the declared models. Nothing is shared with another Agent. It gets the fleet's starter toolbox (run workspace files and public HTTPS web tools); SkillPacks, borrowed tools, channels and heartbeats are not part of a Celln Agent. {capabilities?.celln?.available ? capabilities.celln.reason : `Celln readiness: ${capabilities?.celln?.state || "unknown"} — ${capabilities?.celln?.reason || "not confirmed"}.`}
                   </p>
                 </div>
               )}
@@ -2086,7 +2089,7 @@ export function OnboardingWizard({
                     : <>existing Secret <code>{cellnKey.secretName}</code> (<code>{cellnRoute.secretKey}</code>)</>}</p>
                   <p>Model connection: <code>{modelConnectionName(form.name)}</code>{cellnParsedTokens.maxOutputTokens ? `, up to ${cellnParsedTokens.maxOutputTokens} output tokens per request` : ""}{cellnParsedParameters.parameters ? ", with model parameters" : ""}</p>
                   <p>Runtime: <code>{cellnProfile?.wrapper}</code> (the fleet's; created in this namespace if missing)</p>
-                  {cellnEnduring && <p className="text-muted-foreground">One conversation: {describeEnduringLimits(cellnEnduring)}. Chat only; context is lost with the parent.</p>}
+                  {cellnEnduring && <p className="text-muted-foreground">One conversation: {describeEnduringLimits(cellnEnduring)}. Starter tools: {cellnProfile?.tools.map((tool) => tool.name).join(", ") || "none"}. Context and workspace files are lost with the parent.</p>}
                 </div>}
               </div>}
               {mode === "agent" && (

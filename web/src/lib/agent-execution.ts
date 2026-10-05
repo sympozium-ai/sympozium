@@ -122,6 +122,6 @@ export function modelConnectionEndpoint(
 
 export function agentCreationSteps(celln: boolean) {
   // A Celln Agent owns its model backend (provider route, key, model); its
-  // runtime is the fleet's and the mediated path is chat only.
+  // runtime and starter toolbox are the fleet's, lent by the policy.
   return ["name", "plane", ...(celln ? ["provider", "apikey", "model"] : ["runtime", "skills", "provider", "apikey", "model", "heartbeat", "channels"]), "confirm", "channelAction"] as const;
 }

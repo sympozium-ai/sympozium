@@ -1,0 +1,40 @@
+{
+  "apiVersion": "celln.scoped-artifacts/v2",
+  "declared": {"maxOperations":4,"maxFiles":8,"maxFileBytes":4096,"maxTotalBytes":16384},
+  "effects": {"read":"none","list":"none","search":"none","write":"external-side-effects","append":"external-side-effects","delete":"external-side-effects"},
+  "vectors": [
+    {"name":"read-exact","lifecycle":"enduring-initial","operation":"read","effects":"none","patch":{},"accepted":true},
+    {"name":"write-exact","lifecycle":"enduring-turn","operation":"write","effects":"external-side-effects","patch":{},"accepted":true},
+    {"name":"list-exact","lifecycle":"enduring-initial","operation":"list","effects":"none","patch":{},"accepted":true},
+    {"name":"append-exact","lifecycle":"enduring-turn","operation":"append","effects":"external-side-effects","patch":{},"accepted":true},
+    {"name":"search-exact","lifecycle":"enduring-initial","operation":"search","effects":"none","patch":{},"accepted":true},
+    {"name":"delete-exact","lifecycle":"enduring-turn","operation":"delete","effects":"external-side-effects","patch":{},"accepted":true},
+    {"name":"list-one-shot","lifecycle":"one-shot","operation":"list","effects":"none","patch":{},"accepted":true},
+    {"name":"append-one-shot","lifecycle":"one-shot","operation":"append","effects":"external-side-effects","patch":{},"accepted":true},
+    {"name":"append-attenuated","lifecycle":"enduring-initial","operation":"append","effects":"external-side-effects","patch":{"maxOperations":2,"maxFiles":4,"maxFileBytes":1024,"maxTotalBytes":4096},"accepted":true},
+    {"name":"list-with-effects","lifecycle":"enduring-initial","operation":"list","effects":"external-side-effects","patch":{},"accepted":false},
+    {"name":"search-with-effects","lifecycle":"enduring-initial","operation":"search","effects":"external-side-effects","patch":{},"accepted":false},
+    {"name":"append-without-effects","lifecycle":"enduring-initial","operation":"append","effects":"none","patch":{},"accepted":false},
+    {"name":"delete-without-effects","lifecycle":"one-shot","operation":"delete","effects":"none","patch":{},"accepted":false},
+    {"name":"read-signed-as-list","lifecycle":"enduring-initial","operation":"read","effects":"none","patch":{"operation":"list"},"accepted":false},
+    {"name":"append-signed-as-write","lifecycle":"enduring-initial","operation":"append","effects":"external-side-effects","patch":{"operation":"write"},"accepted":false},
+    {"name":"delete-operations-widened","lifecycle":"enduring-initial","operation":"delete","effects":"external-side-effects","patch":{"maxOperations":5},"accepted":false},
+    {"name":"list-files-widened","lifecycle":"enduring-initial","operation":"list","effects":"none","patch":{"maxFiles":9},"accepted":false},
+    {"name":"search-bytes-widened","lifecycle":"enduring-initial","operation":"search","effects":"none","patch":{"maxTotalBytes":16385},"accepted":false},
+    {"name":"append-zero-operations","lifecycle":"enduring-initial","operation":"append","effects":"external-side-effects","patch":{"maxOperations":0},"accepted":false},
+    {"name":"list-noninteger","lifecycle":"enduring-initial","operation":"list","effects":"none","patch":{"maxFiles":"8"},"accepted":false},
+    {"name":"not-a-move-grant","lifecycle":"enduring-initial","operation":"move","effects":"external-side-effects","patch":{},"accepted":false},
+    {"name":"not-a-symlink-grant","lifecycle":"enduring-initial","operation":"symlink","effects":"external-side-effects","patch":{},"accepted":false},
+    {"name":"unknown-host-path","lifecycle":"enduring-initial","operation":"list","effects":"none","patch":{"hostPath":"/etc"},"accepted":false}
+  ],
+  "guest": {
+    "list":{"apiVersion":"celln.workspace/v1","body":{"operation":"list"}},
+    "append":{"apiVersion":"celln.workspace/v1","body":{"operation":"append","name":"notes/log.txt","revision":0,"content":"red\n"}},
+    "search":{"apiVersion":"celln.workspace/v1","body":{"operation":"search","pattern":"red"}},
+    "delete":{"apiVersion":"celln.workspace/v1","body":{"operation":"delete","name":"notes/log.txt","revision":1}},
+    "listResponse":{"revision":1,"files":[{"name":"notes/log.txt","bytes":4}]},
+    "appendResponse":{"revision":1},
+    "searchResponse":{"revision":1,"matches":[{"name":"notes/log.txt","line":1,"text":"red"}]},
+    "deleteResponse":{"revision":2}
+  }
+}

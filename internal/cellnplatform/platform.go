@@ -211,6 +211,32 @@ func EnsureRuntimeWrapper(ctx context.Context, c client.Client, namespace, profi
 	return wrapper.Name, nil
 }
 
+// LentTools are the shared catalogue revisions a policy lends to runs on its
+// profiles: what a run (or an Agent's defaults) selects as
+// cellnSelection.clusterToolRefs. The resolver still admits each one against
+// the policy, route and lifecycle; lending is not admission.
+func LentTools(policy *api.CellnExecutionPolicy) []api.ClusterCellnToolRef {
+	tools := make([]api.ClusterCellnToolRef, 0, len(policy.Spec.Tools))
+	for _, t := range policy.Spec.Tools {
+		tools = append(tools, t.Ref)
+	}
+	return tools
+}
+
+// ProfileTools is LentTools for the policy that admits profileName in
+// namespace, evaluated as AuthorisedProfiles evaluates it.
+func ProfileTools(ctx context.Context, reader client.Reader, namespace, profileName string) ([]api.ClusterCellnToolRef, error) {
+	authorised, err := AuthorisedProfiles(ctx, reader, namespace)
+	if err != nil {
+		return nil, err
+	}
+	index := slices.IndexFunc(authorised, func(a Authorised) bool { return a.Profile.Name == profileName })
+	if index < 0 {
+		return nil, fmt.Errorf("no execution policy admits profile %q in namespace %q", profileName, namespace)
+	}
+	return LentTools(&authorised[index].Policy), nil
+}
+
 // MediationOnly reports whether a profile's backend holds no fleet key
 // (MediationOnlyLabel): it serves only Agents with their own key.
 func MediationOnly(profile *api.CellnRuntimeProfile) bool {

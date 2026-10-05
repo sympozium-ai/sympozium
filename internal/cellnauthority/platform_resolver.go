@@ -437,20 +437,16 @@ func evaluatePlatform(s platformSnapshot, request PlatformResolveRequest) (*Plat
 	if err != nil {
 		return nil, err
 	}
-	// A host-profile route runs on the node's own broker, which serves every
-	// run-artifact operation for any lifecycle. The scoped artifact contract
-	// (celln.scoped-artifacts/v1) behind a mediated route is narrower.
-	if route.Auth != "host-profile" {
+	// A host-profile route runs on the node's own broker. A mediated route
+	// runs on the scoped receiver, which serves the same starter toolbox
+	// (ScopedArtifactsV2: all six run-data operations, one-shot and enduring;
+	// ScopedHTTPS: the public-only web tools) once the node advertises it.
+	// Either way the broker rides the model transport: a model-free run has
+	// none, so it cannot carry brokered tools.
+	if route.Auth != "host-profile" && route.Provider == "none" {
 		for _, tool := range tools {
-			a := tool.Limits.Artifacts
-			if a == nil {
-				continue
-			}
-			if lifecycle != "enduring" {
-				return nil, deny(ReasonLifecycle, "scoped artifacts require mediated enduring execution")
-			}
-			if a.Operation != "read" && a.Operation != "write" {
-				return nil, deny(ReasonToolUnknown, "scoped artifacts support only read and write, not %q", a.Operation)
+			if tool.Limits.Artifacts != nil || tool.Limits.HTTPS != nil {
+				return nil, deny(ReasonRouteMismatch, "brokered tool %q requires a model route", tool.Name)
 			}
 		}
 	}
