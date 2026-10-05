@@ -519,6 +519,31 @@ say so while it lasts. The Agent
 page's backend picker has the same form. A backend named at install cannot
 be added again, and a key already published for a name is never replaced.
 
+**With mediated model access** (the default; the cluster has the
+`celln-system/celln-mediated-routes` record), a keyed HTTPS backend added this
+way is mediation-only, exactly like an installer backend. Its key becomes the
+own key of the backend's starter Agent, `starter-<name>`, in the namespace the
+request names (`?namespace=team-a`, default `default`): a Secret
+`starter-<name>-model-key` annotated with that Agent as its owner, a
+ModelConnection and the Agent. The fleet's credential Secret gets only the
+mediation marker for the backend, so no node holds the key; the scope's policy
+offers the backend as an `auth: secret` route for that provider, model and
+origin, with no host-profile route and no shared tenant Agent; and once it is
+`ready` the starter Agent's namespace gets the runtime wrapper it runs on. If
+`starter-<name>-model-key` already belongs to another Agent, or holds a
+different key, the add is refused with `409` and nothing is published: pick
+another namespace. The answer and `GET` carry `mediated`, `starterAgent` and
+`starterNamespace` (so does `GET /api/v1/celln-platform/profiles` for the
+backend's profile), and when you pick that backend's model in Create Agent →
+Celln the wizard names that Agent, linking it when it is in your namespace.
+Every other Agent uses the backend with its own key.
+
+Two kinds of backend keep the fleet path even under mediation: a keyless one
+(for example `llama-server`), which has no key to protect, and a keyed one on
+plain HTTP or an explicit port, because a cluster Secret never crosses plain
+HTTP (`auth: secret` routes are HTTPS without a port). On a cluster that opted
+out of mediation every added backend publishes its key to the fleet as before.
+
 ## The toolbox
 
 Every run on the fleet borrows tools from the scope's package, and the

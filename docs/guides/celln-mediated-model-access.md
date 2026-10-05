@@ -512,9 +512,6 @@ to the list before its Agents use mediation.
 - **Rotation is manual** (delete, bootstrap or rerun the install, restart);
   there is no overlap window tooling yet, although the verifiers accept a
   multi-key JWKS. The default ten-year certificates make this rare.
-- **A backend added from the API or the console** still publishes its key to
-  the fleet (`auth: host-profile`); only installer backends are mediated by
-  default.
 - Secret volumes cannot be owned by a non-root user, and the controller and
   gateway refuse key or token files that are not owner-only. A non-root init
   step in each pod therefore copies the operator's files into an in-memory
