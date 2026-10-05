@@ -165,15 +165,25 @@ fi
 wait_for "apiserver port-forward" 120 curl -sf "${api_auth[@]}" "http://127.0.0.1:$api_port/api/v1/agents?namespace=$starter_ns" -o /dev/null
 api() { curl -sf "${api_auth[@]}" "$@"; }
 CONVO_AGENT=starter KEY_SECRET=starter-model-key KEY_OWNER=Agent/starter
+# toolbox_selection namespace -> prints "wrapper<TAB>tool-refs JSON" for the
+# starter toolbox (creating the runtime-only wrapper), or "<plain wrapper>\t[]"
+# when tools are off.
+toolbox_selection() {
+	local ns=$1 profiles
+	api -X POST -H 'Content-Type: application/json' -d '{"profile":"celln-native-starter"}' "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$ns" >/dev/null || fail "platform wrappers in $ns"
+	profiles="$(api "http://127.0.0.1:$api_port/api/v1/celln-platform/profiles?namespace=$ns")"
+	if [ "${JOURNEY_TOOLS:-1}" != 1 ]; then
+		printf '%s\t[]\n' "$(kc -n "$ns" get agentruntime -o json | python3 -c 'import json,sys; print(next(i["metadata"]["name"] for i in json.load(sys.stdin)["items"] if i["spec"].get("cellnProfileRef",{}).get("name","").endswith("-starter")))')"
+		return
+	fi
+	local toolbox_profile
+	toolbox_profile="$(echo "$profiles" | python3 -c 'import json,sys; print(next(p["toolboxProfile"] for p in json.load(sys.stdin) if p.get("toolboxProfile")))')" || fail "no toolbox profile is offered in $ns: $profiles"
+	api -X POST -H 'Content-Type: application/json' -d "{\"profile\":\"$toolbox_profile\",\"runtimeOnly\":true}" "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$ns" >/dev/null || fail "toolbox wrapper in $ns"
+	echo "$profiles" | python3 -c 'import json,sys; p=next(p for p in json.load(sys.stdin) if p.get("toolboxProfile")); print(p["toolboxWrapper"]+"\t"+json.dumps(p["toolboxTools"]))'
+}
 if [ "$MODE" = keyless ]; then
 	log "A keyless Agent on the approved local route"
-	api -X POST -H 'Content-Type: application/json' -d '{"profile":"celln-native-starter"}' "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$starter_ns" >/dev/null || fail "platform wrappers"
-	runtime="$(kc -n "$starter_ns" get agentruntime -o json | python3 -c 'import json,sys; print(next(i["metadata"]["name"] for i in json.load(sys.stdin)["items"] if i["spec"].get("cellnProfileRef")))')"
-	# The scope's starter toolbox, as fleet and console Agents select it.
-	tool_refs="[]"
-	if [ "${JOURNEY_TOOLS:-1}" = 1 ]; then
-		tool_refs="$(kc get clustercellntool -o json | python3 -c 'import json,sys; print(json.dumps([{"name":i["metadata"]["name"],"revision":i["spec"]["revision"]} for i in json.load(sys.stdin)["items"]]))')"
-	fi
+	IFS=$'\t' read -r runtime tool_refs < <(toolbox_selection "$starter_ns")
 	kc -n "$starter_ns" apply -f - >/dev/null <<EOF
 apiVersion: sympozium.ai/v1alpha1
 kind: ModelConnection
@@ -363,8 +373,7 @@ log "P3: a second namespace runs its own Agent independently"
 tenant_b=tenant-b
 kc create namespace "$tenant_b" >/dev/null 2>&1 || true
 if [ "$MODE" = keyless ]; then
-	api -X POST -H 'Content-Type: application/json' -d '{"profile":"celln-native-starter"}' "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$tenant_b" >/dev/null || fail "platform wrappers in $tenant_b"
-	runtime_b="$(kc -n "$tenant_b" get agentruntime -o json | python3 -c 'import json,sys; print(next(i["metadata"]["name"] for i in json.load(sys.stdin)["items"] if i["spec"].get("cellnProfileRef")))')"
+	IFS=$'\t' read -r runtime_b _ < <(toolbox_selection "$tenant_b")
 	kc -n "$starter_ns" get modelconnection qwen -o json | python3 -c 'import json,sys; o=json.load(sys.stdin); print(json.dumps({"apiVersion":o["apiVersion"],"kind":o["kind"],"metadata":{"name":"qwen"},"spec":o["spec"]}))' | kc -n "$tenant_b" apply -f - >/dev/null
 	kc -n "$starter_ns" get agent qwen -o json | python3 -c '
 import json,sys
