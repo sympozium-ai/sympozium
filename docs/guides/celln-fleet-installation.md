@@ -326,12 +326,11 @@ because JSON contains the commas that separate the flag's pairs). With the
 single-backend flags use `--celln-fleet-model-parameters-file`. Through the
 API, send the object as `parameters`
 (`{"name":"qwen","provider":"llama-server","endpoint":"http://HOST:8080","allowInsecure":true,"parameters":{"chat_template_kwargs":{"enable_thinking":false}}}`).
-In the console, both add-a-fleet-backend forms (the Create Agent wizard's
-Provider step and an Agent's Harness tab) have **Advanced: model parameters**:
-tick **Disable thinking (reasoning models)** — offered for llama-server and
-for Custom with the OpenAI chat protocol — or write the JSON; the two edit
-the same object. `GET /api/v1/celln-platform/backends` returns each backend's
-`parameters`, and the console shows them next to the backend.
+The console no longer adds fleet backends; an Agent's own connection carries
+its model parameters instead (**Advanced: model parameters** in Create Agent →
+Celln, with **Disable thinking (reasoning models)** for llama-server and for
+Custom with the OpenAI chat protocol). `GET /api/v1/celln-platform/backends` returns each
+backend's `parameters`.
 
 Rules (Celln's own; the installer, the API and the console check them first
 and name the rule that is broken, and Celln checks again on every node):
@@ -395,7 +394,7 @@ sympozium install --celln-fleet-model-provider llama-server … \
 | --- | --- |
 | Installer | `max-output-tokens=N` in `--celln-fleet-backend`, or `--celln-fleet-model-max-output-tokens N` |
 | Chart values | `celln.fleet.backends[].maxOutputTokens` (or `celln.fleet.model.maxOutputTokens`) |
-| API / console | `maxOutputTokens` in `POST /api/v1/celln-platform/backends`; "Max output tokens per request" under **Advanced** in both add-a-fleet-backend forms |
+| API | `maxOutputTokens` in `POST /api/v1/celln-platform/backends` |
 
 Absent, `0` and `512` all mean the default, and a default backend carries
 nothing: its values, its entry in `FLEET_BACKENDS` and its
