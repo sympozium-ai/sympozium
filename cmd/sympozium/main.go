@@ -1486,7 +1486,7 @@ func cellnInstallSetValues(ctx context.Context, routerImage, installerImage stri
 const (
 	defaultCellnInstallerRepo = "ghcr.io/sympozium-ai/sympozium/celln-installer"
 	defaultCellnRouterRepo    = "ghcr.io/sympozium-ai/celln"
-	defaultCellnRouterTag     = "v0.5.30"
+	defaultCellnRouterTag     = "v0.5.31"
 )
 
 // sourceBuildInstallerNote says which installer tag a source build chose and
