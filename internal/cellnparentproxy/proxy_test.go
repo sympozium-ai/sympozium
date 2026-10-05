@@ -148,11 +148,13 @@ func TestScopedReceiverEdgeForwardsOnlyTheScopedProtocol(t *testing.T) {
 		{"POST", "/v1/scoped/start/extra", false}, {"POST", "/v1/scoped/../parents", false},
 		{"POST", "/v1/parents", false}, {"POST", "/v1/executions", false},
 		{"POST", "/v1/drain", false}, {"GET", "/v1/health", false},
+		{"GET", "/v1/capabilities", true}, {"POST", "/v1/capabilities", false},
 	} {
 		if scopedRoute(tc.method, tc.path) != tc.allowed {
 			t.Fatalf("unexpected scoped route %s %s", tc.method, tc.path)
 		}
-		if tc.allowed && (route(tc.method, tc.path) || executionRoute(tc.method, tc.path)) {
+		// Capability discovery is read-only and shared with the execution edge.
+		if tc.allowed && tc.path != "/v1/capabilities" && (route(tc.method, tc.path) || executionRoute(tc.method, tc.path)) {
 			t.Fatal("scoped route leaked into another listener")
 		}
 	}

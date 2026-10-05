@@ -38,6 +38,11 @@ func NewScoped(backend string) (http.Handler, func(), error) {
 }
 
 func scopedRoute(method, path string) bool {
+	// Read-only discovery: the controller preflights the contracts a run's
+	// tools need, and the receiver (the router) answers for the whole fleet.
+	if method == http.MethodGet && path == "/v1/capabilities" {
+		return true
+	}
 	if method != http.MethodPost {
 		return false
 	}
