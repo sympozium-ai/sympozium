@@ -11,6 +11,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/agentexecution"
 	"github.com/sympozium-ai/sympozium/internal/cellnauthority"
 	"github.com/sympozium-ai/sympozium/internal/modelconnection"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	"io"
 	"io/fs"
 	"net"
@@ -1242,6 +1243,10 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to get secret: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if err := modelkey.CheckOwner(r.Context(), s.client, "Agent/"+req.Name, existing); err != nil {
+			writeKeyOwnershipError(w, err)
+			return
+		}
 	}
 
 	if req.SecretName != "" {
@@ -2465,6 +2470,10 @@ func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			http.Error(w, "failed to get secret: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := modelkey.CheckOwner(r.Context(), s.client, "Ensemble/"+name, existing); err != nil {
+			writeKeyOwnershipError(w, err)
 			return
 		}
 	}

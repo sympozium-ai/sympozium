@@ -33,7 +33,7 @@ func AuthorityReadinessForNamespaces(reviews authclient.SelfSubjectAccessReviewI
 		type check struct{ group, resource, namespace, resourceName string }
 		checks := []check{}
 		if len(namespaces) == 0 {
-			checks = []check{{resource: "namespaces"}, {group: "sympozium.ai", resource: "modelconnections"}, {resource: "secrets"}}
+			checks = []check{{resource: "namespaces"}, {group: "sympozium.ai", resource: "modelconnections"}, {group: "sympozium.ai", resource: "agents"}, {resource: "secrets"}}
 		} else {
 			seen := map[string]bool{}
 			for _, namespace := range namespaces {
@@ -44,6 +44,7 @@ func AuthorityReadinessForNamespaces(reviews authclient.SelfSubjectAccessReviewI
 				checks = append(checks,
 					check{resource: "namespaces", resourceName: namespace},
 					check{group: "sympozium.ai", resource: "modelconnections", namespace: namespace},
+					check{group: "sympozium.ai", resource: "agents", namespace: namespace},
 					check{resource: "secrets", namespace: namespace},
 				)
 			}

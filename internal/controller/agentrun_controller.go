@@ -48,6 +48,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/ipc"
 	"github.com/sympozium-ai/sympozium/internal/modelconnection"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"github.com/sympozium-ai/sympozium/internal/pricing"
 	"github.com/sympozium-ai/sympozium/internal/sessionkey"
@@ -551,6 +552,21 @@ func (r *AgentRunReconciler) resolveAgentRunInputs(ctx context.Context, agentRun
 	return out, nil
 }
 
+// runModelSecrets lists the credential Secrets a run would use: its inline
+// key, its provider-headers Secret and its ModelConnection's Secret. A
+// connection that cannot be read is skipped; resolving it fails the run later.
+func (r *AgentRunReconciler) runModelSecrets(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) []string {
+	model := agentRun.Spec.Model
+	secrets := []string{model.AuthSecretRef, model.ProviderHeadersSecretRef}
+	if model.ConnectionRef != "" {
+		var connection sympoziumv1alpha1.ModelConnection
+		if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: model.ConnectionRef}, &connection); err == nil {
+			secrets = append(secrets, connection.Spec.SecretRef)
+		}
+	}
+	return secrets
+}
+
 // resolveProviderHeaders merges the providerHeadersSecretRef contents into
 // spec.model.providerHeaders in memory, so buildContainers can pass them to the
 // agent-runner. Shared by both execution backends; never persisted back to the CR.
@@ -914,6 +930,16 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 	if taskmodes.HarnessImage(agentRun.Spec.Task) != "" && !agentAllowsModelCredential(&runtimeInstance, agentRun.Spec.Model.Provider, agentRun.Spec.Model.AuthSecretRef) {
 		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider))
+	}
+	// Every model credential a run names must belong to its Agent (or the
+	// Agent's Ensemble): one key per Agent, shared only with its sub-agents.
+	for _, secret := range r.runModelSecrets(ctx, agentRun) {
+		if err := modelkey.Authorize(ctx, r.Client, &runtimeInstance, "", secret); err != nil {
+			if modelkey.IsRefusal(err) {
+				return ctrl.Result{}, r.failRun(ctx, agentRun, err.Error())
+			}
+			return ctrl.Result{}, fmt.Errorf("checking model key ownership: %w", err)
+		}
 	}
 
 	// Agent Sandbox mode — create Sandbox CR instead of Job.

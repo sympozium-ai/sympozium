@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,6 +48,14 @@ func (s *Server) listCellnKeySecrets(w http.ResponseWriter, r *http.Request) {
 	out := []CellnKeySecret{}
 	for _, secret := range secrets.Items {
 		if !holdsModelKey(&secret, key) {
+			continue
+		}
+		// A key another Agent or Ensemble owns is not offered: every Agent
+		// needs its own key.
+		if owner, err := modelkey.LiveOwner(r.Context(), s.client, &secret); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		} else if owner != "" {
 			continue
 		}
 		out = append(out, CellnKeySecret{Name: secret.Name, Key: key, Managed: secret.Labels["sympozium.ai/model-connection"] != ""})
@@ -92,4 +101,13 @@ func (s *Server) cellnConnectionSecret(ctx context.Context, namespace, connectio
 		return nil, fmt.Errorf("secret %q does not hold a value under %s, the key a %s connection requires", secret.Name, key, connection.Spec.Protocol)
 	}
 	return &api.SecretRef{Provider: connection.Spec.Provider, Secret: secret.Name}, nil
+}
+
+// writeKeyOwnershipError answers 409 for a key another owner holds.
+func writeKeyOwnershipError(w http.ResponseWriter, err error) {
+	if modelkey.IsRefusal(err) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	http.Error(w, "checking model key ownership: "+err.Error(), http.StatusInternalServerError)
 }

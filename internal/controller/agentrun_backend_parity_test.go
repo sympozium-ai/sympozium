@@ -195,7 +195,9 @@ func parityScenarios() []parityScenario {
 			name:   "auth_secret_ref",
 			guards: "env[].valueFrom SecretKeyRef — the provider API key",
 			objects: func() []client.Object {
-				return []client.Object{parityAgent(), &corev1.Secret{
+				agent := parityAgent()
+				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Secret: "my-secret"}}
+				return []client.Object{agent, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "default"},
 				}}
 			},
@@ -308,7 +310,9 @@ func parityScenarios() []parityScenario {
 			name:   "provider_headers_from_secret",
 			guards: "resolveProviderHeaders + MODEL_PROVIDER_HEADERS env",
 			objects: func() []client.Object {
-				return []client.Object{parityAgent(), &corev1.Secret{
+				agent := parityAgent()
+				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Secret: "headers-secret"}}
+				return []client.Object{agent, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "headers-secret", Namespace: "default"},
 					Data:       map[string][]byte{"x-tenant": []byte("acme")},
 				}}

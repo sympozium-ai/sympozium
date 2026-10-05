@@ -19,6 +19,7 @@ import (
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	cap "github.com/sympozium-ai/sympozium/internal/cellncapability"
 	"github.com/sympozium-ai/sympozium/internal/modelbudget"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -171,9 +172,10 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 			connUID := types.UID("connection-" + tenant)
 			secretUID := types.UID("secret-" + tenant)
 			conn := &api.ModelConnection{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "model", UID: connUID}, Spec: api.ModelConnectionSpec{Provider: "openai", Protocol: "openai-chat", Endpoint: provider.URL + "/v1/chat/completions", SecretRef: "key", Models: []string{"m"}, AllowInsecure: true}}
-			secret := &core.Secret{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "key", UID: secretUID}, Data: map[string][]byte{"OPENAI_API_KEY": []byte(key)}}
+			secret := &core.Secret{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "key", UID: secretUID, Annotations: map[string]string{modelkey.OwnerAnnotation: "Agent/agent"}}, Data: map[string][]byte{"OPENAI_API_KEY": []byte(key)}}
+			agent := &api.Agent{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "agent", UID: "agent-uid"}}
 			namespace := &core.Namespace{ObjectMeta: meta.ObjectMeta{Name: ns, UID: uid, Labels: map[string]string{"sympozium.ai/test": "model-gateway"}}}
-			for _, obj := range []client.Object{namespace, conn, secret} {
+			for _, obj := range []client.Object{namespace, conn, secret, agent} {
 				if live {
 					obj.SetUID("")
 				}
@@ -215,6 +217,7 @@ func testGatewayTenantCredentialIsolation(t *testing.T, live, process bool) {
 			run := fmt.Sprintf("run-%s-%d", tenant, time.Now().UnixNano())
 			d := cap.Decision{APIVersion: cap.DecisionAPIVersion, Kind: "CellnAuthorisationDecision", ClusterID: "cluster", Operation: "execution.start", Lifecycle: "one-shot", Run: cap.RunBinding{Namespace: ns, NamespaceUID: string(uid), UID: run, SpecSHA256: "spec"}, Route: cap.RouteBinding{ModelConnectionUID: &cuid, ModelConnectionSpecSHA256: digest, Provider: "openai", Protocol: "openai-chat", Model: "m", EndpointOrigin: provider.URL, Auth: "secret", CredentialSource: &cap.CredentialSource{Kind: "Secret", SecretUID: string(secretUID), SecretName: "key", SecretKey: "OPENAI_API_KEY"}}, Budget: cap.BudgetBinding{BudgetID: run, MaxTurns: 1, RunCap: cap.Cap{Requests: 3, OutputTokens: 1536}, TurnCap: cap.Cap{Requests: 3, OutputTokens: 1536}, TurnDeadlineUnix: now + 120}, Windows: cap.Windows{IssuedAt: now, NotBefore: now, AdmissionDeadline: now + 60}, RequestDigest: "request"}
 			completeGatewayDecision(&d)
+			d.Agent.UID = string(agent.UID)
 			raw, _, err := cap.CanonicalDecision(d)
 			if err != nil {
 				t.Fatal(err)

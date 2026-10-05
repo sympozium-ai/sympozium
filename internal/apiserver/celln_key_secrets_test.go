@@ -215,3 +215,33 @@ func TestCreateKeylessCellnAgentDoesNotCreateCompatibilitySecret(t *testing.T) {
 		t.Fatalf("keyless agent created Secrets: %d %v", len(secrets.Items), err)
 	}
 }
+
+// One key per Agent: the picker hides a key another live Agent owns, and an
+// Agent cannot be created on it. A stale claim (owner deleted) is offered.
+func TestKeysOwnedByAnotherAgentAreNeitherOfferedNorAccepted(t *testing.T) {
+	owned := opaque("team-a", "owned", nil, map[string]string{"OPENAI_API_KEY": keySecretValue})
+	owned.Annotations = map[string]string{"sympozium.ai/model-key-owner": "Agent/hermes-a"}
+	stale := opaque("team-a", "stale", nil, map[string]string{"OPENAI_API_KEY": keySecretValue})
+	stale.Annotations = map[string]string{"sympozium.ai/model-key-owner": "Agent/deleted"}
+	owner := &api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "hermes-a"}}
+	srv := keySecretServer(t, owned, stale, owner)
+
+	res := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/celln-platform/key-secrets?namespace=team-a&key=OPENAI_API_KEY", nil))
+	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), `"owned"`) || !strings.Contains(res.Body.String(), `"stale"`) {
+		t.Fatalf("listing: %d %s", res.Code, res.Body.String())
+	}
+
+	create := func(name, secret string) *httptest.ResponseRecorder {
+		res := httptest.NewRecorder()
+		body := `{"name":"` + name + `","provider":"openai","model":"gpt-5","secretName":"` + secret + `"}`
+		srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/v1/agents?namespace=team-a", strings.NewReader(body)))
+		return res
+	}
+	if res := create("pi-b", "owned"); res.Code != http.StatusConflict || !strings.Contains(res.Body.String(), "belongs to Agent/hermes-a") {
+		t.Fatalf("create on another Agent's key: %d %s", res.Code, res.Body.String())
+	}
+	if res := create("pi-c", "stale"); res.Code >= 300 {
+		t.Fatalf("create on a stale key: %d %s", res.Code, res.Body.String())
+	}
+}

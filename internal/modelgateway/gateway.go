@@ -17,6 +17,7 @@ import (
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/cellncapability"
 	"github.com/sympozium-ai/sympozium/internal/modelbudget"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 )
 
 type Gateway struct {
@@ -324,6 +325,16 @@ func (g *Gateway) liveRoute(ctx context.Context, decision cellncapability.Decisi
 	}
 	credential := secret.Data[source.SecretKey]
 	if secret.DeletionTimestamp != nil || string(secret.UID) != source.SecretUID || len(credential) == 0 {
+		return connection, nil, fail(ReasonCredentialChanged, 403, nil)
+	}
+	// One key per Agent, checked on every call: the decision's Agent must
+	// still exist and still own this key, so a key revoked or claimed by
+	// another owner stops working mid-run, not at the next decision.
+	var agent api.Agent
+	if err := g.k8s.Get(ctx, types.NamespacedName{Namespace: decision.Run.Namespace, Name: decision.Agent.Name}, &agent); err != nil {
+		return connection, nil, fail(ReasonCredentialChanged, 503, err)
+	}
+	if string(agent.UID) != decision.Agent.UID || agent.DeletionTimestamp != nil || !modelkey.OwnedBy(&secret, &agent) {
 		return connection, nil, fail(ReasonCredentialChanged, 403, nil)
 	}
 	return connection, append([]byte(nil), credential...), nil

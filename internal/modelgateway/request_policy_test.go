@@ -17,6 +17,7 @@ import (
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	cap "github.com/sympozium-ai/sympozium/internal/cellncapability"
 	"github.com/sympozium-ai/sympozium/internal/modelbudget"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	core "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -224,7 +225,8 @@ func TestInvokeAppliesLiveConnectionRequestPolicy(t *testing.T) {
 		Parameters: &apiextensionsv1.JSON{Raw: []byte(`{"temperature": 0.7, "chat_template_kwargs": {"enable_thinking": false}}`)}, MaxOutputTokens: 2048}}
 	for _, obj := range []client.Object{
 		&core.Namespace{ObjectMeta: meta.ObjectMeta{Name: ns, UID: "namespace-uid"}}, conn,
-		&core.Secret{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "key", UID: "secret-uid"}, Data: map[string][]byte{"OPENAI_API_KEY": []byte("provider-key")}},
+		&core.Secret{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "key", UID: "secret-uid", Annotations: map[string]string{modelkey.OwnerAnnotation: "Agent/agent"}}, Data: map[string][]byte{"OPENAI_API_KEY": []byte("provider-key")}},
+		&api.Agent{ObjectMeta: meta.ObjectMeta{Namespace: ns, Name: "agent", UID: "agent-uid"}},
 	} {
 		if err := k8s.Create(ctx, obj); err != nil {
 			t.Fatal(err)
@@ -336,4 +338,22 @@ func TestInvokeAppliesLiveConnectionRequestPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-forwarded
+	// The key is checked against its owner on every call: once another Agent
+	// owns it, this run's next call is refused before reaching the provider.
+	var key core.Secret
+	if err := k8s.Get(ctx, types.NamespacedName{Namespace: ns, Name: "key"}, &key); err != nil {
+		t.Fatal(err)
+	}
+	key.Annotations[modelkey.OwnerAnnotation] = "Agent/someone-else"
+	if err := k8s.Update(ctx, &key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Invoke(ctx, model, InvokeRequest{Decision: raw, RequestID: "q-reowned", Request: guestBody("256")}); Reason(err) != ReasonCredentialChanged {
+		t.Fatalf("want %s for a key owned by another Agent, got %v", ReasonCredentialChanged, err)
+	}
+	select {
+	case body := <-forwarded:
+		t.Fatalf("a key owned by another Agent reached the provider: %s", body)
+	default:
+	}
 }

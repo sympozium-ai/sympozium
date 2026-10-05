@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/sympozium-ai/sympozium/internal/modelconnection"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	"sort"
 	"strings"
 	"time"
@@ -272,6 +273,14 @@ func (r *HarnessSessionReconciler) resolveInputs(ctx context.Context, session *s
 	runtime.Spec.Model = model
 	if (agent.Spec.Execution == nil || agent.Spec.Execution.ModelConnectionRef == "") && !agentAllowsModelCredential(agent, model.Provider, model.AuthSecretRef) {
 		return nil, nil, fmt.Sprintf("Agent %q does not allow runtime model credential %q for provider %q", agent.Name, model.AuthSecretRef, model.Provider), nil
+	}
+	// The key, including one reached through the Agent's ModelConnection, must
+	// belong to this Agent (or its Ensemble) and to no other.
+	if err := modelkey.Authorize(ctx, r.Client, agent, "", model.AuthSecretRef); err != nil {
+		if modelkey.IsRefusal(err) {
+			return nil, nil, err.Error(), nil
+		}
+		return nil, nil, "", err
 	}
 	return agent, runtime, "", nil
 }

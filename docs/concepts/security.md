@@ -15,11 +15,22 @@ Sympozium enforces defence-in-depth at every layer — from network isolation to
 | **RBAC lifecycle** | `ownerReference` (namespace) + label-based cleanup (cluster) | Namespace RBAC is garbage-collected by Kubernetes. Cluster RBAC is cleaned up by the controller on AgentRun completion and deletion |
 | **Controller privilege** | Dedicated `sympozium-manager` ClusterRole | The controller has RBAC delegation permissions to provision skill roles. The API server has a **separate, scoped** `sympozium-apiserver` ClusterRole with no RBAC delegation or `pods/exec` access |
 | **Auth secret isolation** | Individual `secretKeyRef` per provider key | Auth secrets are mounted as individual env vars (e.g. `OPENAI_API_KEY`) rather than wholesale `envFrom`, preventing leakage of unrelated secret keys |
+| **One key per Agent** | `sympozium.ai/model-key-owner` on the key Secret | A model key belongs to one Agent, or to one Ensemble's members. A run may use only its own Agent's key, whatever it names. See [Model keys](#model-keys) |
 | **Image allowlist** | `ImagePolicy.allowedRegistries` in `SympoziumPolicy` | Lifecycle hook, sandbox, skill sidecar and harness images can be restricted to approved registries. Matched by **string prefix**, so end each entry at a `/`, a full tag or a digest — `ghcr.io/acme` also admits `ghcr.io/acmecorp-evil/…`. No `policyRef`, no `imagePolicy`, or an empty list all mean no restriction |
 | **Lifecycle RBAC bounds** | `LifecyclePolicy.deniedResources` in `SympoziumPolicy` | Prevents lifecycle hooks from requesting RBAC access to sensitive resources (e.g. `secrets`, `clusterroles`) |
 | **Env var denylist** | Admission webhook validation | Blocks `spec.env` overrides of dangerous variables (`PATH`, `LD_PRELOAD`, `HOME`, etc.) |
 | **Model integrity** | SHA256 checksum verification | Model downloads can specify a `sha256` hash; the download job verifies integrity before loading |
 | **Multi-tenancy** | Namespaced CRDs + Kubernetes RBAC | Agents, runs, and policies are namespace-scoped; standard K8s RBAC controls who can create them |
+
+## Model keys
+
+Every Agent uses its own model key. Sub-agents share their parent's key: runs an Agent spawns run as that Agent, and the members of an Ensemble share the Ensemble's key. No other sharing is allowed.
+
+- **Ownership is recorded on the Secret.** The first time a run of an Agent uses a key that the Agent lists in `spec.authRefs`, the controller records the owner in the Secret's `sympozium.ai/model-key-owner` annotation: `Agent/<name>`, or `Ensemble/<name>` for an Ensemble member. Membership needs the Ensemble's controller reference as well as the label, so labelling an Agent by hand does not join a team.
+- **Every credential a run names is checked**: `spec.model.authSecretRef`, `providerHeadersSecretRef`, and the Secret behind a `ModelConnection`. This applies to Job, agent-sandbox, harness, HarnessSession and Celln runs. A key owned by another Agent, or one the Agent does not grant, fails the run before any pod or cell starts. The admission webhook gives the same answer early.
+- **The model gateway re-checks on every call.** For mediated Celln runs, the gateway confirms the decision's Agent still exists (same UID) and still owns the Secret before it reads the key. A key claimed by another owner stops working mid-run.
+- **The console** does not offer another Agent's key, and creating an Agent on one returns `409 Conflict`.
+- **Re-using a key.** When the owning Agent or Ensemble is deleted, its claim goes stale, and the next Agent that grants the key takes it over. To move a key deliberately, delete or edit the annotation.
 
 ## Ephemeral Skill RBAC
 

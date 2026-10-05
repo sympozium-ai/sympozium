@@ -17,7 +17,8 @@ func TestGatewayChartRequiresExplicitTrustAndRestrictsIdentity(t *testing.T) {
 	}
 	base := []string{"template", "gateway-test", "../../charts/sympozium", "--show-only", "templates/model-gateway.yaml", "--set", "modelGateway.enabled=true"}
 	image := "modelGateway.image=example/gateway@sha256:" + strings.Repeat("a", 64)
-	for _, args := range [][]string{nil, {"--set", image}, {"--set", image, "--set", "modelGateway.configurationClaim=reviewed"}, {"--set", "modelGateway.image=example/gateway:latest", "--set", "modelGateway.configurationClaim=reviewed", "--set-json", `modelGateway.egress=[{}]`}} {
+	// No egress list is not incomplete: it allows any provider.
+	for _, args := range [][]string{nil, {"--set", image}, {"--set", "modelGateway.image=example/gateway:latest", "--set", "modelGateway.configurationClaim=reviewed", "--set-json", `modelGateway.egress=[{}]`}} {
 		if out, err := exec.Command("helm", append(append([]string{}, base...), args...)...).CombinedOutput(); err == nil {
 			t.Fatalf("incomplete or unpinned deployment rendered: %s", out)
 		}

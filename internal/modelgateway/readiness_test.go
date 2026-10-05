@@ -39,7 +39,7 @@ func TestAuthorityReadinessFailsClosed(t *testing.T) {
 			if (err == nil) != (scenario == "allowed") {
 				t.Fatalf("unexpected result %v", err)
 			}
-			if scenario == "allowed" && len(seen) != 3 {
+			if scenario == "allowed" && len(seen) != 4 {
 				t.Fatal("missing authority checks")
 			}
 			for _, action := range kube.Actions() {
@@ -59,9 +59,11 @@ func TestAuthorityReadinessUsesExplicitNamespaces(t *testing.T) {
 	want := map[string]bool{
 		"namespaces///tenant-a":                   true,
 		"modelconnections/sympozium.ai/tenant-a/": true,
+		"agents/sympozium.ai/tenant-a/":           true,
 		"secrets//tenant-a/":                      true,
 		"namespaces///tenant-b":                   true,
 		"modelconnections/sympozium.ai/tenant-b/": true,
+		"agents/sympozium.ai/tenant-b/":           true,
 		"secrets//tenant-b/":                      true,
 	}
 	seen := map[string]bool{}
