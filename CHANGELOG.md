@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.0](https://github.com/sympozium-ai/sympozium/compare/v0.10.88...v0.11.0) (2026-10-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* two Agents can no longer share a key Secret, and a run can no longer name a Secret its Agent does not grant in spec.authRefs.
+* **policy:** SympoziumPolicy toolGating is now enforced, so agents on a policy lose the tools it denies; the built-in restrictive policy denies execute_command. Policies using `ask` fail validation; use allow or deny.
+
+### Features
+
+* **celln:** scoped artifact authority and installed development proof ([#636](https://github.com/sympozium-ai/sympozium/issues/636)) ([939f383](https://github.com/sympozium-ai/sympozium/commit/939f383745227768e6dfae0b635a1a7ab8a359be))
+* **chart:** bundle PostgreSQL for mediated model access ([#647](https://github.com/sympozium-ai/sympozium/issues/647)) ([70f360d](https://github.com/sympozium-ai/sympozium/commit/70f360d23e4bb27d4d6692f910e5d04393476b3c))
+* one key per Agent, mediated by default, on any number of nodes ([#650](https://github.com/sympozium-ai/sympozium/issues/650)) ([f7b474d](https://github.com/sympozium-ai/sympozium/commit/f7b474db4c81fb318f32c958791c1cc34d7dfc91))
+
+
+### Bug Fixes
+
+* **policy:** enforce SympoziumPolicy tool gating; docs: compare with Google AX and Agent Substrate ([#631](https://github.com/sympozium-ai/sympozium/issues/631)) ([c4a4c95](https://github.com/sympozium-ai/sympozium/commit/c4a4c9535a5898a31ec363a5b3003ddcba318896))
+
 ## [0.10.88](https://github.com/sympozium-ai/sympozium/compare/v0.10.87...v0.10.88) (2026-10-04)
 
 
