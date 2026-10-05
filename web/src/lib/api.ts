@@ -252,6 +252,8 @@ export interface CellnPlatformProfile {
   /** The policy's per-parent maxima and the budget a new conversation should ask for. */
   ceilings: EnduringLimits;
   sessionDefaults: EnduringLimits;
+  /** The backend's key never reached the fleet: only Agents with their own key run on it (no shared agent). */
+  mediationOnly?: boolean;
 }
 
 export interface EnduringLimits {

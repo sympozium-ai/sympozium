@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,7 +34,18 @@ const (
 	MediationTrustConfigMap   = "celln-mediation-trust"
 	// MediationIssuer is fixed by the authorisation credential contract.
 	MediationIssuer = "sympozium-control-plane"
+	// DefaultMediationValidity is the lifetime of the private CA and both
+	// server certificates. The CA key is discarded after signing, so nothing
+	// can renew them in place; ten years keeps an installed cluster from
+	// silently losing its mediated path, and `sympozium doctor` warns in the
+	// last MediationExpiryWarning before they lapse (rotate by bootstrapping
+	// again, see docs/guides/celln-mediated-model-access.md).
+	DefaultMediationValidity = 10 * 365 * 24 * time.Hour
+	// MediationExpiryWarning is how long before expiry doctor warns.
+	MediationExpiryWarning = 60 * 24 * time.Hour
 )
+
+var mediationKeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
 // MediationOptions names where the mediated path's trust is published and the
 // host names its two TLS endpoints are reached by.
@@ -45,8 +57,13 @@ type MediationOptions struct {
 	// origin and of celln.mediation.receiver.url.
 	GatewayHosts  []string
 	ReceiverHosts []string
-	Validity      time.Duration
-	Now           func() time.Time
+	// KeyID is the signing key's id when the caller chose it beforehand (the
+	// installer renders it into the chart values before the trust exists).
+	// Empty mints one. Existing trust under another id is refused, never
+	// rotated.
+	KeyID    string
+	Validity time.Duration
+	Now      func() time.Time
 }
 
 // MediationTrust is the credential-free result an operator feeds to the chart.
@@ -95,8 +112,11 @@ func PrepareMediationTrust(ctx context.Context, store client.Client, o Mediation
 			return MediationTrust{}, fmt.Errorf("invalid certificate host %q: a DNS name or IP address without scheme or port", host)
 		}
 	}
+	if o.KeyID != "" && !mediationKeyIDPattern.MatchString(o.KeyID) {
+		return MediationTrust{}, fmt.Errorf("key id %q must be 1-128 letters, digits, dots, underscores or hyphens", o.KeyID)
+	}
 	if o.Validity <= 0 {
-		o.Validity = 365 * 24 * time.Hour
+		o.Validity = DefaultMediationValidity
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -124,6 +144,9 @@ func PrepareMediationTrust(ctx context.Context, store client.Client, o Mediation
 		if err != nil {
 			return MediationTrust{}, fmt.Errorf("existing mediation trust is inconsistent (%w); never repaired by replacement: delete all of it deliberately and bootstrap again", err)
 		}
+		if o.KeyID != "" && o.KeyID != keyID {
+			return MediationTrust{}, fmt.Errorf("existing mediation trust signs with key id %s, not the expected %s; it is never rotated silently: install again so the values name %s, or delete all five objects deliberately to rotate", keyID, o.KeyID, keyID)
+		}
 		return MediationTrust{ClusterID: o.ClusterID, KeyID: keyID}, nil
 	case 0:
 	default:
@@ -139,11 +162,12 @@ func PrepareMediationTrust(ctx context.Context, store client.Client, o Mediation
 		return MediationTrust{}, err
 	}
 	issuerKey := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8})
-	suffix := make([]byte, 4)
-	if _, err := rand.Read(suffix); err != nil {
-		return MediationTrust{}, err
+	keyID := o.KeyID
+	if keyID == "" {
+		if keyID, err = NewMediationKeyID(o.Now()); err != nil {
+			return MediationTrust{}, err
+		}
 	}
-	keyID := fmt.Sprintf("mediation-%s-%x", o.Now().UTC().Format("2006-01-02"), suffix)
 	jwks, err := mediationJWKS(keyID, public)
 	if err != nil {
 		return MediationTrust{}, err
@@ -176,6 +200,96 @@ func PrepareMediationTrust(ctx context.Context, store client.Client, o Mediation
 		}
 	}
 	return MediationTrust{ClusterID: o.ClusterID, KeyID: keyID, Created: true}, nil
+}
+
+// NewMediationKeyID mints a signing key id: the day it was made and a random
+// suffix, so two bootstraps never share one.
+func NewMediationKeyID(now time.Time) (string, error) {
+	suffix := make([]byte, 4)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("mediation-%s-%x", now.UTC().Format("2006-01-02"), suffix), nil
+}
+
+// ExistingMediationKeyID reads the bootstrapped trust without changing it:
+// the signing key's id when all five objects exist and still belong
+// together, found=false when none exists (or its namespaces do not exist
+// yet), and an error for partial or inconsistent trust, which is never
+// completed or repaired by replacement.
+func ExistingMediationKeyID(ctx context.Context, store client.Reader, systemNamespace string) (keyID string, found bool, err error) {
+	objects := mediationObjects(systemNamespace)
+	present := 0
+	for _, object := range objects {
+		err := store.Get(ctx, client.ObjectKeyFromObject(object), object)
+		switch {
+		case err == nil:
+			present++
+		case !apierrors.IsNotFound(err):
+			return "", false, err
+		}
+	}
+	switch present {
+	case 0:
+		return "", false, nil
+	case len(objects):
+		keyID, err := verifyMediationTrust(objects)
+		if err != nil {
+			return "", false, fmt.Errorf("existing mediation trust is inconsistent (%w); never repaired by replacement: delete all of it deliberately and install again", err)
+		}
+		return keyID, true, nil
+	default:
+		return "", false, fmt.Errorf("mediation trust is partially present (%d of %d objects); never completed by replacement: delete what exists deliberately and install again", present, len(objects))
+	}
+}
+
+// MediationCertificateExpiry is the earliest expiry among the PEM
+// certificates given (the CA and the two server certificates); ok is false
+// when none parses.
+func MediationCertificateExpiry(pems ...[]byte) (earliest time.Time, ok bool) {
+	for _, raw := range pems {
+		for len(raw) > 0 {
+			var block *pem.Block
+			block, raw = pem.Decode(raw)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				continue
+			}
+			if !ok || cert.NotAfter.Before(earliest) {
+				earliest, ok = cert.NotAfter, true
+			}
+		}
+	}
+	return earliest, ok
+}
+
+// AutoMediationValues are the chart values that switch mediated model access
+// on for an installer-bootstrapped cluster: the trust's identity, the
+// gateway image, and every HTTPS backend offered to an Agent's own key (the
+// starter Agent's route among them). They carry no credential.
+func AutoMediationValues(clusterID, keyID, gatewayImage string) ([]string, error) {
+	if clusterID == "" || strings.ContainsAny(clusterID, " \t\r\n,=") {
+		return nil, fmt.Errorf("a cluster id without whitespace, commas or equals signs is required")
+	}
+	if !mediationKeyIDPattern.MatchString(keyID) {
+		return nil, fmt.Errorf("invalid mediation key id %q", keyID)
+	}
+	if !digestImagePattern.MatchString(gatewayImage) {
+		return nil, fmt.Errorf("the model gateway image must be pinned by digest (repository@sha256:...), got %q", gatewayImage)
+	}
+	return []string{
+		"celln.mediation.enabled=true",
+		"celln.mediation.clusterId=" + clusterID,
+		"celln.mediation.issuer.keyId=" + keyID,
+		"celln.mediation.mediateBackends=true",
+		"modelGateway.image=" + gatewayImage,
+	}, nil
 }
 
 func mediationObjects(systemNamespace string) []client.Object {

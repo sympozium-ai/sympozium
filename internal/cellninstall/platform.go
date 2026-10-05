@@ -171,26 +171,30 @@ func DefaultMediatedRoutes() []MediatedRoute {
 
 // mediatedPolicyRoutes are the auth "secret" routes a scope's policy carries
 // besides its backends' host-profile routes, without duplicates.
-func mediatedPolicyRoutes(o PlatformOptions, backends []backendConfiguration) ([]api.CellnExecutionPolicyRoute, error) {
+//
+// A mediation-only backend is always offered: an Agent's own key is the only
+// way to run it.
+func mediatedPolicyRoutes(o PlatformOptions, backends []backendConfiguration, mediatedOnly map[string]bool) ([]api.CellnExecutionPolicyRoute, error) {
 	var routes []api.CellnExecutionPolicyRoute
 	add := func(route api.CellnExecutionPolicyRoute) {
 		if !slices.ContainsFunc(routes, func(r api.CellnExecutionPolicyRoute) bool { return reflect.DeepEqual(r, route) }) {
 			routes = append(routes, route)
 		}
 	}
-	if o.MediateBackends {
-		for _, b := range backends {
-			if !strings.HasPrefix(b.origin, "https://") {
-				continue
-			}
-			route, err := MediatedRoute{Provider: b.configured.Model.Provider, Protocol: b.protocol, Models: []string{b.configured.Model.Model}, EndpointOrigins: []string{b.origin}}.PolicyRoute()
-			if err != nil {
-				// An HTTPS backend on a private port is a host-profile route the
-				// operator approved as insecure; it is not offered to Secrets.
-				continue
-			}
-			add(route)
+	for _, b := range backends {
+		if !o.MediateBackends && !mediatedOnly[b.name] {
+			continue
 		}
+		if !strings.HasPrefix(b.origin, "https://") {
+			continue
+		}
+		route, err := MediatedRoute{Provider: b.configured.Model.Provider, Protocol: b.protocol, Models: []string{b.configured.Model.Model}, EndpointOrigins: []string{b.origin}}.PolicyRoute()
+		if err != nil {
+			// An HTTPS backend on a private port is a host-profile route the
+			// operator approved as insecure; it is not offered to Secrets.
+			continue
+		}
+		add(route)
 	}
 	for _, declared := range o.MediatedRoutes {
 		route, err := declared.PolicyRoute()
@@ -330,6 +334,12 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	if err != nil {
 		return err
 	}
+	// Backends whose key never reached the fleet carry the mediation marker
+	// instead of a key: no host-profile route and no shared wrappers.
+	mediatedOnly, err := MediatedOnlyBackends(ctx, store)
+	if err != nil {
+		return err
+	}
 	backends := make([]backendConfiguration, 0, len(names))
 	for _, name := range names {
 		b, err := readBackendConfiguration(o.ConfigurationDir, name, o.PackageHash, o.Principal)
@@ -382,6 +392,9 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		cat, native := b.cat, b.native
 		profileMeta := meta(profileName, map[string]string{cellnplatform.BackendLabel: b.name})
 		profileMeta.Annotations[cellnplatform.ProtocolAnnotation] = b.protocol
+		if mediatedOnly[b.name] {
+			profileMeta.Labels[cellnplatform.MediationOnlyLabel] = "true"
+		}
 		profile := &api.CellnRuntimeProfile{ObjectMeta: profileMeta, Spec: api.CellnRuntimeProfileSpec{
 			Revision: cat.Worker.Revision, ContractVersion: cat.Worker.ContractVersion, Executable: cat.Worker.Executable, Closure: cat.Worker.Closure, Mote: cat.Worker.Mote, PublisherKey: cat.Worker.PublisherKey, EntryPoint: cat.Worker.EntryPoint, Platform: cat.Worker.Platform, Lane: cat.Worker.Lane,
 			Lifecycles: []string{"disposable-one-shot", "enduring"}, Limits: cat.Worker.Limits, JSON: cat.Worker.JSON.DeepCopy(),
@@ -390,11 +403,14 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		profiles[b.name] = profile
 		objects = append(objects, profile)
 		runtimeRefs = append(runtimeRefs, api.CellnExecutionPolicyRuntime{Ref: api.CellnRuntimeProfileRef{Name: profileName, Revision: cat.Worker.Revision}})
+		if mediatedOnly[b.name] {
+			continue
+		}
 		routes = append(routes, api.CellnExecutionPolicyRoute{Provider: b.configured.Model.Provider, Protocol: b.protocol, Models: []string{b.configured.Model.Model}, EndpointOrigins: []string{b.origin}, Auth: "host-profile", AllowInsecure: b.insecure})
 	}
 	// Operator-declared gateway-mediated routes follow the backends' own, so a
 	// scope installed without them carries exactly the policy it always did.
-	mediated, err := mediatedPolicyRoutes(o, backends)
+	mediated, err := mediatedPolicyRoutes(o, backends, mediatedOnly)
 	if err != nil {
 		return err
 	}
@@ -442,7 +458,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		if err := retirePlatformCatalogue(ctx, store, o.Replacing, o.Scope, objects, policyName); err != nil {
 			return err
 		}
-		if err := rebindTenantWrappers(ctx, store, profiles, policy); err != nil {
+		if err := rebindTenantWrappers(ctx, store, profiles, policy, mediatedOnly); err != nil {
 			return err
 		}
 	}
@@ -463,7 +479,7 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 	// The install namespace's wrappers are the same objects the API server
 	// creates on demand for any other authorised namespace: one set per backend.
 	for _, b := range backends {
-		wrappers, err := cellnplatform.TenantWrappers(o.Namespace, profiles[b.name], policy)
+		wrappers, err := platformWrappers(o.Namespace, profiles[b.name], policy, mediatedOnly[b.name])
 		if err != nil {
 			return err
 		}
@@ -525,6 +541,14 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		Enduring:       SessionDefaultsFor(limits, profiles[sample.name]),
 		Task:           api.NewStringTask("Write violet to notes.txt using workspace-write with revision 0. Make exactly that one tool call, then reply done."),
 	}}
+	if mediatedOnly[sample.name] {
+		// The backend has no shared Agent: the sample runs as the starter
+		// Agent on its own key, and the mediated path is chat only.
+		starter := StarterAgentNamesFor(sample.name)
+		run.Spec.AgentRef, run.Spec.Model.ConnectionRef = starter.Agent, starter.Connection
+		run.Spec.CellnSelection.ClusterToolRefs = nil
+		run.Spec.Task = api.NewStringTask("Reply with the single word ready.")
+	}
 	if err := write("run.json", run); err != nil {
 		return err
 	}
@@ -533,6 +557,15 @@ func InstallPlatform(ctx context.Context, store client.Client, o PlatformOptions
 		profileNames = append(profileNames, PlatformProfileName(o.Scope, b.name))
 	}
 	return write("installed.json", map[string]any{"namespace": o.Namespace, "scope": o.Scope, "packageHash": first.configured.PackageHash, "backends": names, "profiles": profileNames, "policy": policyName, "runSubmitted": false, "readiness": "not_established"})
+}
+
+// platformWrappers are a namespace's wrapper objects for one backend: the
+// full set, or for a mediation-only backend the runtime wrapper alone.
+func platformWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy, mediatedOnly bool) ([]client.Object, error) {
+	if mediatedOnly {
+		return []client.Object{cellnplatform.RuntimeWrapper(namespace, profile)}, nil
+	}
+	return cellnplatform.TenantWrappers(namespace, profile, policy)
 }
 
 // ClusterIdentity is the stable cluster identity every platform decision and

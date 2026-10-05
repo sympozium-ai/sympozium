@@ -125,7 +125,7 @@ func deleteIgnoringMissing(ctx context.Context, store client.Client, object clie
 // connection's route and credential profile. Wrappers a namespace prepared
 // itself (without the managed-by label) are left alone, as are wrappers for
 // a backend the new publication does not carry.
-func rebindTenantWrappers(ctx context.Context, store client.Client, profiles map[string]*api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy) error {
+func rebindTenantWrappers(ctx context.Context, store client.Client, profiles map[string]*api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy, mediatedOnly map[string]bool) error {
 	var runtimes api.AgentRuntimeList
 	if err := store.List(ctx, &runtimes, client.MatchingLabels{cellnplatform.ManagedByLabel: cellnplatform.ManagedByValue}); err != nil {
 		return err
@@ -136,7 +136,8 @@ func rebindTenantWrappers(ctx context.Context, store client.Client, profiles map
 		if profile == nil || runtime.Spec.CellnProfileRef == nil {
 			continue
 		}
-		wanted, err := cellnplatform.TenantWrappers(runtime.Namespace, profile, policy)
+		backend := runtime.Labels[cellnplatform.BackendLabel]
+		wanted, err := platformWrappers(runtime.Namespace, profile, policy, mediatedOnly[backend])
 		if err != nil {
 			return err
 		}

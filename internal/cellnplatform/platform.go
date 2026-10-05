@@ -42,6 +42,12 @@ const (
 	// route speaks, so a policy carrying several routes to the same origin
 	// and model (one per protocol) binds each backend to its own route.
 	ProtocolAnnotation = "celln.sympozium.ai/protocol"
+	// MediationOnlyLabel marks the runtime profile of a backend whose
+	// provider key never reached the fleet: the nodes hold a placeholder,
+	// the policy carries no host-profile route for it, and it serves only
+	// Agents that bring their own key through the model gateway. A namespace
+	// gets its runtime wrapper alone, never a shared Agent or connection.
+	MediationOnlyLabel = "celln.sympozium.ai/mediation-only"
 
 	// The wrapper names of the default backend; a run selects them by name.
 	WrapperRuntimeName    = "celln-native"
@@ -205,13 +211,19 @@ func EnsureRuntimeWrapper(ctx context.Context, c client.Client, namespace, profi
 	return wrapper.Name, nil
 }
 
-// TenantWrappers builds the three objects a namespace needs to run a native
-// profile: a runtime wrapper, an agent and the host-profile model connection
-// bound to the policy's route for the profile's model.
-func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy) ([]client.Object, error) {
+// MediationOnly reports whether a profile's backend holds no fleet key
+// (MediationOnlyLabel): it serves only Agents with their own key.
+func MediationOnly(profile *api.CellnRuntimeProfile) bool {
+	return profile.Labels[MediationOnlyLabel] == "true"
+}
+
+// ProfileRoute finds the policy route with the given auth ("host-profile" or
+// "secret") that admits the profile's own model at its endpoint, and returns
+// it with that endpoint and model.
+func ProfileRoute(profile *api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy, auth string) (*api.CellnExecutionPolicyRoute, string, string, error) {
 	native := profile.Spec.Native
-	if native == nil || native.CredentialProfile == "" {
-		return nil, fmt.Errorf("runtime profile %q carries no native credential profile", profile.Name)
+	if native == nil {
+		return nil, "", "", fmt.Errorf("runtime profile %q is not native", profile.Name)
 	}
 	var harness struct {
 		Model         string `json:"model"`
@@ -219,11 +231,12 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 		AllowInsecure bool   `json:"allow_insecure"`
 	}
 	if json.Unmarshal(native.Template.Raw, &harness) != nil || harness.Model == "" || harness.URL == "" {
-		return nil, fmt.Errorf("runtime profile %q template names no model route", profile.Name)
+		return nil, "", "", fmt.Errorf("runtime profile %q template names no model route", profile.Name)
 	}
-	origin, err := api.ModelEndpointOriginInsecure(harness.URL, harness.AllowInsecure)
+	insecure := harness.AllowInsecure && auth == "host-profile"
+	origin, err := api.ModelEndpointOriginInsecure(harness.URL, insecure)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 	// The first matching route wins unless the profile names its protocol,
 	// in which case the route speaking that protocol does.
@@ -231,7 +244,7 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 	protocol := profile.Annotations[ProtocolAnnotation]
 	for i := range policy.Spec.Routes {
 		r := &policy.Spec.Routes[i]
-		if r.Auth != "host-profile" || (harness.AllowInsecure && !r.AllowInsecure) || !slices.Contains(r.Models, harness.Model) || !slices.Contains(r.EndpointOrigins, origin) {
+		if r.Auth != auth || (harness.AllowInsecure && !r.AllowInsecure) || !slices.Contains(r.Models, harness.Model) || !slices.Contains(r.EndpointOrigins, origin) {
 			continue
 		}
 		if protocol == "" || r.Protocol == protocol {
@@ -243,8 +256,27 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 		}
 	}
 	if route == nil {
-		return nil, fmt.Errorf("policy %q has no host-profile route for %s at %s", policy.Name, harness.Model, origin)
+		return nil, "", "", fmt.Errorf("policy %q has no %s route for %s at %s", policy.Name, auth, harness.Model, origin)
 	}
+	return route, harness.URL, harness.Model, nil
+}
+
+// TenantWrappers builds the three objects a namespace needs to run a native
+// profile: a runtime wrapper, an agent and the host-profile model connection
+// bound to the policy's route for the profile's model.
+func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *api.CellnExecutionPolicy) ([]client.Object, error) {
+	native := profile.Spec.Native
+	if native == nil || native.CredentialProfile == "" {
+		return nil, fmt.Errorf("runtime profile %q carries no native credential profile", profile.Name)
+	}
+	route, endpoint, model, err := ProfileRoute(profile, policy, "host-profile")
+	if err != nil {
+		return nil, err
+	}
+	var harness struct {
+		AllowInsecure bool `json:"allow_insecure"`
+	}
+	_ = json.Unmarshal(native.Template.Raw, &harness)
 	names := WrapperNames(Backend(profile))
 	meta := func(name string) metav1.ObjectMeta {
 		return metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{ManagedByLabel: ManagedByValue, BackendLabel: names.Backend}}
@@ -252,7 +284,7 @@ func TenantWrappers(namespace string, profile *api.CellnRuntimeProfile, policy *
 	return []client.Object{
 		RuntimeWrapper(namespace, profile),
 		&api.Agent{ObjectMeta: meta(names.Agent), Spec: api.AgentSpec{RuntimeRef: names.Runtime}},
-		&api.ModelConnection{ObjectMeta: meta(names.Connection), Spec: api.ModelConnectionSpec{Provider: route.Provider, Protocol: route.Protocol, Endpoint: harness.URL, CredentialProfile: native.CredentialProfile, Models: []string{harness.Model}, AllowInsecure: harness.AllowInsecure}},
+		&api.ModelConnection{ObjectMeta: meta(names.Connection), Spec: api.ModelConnectionSpec{Provider: route.Provider, Protocol: route.Protocol, Endpoint: endpoint, CredentialProfile: native.CredentialProfile, Models: []string{model}, AllowInsecure: harness.AllowInsecure}},
 	}, nil
 }
 

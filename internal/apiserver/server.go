@@ -547,6 +547,10 @@ type CellnPlatformProfile struct {
 	// budget a new conversation should ask for (within them).
 	Ceilings        sympoziumv1alpha1.EnduringRunSpec `json:"ceilings"`
 	SessionDefaults sympoziumv1alpha1.EnduringRunSpec `json:"sessionDefaults"`
+	// MediationOnly is set for a backend whose key never reached the fleet:
+	// it runs only Agents with their own key (agent and credentialProfile
+	// stay empty; ask for the wrapper with runtimeOnly).
+	MediationOnly bool `json:"mediationOnly,omitempty"`
 }
 
 // platformPersona returns the system prompt a fleet runtime profile binds
@@ -584,19 +588,26 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 	}
 	out := make([]CellnPlatformProfile, 0, len(authorised))
 	for _, a := range authorised {
-		objects, err := cellnplatform.TenantWrappers(ns, &a.Profile, &a.Policy)
-		if err != nil {
+		names := cellnplatform.WrapperNames(cellnplatform.Backend(&a.Profile))
+		entry := CellnPlatformProfile{Name: a.Profile.Name, Revision: a.Profile.Spec.Revision, Policy: a.Policy.Name, SystemPrompt: a.Profile.Spec.Native.SystemPrompt, Backend: names.Backend, Wrapper: names.Runtime}
+		if objects, err := cellnplatform.TenantWrappers(ns, &a.Profile, &a.Policy); err == nil {
+			connection := objects[2].(*sympoziumv1alpha1.ModelConnection)
+			entry.Model, entry.Provider, entry.Endpoint, entry.CredentialProfile, entry.Agent = connection.Spec.Models[0], connection.Spec.Provider, connection.Spec.Endpoint, connection.Spec.CredentialProfile, names.Agent
+		} else if route, endpoint, model, err := cellnplatform.ProfileRoute(&a.Profile, &a.Policy, "secret"); err == nil && cellnplatform.MediationOnly(&a.Profile) {
+			// The backend's key never reached the fleet: the profile serves
+			// Agents with their own key only, so it has no shared Agent.
+			entry.Model, entry.Provider, entry.Endpoint, entry.MediationOnly = model, route.Provider, endpoint, true
+		} else {
 			continue // a profile without a usable route is not offered
 		}
-		connection := objects[2].(*sympoziumv1alpha1.ModelConnection)
 		c := a.Policy.Spec.Ceilings
 		ceilings := sympoziumv1alpha1.EnduringRunSpec{LeaseSeconds: int32(min(c.MaxParentLeaseSeconds, 86400)), MaxTurns: int32(min(c.MaxTurns, 1024)), MaxModelRequests: int32(min(c.MaxModelRequests, 6144)), MaxOutputTokens: c.MaxOutputTokens}
-		names := cellnplatform.WrapperNames(cellnplatform.Backend(&a.Profile))
 		tools := make([]sympoziumv1alpha1.ClusterCellnToolRef, 0, len(a.Policy.Spec.Tools))
 		for _, t := range a.Policy.Spec.Tools {
 			tools = append(tools, t.Ref)
 		}
-		out = append(out, CellnPlatformProfile{Name: a.Profile.Name, Revision: a.Profile.Spec.Revision, Policy: a.Policy.Name, Model: connection.Spec.Models[0], Provider: connection.Spec.Provider, Endpoint: connection.Spec.Endpoint, CredentialProfile: connection.Spec.CredentialProfile, SystemPrompt: a.Profile.Spec.Native.SystemPrompt, Backend: names.Backend, Wrapper: names.Runtime, Agent: names.Agent, Tools: tools, Ceilings: ceilings, SessionDefaults: *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)})
+		entry.Tools, entry.Ceilings, entry.SessionDefaults = tools, ceilings, *cellninstall.SessionDefaultsFor(ceilings, &a.Profile)
+		out = append(out, entry)
 	}
 	writeJSON(w, out)
 }

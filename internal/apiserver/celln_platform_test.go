@@ -111,3 +111,39 @@ func TestCellnPlatformProfilesAndWrappersFollowTheNamespacePolicy(t *testing.T) 
 		t.Fatalf("run did not inherit the profile's persona as a platform one-shot: %+v", run.Spec)
 	}
 }
+
+// A backend whose key never reached the fleet is listed for Agents with their
+// own key (its runtime, the secret route's provider and model) and has no
+// shared Agent; without its mediation-only label it is not offered at all.
+func TestCellnPlatformListsMediationOnlyProfiles(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = sympoziumv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	template := apiextensionsv1.JSON{Raw: []byte(`{"model":"deepseek-chat","url":"https://api.deepseek.com/chat/completions"}`)}
+	profile := func(name string, labels map[string]string) *sympoziumv1alpha1.CellnRuntimeProfile {
+		return &sympoziumv1alpha1.CellnRuntimeProfile{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}, Spec: sympoziumv1alpha1.CellnRuntimeProfileSpec{Revision: "v1", Native: &sympoziumv1alpha1.CellnNativeProvisioning{CredentialProfile: "trial", SystemPrompt: "host persona", Template: template}}}
+	}
+	mediated := profile("celln-native-trial", map[string]string{cellnplatform.MediationOnlyLabel: "true"})
+	unlabeled := profile("celln-native-trial-other", map[string]string{cellnplatform.BackendLabel: "other"})
+	policy := &sympoziumv1alpha1.CellnExecutionPolicy{ObjectMeta: metav1.ObjectMeta{Name: "celln-fleet-trial"}, Spec: sympoziumv1alpha1.CellnExecutionPolicySpec{
+		NamespaceSelector: cellnplatform.OpenSelector(cellnplatform.SystemNamespaces("sympozium-system")),
+		RuntimeProfiles:   []sympoziumv1alpha1.CellnExecutionPolicyRuntime{{Ref: sympoziumv1alpha1.CellnRuntimeProfileRef{Name: mediated.Name, Revision: "v1"}}, {Ref: sympoziumv1alpha1.CellnRuntimeProfileRef{Name: unlabeled.Name, Revision: "v1"}}},
+		Routes:            []sympoziumv1alpha1.CellnExecutionPolicyRoute{{Provider: "deepseek", Protocol: "openai-chat", Models: []string{"deepseek-chat"}, EndpointOrigins: []string{"https://api.deepseek.com"}, Auth: "secret"}},
+		Ceilings:          sympoziumv1alpha1.CellnExecutionPolicyCeilings{MaxTurns: 256, MaxModelRequests: 1536, MaxOutputTokens: 786432, MaxParentLeaseSeconds: 86400, MaxTurnSeconds: 60},
+	}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(mediated, unlabeled, policy, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "team-a", Labels: map[string]string{cellnplatform.NamespaceNameLabel: "team-a"}}}).Build()
+	srv := NewServer(cl, nil, nil, logr.Discard())
+	res := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/celln-platform/profiles?namespace=team-a", nil))
+	var out []CellnPlatformProfile
+	if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &out) != nil {
+		t.Fatalf("status %d: %s", res.Code, res.Body.String())
+	}
+	if len(out) != 1 {
+		t.Fatalf("profiles: %+v", out)
+	}
+	p := out[0]
+	if p.Name != mediated.Name || !p.MediationOnly || p.Agent != "" || p.CredentialProfile != "" || p.Provider != "deepseek" || p.Model != "deepseek-chat" || p.Wrapper != "celln-native" || p.SessionDefaults.MaxTurns == 0 {
+		t.Fatalf("mediation-only profile: %+v", p)
+	}
+}
