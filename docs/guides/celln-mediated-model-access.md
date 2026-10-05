@@ -465,7 +465,8 @@ key is required. Its ModelConnection sets `allowInsecure: true` and has neither
 `secretRef` nor `credentialProfile`. No compatibility Secret is created. The
 gateway still enforces budgets and model parameters, but sends no credentials.
 
-HTTP DNS answers must all be loopback or private addresses; public, link-local,
+HTTP DNS answers must all be loopback or private addresses (RFC 1918, IPv6 ULA,
+or the 100.64.0.0/10 shared space Tailscale uses); public, link-local,
 and mixed public/private answers are refused. Use an explicit LAN IP when the
 host name resolves to several address classes. Redirects remain disabled.
 Secret-backed HTTP routes remain forbidden.

@@ -41,6 +41,13 @@ func TestConnectTimeAddressValidation(t *testing.T) {
 		{"plaintext-public", []net.IP{net.ParseIP("8.8.8.8")}, true, true, true},
 		{"plaintext-metadata", []net.IP{net.ParseIP("169.254.169.254")}, true, true, true},
 		{"plaintext-mixed", []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("8.8.8.8")}, true, true, true},
+		// RFC 6598 shared address space (CGNAT, Tailscale): never reachable
+		// from a public route, reachable as an approved private origin.
+		{"public-route-to-shared", []net.IP{net.ParseIP("100.81.163.75")}, false, false, true},
+		{"approved-shared", []net.IP{net.ParseIP("100.81.163.75")}, true, false, false},
+		{"plaintext-shared", []net.IP{net.ParseIP("100.81.163.75")}, true, true, false},
+		{"just-outside-shared", []net.IP{net.ParseIP("100.128.0.1")}, false, false, false},
+		{"plaintext-just-outside-shared", []net.IP{net.ParseIP("100.63.255.255")}, true, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			called := false

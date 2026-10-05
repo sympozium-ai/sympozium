@@ -282,8 +282,17 @@ func mergeParameters(canonical []byte, parameters map[string]any) ([]byte, error
 }
 
 func forbiddenIP(ip net.IP) bool {
-	return ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+	return ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || sharedAddressSpace(ip) || ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() || ip.IsMulticast()
+}
+
+// sharedAddressSpace reports RFC 6598 100.64.0.0/10 (carrier-grade NAT, and
+// the addresses Tailscale assigns). net.IP.IsPrivate leaves it out, but it
+// is never the public internet: a public route must not reach it, and an
+// explicitly approved private origin may be on it.
+func sharedAddressSpace(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1]&0xc0 == 64
 }
 
 func exactOrigin(rawURL string) (string, error) {

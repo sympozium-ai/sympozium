@@ -42,7 +42,7 @@ func (d restrictedDialer) DialContext(ctx context.Context, network, address stri
 		return nil, fail(ReasonProviderUnavailable, 502, err)
 	}
 	for _, ip := range ips {
-		if (d.privateOnly && !(ip.IsLoopback() || ip.IsPrivate())) || (forbiddenIP(ip) && !d.allowPrivate) {
+		if (d.privateOnly && !(ip.IsLoopback() || ip.IsPrivate() || sharedAddressSpace(ip))) || (forbiddenIP(ip) && !d.allowPrivate) {
 			return nil, fail(ReasonDestination, 403, nil)
 		}
 	}
