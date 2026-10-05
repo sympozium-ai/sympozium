@@ -138,7 +138,7 @@ func TestStarterReuseDecision(t *testing.T) {
 		"image":        "ghcr.io/sympozium-ai/sympozium/celln-starter@sha256:" + strings.Repeat("1", 64),
 		"packageHash":  "blake3:" + strings.Repeat("2", 64),
 		"publisher":    strings.Repeat("3", 64),
-		"cellnVersion": "v0.5.28",
+		"cellnVersion": "v0.5.29",
 		"inputs":       fingerprint,
 	}
 	with := func(field string, value any) map[string]any {
