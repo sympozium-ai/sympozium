@@ -99,3 +99,33 @@ func TestCancelledTurnSettlesAsCancelled(t *testing.T) {
 		t.Fatalf("condition %+v finalizers %v", condition, got.Finalizers)
 	}
 }
+
+// Settling never relabels a committed answer, even from a stale copy.
+func TestSettlingKeepsACommittedAnswer(t *testing.T) {
+	committed := &api.AgentRunTurn{ObjectMeta: metav1.ObjectMeta{Name: "turn", Namespace: "tenant", UID: "turn-uid"},
+		Status: api.AgentRunTurnStatus{CellnScoped: &api.CellnScopedStatus{CleanupConfirmed: true},
+			Execution: &api.CellnParentTurnStatus{ID: "turn-uid", Result: &api.CellnParentTurnResult{Succeeded: true, Answer: "indigo"}}}}
+	c := fake.NewClientBuilder().WithScheme(newAgentRunTestScheme(t)).WithStatusSubresource(&api.AgentRunTurn{}).WithObjects(committed).Build()
+	r := &AgentRunTurnReconciler{Client: c, APIReader: c}
+	stale := committed.DeepCopy()
+	if err := r.markTurnSettled(context.Background(), stale); err != nil {
+		t.Fatal(err)
+	}
+	var got api.AgentRunTurn
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(committed), &got); err != nil {
+		t.Fatal(err)
+	}
+	if c := meta.FindStatusCondition(got.Status.Conditions, "CellnTurnComplete"); c == nil || c.Reason != "Committed" {
+		t.Fatalf("a turn with a result settled as %+v", c)
+	}
+	// A second settle, again from the stale copy, keeps it.
+	if err := r.markTurnSettled(context.Background(), stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(committed), &got); err != nil {
+		t.Fatal(err)
+	}
+	if c := meta.FindStatusCondition(got.Status.Conditions, "CellnTurnComplete"); c == nil || c.Reason != "Committed" {
+		t.Fatalf("relabelled to %+v", c)
+	}
+}
