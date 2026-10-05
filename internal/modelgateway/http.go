@@ -4,8 +4,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/sympozium-ai/sympozium/internal/cellncapability"
@@ -144,6 +146,10 @@ func writeFailure(w http.ResponseWriter, err error) {
 			reason = ReasonUnavailable
 		}
 	}
+	// One line per refusal, public reason code and status only: no request,
+	// decision, credential or provider detail. Operators otherwise cannot tell
+	// why a model call was refused.
+	fmt.Fprintf(os.Stderr, "model-gateway: refused status=%d reason=%s\n", status, reason)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"reason": reason})
