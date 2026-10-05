@@ -14,6 +14,16 @@ var (
 	ArtifactWrites     = map[string]bool{"write": true, "append": true, "delete": true}
 )
 
+// AnyHost, as the only HTTPS host, lets a web tool reach any public HTTPS
+// site. Celln's broker still refuses private, loopback, link-local and
+// reserved addresses, plain HTTP and redirects to them.
+const AnyHost = "*"
+
+// AnyPublicHost reports a host list that is exactly [AnyHost].
+func AnyPublicHost(hosts []string) bool {
+	return len(hosts) == 1 && hosts[0] == AnyHost
+}
+
 func validateBrokerLimits(l api.CellnToolLimits) error {
 	if l.Artifacts != nil && l.HTTPS != nil {
 		return fmt.Errorf("one broker capability per starter tool required")
@@ -27,8 +37,14 @@ func validateBrokerLimits(l api.CellnToolLimits) error {
 		if len(h.AllowHosts) < 1 || len(h.AllowHosts) > 16 || h.MaxRequests < 1 || h.MaxRequests > 16 || h.MaxResponseBytes < 1 || h.MaxResponseBytes > 4096 || h.TimeoutMillis < 1 || h.TimeoutMillis > 30000 || h.TimeoutMillis > l.TimeoutMillis || l.Effects != "external-side-effects" {
 			return fmt.Errorf("invalid HTTPS broker limits")
 		}
+		if AnyPublicHost(h.AllowHosts) {
+			return nil
+		}
 		seen := map[string]bool{}
 		for _, host := range h.AllowHosts {
+			if host == AnyHost {
+				return fmt.Errorf("%q must be the only HTTPS host", AnyHost)
+			}
 			if len(host) > 253 || !strings.Contains(host, ".") || seen[host] {
 				return fmt.Errorf("invalid or duplicate HTTPS host")
 			}
@@ -71,11 +87,20 @@ func intersectBrokerLimits(l *api.CellnToolLimits, grant api.CellnToolLimits) er
 		g := grant.HTTPS
 		copy := *h
 		copy.AllowHosts = nil
-		for _, host := range h.AllowHosts {
-			for _, allowed := range g.AllowHosts {
-				if host == allowed {
-					copy.AllowHosts = append(copy.AllowHosts, host)
-					break
+		switch {
+		case AnyPublicHost(g.AllowHosts):
+			// Any public host keeps whatever this layer allows.
+			copy.AllowHosts = append(copy.AllowHosts, h.AllowHosts...)
+		case AnyPublicHost(h.AllowHosts):
+			// An explicit grant narrows any public host to its own list.
+			copy.AllowHosts = append(copy.AllowHosts, g.AllowHosts...)
+		default:
+			for _, host := range h.AllowHosts {
+				for _, allowed := range g.AllowHosts {
+					if host == allowed {
+						copy.AllowHosts = append(copy.AllowHosts, host)
+						break
+					}
 				}
 			}
 		}

@@ -17,7 +17,7 @@ export function CellnPermissionPreview({ agentRef, selection, enduring = false }
       {preview.data.tools.map(({ tool, limits }) => <div key={tool.name}>
         <p>{tool.name}@{tool.revision}: {limits.timeoutMillis} ms · {limits.memoryBytes} bytes memory · input {limits.argumentBytes} bytes · output {limits.outputBytes} bytes · host mounts {limits.workspace} · effects {limits.effects}</p>
         {limits.artifacts && <p>Run files: {limits.artifacts.operation} · {limits.artifacts.maxOperations} operations/turn · {limits.artifacts.maxFiles} files · {limits.artifacts.maxFileBytes} bytes/file · {limits.artifacts.maxTotalBytes} bytes total</p>}
-        {limits.https && <p>HTTPS GET: {limits.https.allowHosts.join(", ")} · {limits.https.maxRequests} requests/turn · {limits.https.maxResponseBytes} response bytes · {limits.https.timeoutMillis} ms · no model credentials</p>}
+        {limits.https && <p>HTTPS GET: {limits.https.allowHosts.length === 1 && limits.https.allowHosts[0] === "*" ? "any public HTTPS host" : limits.https.allowHosts.join(", ")} · {limits.https.maxRequests} requests/turn · {limits.https.maxResponseBytes} response bytes · {limits.https.timeoutMillis} ms · no model credentials</p>}
       </div>)}
       <p>Shared cell memory ceiling: {preview.data.runtimeLimits.memoryBytes} bytes</p>
     </> : null}

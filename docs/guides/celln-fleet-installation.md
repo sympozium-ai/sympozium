@@ -474,7 +474,7 @@ namespace's policy lends exactly those revisions. Two kinds live side by side:
   They are the only way a cell touches files or the network, through host
   brokers with the quotas the policy shows: every write-like operation is an
   approved effect, reads are not. The hosts the two HTTPS tools may reach are
-  the scope's `--celln-fleet-https-host` list (default `example.com`); a
+  the scope's `--celln-fleet-https-host` list (default: any public HTTPS host, never a private address); a
   backend approved with `allow-insecure` may also post over plain HTTP to a
   private host, for example a receiver inside the cluster.
 - **Borrowed commands** are ordinary programs taken from container images

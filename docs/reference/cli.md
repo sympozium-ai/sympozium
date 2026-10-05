@@ -46,7 +46,7 @@ and key; without a terminal it installs only the one-shot router. See
 | `--celln-fleet-model-provider`, `--celln-fleet-model`, `--celln-fleet-model-endpoint`, `--celln-fleet-model-protocol`, `--celln-fleet-model-allow-insecure`, `--celln-fleet-model-credential-file` | `deepseek` | Define the single backend named `native` when `--celln-fleet-backend` is not used |
 | `--celln-fleet-scope` | `starter` | Stable installation identity; node state lives at `/var/lib/sympozium-celln/<scope>` |
 | `--celln-fleet-package-image`, `--celln-fleet-package-hash`, `--celln-fleet-publisher` | the release's starter package | Your own reviewed, digest-pinned starter package |
-| `--celln-fleet-https-host` | `example.com` | Host the `https-fetch`/`https-post-json` tools may reach (repeatable) |
+| `--celln-fleet-https-host` | any public host | Restrict the `https-fetch`/`https-post-json` tools to these hosts (repeatable). Unset, they may reach any public HTTPS host; private, loopback and link-local addresses are always refused |
 | `--celln-fleet-authorise` | `all` | `all` (every non-system namespace) or `labeled` (`celln.sympozium.ai/scope=<scope>` only) |
 | `--celln-fleet-max-lease-seconds`, `-max-turns`, `-max-model-requests`, `-max-output-tokens` | 86400 / 256 / 1536 / 786432 | Scope ceilings for every parent (tokens scale with the largest backend cap) |
 | `--celln-fleet-model-parameters-file`, `--celln-fleet-model-max-output-tokens` | — | Model parameters and per-request output cap for the single backend (`parameters-file=`, `max-output-tokens=` in a backend spec) |

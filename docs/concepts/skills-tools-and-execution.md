@@ -35,7 +35,7 @@ tool (see [the toolbox](../guides/celln-fleet-installation.md#the-toolbox)):
   `workspace-write`, `workspace-append`, `workspace-delete` over bounded,
   revision-checked files belonging to the live run; `https-fetch` (GET) and
   `https-post-json` (a JSON object, no credential) to the scope's approved
-  hosts (`--celln-fleet-https-host`, default `example.com`).
+  hosts (`--celln-fleet-https-host`; by default any public HTTPS host, never a private, loopback or link-local address).
 - **Borrowed commands** taken from digest-pinned images (busybox's grep, sed,
   awk, sort, …, and jq), called with validated arguments and no shell. Each
   `ClusterCellnTool` names its source image in `spec.sourceImage`.

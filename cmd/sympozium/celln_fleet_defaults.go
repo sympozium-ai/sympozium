@@ -20,7 +20,7 @@ const defaultFleetScope = "starter"
 
 // The starter tools the default install lends, stated so approving them by
 // running the default is an informed act rather than a silent one.
-const starterToolGrants = "run-owned files (read, write, list, append, search, delete) and bounded HTTPS (GET and JSON POST) to the --celln-fleet-https-host list, default example.com"
+const starterToolGrants = "run-owned files (read, write, list, append, search, delete) and bounded HTTPS (GET and JSON POST) to any public host, or the --celln-fleet-https-host list"
 
 func defaultFleetOutputDir(scope string) (string, error) {
 	home, err := os.UserHomeDir()

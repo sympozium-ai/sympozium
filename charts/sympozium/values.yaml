@@ -706,9 +706,11 @@ celln:
       maxTurns: 0
       maxModelRequests: 0
       maxOutputTokens: 0
-    # -- Exact hosts the https-fetch and https-post-json starter tools may
-    # reach (lowercase DNS names, at most 16). Empty keeps Celln's reviewed
-    # default, example.com. The installer's --celln-fleet-https-host sets it.
+    # -- Hosts the https-fetch and https-post-json starter tools may reach.
+    # Empty (or ["*"]) means any public HTTPS host; Celln's broker always
+    # refuses private, loopback, link-local and reserved addresses. List
+    # lowercase DNS names (at most 16) to restrict it. The installer's
+    # --celln-fleet-https-host sets it.
     httpsHosts: []
     # -- Rolled by the API server when a backend is added after the install
     # (the celln-fleet-backends-extra ConfigMap); leave empty.

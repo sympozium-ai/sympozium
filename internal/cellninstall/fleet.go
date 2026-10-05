@@ -70,8 +70,9 @@ type FleetOptions struct {
 	Backends []FleetBackend
 	// Limits are the scope's parent ceilings; zero fields take DefaultFleetLimits.
 	Limits FleetLimits
-	// HTTPSHosts are the exact hosts the https-fetch and https-post-json
-	// starter tools may reach; empty keeps Celln's reviewed default, example.com.
+	// HTTPSHosts are the hosts the https-fetch and https-post-json starter
+	// tools may reach. Empty keeps Celln's default, ["*"]: any public HTTPS
+	// host (never a private, loopback or link-local address).
 	HTTPSHosts []string
 }
 
@@ -341,6 +342,12 @@ func (o FleetOptions) validate() error {
 		return fmt.Errorf("at most 16 HTTPS hosts")
 	}
 	for _, host := range o.HTTPSHosts {
+		if host == "*" {
+			if len(o.HTTPSHosts) != 1 {
+				return fmt.Errorf(`"*" (any public host) must be the only HTTPS host`)
+			}
+			continue
+		}
 		if len(host) > 253 || !httpsHostPattern.MatchString(host) {
 			return fmt.Errorf("HTTPS host %q must be a lowercase DNS name", host)
 		}

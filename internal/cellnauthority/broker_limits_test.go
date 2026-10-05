@@ -91,7 +91,7 @@ func TestHTTPSLimitsIntersectHostsAndBudgets(t *testing.T) {
 }
 
 func TestBrokerLimitsRejectAmbientAuthorityAndInvalidBounds(t *testing.T) {
-	for _, host := range []string{"*", "https://example.com", "example.com:443", "user@example.com", "Example.com", "example.com/secret", "example..com"} {
+	for _, host := range []string{"*.example.com", "https://example.com", "example.com:443", "user@example.com", "Example.com", "example.com/secret", "example..com"} {
 		r := brokerFixture(t, true)
 		r.Agent[0].Limits.HTTPS.AllowHosts = []string{host}
 		if _, err := ResolveTools(r); err == nil {
@@ -102,5 +102,43 @@ func TestBrokerLimitsRejectAmbientAuthorityAndInvalidBounds(t *testing.T) {
 	r.Agent[0].Limits.Artifacts.MaxOperations = 0
 	if _, err := ResolveTools(r); err == nil {
 		t.Fatal("unbounded artifact operations")
+	}
+}
+
+// "*" alone is any public host: a grant of it keeps the catalogue's list, an
+// explicit grant narrows a "*" catalogue to its own list, and "*" may never
+// be mixed with named hosts.
+func TestBrokerLimitsAnyPublicHost(t *testing.T) {
+	r := brokerFixture(t, true)
+	catalogueHosts := append([]string(nil), r.Catalogue[0].Spec.Limits.HTTPS.AllowHosts...)
+	r.Agent[0].Limits.HTTPS.AllowHosts = []string{AnyHost}
+	got, err := ResolveTools(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got[0].Limits.HTTPS.AllowHosts, catalogueHosts) {
+		t.Fatalf("a any-host grant changed the catalogue's hosts: %v", got[0].Limits.HTTPS.AllowHosts)
+	}
+
+	https := func(hosts ...string) api.CellnToolLimits {
+		return api.CellnToolLimits{TimeoutMillis: 1000, HTTPS: &api.CellnHTTPSLimits{AllowHosts: hosts, MaxRequests: 4, MaxResponseBytes: 4096, TimeoutMillis: 1000}}
+	}
+	for _, tc := range []struct {
+		catalogue, grant, want []string
+	}{
+		{[]string{AnyHost}, []string{AnyHost}, []string{AnyHost}},
+		{[]string{AnyHost}, []string{"example.org"}, []string{"example.org"}},
+		{[]string{"example.org"}, []string{AnyHost}, []string{"example.org"}},
+	} {
+		l := https(tc.catalogue...)
+		if err := intersectBrokerLimits(&l, https(tc.grant...)); err != nil || !reflect.DeepEqual(l.HTTPS.AllowHosts, tc.want) {
+			t.Fatalf("%v ∩ %v = %v (%v), want %v", tc.catalogue, tc.grant, l.HTTPS.AllowHosts, err, tc.want)
+		}
+	}
+
+	r = brokerFixture(t, true)
+	r.Agent[0].Limits.HTTPS.AllowHosts = []string{AnyHost, "example.org"}
+	if _, err := ResolveTools(r); err == nil {
+		t.Fatal(`"*" mixed with a named host accepted`)
 	}
 }

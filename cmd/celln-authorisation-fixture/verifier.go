@@ -121,6 +121,10 @@ func httpsWithin(a, b *HTTPSLimits) bool {
 	if b == nil || a.MaxRequests > b.MaxRequests || a.MaxResponseBytes > b.MaxResponseBytes || a.TimeoutMillis > b.TimeoutMillis {
 		return false
 	}
+	// "*" alone is any public host: a superset of every list.
+	if len(b.AllowHosts) == 1 && b.AllowHosts[0] == "*" {
+		return true
+	}
 	allowed := map[string]bool{}
 	for _, h := range b.AllowHosts {
 		allowed[h] = true
