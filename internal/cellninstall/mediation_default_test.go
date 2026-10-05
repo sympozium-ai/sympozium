@@ -3,6 +3,7 @@ package cellninstall
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -260,6 +261,18 @@ func TestInstallPlatformMediationOnlyBackend(t *testing.T) {
 	if err := json.Unmarshal(raw, &run); err != nil || run.Spec.AgentRef != StarterAgentName || run.Spec.Model.ConnectionRef != StarterAgentName || len(run.Spec.CellnSelection.ClusterToolRefs) != 0 {
 		t.Fatalf("sample run: %+v %v", run.Spec, err)
 	}
+	// A starter Agent created elsewhere before the profile existed (as the API
+	// server creates an added backend's) is bound to it once it is admitted.
+	starter := StarterAgentOptions{Namespace: "tenant-b", Backend: resolvedBackend(t, "native", FleetModel{Provider: ModelProviderDeepSeek}), Credential: "sk-starter-0123456789abcdef0123", Runtime: native.Runtime}
+	if _, err := EnsureStarterAgent(ctx, store, starter); err != nil {
+		t.Fatal(err)
+	}
+	if bound, err := EnsureStarterRuntimeWrappers(ctx, store, "trial", "native"); err != nil || !slices.Equal(bound, []string{"tenant-b"}) {
+		t.Fatalf("starter runtime wrappers: %v %v", bound, err)
+	}
+	if err := store.Get(ctx, types.NamespacedName{Namespace: "tenant-b", Name: native.Runtime}, &api.AgentRuntime{}); err != nil {
+		t.Fatalf("starter Agent's runtime wrapper: %v", err)
+	}
 	// A namespace asking for the profile's runtime gets it, as for any other.
 	if _, err := cellnplatform.EnsureRuntimeWrapper(ctx, store, "tenant-b", profile.Name); err != nil {
 		t.Fatal(err)
@@ -338,14 +351,14 @@ func TestEnsureStarterAgentNeverReplacesAKey(t *testing.T) {
 	}
 	other := o
 	other.Credential = "sk-another-key-0123456789abcdef"
-	if _, err := EnsureStarterAgent(ctx, store, other); err == nil || !strings.Contains(err.Error(), "never replaces an Agent's key") {
+	if _, err := EnsureStarterAgent(ctx, store, other); !errors.Is(err, ErrStarterKeyTaken) || !strings.Contains(err.Error(), "never replaces an Agent's key") {
 		t.Fatalf("a different key was accepted: %v", err)
 	}
 	// A Secret another live Agent owns is never taken.
 	taken := extraStore(t,
 		&api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "someone"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "starter-model-key", Annotations: map[string]string{modelkey.OwnerAnnotation: "Agent/someone"}}, Data: map[string][]byte{"OPENAI_API_KEY": []byte(key)}})
-	if _, err := EnsureStarterAgent(ctx, taken, o); err == nil || !strings.Contains(err.Error(), "belongs to Agent/someone") {
+	if _, err := EnsureStarterAgent(ctx, taken, o); !errors.Is(err, ErrStarterKeyTaken) || !strings.Contains(err.Error(), "belongs to Agent/someone") {
 		t.Fatalf("another Agent's key was taken: %v", err)
 	}
 }

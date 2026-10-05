@@ -3,18 +3,22 @@ package apiserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/cellninstall"
+	"github.com/sympozium-ai/sympozium/internal/cellnplatform"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Model backends of the Celln fleet, readable and extendable through the API.
@@ -23,6 +27,16 @@ import (
 // package, and, once the nodes have published its configuration, installs
 // its profile, policy route and wrappers. Owners and their conversations
 // are untouched, exactly as with the installer's --celln-fleet-backend.
+//
+// With mediated model access on the cluster (the mediation record exists), a
+// keyed HTTPS backend is added mediation-only, exactly like the installer's:
+// its key becomes the own key of the backend's starter Agent (Secret,
+// ModelConnection, Agent in the request's ?namespace=, default "default"),
+// the fleet credential Secret gets only the mediation marker for it, and its
+// policy route is an auth "secret" route. No node ever holds the key. Keyless
+// backends have no key to protect, and plain-HTTP or port-bearing ones cannot
+// carry a Secret through the gateway, so both keep the fleet path, as does
+// every backend on a cluster without mediation.
 
 // CellnFleetBackend describes one backend and how far an added one got.
 type CellnFleetBackend struct {
@@ -49,6 +63,13 @@ type CellnFleetBackend struct {
 	// State is ready when the profile exists, otherwise the added backend's
 	// progress: pending…, configuring…, or error: ….
 	State string `json:"state"`
+	// Mediated is set for a mediation-only backend: no node holds its key,
+	// and only its starter Agent (or an Agent with its own key) runs on it.
+	Mediated bool `json:"mediated,omitempty"`
+	// StarterAgent and StarterNamespace name the Agent whose own key is the
+	// mediated backend's key; absent when none was found.
+	StarterAgent     string `json:"starterAgent,omitempty"`
+	StarterNamespace string `json:"starterNamespace,omitempty"`
 }
 
 // AddCellnFleetBackendRequest is what a client sends to add a backend.
@@ -59,8 +80,10 @@ type AddCellnFleetBackendRequest struct {
 	Endpoint      string `json:"endpoint,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`
 	AllowInsecure bool   `json:"allowInsecure,omitempty"`
-	// Credential is the provider key, published once as the backend's entry
-	// in the fleet's credential Secret and never returned.
+	// Credential is the provider key, never returned. Without mediation it is
+	// published once as the backend's entry in the fleet's credential Secret;
+	// with mediation (keyed HTTPS backends) it becomes the own key of the
+	// backend's starter Agent and no node holds it.
 	Credential string `json:"credential,omitempty"`
 	// SkipPreflight skips the one-token probe, for endpoints only the nodes
 	// can reach.
@@ -101,6 +124,20 @@ func (s *Server) listCellnFleetBackends(w http.ResponseWriter, r *http.Request) 
 	for _, p := range profiles.Items {
 		present[p.Name] = true
 	}
+	mediatedOnly, err := cellninstall.MediatedOnlyBackends(r.Context(), s.client)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	starter := func(b *CellnFleetBackend) {
+		if !mediatedOnly[b.Name] {
+			return
+		}
+		b.Mediated = true
+		if agents, err := cellninstall.StarterAgentsFor(r.Context(), s.client, b.Name); err == nil && len(agents) != 0 {
+			b.StarterAgent, b.StarterNamespace = agents[0].Name, agents[0].Namespace
+		}
+	}
 	out := make([]CellnFleetBackend, 0, len(facts.InstallBackends)+len(extra))
 	for _, b := range facts.InstallBackends {
 		profile := cellninstall.PlatformProfileName(facts.Scope, b.Name)
@@ -108,7 +145,9 @@ func (s *Server) listCellnFleetBackends(w http.ResponseWriter, r *http.Request) 
 		if present[profile] {
 			state = "ready"
 		}
-		out = append(out, CellnFleetBackend{Name: b.Name, Provider: b.Provider, Protocol: b.Protocol, Endpoint: b.Endpoint, Model: b.Model, AllowInsecure: b.AllowInsecure, Parameters: b.Parameters, MaxOutputTokens: b.MaxOutputTokens, Source: "install", Profile: profile, State: state})
+		entry := CellnFleetBackend{Name: b.Name, Provider: b.Provider, Protocol: b.Protocol, Endpoint: b.Endpoint, Model: b.Model, AllowInsecure: b.AllowInsecure, Parameters: b.Parameters, MaxOutputTokens: b.MaxOutputTokens, Source: "install", Profile: profile, State: state}
+		starter(&entry)
+		out = append(out, entry)
 	}
 	for _, b := range extra {
 		profile := cellninstall.PlatformProfileName(facts.Scope, b.Name)
@@ -118,7 +157,9 @@ func (s *Server) listCellnFleetBackends(w http.ResponseWriter, r *http.Request) 
 		} else if state == "" {
 			state = "pending: waiting for the nodes to configure it"
 		}
-		out = append(out, CellnFleetBackend{Name: b.Name, Provider: b.Provider, Protocol: b.Protocol, Endpoint: b.Endpoint, Model: b.Model, AllowInsecure: b.AllowInsecure, Parameters: b.Parameters, MaxOutputTokens: b.MaxOutputTokens, Source: "added", Profile: profile, State: state})
+		entry := CellnFleetBackend{Name: b.Name, Provider: b.Provider, Protocol: b.Protocol, Endpoint: b.Endpoint, Model: b.Model, AllowInsecure: b.AllowInsecure, Parameters: b.Parameters, MaxOutputTokens: b.MaxOutputTokens, Source: "added", Profile: profile, State: state}
+		starter(&entry)
+		out = append(out, entry)
 	}
 	writeJSON(w, out)
 }
@@ -188,7 +229,34 @@ func (s *Server) addCellnFleetBackend(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := cellninstall.PublishFleetBackendCredentialValue(r.Context(), s.client, req.Name, resolved, req.Credential); err != nil {
+	mediated, starterNamespace, err := s.planAddedBackendKey(r, facts, backend)
+	if err != nil {
+		status := http.StatusServiceUnavailable
+		var refusal statusError
+		if errors.As(err, &refusal) {
+			status = refusal.status
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	var starter cellninstall.StarterAgentNames
+	if mediated {
+		// The key goes to the starter Agent's own Secret, never to the fleet.
+		// Its runtime wrapper is created once the nodes publish the profile.
+		starter = cellninstall.StarterAgentNamesFor(req.Name)
+		if _, err := cellninstall.EnsureStarterAgent(r.Context(), s.client, cellninstall.StarterAgentOptions{Namespace: starterNamespace, Backend: backend, Credential: req.Credential, Runtime: cellnplatform.WrapperNames(req.Name).Runtime}); err != nil {
+			status := http.StatusServiceUnavailable
+			if errors.Is(err, cellninstall.ErrStarterKeyTaken) {
+				status = http.StatusConflict
+			}
+			http.Error(w, "starter Agent for backend "+req.Name+": "+err.Error(), status)
+			return
+		}
+		if err := cellninstall.PublishMediatedBackendPlaceholder(r.Context(), s.client, backend); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+	} else if err := cellninstall.PublishFleetBackendCredentialValue(r.Context(), s.client, req.Name, resolved, req.Credential); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
@@ -208,7 +276,51 @@ func (s *Server) addCellnFleetBackend(w http.ResponseWriter, r *http.Request) {
 	}
 	go complete(req.Name, facts, cellninstall.HintForBackendModel(len(resolved.Parameters) != 0, resolved.MaxOutputTokens))
 	w.WriteHeader(http.StatusAccepted)
-	writeJSON(w, CellnFleetBackend{Name: req.Name, Provider: resolved.Provider, Protocol: resolved.Protocol, Endpoint: resolved.Endpoint, Model: resolved.Name, AllowInsecure: resolved.AllowInsecure, Parameters: resolved.Parameters, MaxOutputTokens: resolved.MaxOutputTokens, Warning: warning, Source: "added", Profile: profile, State: "pending: waiting for the nodes to configure it"})
+	out := CellnFleetBackend{Name: req.Name, Provider: resolved.Provider, Protocol: resolved.Protocol, Endpoint: resolved.Endpoint, Model: resolved.Name, AllowInsecure: resolved.AllowInsecure, Parameters: resolved.Parameters, MaxOutputTokens: resolved.MaxOutputTokens, Warning: warning, Source: "added", Profile: profile, State: "pending: waiting for the nodes to configure it"}
+	if mediated {
+		out.Mediated, out.StarterAgent, out.StarterNamespace = true, starter.Agent, starterNamespace
+	}
+	writeJSON(w, out)
+}
+
+// statusError is a refusal of the request with its HTTP status.
+type statusError struct {
+	status int
+	error
+}
+
+// planAddedBackendKey decides where an added backend's key goes: true when the
+// cluster mediates model access and the backend is keyed and reachable over
+// HTTPS without a port, so its key becomes its starter Agent's own key in the
+// returned namespace. A name that is already a backend is refused first, so
+// no starter object is created for a backend that will not be added.
+func (s *Server) planAddedBackendKey(r *http.Request, facts cellninstall.FleetFacts, backend cellninstall.FleetBackend) (bool, string, error) {
+	record, err := cellninstall.ReadMediationRecord(r.Context(), s.client)
+	if err != nil || !record.Enabled || !backend.Model.NeedsCredential() {
+		return false, "", err
+	}
+	plan, err := cellninstall.PlanMediatedBackends(r.Context(), s.client, []cellninstall.FleetBackend{backend})
+	if err != nil || !plan.Mediated[backend.Name] {
+		return false, "", err
+	}
+	if slices.Contains(facts.Backends, backend.Name) {
+		return false, "", statusError{http.StatusConflict, fmt.Errorf("backend %s was configured at install", backend.Name)}
+	}
+	extra, _, err := cellninstall.ReadExtraBackends(r.Context(), s.client)
+	if err != nil {
+		return false, "", err
+	}
+	if slices.ContainsFunc(extra, func(b cellninstall.ExtraBackend) bool { return b.Name == backend.Name }) {
+		return false, "", statusError{http.StatusConflict, fmt.Errorf("backend %s already added", backend.Name)}
+	}
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+	if len(validation.IsDNS1123Label(namespace)) != 0 {
+		return false, "", statusError{http.StatusBadRequest, fmt.Errorf("namespace %q is not a valid namespace name", namespace)}
+	}
+	return true, namespace, nil
 }
 
 // cellnFleetCeilings reads the ceilings of the scope's policy; false when the
@@ -307,6 +419,17 @@ func (s *Server) completeCellnFleetBackend(name string, facts cellninstall.Fleet
 	if err := cellninstall.InstallPlatform(ctx, s.client, options); err != nil {
 		fail(err)
 		return
+	}
+	// A mediation-only backend runs as its starter Agent on its own key: bind
+	// that Agent's namespace to the profile now that the policy admits it.
+	if mediatedOnly, err := cellninstall.MediatedOnlyBackends(ctx, s.client); err != nil {
+		fail(err)
+		return
+	} else if mediatedOnly[name] {
+		if _, err := cellninstall.EnsureStarterRuntimeWrappers(ctx, s.client, facts.Scope, name); err != nil {
+			fail(err)
+			return
+		}
 	}
 	record("ready")
 	slog.Info("celln.backend.added", "backend", name, "scope", facts.Scope, "namespace", options.Namespace)

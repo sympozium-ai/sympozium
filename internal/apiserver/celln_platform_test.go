@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/cellninstall"
 	"github.com/sympozium-ai/sympozium/internal/cellnplatform"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -131,7 +132,9 @@ func TestCellnPlatformListsMediationOnlyProfiles(t *testing.T) {
 		Routes:            []sympoziumv1alpha1.CellnExecutionPolicyRoute{{Provider: "deepseek", Protocol: "openai-chat", Models: []string{"deepseek-chat"}, EndpointOrigins: []string{"https://api.deepseek.com"}, Auth: "secret"}},
 		Ceilings:          sympoziumv1alpha1.CellnExecutionPolicyCeilings{MaxTurns: 256, MaxModelRequests: 1536, MaxOutputTokens: 786432, MaxParentLeaseSeconds: 86400, MaxTurnSeconds: 60},
 	}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(mediated, unlabeled, policy, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "team-a", Labels: map[string]string{cellnplatform.NamespaceNameLabel: "team-a"}}}).Build()
+	// The backend's starter Agent, whose own key is the backend's key.
+	starter := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: "ops", Name: "starter", Labels: map[string]string{cellninstall.StarterAgentLabel: "starter"}}}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(mediated, unlabeled, policy, starter, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "team-a", Labels: map[string]string{cellnplatform.NamespaceNameLabel: "team-a"}}}).Build()
 	srv := NewServer(cl, nil, nil, logr.Discard())
 	res := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/celln-platform/profiles?namespace=team-a", nil))
@@ -143,7 +146,7 @@ func TestCellnPlatformListsMediationOnlyProfiles(t *testing.T) {
 		t.Fatalf("profiles: %+v", out)
 	}
 	p := out[0]
-	if p.Name != mediated.Name || !p.MediationOnly || p.Agent != "" || p.CredentialProfile != "" || p.Provider != "deepseek" || p.Model != "deepseek-chat" || p.Wrapper != "celln-native" || p.SessionDefaults.MaxTurns == 0 {
+	if p.Name != mediated.Name || !p.MediationOnly || p.Agent != "" || p.CredentialProfile != "" || p.Provider != "deepseek" || p.Model != "deepseek-chat" || p.Wrapper != "celln-native" || p.SessionDefaults.MaxTurns == 0 || p.StarterAgent != "starter" || p.StarterNamespace != "ops" {
 		t.Fatalf("mediation-only profile: %+v", p)
 	}
 }

@@ -254,6 +254,13 @@ export interface CellnPlatformProfile {
   sessionDefaults: EnduringLimits;
   /** The backend's key never reached the fleet: only Agents with their own key run on it (no shared agent). */
   mediationOnly?: boolean;
+  /**
+   * For a mediation-only backend, the starter Agent whose own key is the
+   * backend's provider key (an installer backend, or one added through the
+   * API under mediation). Names only; that key is never lent to another Agent.
+   */
+  starterAgent?: string;
+  starterNamespace?: string;
 }
 
 export interface EnduringLimits {

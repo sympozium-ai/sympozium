@@ -551,6 +551,11 @@ type CellnPlatformProfile struct {
 	// it runs only Agents with their own key (agent and credentialProfile
 	// stay empty; ask for the wrapper with runtimeOnly).
 	MediationOnly bool `json:"mediationOnly,omitempty"`
+	// StarterAgent and StarterNamespace name the Agent whose own key is a
+	// mediation-only backend's provider key (installer or added backend);
+	// absent when there is none. Names only: the key is never lent.
+	StarterAgent     string `json:"starterAgent,omitempty"`
+	StarterNamespace string `json:"starterNamespace,omitempty"`
 }
 
 // platformPersona returns the system prompt a fleet runtime profile binds
@@ -597,6 +602,9 @@ func (s *Server) listCellnPlatformProfiles(w http.ResponseWriter, r *http.Reques
 			// The backend's key never reached the fleet: the profile serves
 			// Agents with their own key only, so it has no shared Agent.
 			entry.Model, entry.Provider, entry.Endpoint, entry.MediationOnly = model, route.Provider, endpoint, true
+			if starters, err := cellninstall.StarterAgentsFor(r.Context(), s.client, names.Backend); err == nil && len(starters) != 0 {
+				entry.StarterAgent, entry.StarterNamespace = starters[0].Name, starters[0].Namespace
+			}
 		} else {
 			continue // a profile without a usable route is not offered
 		}

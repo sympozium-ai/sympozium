@@ -51,7 +51,8 @@ import { persistentHarnesses, persistentHarnessName } from "@/lib/persistent-har
 import { modelConnectionName, modelConnectionEndpoint, describeEnduringLimits } from "@/lib/agent-execution";
 import { OwnKeyError, ownKeyConnectionSpec, defaultEndpointPath, initialModelFor, routeAllowsModel, enduringForOutputTokens, keyChoiceReady, managedSecretName, prepareOwnKeyBackend, profileForRoute, type KeyChoice, type OwnKeyStep } from "@/lib/celln-own-key";
 import { parseMaxOutputTokens, parseModelParameters } from "@/lib/model-parameters";
-import { api } from "@/lib/api";
+import { api, getNamespace } from "@/lib/api";
+import { Link } from "react-router-dom";
 import type { WizardExecution } from "@/lib/agent-execution";
 import type { AgentRuntime, SympoziumPolicy, CellnSelection, CellnMediatedRoute, ModelConnection } from "@/lib/api";
 import {
@@ -1232,6 +1233,15 @@ export function OnboardingWizard({
         )}
         {step === "provider" && celln && cellnRoute && !cellnProfile && !platformProfiles.isLoading && (
           <p role="alert" className="text-xs text-red-400">No fleet runtime profile of policy <code>{cellnRoute.policy}</code> is offered to this namespace, so an Agent on this provider could not run. Ask the operator to check the policy with <code>sympozium doctor</code>.</p>
+        )}
+        {step === "provider" && celln && cellnProfile?.mediationOnly && (
+          <p className="text-xs text-muted-foreground" data-testid="celln-starter-agent-note">
+            Fleet backend <code>{cellnProfile.backend}</code> holds no key on any node: under mediated model access its provider key is the own key of its starter Agent
+            {cellnProfile.starterAgent ? (
+              <> {cellnProfile.starterNamespace === getNamespace() ? <Link to={`/agents/${cellnProfile.starterAgent}`} className="underline" data-testid="celln-starter-agent-link">{cellnProfile.starterAgent}</Link> : <code>{cellnProfile.starterAgent}</code>} in namespace <code>{cellnProfile.starterNamespace}</code></>
+            ) : null}
+            , and no other Agent may use it. Use that Agent, or give this one its own key below.
+          </p>
         )}
         {step === "provider" && !celln && (
           <div className="space-y-4">

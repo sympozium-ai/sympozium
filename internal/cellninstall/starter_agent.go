@@ -2,6 +2,7 @@ package cellninstall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,6 +31,10 @@ const StarterAgentName = "starter"
 // StarterAgentLabel marks the objects the installer created for a starter
 // Agent, with the Agent's name as its value.
 const StarterAgentLabel = "sympozium.ai/starter-agent"
+
+// ErrStarterKeyTaken marks EnsureStarterAgent's refusal to touch a starter
+// Secret that is another Agent's key or already holds a different key.
+var ErrStarterKeyTaken = errors.New("starter Agent's Secret is taken")
 
 // StarterAgentNames are the three objects of one backend's starter Agent.
 type StarterAgentNames struct {
@@ -135,10 +140,10 @@ func EnsureStarterAgent(ctx context.Context, store client.Client, o StarterAgent
 		if owner, err := modelkey.LiveOwner(ctx, store, &existing); err != nil {
 			return nil, err
 		} else if owner != "" && owner != modelkey.Owner(agent) {
-			return nil, fmt.Errorf("Secret %s/%s belongs to %s; the installer never takes another Agent's key: pass --celln-starter-namespace or remove it", secret.Namespace, secret.Name, owner)
+			return nil, fmt.Errorf("%w: Secret %s/%s belongs to %s; the installer never takes another Agent's key: choose another starter namespace (--celln-starter-namespace) or remove it", ErrStarterKeyTaken, secret.Namespace, secret.Name, owner)
 		}
 		if string(existing.Data[key]) != string(secret.Data[key]) {
-			return nil, fmt.Errorf("Secret %s/%s already holds a different %s; the installer never replaces an Agent's key: update the Secret yourself, or delete it and install again", secret.Namespace, secret.Name, key)
+			return nil, fmt.Errorf("%w: Secret %s/%s already holds a different %s; the installer never replaces an Agent's key: update the Secret yourself, or delete it and install again", ErrStarterKeyTaken, secret.Namespace, secret.Name, key)
 		}
 	}
 	var created []string
@@ -165,4 +170,35 @@ func StarterAgentCredential(ctx context.Context, store client.Reader, namespace 
 		return "", err
 	}
 	return strings.TrimSpace(string(secret.Data[ProviderKeyName(b.Model.Protocol)])), nil
+}
+
+// StarterAgentsFor lists the starter Agents of one backend, in whichever
+// namespaces the installer or the API server created them.
+func StarterAgentsFor(ctx context.Context, store client.Reader, backend string) ([]api.Agent, error) {
+	var agents api.AgentList
+	if err := store.List(ctx, &agents, client.MatchingLabels{StarterAgentLabel: StarterAgentNamesFor(backend).Agent}); err != nil {
+		return nil, err
+	}
+	return agents.Items, nil
+}
+
+// EnsureStarterRuntimeWrappers binds every starter Agent of a mediation-only
+// backend to the backend's runtime profile, once the scope's policy admits
+// it: the runtime wrapper its Agent names, in the Agent's namespace. The API
+// server creates an added backend's starter Agent before the nodes have
+// configured the backend, so the wrapper follows here. It returns the
+// namespaces it bound.
+func EnsureStarterRuntimeWrappers(ctx context.Context, store client.Client, scope, backend string) ([]string, error) {
+	agents, err := StarterAgentsFor(ctx, store, backend)
+	if err != nil {
+		return nil, err
+	}
+	var bound []string
+	for _, agent := range agents {
+		if _, err := cellnplatform.EnsureRuntimeWrapper(ctx, store, agent.Namespace, PlatformProfileName(scope, backend)); err != nil {
+			return bound, fmt.Errorf("starter Agent %s/%s: %w", agent.Namespace, agent.Name, err)
+		}
+		bound = append(bound, agent.Namespace)
+	}
+	return bound, nil
 }
