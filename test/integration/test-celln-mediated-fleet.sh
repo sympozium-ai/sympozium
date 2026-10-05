@@ -223,15 +223,15 @@ fi
 # The gateway reserves each model request's full output bound (2048 tokens by
 # default) against the run's maxOutputTokens, so a conversation needs room
 # for every turn's requests or its parent ends with its budget exhausted.
-start_conversation() { # task [maxOutputTokens] -> run name
+start_conversation() { # task [maxOutputTokens] [leaseSeconds] -> run name
 	kc -n "$starter_ns" get agent "$CONVO_AGENT" -o json | python3 -c '
 import json, sys
 a = json.load(sys.stdin)["spec"]
 e = a["execution"]
 print(json.dumps({"agentRef": sys.argv[2], "task": sys.argv[1], "backend": "celln", "executionLifecycle": "enduring",
-  "enduring": {"leaseSeconds": 1800, "maxTurns": 8, "maxModelRequests": 24, "maxOutputTokens": int(sys.argv[3])},
+  "enduring": {"leaseSeconds": int(sys.argv[4]), "maxTurns": 8, "maxModelRequests": 24, "maxOutputTokens": int(sys.argv[3])},
   "model": e["model"], "modelConnectionRef": e["modelConnectionRef"],
-  "cellnSelection": {"runtimeRef": e["cellnSelection"]["runtimeRef"], "toolRefs": []}}))' "$1" "$CONVO_AGENT" "${2:-24576}" |
+  "cellnSelection": {"runtimeRef": e["cellnSelection"]["runtimeRef"], "toolRefs": []}}))' "$1" "$CONVO_AGENT" "${2:-24576}" "${3:-1800}" |
 		api -X POST -H 'Content-Type: application/json' --data-binary @- "http://127.0.0.1:$api_port/api/v1/runs?namespace=$starter_ns" |
 		python3 -c 'import json,sys; print(json.load(sys.stdin)["metadata"]["name"])'
 }
@@ -344,6 +344,60 @@ fi
 log "Skills cannot reach Secrets"
 kc get validatingadmissionpolicy sympozium-skill-secret-references >/dev/null || fail "skill Secret admission policy missing"
 pass "skill Secret admission policy installed"
+
+log "P3: a second namespace runs its own Agent independently"
+tenant_b=tenant-b
+kc create namespace "$tenant_b" >/dev/null 2>&1 || true
+if [ "$MODE" = keyless ]; then
+	api -X POST -H 'Content-Type: application/json' -d '{"profile":"celln-native-starter"}' "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$tenant_b" >/dev/null || fail "platform wrappers in $tenant_b"
+	runtime_b="$(kc -n "$tenant_b" get agentruntime -o json | python3 -c 'import json,sys; print(next(i["metadata"]["name"] for i in json.load(sys.stdin)["items"] if i["spec"].get("cellnProfileRef")))')"
+	kc -n "$starter_ns" get modelconnection qwen -o json | python3 -c 'import json,sys; o=json.load(sys.stdin); print(json.dumps({"apiVersion":o["apiVersion"],"kind":o["kind"],"metadata":{"name":"qwen"},"spec":o["spec"]}))' | kc -n "$tenant_b" apply -f - >/dev/null
+	kc -n "$starter_ns" get agent qwen -o json | python3 -c '
+import json,sys
+o=json.load(sys.stdin); spec=o["spec"]; r=sys.argv[1]
+spec["runtimeRef"]=r; spec["execution"]["cellnSelection"]["runtimeRef"]=r
+print(json.dumps({"apiVersion":o["apiVersion"],"kind":o["kind"],"metadata":{"name":"qwen"},"spec":spec}))' "$runtime_b" | kc -n "$tenant_b" apply -f - >/dev/null
+	saved_ns="$starter_ns"; starter_ns="$tenant_b"
+	run_t="$(start_conversation "Remember the word indigo. Reply with only READY.")" || fail "API refused a conversation in $tenant_b"
+	wait_for "first answer in $tenant_b" 420 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $tenant_b get agentrun $run_t -o jsonpath='{.status.result}')\" ]"
+	send_turn "$run_t" "$run_t-recall" "Which word did I ask you to remember? Reply with only the word."
+	wait_for "turn $run_t-recall" 300 bash -c "kubectl --context kind-$CLUSTER -n $tenant_b get agentrunturn $run_t-recall -o json | grep -qiE '\"reason\": \"(Committed|ParentEnded)\"'"
+	turn_json "$run_t-recall" | grep -qi indigo || fail "$tenant_b conversation did not recall indigo"
+	starter_ns="$saved_ns"
+	pass "$tenant_b ran its own conversation (recalled indigo) beside $starter_ns"
+fi
+
+log "P3: a controller restart mid-turn completes the turn once"
+send_turn "$run_b" "$run_b-restart" "Which word did I ask you to remember? Reply with only the word."
+kc -n sympozium-system rollout restart deploy/sympozium-controller-manager >/dev/null
+kc -n sympozium-system rollout status deploy/sympozium-controller-manager --timeout=180s >/dev/null || fail "controller restart"
+wait_for "turn $run_b-restart after a controller restart" 300 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $run_b-restart -o json | grep -qiE '\"reason\": \"Committed\"'"
+turn_json "$run_b-restart" | grep -qi saffron || fail "the turn across a controller restart did not recall saffron"
+cells="$(api "http://127.0.0.1:$api_port/api/v1/celln-platform/cells" | python3 -c '
+import json, sys
+turn = sys.argv[1]
+print(sum(1 for n in json.load(sys.stdin) for c in (n.get("cells") or []) if c.get("turn") == turn))' "$(kc -n "$starter_ns" get agentrunturn "$run_b-restart" -o jsonpath='{.metadata.uid}')" 2>/dev/null || echo "?")"
+case "$cells" in 0|1|"?") ;; *) fail "the turn ran in $cells cells across the controller restart (duplicate work)";; esac
+pass "the turn across a controller restart committed once (cells attributed: $cells)"
+
+log "P3: a cancelled turn ends without an answer and the conversation goes on"
+send_turn "$run_b" "$run_b-cancel" "Write a detailed 400 word essay about the history of sailing ships."
+wait_for "turn $run_b-cancel to be dispatched" 120 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $run_b-cancel -o jsonpath='{.status.cellnScoped.startAttempted}' | grep -q true"
+kc -n "$starter_ns" patch agentrunturn "$run_b-cancel" --type merge -p '{"spec":{"cancelRequested":true}}' >/dev/null
+wait_for "turn $run_b-cancel to end" 300 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $run_b-cancel -o jsonpath='{.status.conditions[?(@.type==\"CellnTurnComplete\")].status}' | grep -q True"
+send_turn "$run_b" "$run_b-after-cancel" "Which word did I ask you to remember? Reply with only the word."
+wait_for "turn $run_b-after-cancel" 300 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $run_b-after-cancel -o json | grep -qiE '\"reason\": \"Committed\"'"
+turn_json "$run_b-after-cancel" | grep -qi saffron || fail "the conversation did not go on after a cancelled turn"
+pass "the cancelled turn ended ($(kc -n "$starter_ns" get agentrunturn "$run_b-cancel" -o jsonpath='{.status.conditions[?(@.type=="CellnTurnComplete")].reason}')) and B still recalled saffron"
+
+log "P3: a conversation past its lease ends"
+leased="$(start_conversation "Reply with only OK." 24576 60)" || fail "API refused the short-lease conversation"
+wait_for "first answer of $leased" 300 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $leased -o jsonpath='{.status.result}')\" ]"
+sleep 75
+send_turn "$leased" "$leased-late" "Reply with only OK."
+wait_for "the expired conversation to end" 420 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $leased -o jsonpath='{.status.phase}' | grep -qE 'Failed|Succeeded' || kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $leased-late -o jsonpath='{.status.conditions[?(@.type==\"CellnTurnComplete\")].status}' | grep -q True"
+if turn_json "$leased-late" | grep -qi '"answer": "OK'; then fail "a turn after the lease expired was answered"; fi
+pass "the conversation past its lease ended: run $(kc -n "$starter_ns" get agentrun "$leased" -o jsonpath='{.status.phase} {.status.error}' | head -c 160)"
 
 log "Losing conversation A's node ends A; B carries on"
 pod_a="$(kc -n celln-system get pods -l app.kubernetes.io/name=celln-node --field-selector "spec.nodeName=$node_a" -o name)"
