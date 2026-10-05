@@ -170,7 +170,10 @@ if [ "$MODE" = keyless ]; then
 	api -X POST -H 'Content-Type: application/json' -d '{"profile":"celln-native-starter"}' "http://127.0.0.1:$api_port/api/v1/celln-platform/wrappers?namespace=$starter_ns" >/dev/null || fail "platform wrappers"
 	runtime="$(kc -n "$starter_ns" get agentruntime -o json | python3 -c 'import json,sys; print(next(i["metadata"]["name"] for i in json.load(sys.stdin)["items"] if i["spec"].get("cellnProfileRef")))')"
 	# The scope's starter toolbox, as fleet and console Agents select it.
-	tool_refs="$(kc get clustercellntool -o json | python3 -c 'import json,sys; print(json.dumps([{"name":i["metadata"]["name"],"revision":i["spec"]["revision"]} for i in json.load(sys.stdin)["items"]]))')"
+	tool_refs="[]"
+	if [ "${JOURNEY_TOOLS:-1}" = 1 ]; then
+		tool_refs="$(kc get clustercellntool -o json | python3 -c 'import json,sys; print(json.dumps([{"name":i["metadata"]["name"],"revision":i["spec"]["revision"]} for i in json.load(sys.stdin)["items"]]))')"
+	fi
 	kc -n "$starter_ns" apply -f - >/dev/null <<EOF
 apiVersion: sympozium.ai/v1alpha1
 kind: ModelConnection
@@ -348,11 +351,13 @@ log "Skills cannot reach Secrets"
 kc get validatingadmissionpolicy sympozium-skill-secret-references >/dev/null || fail "skill Secret admission policy missing"
 pass "skill Secret admission policy installed"
 
+if [ "${JOURNEY_TOOLS:-1}" = 1 ]; then
 log "A mediated Agent fetches a public web page with its own tools"
 fetch_run="$(start_conversation "Use the https-fetch tool to fetch https://example.com/ and reply with only the text inside its <title> element.")" || fail "API refused the fetch conversation"
 wait_for "the fetch answer" 420 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $fetch_run -o jsonpath='{.status.result}')\" ] || kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $fetch_run -o jsonpath='{.status.phase}' | grep -q Failed"
 first_answer "$fetch_run" | grep -qi 'Example Domain' || fail "the mediated web fetch did not return the page: phase=$(kc -n "$starter_ns" get agentrun "$fetch_run" -o jsonpath='{.status.phase} {.status.error}') answer=$(first_answer "$fetch_run" | head -c 200)"
 pass "a mediated Agent fetched https://example.com through the broker: $(first_answer "$fetch_run" | head -c 60)"
+fi
 
 log "P3: a second namespace runs its own Agent independently"
 tenant_b=tenant-b

@@ -77,3 +77,25 @@ func TestTurnOfACleanedUpParentIsReleased(t *testing.T) {
 		})
 	}
 }
+
+// A cancelled turn whose owner confirmed cleanup reads as Cancelled and
+// complete, not as the last "waiting" condition recorded before cleanup.
+func TestCancelledTurnSettlesAsCancelled(t *testing.T) {
+	turn := &api.AgentRunTurn{ObjectMeta: metav1.ObjectMeta{Name: "turn", Namespace: "tenant", UID: "turn-uid", Finalizers: []string{agentRunTurnFinalizer}},
+		Spec: api.AgentRunTurnSpec{RunName: "run", RunUID: "run-uid", CancelRequested: true},
+		Status: api.AgentRunTurnStatus{CellnScoped: &api.CellnScopedStatus{CleanupConfirmed: true, NativePhase: "Cancelled"},
+			Conditions: []metav1.Condition{{Type: "CellnTurnComplete", Status: metav1.ConditionFalse, Reason: "CleanupUnconfirmed", LastTransitionTime: metav1.Now()}}}}
+	c := fake.NewClientBuilder().WithScheme(newAgentRunTestScheme(t)).WithStatusSubresource(&api.AgentRunTurn{}).WithObjects(turn).Build()
+	r := &AgentRunTurnReconciler{Client: c, APIReader: c, ScopedDispatcher: &cellnscoped.Dispatcher{}}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(turn)}); err != nil {
+		t.Fatal(err)
+	}
+	var got api.AgentRunTurn
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(turn), &got); err != nil {
+		t.Fatal(err)
+	}
+	condition := meta.FindStatusCondition(got.Status.Conditions, "CellnTurnComplete")
+	if condition == nil || condition.Status != metav1.ConditionTrue || condition.Reason != "Cancelled" || len(got.Finalizers) != 0 {
+		t.Fatalf("condition %+v finalizers %v", condition, got.Finalizers)
+	}
+}

@@ -107,6 +107,10 @@ func (r *AgentRunTurnReconciler) Reconcile(ctx context.Context, request ctrl.Req
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 	if turn.Status.CellnScoped != nil && turn.Status.CellnScoped.CleanupConfirmed {
+		// Settle a turn cleaned up before this condition was recorded.
+		if err := r.markTurnSettled(ctx, &turn); err != nil {
+			return ctrl.Result{}, err
+		}
 		return r.removeTurnFinalizer(ctx, &turn)
 	}
 	if condition := meta.FindStatusCondition(turn.Status.Conditions, "CellnTurnComplete"); condition != nil && condition.Status == metav1.ConditionTrue && condition.Reason == "CancelledBeforeAdmission" {
@@ -477,7 +481,27 @@ func (r *AgentRunTurnReconciler) cleanupTurn(ctx context.Context, turn *api.Agen
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
+	if err := r.markTurnSettled(ctx, turn); err != nil {
+		return ctrl.Result{}, err
+	}
 	return r.removeTurnFinalizer(ctx, turn)
+}
+
+// markTurnSettled completes a turn whose owner confirmed cleanup, unless a
+// terminal outcome was already recorded: a cancelled turn reads as Cancelled
+// instead of keeping the last "waiting" condition forever.
+func (r *AgentRunTurnReconciler) markTurnSettled(ctx context.Context, turn *api.AgentRunTurn) error {
+	if c := meta.FindStatusCondition(turn.Status.Conditions, "CellnTurnComplete"); c != nil && c.Status == metav1.ConditionTrue {
+		return nil
+	}
+	reason, message := "CleanupConfirmed", "The turn's native owner confirmed cleanup; no further work will run."
+	if turn.Spec.CancelRequested {
+		reason, message = "Cancelled", "The turn was cancelled and its native owner confirmed cleanup; no answer was committed."
+	}
+	return r.updateTurnStatus(ctx, turn, func(current *api.AgentRunTurn) error {
+		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "CellnTurnComplete", Status: metav1.ConditionTrue, Reason: reason, Message: message, ObservedGeneration: current.Generation})
+		return nil
+	})
 }
 
 func (r *AgentRunTurnReconciler) removeTurnFinalizer(ctx context.Context, turn *api.AgentRunTurn) (ctrl.Result, error) {
