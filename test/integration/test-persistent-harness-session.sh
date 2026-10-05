@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # End-to-end proof for the Agent-first persistent harness lifecycle.
-# Requires a deployed v1alpha2 Pi runtime and a real model credential.
+# Requires a deployed v1alpha2 runtime and an OpenAI-compatible model endpoint.
+#
+# The Kind lane points TEST_BASE_URL at the deterministic fixture
+# (test/integration/fake-model, deployed by deploy-fake-model.sh) and sets
+# TEST_MODEL_FIXTURE=fake. The fixture answers a recall only from the history
+# the harness sends, so every exact-token assertion below still fails when
+# stored conversation state is lost. Point TEST_PROVIDER/TEST_BASE_URL/
+# TEST_MODEL/TEST_API_KEY at a real provider (and leave TEST_MODEL_FIXTURE
+# unset) for real-model qualification.
 
 set -euo pipefail
 
@@ -15,6 +23,12 @@ MODEL="${TEST_MODEL:-gpt-4o-mini}"
 MODEL_BASE_URL="${TEST_BASE_URL:-}"
 MODEL_API_KEY="${TEST_API_KEY:-${OPENAI_API_KEY:-}}"
 TIMEOUT="${TEST_TIMEOUT:-300}"
+# "fake" when MODEL_BASE_URL is the deterministic fixture; only changes failure
+# diagnostics, never an assertion.
+MODEL_FIXTURE="${TEST_MODEL_FIXTURE:-}"
+# The fixture's reply to a recall whose history carried no token. Must match
+# NoTokenSentinel in test/integration/fake-model/main.go.
+FIXTURE_NO_TOKEN_SENTINEL="FIXTURE-NO-TOKEN-IN-HISTORY"
 
 STAMP="$(date +%s)"
 AGENT_NAME="inttest-persistent-${STAMP}"
@@ -25,6 +39,12 @@ MEMORY_TOKEN="sympozium-${STAMP}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 pass() { echo -e "${GREEN}PASS $*${NC}"; }
+# Explain a fixture sentinel: it means the model received no stored history.
+explain_recall_failure() {
+  if [[ "$MODEL_FIXTURE" == "fake" && "$1" == *"$FIXTURE_NO_TOKEN_SENTINEL"* ]]; then
+    echo "deterministic fixture received no remembered token in the request history: the harness did not supply the stored conversation" >&2
+  fi
+}
 fail() { echo -e "${RED}FAIL $*${NC}"; exit 1; }
 info() { echo -e "${YELLOW}---- $*${NC}"; }
 
@@ -119,7 +139,7 @@ wait_for_session_phase() {
 }
 
 for command in kubectl curl jq; do command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"; done
-[[ -n "$MODEL_API_KEY" ]] || fail "set OPENAI_API_KEY or TEST_API_KEY for the real persistent chat proof"
+[[ -n "$MODEL_API_KEY" ]] || fail "set OPENAI_API_KEY or TEST_API_KEY for the persistent chat proof (any non-empty value for the fixture)"
 kubectl get crd harnesssessions.sympozium.ai >/dev/null 2>&1 || fail "HarnessSession CRD is not installed"
 
 if [[ "$SKIP_PORT_FORWARD" != "1" ]] && ! curl -fsS "$APISERVER_URL/healthz" >/dev/null 2>&1; then
@@ -202,6 +222,7 @@ done
 SECOND_TEXT="$(jq -r '.choices[0].message.content // ""' <<<"$SECOND_RESPONSE")"
 if [[ "$SECOND_TEXT" != *"$MEMORY_TOKEN"* ]]; then
   dump_persistence_evidence "post-restart-recall"
+  explain_recall_failure "$SECOND_TEXT"
   fail "conversation state did not survive restart; response: ${SECOND_TEXT}"
 fi
 [[ "$(kubectl get pvc "$SESSION_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')" == "$PVC_UID" ]] || fail "pod restart replaced the durable state claim"
@@ -252,6 +273,7 @@ RESUMED_TEXT="$(jq -r '.choices[0].message.content // ""' <<<"$RESUMED_RESPONSE"
 [[ -n "$RESUMED_TEXT" ]] || fail "session adapter returned no content after resume"
 if [[ "$RESUMED_TEXT" != *"$MEMORY_TOKEN"* ]]; then
   dump_persistence_evidence "post-resume-recall"
+  explain_recall_failure "$RESUMED_TEXT"
   fail "resume lost conversation token: ${RESUMED_TEXT}"
 fi
 [[ "$(kubectl get pvc "$SESSION_NAME" -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')" == "$PVC_UID" ]] || fail "resume replaced the durable state claim"
@@ -265,7 +287,11 @@ USAGE_ACCOUNTING="$(kubectl get harnesssession "$SESSION_NAME" -n "$NAMESPACE" -
 pass "request IDs, lifecycle counters, and honest unavailable usage are recorded"
 
 info "Proving client disconnect cancellation"
-CANCEL_BODY='{"stream":true,"messages":[{"role":"user","content":"Write a detailed 3000 word technical essay. Do not finish early."}]}'
+# SLOW:120 makes the deterministic fixture hold the reply open for two minutes,
+# so the one-second client disconnect below always lands while model work is
+# in flight instead of racing a reply that finished first. A real model
+# ignores the marker and is kept busy by the essay request.
+CANCEL_BODY='{"stream":true,"messages":[{"role":"user","content":"SLOW:120 Write a detailed 3000 word technical essay. Do not finish early."}]}'
 CANCEL_URL="$(url_with_namespace "/api/v1/harness-sessions/${SESSION_NAME}/chat")"
 CANCEL_ARGS=(-sS --max-time 1 -X POST -H "Content-Type: application/json")
 [[ -n "$APISERVER_TOKEN" ]] && CANCEL_ARGS+=(-H "Authorization: Bearer ${APISERVER_TOKEN}")
