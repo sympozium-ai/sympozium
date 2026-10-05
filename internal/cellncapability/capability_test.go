@@ -349,3 +349,26 @@ func mustDecisionJSON(t *testing.T, decision Decision) []byte {
 	}
 	return data
 }
+
+// A decision carries a starter toolbox of up to 24 tools, the Celln worker's
+// own cap; the fleet's eight brokered tools plus borrowed commands exceed 16.
+func TestDecisionSchemaAdmitsAStarterToolboxOf24Tools(t *testing.T) {
+	decision, _ := fixtureDecisionByVector(t, "harness-one-shot")
+	if len(decision.Tools) == 0 {
+		t.Skip("fixture decision lends no tool to replicate")
+	}
+	withTools := func(n int) Decision {
+		d := decision
+		d.Tools = nil
+		for i := 0; i < n; i++ {
+			d.Tools = append(d.Tools, decision.Tools[0])
+		}
+		return d
+	}
+	if !decisionConformsToSchema(withTools(24)) {
+		t.Fatal("a 24-tool decision does not conform")
+	}
+	if decisionConformsToSchema(withTools(25)) {
+		t.Fatal("a 25-tool decision conforms")
+	}
+}

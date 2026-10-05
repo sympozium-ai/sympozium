@@ -17,7 +17,7 @@
     "runtime": {"$ref":"#/$defs/runtime"},
     "agent": {"$ref":"#/$defs/subject"},
     "policy": {"$ref":"#/$defs/policy"},
-    "tools": {"type":"array","maxItems":16,"items":{"$ref":"#/$defs/tool"}},
+    "tools": {"type":"array","maxItems":24,"items":{"$ref":"#/$defs/tool"}},
     "route": {"$ref":"#/$defs/route"},
     "budget": {"$ref":"#/$defs/budget"},
     "windows": {"$ref":"#/$defs/windows"},
