@@ -157,6 +157,21 @@ func (r *AgentRunTurnReconciler) Reconcile(ctx context.Context, request ctrl.Req
 			return r.turnUncertain(ctx, &turn, "OriginalParentUnavailable", err)
 		}
 	}
+	// The parent's confirmed cleanup (or confirmed loss of its node) ends
+	// every turn of that parent: this one can never complete, and waiting
+	// would hold the run's finalizer forever.
+	if turn.Status.CellnScoped != nil {
+		var original api.AgentRun
+		if err := reader.Get(ctx, client.ObjectKey{Namespace: turn.Namespace, Name: turn.Spec.RunName}, &original); err == nil && string(original.UID) == turn.Spec.RunUID && parentCleanupCoversTurn(&original, &turn) {
+			if err := r.updateTurnStatus(ctx, &turn, func(current *api.AgentRunTurn) error {
+				meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "CellnTurnComplete", Status: metav1.ConditionTrue, Reason: "ParentEnded", Message: "The conversation's parent ended and its cleanup was confirmed; this turn cannot complete.", ObservedGeneration: current.Generation})
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, err
+			}
+			return r.cleanupTurn(ctx, &turn)
+		}
+	}
 	parent, err := r.scopedTurnParent(ctx, reader, &turn)
 	if err != nil {
 		return r.turnUncertain(ctx, &turn, "OriginalParentUnavailable", err)
@@ -381,6 +396,15 @@ func (r *AgentRunTurnReconciler) applyTurnStatus(ctx context.Context, turn *api.
 	return r.cleanupTurn(ctx, turn)
 }
 
+// parentCleanupCoversTurn reports a run whose original owner confirmed
+// cleanup of this turn's parent (stopping it and every child), or whose node
+// was lost with it. A turn that never enrolled with a receiver has no owner of
+// its own; one that did must share the run's.
+func parentCleanupCoversTurn(run *api.AgentRun, turn *api.AgentRunTurn) bool {
+	rs, ts := run.Status.CellnScoped, turn.Status.CellnScoped
+	return rs != nil && ts != nil && rs.CleanupConfirmed && rs.ParentIncarnation != "" && rs.ParentIncarnation == ts.ParentIncarnation && (ts.Owner == "" || ts.Owner == rs.Owner)
+}
+
 func (r *AgentRunTurnReconciler) cleanupTurn(ctx context.Context, turn *api.AgentRunTurn) (ctrl.Result, error) {
 	if turn.Status.CellnScoped == nil {
 		return r.removeTurnFinalizer(ctx, turn)
@@ -396,7 +420,7 @@ func (r *AgentRunTurnReconciler) cleanupTurn(ctx context.Context, turn *api.Agen
 	// Root cleanup is stronger evidence: the lifecycle-aware receiver only sets
 	// this after stopping and joining the retained parent and every child owner.
 	// Do not send a child cleanup request after that owner has been destroyed.
-	if parent.Status.CellnScoped != nil && parent.Status.CellnScoped.CleanupConfirmed && parent.Status.CellnScoped.ParentIncarnation == turn.Status.CellnScoped.ParentIncarnation && parent.Status.CellnScoped.Owner == turn.Status.CellnScoped.Owner {
+	if parentCleanupCoversTurn(&parent, turn) {
 		if err := r.updateTurnScoped(ctx, turn, func(state *api.CellnScopedStatus) error { state.CleanupConfirmed = true; return nil }); err != nil {
 			return ctrl.Result{}, err
 		}
