@@ -94,7 +94,7 @@ func TestCreateAgentInvalidNativeSkillsDoesNotWriteSecret(t *testing.T) {
 // apiserver stores under a key the controller does not mount never reaches the
 // agent container, and the provider answers 401 (#627).
 func TestCreateAgent_ProviderSecretKeyIsInjected(t *testing.T) {
-	for _, provider := range []string{"openai", "anthropic", "azure-openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek"} {
+	for _, provider := range []string{"openai", "anthropic", "azure-openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek", "google"} {
 		t.Run(provider, func(t *testing.T) {
 			srv, _ := newInstanceTestServer(t)
 			body, _ := json.Marshal(CreateInstanceRequest{

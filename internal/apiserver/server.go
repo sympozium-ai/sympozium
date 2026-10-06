@@ -3067,10 +3067,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 // runner reads, or the credential never reaches the model call. The
 // OpenAI-compatible providers share OPENAI_API_KEY: the agent runner and the
 // Hermes adapter both read it, and the provider-named slots on the allowlist
-// (MISTRAL_API_KEY etc.) are read by nothing.
+// (MISTRAL_API_KEY etc.) are read by nothing. Google goes through the runner's
+// OpenAI-compatible client too, so it shares OPENAI_API_KEY.
 func providerEnvKey(provider string) string {
 	switch provider {
-	case "openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek":
+	case "openai", "custom", "ollama", "openrouter", "mistral", "groq", "deepseek", "google":
 		return "OPENAI_API_KEY"
 	case "anthropic":
 		return "ANTHROPIC_API_KEY"
