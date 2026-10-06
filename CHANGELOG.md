@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/sympozium-ai/sympozium/compare/v0.11.0...v0.11.1) (2026-10-06)
+
+
+### Features
+
+* mediated Agents get the full toolbox; P3 failure suite and the fixes it found ([#653](https://github.com/sympozium-ai/sympozium/issues/653)) ([6b7138e](https://github.com/sympozium-ai/sympozium/commit/6b7138ed83b79a3ada489996622aa5893c4d80ef))
+
 ## [0.11.0](https://github.com/sympozium-ai/sympozium/compare/v0.10.88...v0.11.0) (2026-10-05)
 
 
