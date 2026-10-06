@@ -1758,8 +1758,8 @@ func runInstall(imageTag string, setValues []string) error {
 	return nil
 }
 
-// helmInstallOrUpgrade installs the Sympozium release, or upgrades a
-// deployed one, recovering a failed previous release by reinstalling.
+// helmInstallOrUpgrade installs the Sympozium release, or upgrades one that
+// was ever deployed.
 func helmInstallOrUpgrade(ch *chart.Chart, vals map[string]interface{}) error {
 	return helmInstallOrUpgradeRelease(helmReleaseName, helmNamespace, ch, vals)
 }
@@ -1799,8 +1799,39 @@ func installErgoz() error {
 	return nil
 }
 
-// helmInstallOrUpgradeRelease installs or upgrades one Helm release,
-// recovering a failed previous revision by reinstalling.
+type releaseAction int
+
+const (
+	planInstall releaseAction = iota
+	planUpgrade
+	planReinstall
+)
+
+// releasePlan decides how to reach the new revision. A release that was ever
+// deployed is upgraded, even when its latest attempt failed: Helm upgrades
+// from the last deployed revision, and uninstalling would delete every object
+// the chart owns (its namespaces, and whatever operators put in them). Only a
+// release that never deployed is removed and installed afresh. A release
+// with an operation in progress is left alone.
+func releasePlan(name, namespace string, history []*release.Release) (releaseAction, error) {
+	if len(history) == 0 {
+		return planInstall, nil
+	}
+	latest := history[len(history)-1]
+	if latest.Info.Status.IsPending() {
+		return 0, fmt.Errorf("release %s has an operation in progress (%q); wait for it, or roll it back with 'helm rollback %s -n %s', then rerun", name, latest.Info.Status, name, namespace)
+	}
+	for _, r := range history {
+		if r.Info.Status == release.StatusDeployed || r.Info.Status == release.StatusSuperseded {
+			return planUpgrade, nil
+		}
+	}
+	return planReinstall, nil
+}
+
+// helmInstallOrUpgradeRelease installs or upgrades one Helm release. A
+// release whose latest attempt failed is upgraded from its last deployed
+// revision, never uninstalled.
 func helmInstallOrUpgradeRelease(name, namespace string, ch *chart.Chart, vals map[string]interface{}) error {
 	cfg, err := newHelmConfig(namespace)
 	if err != nil {
@@ -1809,27 +1840,23 @@ func helmInstallOrUpgradeRelease(name, namespace string, ch *chart.Chart, vals m
 
 	// Check if a release already exists and in what state.
 	histClient := action.NewHistory(cfg)
-	histClient.Max = 1
+	histClient.Max = 256
 	history, histErr := histClient.Run(name)
-
-	// A release is recoverable-by-install if history is missing, or if the
-	// most recent revision is in a non-deployed state (failed, pending-*,
-	// uninstalled). In those cases, upgrade will error with "has no deployed
-	// releases", so we uninstall and reinstall to recover cleanly.
-	needsFreshInstall := histErr != nil
-	if !needsFreshInstall && len(history) > 0 {
-		switch history[len(history)-1].Info.Status {
-		case release.StatusDeployed, release.StatusSuperseded:
-			// Healthy — upgrade path.
-		default:
-			fmt.Printf("  Found previous release in %q state, cleaning up...\n", history[len(history)-1].Info.Status)
-			uninstall := action.NewUninstall(cfg)
-			uninstall.Wait = true
-			uninstall.Timeout = 2 * time.Minute
-			if _, err := uninstall.Run(name); err != nil {
-				return fmt.Errorf("cleaning up failed release: %w", err)
-			}
-			needsFreshInstall = true
+	if histErr != nil {
+		history = nil
+	}
+	plan, err := releasePlan(name, namespace, history)
+	if err != nil {
+		return err
+	}
+	needsFreshInstall := plan != planUpgrade
+	if plan == planReinstall {
+		fmt.Printf("  Release %s never deployed (last attempt %q); removing it before a fresh install...\n", name, history[len(history)-1].Info.Status)
+		uninstall := action.NewUninstall(cfg)
+		uninstall.Wait = true
+		uninstall.Timeout = 2 * time.Minute
+		if _, err := uninstall.Run(name); err != nil {
+			return fmt.Errorf("cleaning up a release that never deployed: %w", err)
 		}
 	}
 
