@@ -144,4 +144,22 @@ func exerciseEnduringLedger(t *testing.T, g *Gateway, issuer *cap.Issuer, origin
 	if err := register(next); err == nil {
 		t.Fatal("fresh turn token topped up original parent")
 	}
+
+	// A run whose registration never happened (refused, or interrupted before
+	// its authority was published) must still be closable, or its cleanup and
+	// deletion hang; the fence then refuses any late registration.
+	never := d
+	never.Run.UID = fmt.Sprintf("never-registered-%d", time.Now().UnixNano())
+	never.Budget.BudgetID = fixtureDigest("budget/" + never.Run.UID)
+	never.Subject.UID = never.Run.UID
+	never.Parent = &cap.ParentBinding{Incarnation: fixtureIncarnation(never.Run.UID)}
+	if err := closeUnregistered(never); err != nil {
+		t.Fatalf("unregistered run cleanup: %v", err)
+	}
+	if err := closeUnregistered(never); err != nil {
+		t.Fatalf("unregistered run cleanup replay: %v", err)
+	}
+	if err := register(never); modelbudget.Reason(err) != modelbudget.ReasonRegisterConflict {
+		t.Fatalf("fenced run registered late: %v", err)
+	}
 }

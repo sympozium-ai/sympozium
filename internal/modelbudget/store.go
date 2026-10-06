@@ -439,6 +439,40 @@ func (s *Store) FenceTurn(ctx context.Context, budgetID, turnID string) error {
 	return nil
 }
 
+// FenceRunRegistration closes a run whose registration never completed: it
+// publishes a closed budget row (or closes an existing one), so a late or
+// racing RegisterRun is refused and nothing can be served under it.
+func (s *Store) FenceRunRegistration(ctx context.Context, in RunRegistration) error {
+	if err := validateRunRegistration(in); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return reasonError(ReasonUnavailable, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	_, err = tx.Exec(ctx, `
+		INSERT INTO celln_model_budgets (
+			budget_id, cluster_id, namespace_uid, run_uid, decision_digest, route_digest,
+			max_requests, max_output_tokens, max_turns, parent_deadline, closed, closed_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,now())
+		ON CONFLICT (budget_id) DO UPDATE SET closed=TRUE, closed_at=COALESCE(celln_model_budgets.closed_at, now()), updated_at=now()`,
+		in.BudgetID, in.ClusterID, in.NamespaceUID, in.RunUID, in.DecisionDigest, in.RouteDigest,
+		in.MaxRequests, in.MaxOutputTokens, in.MaxTurns, in.ParentDeadline.UTC())
+	if err != nil {
+		return reasonError(ReasonUnavailable, err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE celln_model_turn_budgets SET closed=TRUE, closed_at=COALESCE(closed_at, now()), updated_at=now() WHERE budget_id=$1`, in.BudgetID); err != nil {
+		return reasonError(ReasonUnavailable, err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return reasonError(ReasonUnavailable, err)
+	}
+	return nil
+}
+
 func (s *Store) FenceRun(ctx context.Context, budgetID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

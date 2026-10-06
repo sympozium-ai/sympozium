@@ -71,6 +71,7 @@ type BudgetStore interface {
 	CheckReady(context.Context) error
 	Inspect(context.Context, string, string) (modelbudget.Usage, error)
 	FenceRun(context.Context, string) error
+	FenceRunRegistration(context.Context, modelbudget.RunRegistration) error
 	FenceTurn(context.Context, string, string) error
 	FenceTurnRegistration(context.Context, modelbudget.TurnRegistration) error
 }
