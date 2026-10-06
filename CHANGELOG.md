@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/sympozium-ai/sympozium/compare/v0.11.2...v0.11.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* **gateway:** a run that never registered can still be closed ([#658](https://github.com/sympozium-ai/sympozium/issues/658)) ([16908d4](https://github.com/sympozium-ai/sympozium/commit/16908d4b09975d992da4aa07e672f89cef67b604))
+
 ## [0.11.2](https://github.com/sympozium-ai/sympozium/compare/v0.11.1...v0.11.2) (2026-10-06)
 
 
