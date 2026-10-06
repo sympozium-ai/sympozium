@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"time"
@@ -255,6 +256,23 @@ func (r *AgentRunReconciler) reconcilePendingScoped(ctx context.Context, log log
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	// The run's own key must be its Agent's, claimed before the gateway is
+	// asked to serve it: the gateway refuses a key its Agent does not own.
+	if run.Status.CellnScoped == nil {
+		var agent api.Agent
+		if err := r.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.AgentRef}, &agent); err != nil {
+			if apierrors.IsNotFound(err) {
+				return ctrl.Result{}, r.failRun(ctx, run, fmt.Sprintf("Agent %q not found", run.Spec.AgentRef))
+			}
+			return ctrl.Result{}, err
+		}
+		if refusal, err := r.authorizeRunKeys(ctx, run, &agent); err != nil || refusal != "" {
+			if refusal != "" {
+				return ctrl.Result{}, r.failRun(ctx, run, refusal)
+			}
+			return ctrl.Result{}, err
+		}
 	}
 	prepared, err := r.ScopedDispatcher.Prepare(ctx, client.ObjectKeyFromObject(run))
 	if err != nil {

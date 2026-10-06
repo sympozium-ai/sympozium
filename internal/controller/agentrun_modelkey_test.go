@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/cellnscoped"
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
 )
 
@@ -78,5 +79,59 @@ func TestRunsUseOnlyTheirAgentsOwnKey(t *testing.T) {
 				t.Fatalf("key owner = %q, want Agent/my-instance", got)
 			}
 		})
+	}
+}
+
+// A mediated (scoped) Celln run claims its Agent's key before the gateway is
+// asked to serve it, and is refused before any preparation when the key
+// belongs to another Agent. The scoped path used to skip this entirely.
+func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
+	keyFor := func(owner string) *corev1.Secret {
+		s := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "key", Namespace: "default"}, Data: map[string][]byte{"OPENAI_API_KEY": []byte("k")}}
+		if owner != "" {
+			s.Annotations = map[string]string{modelkey.OwnerAnnotation: owner}
+		}
+		return s
+	}
+	connection := &sympoziumv1alpha1.ModelConnection{ObjectMeta: metav1.ObjectMeta{Name: "conn", Namespace: "default"}, Spec: sympoziumv1alpha1.ModelConnectionSpec{Provider: "deepseek", Protocol: "openai-chat", Endpoint: "https://api.deepseek.com/chat/completions", SecretRef: "key", Models: []string{"deepseek-chat"}}}
+	agent := parityAgent()
+	agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Provider: "deepseek", Secret: "key"}}
+	run := parityRun()
+	run.Spec.Model = sympoziumv1alpha1.ModelSpec{ConnectionRef: "conn", Model: "deepseek-chat"}
+
+	// The shared helper claims an unowned key the Agent grants.
+	r := newAgentRunTestReconciler(t, agent, connection, keyFor(""), run)
+	if refusal, err := r.authorizeRunKeys(context.Background(), run, agent); err != nil || refusal != "" {
+		t.Fatalf("claim: refusal %q err %v", refusal, err)
+	}
+	var claimed corev1.Secret
+	if err := r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "key"}, &claimed); err != nil || claimed.Annotations[modelkey.OwnerAnnotation] != "Agent/my-instance" {
+		t.Fatalf("key not claimed through the connection: %v %v", claimed.Annotations, err)
+	}
+
+	// The scoped path refuses another Agent's key before preparing anything.
+	other := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "default"}}
+	run = parityRun()
+	run.Spec.Model = sympoziumv1alpha1.ModelSpec{ConnectionRef: "conn", Model: "deepseek-chat"}
+	r = newAgentRunTestReconciler(t, agent, other, connection, keyFor("Agent/other"), run)
+	r.ScopedDispatcher = &cellnscoped.Dispatcher{}
+	run.Spec.Backend = "celln"
+	run.Spec.ExecutionLifecycle = "enduring"
+	run.Spec.CellnSelection = &sympoziumv1alpha1.CellnCatalogueSelection{RuntimeRef: "celln-native", ToolRefs: []sympoziumv1alpha1.CellnCatalogueToolRef{}}
+	if err := r.Update(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	if !scopedCatalogueSelected(run) {
+		t.Fatal("test run is not a scoped selection")
+	}
+	if _, err := r.reconcilePendingScoped(context.Background(), logr.Discard(), run); err != nil {
+		t.Fatal(err)
+	}
+	var stored sympoziumv1alpha1.AgentRun
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Status.Error, "belongs to Agent/other") {
+		t.Fatalf("scoped run with another Agent's key: phase %q error %q", stored.Status.Phase, stored.Status.Error)
 	}
 }

@@ -552,6 +552,22 @@ func (r *AgentRunReconciler) resolveAgentRunInputs(ctx context.Context, agentRun
 	return out, nil
 }
 
+// authorizeRunKeys holds every model credential a run names to one key per
+// Agent (shared only with the Agent's sub-agents), claiming an unowned key the
+// Agent grants. Both the pod and the scoped Celln paths call it before any
+// work. It returns a refusal to fail the run with, or a transient error.
+func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) (string, error) {
+	for _, secret := range r.runModelSecrets(ctx, agentRun) {
+		if err := modelkey.Authorize(ctx, r.Client, agent, "", secret); err != nil {
+			if modelkey.IsRefusal(err) {
+				return err.Error(), nil
+			}
+			return "", fmt.Errorf("checking model key ownership: %w", err)
+		}
+	}
+	return "", nil
+}
+
 // runModelSecrets lists the credential Secrets a run would use: its inline
 // key, its provider-headers Secret and its ModelConnection's Secret. A
 // connection that cannot be read is skipped; resolving it fails the run later.
@@ -931,15 +947,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	if taskmodes.HarnessImage(agentRun.Spec.Task) != "" && !agentAllowsModelCredential(&runtimeInstance, agentRun.Spec.Model.Provider, agentRun.Spec.Model.AuthSecretRef) {
 		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider))
 	}
-	// Every model credential a run names must belong to its Agent (or the
-	// Agent's Ensemble): one key per Agent, shared only with its sub-agents.
-	for _, secret := range r.runModelSecrets(ctx, agentRun) {
-		if err := modelkey.Authorize(ctx, r.Client, &runtimeInstance, "", secret); err != nil {
-			if modelkey.IsRefusal(err) {
-				return ctrl.Result{}, r.failRun(ctx, agentRun, err.Error())
-			}
-			return ctrl.Result{}, fmt.Errorf("checking model key ownership: %w", err)
+	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != "" {
+		if refusal != "" {
+			return ctrl.Result{}, r.failRun(ctx, agentRun, refusal)
 		}
+		return ctrl.Result{}, err
 	}
 
 	// Agent Sandbox mode — create Sandbox CR instead of Job.
