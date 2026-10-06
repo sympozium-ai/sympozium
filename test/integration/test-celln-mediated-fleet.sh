@@ -195,6 +195,10 @@ spec:
   endpoint: $LLAMA_ORIGIN/v1/chat/completions
   allowInsecure: true
   models: ["$LLAMA_MODEL"]
+  # A local reasoning model at ~10 tokens/s must answer within a turn:
+  # no thinking, and a short output bound per request.
+  parameters: {"chat_template_kwargs": {"enable_thinking": false}}
+  maxOutputTokens: 512
 ---
 apiVersion: sympozium.ai/v1alpha1
 kind: Agent
