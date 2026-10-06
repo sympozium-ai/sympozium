@@ -419,9 +419,10 @@ turn_json "$run_b-after-cancel" | grep -qi saffron || fail "the conversation did
 pass "the cancelled turn ended ($(kc -n "$starter_ns" get agentrunturn "$run_b-cancel" -o jsonpath='{.status.conditions[?(@.type=="CellnTurnComplete")].reason}')) and B still recalled saffron"
 
 log "P3: a conversation past its lease ends"
-leased="$(start_conversation "Reply with only OK." 24576 60)" || fail "API refused the short-lease conversation"
+# The lease must outlast the first turn's window, or the parent is refused.
+leased="$(start_conversation "Reply with only OK." 24576 180)" || fail "API refused the short-lease conversation"
 wait_for "first answer of $leased" 300 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $leased -o jsonpath='{.status.result}')\" ]"
-sleep 75
+sleep 195
 send_turn "$leased" "$leased-late" "Reply with only OK."
 wait_for "the expired conversation to end" 420 bash -c "kubectl --context kind-$CLUSTER -n $starter_ns get agentrun $leased -o jsonpath='{.status.phase}' | grep -qE 'Failed|Succeeded' || kubectl --context kind-$CLUSTER -n $starter_ns get agentrunturn $leased-late -o jsonpath='{.status.conditions[?(@.type==\"CellnTurnComplete\")].status}' | grep -q True"
 if turn_json "$leased-late" | grep -qi '"answer": "OK'; then fail "a turn after the lease expired was answered"; fi
