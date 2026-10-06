@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.2](https://github.com/sympozium-ai/sympozium/compare/v0.11.1...v0.11.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **controller:** mediated Celln runs claim their Agent's key ([#657](https://github.com/sympozium-ai/sympozium/issues/657)) ([034057e](https://github.com/sympozium-ai/sympozium/commit/034057e1f7a816a58fdb4b8f07d7cfa1bfd12aaf))
+* **install:** never uninstall a release that was ever deployed ([#655](https://github.com/sympozium-ai/sympozium/issues/655)) ([633eb0b](https://github.com/sympozium-ai/sympozium/commit/633eb0b40ab44f572d1e32c2b061c87f0168cb5a))
+
 ## [0.11.1](https://github.com/sympozium-ai/sympozium/compare/v0.11.0...v0.11.1) (2026-10-06)
 
 
