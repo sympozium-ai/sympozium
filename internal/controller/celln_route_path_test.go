@@ -29,6 +29,8 @@ func routePathObjects() []client.Object {
 		connection("own", func(s *api.ModelConnectionSpec) { s.SecretRef = "tenant-key"; s.MaxOutputTokens = 4096 }),
 		connection("open", func(*api.ModelConnectionSpec) {}),
 		&api.AgentRuntime{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant", Name: "celln-native"}, Spec: api.AgentRuntimeSpec{CellnProfileRef: &api.CellnRuntimeProfileRef{Name: "celln-native-trial", Revision: "v1"}}},
+		// The runs' Agent, which grants the own connection's key.
+		&api.Agent{ObjectMeta: metav1.ObjectMeta{Namespace: "tenant", Name: "agent"}, Spec: api.AgentSpec{AuthRefs: []api.SecretRef{{Secret: "tenant-key"}}}},
 	}
 }
 
