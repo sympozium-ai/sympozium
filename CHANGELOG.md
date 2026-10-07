@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.4](https://github.com/sympozium-ai/sympozium/compare/v0.11.3...v0.11.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* **apiserver:** write the google provider key as OPENAI_API_KEY ([#660](https://github.com/sympozium-ai/sympozium/issues/660)) ([5eb9c52](https://github.com/sympozium-ai/sympozium/commit/5eb9c525d34174346ec3053faf0f246bbf4e4ffc))
+* **controller:** keep the resolved spec when recording the run ServiceAccount ([#652](https://github.com/sympozium-ai/sympozium/issues/652)) ([71c6f11](https://github.com/sympozium-ai/sympozium/commit/71c6f111248e7286334a4100f21501943973742c))
+
 ## [0.11.3](https://github.com/sympozium-ai/sympozium/compare/v0.11.2...v0.11.3) (2026-10-06)
 
 
