@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.5](https://github.com/sympozium-ai/sympozium/compare/v0.11.4...v0.11.5) (2026-10-08)
+
+
+### Features
+
+* prove per-Agent keys in the journey; attribute refusals and cells ([#662](https://github.com/sympozium-ai/sympozium/issues/662)) ([7944bba](https://github.com/sympozium-ai/sympozium/commit/7944bba0d27f48a2ef5a01abdd3d2a893ac2cb32))
+
 ## [0.11.4](https://github.com/sympozium-ai/sympozium/compare/v0.11.3...v0.11.4) (2026-10-07)
 
 
