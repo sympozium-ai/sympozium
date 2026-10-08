@@ -21,6 +21,47 @@ Components:
 ⚠️  Gateway is enabled. Make sure Gateway API CRDs are installed:
   kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
 {{- end }}
+{{- /*
+  Warn only on the upgrade that crosses into versioned memory: read the
+  pre-upgrade chart version from the controller Deployment's helm.sh/chart
+  label (templates render before Helm applies anything). lookup returns
+  nothing under `helm template` and client-side dry runs, so the note stays
+  hidden there. semverCompare fails the render on a version it cannot parse,
+  hence the regexMatch guard.
+
+  $memoryVersioningSince must be the first release that contains the
+  migration: an upgrade from a version at or above it never shows the note.
+  It is written as the next-release placeholder, which the release workflow
+  replaces with that release's version (hack/stamp-release-version.sh). Until
+  then the chart is an unreleased build, and every upgrade shows the note.
+*/}}
+{{- $memoryVersioningSince := "__NEXT_RELEASE_VERSION__" }}
+{{- $semver := "^[0-9]+\\.[0-9]+\\.[0-9]+$" }}
+{{- $prevVersion := "" }}
+{{- if .Release.IsUpgrade }}
+{{- with lookup "apps/v1" "Deployment" (include "sympozium.namespace" .) "sympozium-controller-manager" }}
+{{- $prevVersion = trimPrefix (printf "%s-" $.Chart.Name) (index (.metadata.labels | default dict) "helm.sh/chart" | default "") }}
+{{- end }}
+{{- end }}
+{{- $showMemoryNote := false }}
+{{- if regexMatch $semver $prevVersion }}
+{{- if not (regexMatch $semver $memoryVersioningSince) }}
+{{- $showMemoryNote = true }}
+{{- else if semverCompare (printf "<%s" $memoryVersioningSince) $prevVersion }}
+{{- $showMemoryNote = true }}
+{{- end }}
+{{- end }}
+{{- if $showMemoryNote }}
+
+⚠️  Memory upgrade: on first start, each memory server copies its SQLite
+    database (/data/memory.db) to /data/memory.v2.db, migrates the copy to
+    the versioned (update/forget) layout, and works only on the copy.
+    memory.db is left unchanged, so `helm rollback` needs no restore, but
+    memory written after the upgrade is not visible after a rollback.
+    Before upgrading again after a rollback, and to remove memory.db once
+    you are done, see "Upgrading and rolling back" in
+    https://github.com/sympozium-ai/sympozium/blob/main/docs/concepts/persistent-memory.md
+{{- end }}
 {{- if .Values.celln.enabled }}
 
 ⚠️  Hermetic workloads (Celln) are enabled. This installed a PRIVILEGED,

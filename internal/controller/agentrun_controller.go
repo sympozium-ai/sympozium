@@ -3390,6 +3390,15 @@ func (r *AgentRunReconciler) buildContainers(
 		containers[0].Env = append(containers[0].Env,
 			corev1.EnvVar{Name: "MEMORY_SERVER_URL", Value: memoryURL},
 		)
+		// The writer token goes into the agent container only, never into
+		// skill sidecars, where execute_command runs model-chosen commands —
+		// and only when that container runs agent-runner. A task mode that
+		// replaces it (mode: harness) runs an operator-supplied binary that
+		// may run model-chosen commands itself.
+		if !taskModeReplacesAgentContainer(agentRun.Spec.Task) {
+			containers[0].Env = append(containers[0].Env,
+				memoryWriterTokenEnv(memoryWriterTokenEnvName, agentRun.Spec.AgentRef+"-memory"))
+		}
 
 		// Init container to wait for memory server readiness before agent starts.
 		// The controller already checks for ready replicas before creating the pod,

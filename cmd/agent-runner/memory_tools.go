@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ const (
 	ToolMemorySearch = "memory_search"
 	ToolMemoryStore  = "memory_store"
 	ToolMemoryList   = "memory_list"
+	ToolMemoryUpdate = "memory_update"
+	ToolMemoryForget = "memory_forget"
 )
 
 // memoryToolNames contains all memory tool names for lookup.
@@ -27,6 +30,8 @@ var memoryToolNames = map[string]bool{
 	ToolMemorySearch: true,
 	ToolMemoryStore:  true,
 	ToolMemoryList:   true,
+	ToolMemoryUpdate: true,
+	ToolMemoryForget: true,
 }
 
 // isMemoryTool returns true if the tool name is a memory tool.
@@ -37,6 +42,20 @@ func isMemoryTool(name string) bool {
 // memoryServerURL is the HTTP endpoint of the memory server.
 // Set from MEMORY_SERVER_URL env var at startup.
 var memoryServerURL string
+
+// memoryWriterToken authenticates writes to the memory server. Set from
+// MEMORY_WRITER_TOKEN at startup. The controller injects it into this
+// container only, never into skill sidecars. It must never be logged or
+// written under /ipc, which sidecars and read_file can read.
+var memoryWriterToken string
+
+// setMemoryAuth adds the writer token to a request for a memory server. It is
+// sent on reads as well as writes; the server only checks it on writes.
+func setMemoryAuth(req *http.Request, token string) {
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
 
 // memoryHTTPClient is a shared HTTP client with reasonable timeouts. The
 // otelhttp transport injects the W3C traceparent header into every request and
@@ -111,7 +130,107 @@ func memoryToolDefs() []ToolDef {
 				},
 			},
 		},
+		{
+			Name:        ToolMemoryUpdate,
+			Description: "Correct an existing memory entry. The entry keeps its ID; the new content replaces the old content in all future searches and lists. Use this when a stored fact is wrong or out of date, instead of storing a second, conflicting entry.",
+			Parameters:  memoryUpdateParams("the corrected content in full. It replaces the old content; it is not appended."),
+		},
+		{
+			Name:        ToolMemoryForget,
+			Description: "Forget a memory entry. Future searches and lists no longer return it. Use this for entries that are wrong and have no correct replacement.",
+			Parameters:  memoryForgetParams(),
+		},
 	}
+}
+
+// memoryUpdateParams is the parameter schema shared by memory_update and
+// workflow_memory_update.
+func memoryUpdateParams(contentDesc string) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{
+				"type":        "integer",
+				"description": "ID of the entry to update, as shown in search or list results (Memory #ID).",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "The content to store: " + contentDesc,
+			},
+			"tags": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Replacement tags. Omit to keep the entry's current tags.",
+			},
+		},
+		"required": []string{"id", "content"},
+	}
+}
+
+// memoryForgetParams is the parameter schema shared by memory_forget and
+// workflow_memory_forget.
+func memoryForgetParams() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{
+				"type":        "integer",
+				"description": "ID of the entry to forget, as shown in search or list results (Memory #ID).",
+			},
+		},
+		"required": []string{"id"},
+	}
+}
+
+// versionBody builds the /update or /forget request body from tool args.
+// It copies only the fields the tool exposes, so the model cannot set server
+// fields such as source_agent or visibility. withContent is false for forget.
+func versionBody(args map[string]any, withContent bool) (map[string]any, error) {
+	id, err := memoryIDArg(args["id"])
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"id": id}
+	if !withContent {
+		return body, nil
+	}
+	content, _ := args["content"].(string)
+	if content == "" {
+		return nil, fmt.Errorf("'content' is required")
+	}
+	body["content"] = content
+	if tags, ok := args["tags"].([]any); ok {
+		body["tags"] = tags
+	}
+	return body, nil
+}
+
+// storeBody builds the private /store request body from tool args. Like
+// versionBody, it copies only the fields memory_store exposes (content, tags),
+// so the model cannot set source_agent, visibility, parent_id or evidence.
+// source_agent stays empty, matching auto-store and memory_update.
+func storeBody(args map[string]any) map[string]any {
+	body := map[string]any{"content": args["content"]}
+	if tags, ok := args["tags"].([]any); ok {
+		body["tags"] = tags
+	}
+	return body
+}
+
+// memoryIDArg reads an entry id from tool args. Models send ids as numbers or
+// as strings such as "12" or "#12"; both are accepted.
+func memoryIDArg(v any) (int64, error) {
+	switch id := v.(type) {
+	case float64:
+		if id > 0 && id == float64(int64(id)) {
+			return int64(id), nil
+		}
+	case string:
+		if n, err := strconv.ParseInt(strings.TrimPrefix(strings.TrimSpace(id), "#"), 10, 64); err == nil && n > 0 {
+			return n, nil
+		}
+	}
+	return 0, fmt.Errorf("'id' must be a positive integer memory entry id")
 }
 
 // memoryAPIResponse matches the memory server's JSON response format.
@@ -132,6 +251,14 @@ func executeMemoryTool(ctx context.Context, toolName string, argsJSON string) st
 		return fmt.Sprintf("Error parsing arguments: %v", err)
 	}
 
+	var version map[string]any
+	if toolName == ToolMemoryUpdate || toolName == ToolMemoryForget {
+		var err error
+		if version, err = versionBody(args, toolName == ToolMemoryUpdate); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+	}
+
 	var resp *http.Response
 	var err error
 
@@ -150,9 +277,13 @@ func executeMemoryTool(ctx context.Context, toolName string, argsJSON string) st
 		case ToolMemorySearch:
 			resp, err = memoryPost(ctx, "/search", args)
 		case ToolMemoryStore:
-			resp, err = memoryPost(ctx, "/store", args)
+			resp, err = memoryPost(ctx, "/store", storeBody(args))
 		case ToolMemoryList:
 			resp, err = memoryGet(ctx, "/list", args)
+		case ToolMemoryUpdate:
+			resp, err = memoryPost(ctx, "/update", version)
+		case ToolMemoryForget:
+			resp, err = memoryPost(ctx, "/forget", version)
 		default:
 			return fmt.Sprintf("Unknown memory tool: %s", toolName)
 		}
@@ -199,6 +330,7 @@ func memoryPost(ctx context.Context, path string, body any) (*http.Response, err
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setMemoryAuth(req, memoryWriterToken)
 	return memoryHTTPClient.Do(req)
 }
 
@@ -216,6 +348,7 @@ func memoryGet(ctx context.Context, path string, args map[string]any) (*http.Res
 	if err != nil {
 		return nil, err
 	}
+	setMemoryAuth(req, memoryWriterToken)
 	return memoryHTTPClient.Do(req)
 }
 
@@ -310,6 +443,7 @@ func queryMemoryContext(parent context.Context, task string, maxResults int) str
 		return ""
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setMemoryAuth(req, memoryWriterToken)
 
 	resp, err := memoryHTTPClient.Do(req)
 	if err != nil {
@@ -417,6 +551,7 @@ func initMemoryTools() []ToolDef {
 	}
 	// Strip trailing slash.
 	memoryServerURL = strings.TrimRight(memoryServerURL, "/")
+	memoryWriterToken = os.Getenv("MEMORY_WRITER_TOKEN")
 
 	log.Printf("Memory server configured: %s", memoryServerURL)
 	return memoryToolDefs()
@@ -429,6 +564,8 @@ const (
 	ToolWorkflowMemorySearch = "workflow_memory_search"
 	ToolWorkflowMemoryStore  = "workflow_memory_store"
 	ToolWorkflowMemoryList   = "workflow_memory_list"
+	ToolWorkflowMemoryUpdate = "workflow_memory_update"
+	ToolWorkflowMemoryForget = "workflow_memory_forget"
 )
 
 // workflowMemoryToolNames contains all workflow memory tool names for lookup.
@@ -436,6 +573,14 @@ var workflowMemoryToolNames = map[string]bool{
 	ToolWorkflowMemorySearch: true,
 	ToolWorkflowMemoryStore:  true,
 	ToolWorkflowMemoryList:   true,
+	ToolWorkflowMemoryUpdate: true,
+	ToolWorkflowMemoryForget: true,
+}
+
+// isWorkflowMemoryWriteTool returns true for the tools that change shared
+// memory. Read-only personas do not get them.
+func isWorkflowMemoryWriteTool(name string) bool {
+	return name == ToolWorkflowMemoryStore || name == ToolWorkflowMemoryUpdate || name == ToolWorkflowMemoryForget
 }
 
 // isWorkflowMemoryTool returns true if the tool name is a workflow memory tool.
@@ -445,6 +590,11 @@ func isWorkflowMemoryTool(name string) bool {
 
 // workflowMemoryServerURL is the HTTP endpoint of the shared pack-level memory server.
 var workflowMemoryServerURL string
+
+// workflowMemoryWriterToken authenticates writes to the shared memory server.
+// Set from WORKFLOW_MEMORY_WRITER_TOKEN at startup; the controller only
+// injects it for read-write personas. Same handling rules as memoryWriterToken.
+var workflowMemoryWriterToken string
 
 // workflowMemoryAccess is the access mode for this persona ("read-write" or "read-only").
 var workflowMemoryAccess string
@@ -512,33 +662,7 @@ func workflowMemoryToolDefs() []ToolDef {
 				"description": "Tags for categorization (e.g., ['kafka', 'consumer-lag']). Your persona name is added automatically.",
 			},
 		}
-		storeProps["evidence"] = map[string]any{
-			"type":        "object",
-			"description": "Evidence trace for provenance tracking. Attach this when storing findings backed by tool outputs or external sources.",
-			"properties": map[string]any{
-				"kind": map[string]any{
-					"type":        "string",
-					"enum":        []string{"tool_result", "external_source", "llm_interpretation", "agent_opinion"},
-					"description": "Evidence quality tier: tool_result (direct tool output), external_source (URL/doc reference), llm_interpretation (model analysis), agent_opinion (subjective assessment).",
-				},
-				"tool_call": map[string]any{
-					"type":        "string",
-					"description": "Tool name and arguments that produced this finding (for tool_result kind).",
-				},
-				"raw_result": map[string]any{
-					"type":        "string",
-					"description": "Unmodified tool output or source content (truncated to key details).",
-				},
-				"source": map[string]any{
-					"type":        "string",
-					"description": "URL, document reference, or upstream memory entry ID.",
-				},
-				"confidence": map[string]any{
-					"type":        "number",
-					"description": "Confidence level from 0.0 to 1.0.",
-				},
-			},
-		}
+		storeProps["evidence"] = evidenceParam("Evidence trace for provenance tracking. Attach this when storing findings backed by tool outputs or external sources.")
 		storeDesc := "Store a finding in the shared team memory so other personas in the workflow can access it. Entries are automatically tagged with your persona name for attribution. You can attach an evidence trace to record how the finding was derived."
 
 		// Add membrane parameters when configured.
@@ -563,19 +687,69 @@ func workflowMemoryToolDefs() []ToolDef {
 				"properties": storeProps,
 				"required":   []string{"content"},
 			},
+		}, ToolDef{
+			Name:        ToolWorkflowMemoryUpdate,
+			Description: "Correct a shared team memory entry that you stored. The entry keeps its ID; the new content replaces the old content in all future searches and lists for every persona. Use this when a finding is wrong or out of date, instead of storing a second, conflicting entry.",
+			Parameters:  workflowMemoryUpdateParams(),
+		}, ToolDef{
+			Name:        ToolWorkflowMemoryForget,
+			Description: "Forget a shared team memory entry that you stored. Future searches and lists no longer return it for any persona. Use this for findings that are wrong and have no correct replacement.",
+			Parameters:  memoryForgetParams(),
 		})
 	}
 
 	return defs
 }
 
-// executeWorkflowMemoryTool dispatches a workflow memory tool call to the shared memory server.
+// workflowMemoryUpdateParams is the memory_update schema plus evidence, so a
+// correction can restate how the finding is known. The membrane's min_kind
+// filter ranks entries by evidence kind.
+func workflowMemoryUpdateParams() map[string]any {
+	params := memoryUpdateParams("the corrected finding in full. It replaces the old content; it is not appended.")
+	params["properties"].(map[string]any)["evidence"] = evidenceParam(
+		"Evidence trace for the corrected finding. Omit to keep the entry's current evidence; pass {} to clear it.")
+	return params
+}
+
+// evidenceParam is the evidence trace schema shared by workflow_memory_store
+// and workflow_memory_update.
+func evidenceParam(description string) map[string]any {
+	return map[string]any{
+		"type":        "object",
+		"description": description,
+		"properties": map[string]any{
+			"kind": map[string]any{
+				"type":        "string",
+				"enum":        []string{"tool_result", "external_source", "llm_interpretation", "agent_opinion"},
+				"description": "Evidence quality tier: tool_result (direct tool output), external_source (URL/doc reference), llm_interpretation (model analysis), agent_opinion (subjective assessment).",
+			},
+			"tool_call": map[string]any{
+				"type":        "string",
+				"description": "Tool name and arguments that produced this finding (for tool_result kind).",
+			},
+			"raw_result": map[string]any{
+				"type":        "string",
+				"description": "Unmodified tool output or source content (truncated to key details).",
+			},
+			"source": map[string]any{
+				"type":        "string",
+				"description": "URL, document reference, or upstream memory entry ID.",
+			},
+			"confidence": map[string]any{
+				"type":        "number",
+				"description": "Confidence level from 0.0 to 1.0.",
+			},
+		},
+	}
+}
+
+// executeWorkflowMemoryTooldispatches a workflow memory tool call to the shared memory server.
 func executeWorkflowMemoryTool(ctx context.Context, toolName string, argsJSON string) string {
 	if workflowMemoryServerURL == "" {
 		return "Error: shared workflow memory not configured (WORKFLOW_MEMORY_SERVER_URL not set)"
 	}
 
-	if toolName == ToolWorkflowMemoryStore && workflowMemoryAccess == "read-only" {
+	if isWorkflowMemoryWriteTool(toolName) && workflowMemoryAccess == "read-only" {
 		return "Error: this persona has read-only access to shared workflow memory"
 	}
 
@@ -587,18 +761,20 @@ func executeWorkflowMemoryTool(ctx context.Context, toolName string, argsJSON st
 	instanceName := os.Getenv("INSTANCE_NAME")
 
 	// Auto-tag store calls with the source persona name for attribution.
+	// source_agent is always the persona, never the model's value: update and
+	// forget only match entries whose source_agent equals the caller's.
 	if toolName == ToolWorkflowMemoryStore {
 		if instanceName != "" {
 			tags, _ := args["tags"].([]any)
 			tags = append(tags, instanceName)
 			args["tags"] = tags
 		}
+		args["source_agent"] = instanceName
 		// Inject membrane fields for store calls.
 		if membraneVisibility != "" {
 			if _, ok := args["visibility"]; !ok {
 				args["visibility"] = membraneVisibility
 			}
-			args["source_agent"] = instanceName
 
 			// Enforce expose tags: if the persona has an exposeTags list,
 			// entries with tags that don't intersect are forced private so
@@ -608,6 +784,31 @@ func executeWorkflowMemoryTool(ctx context.Context, toolName string, argsJSON st
 					args["visibility"] = "private"
 				}
 			}
+		}
+	}
+
+	// Update and forget send an explicit body. Attribution follows the same
+	// rules as store, so a persona can only change entries it stored.
+	var version map[string]any
+	if toolName == ToolWorkflowMemoryUpdate || toolName == ToolWorkflowMemoryForget {
+		var err error
+		if version, err = versionBody(args, toolName == ToolWorkflowMemoryUpdate); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		if tags, ok := version["tags"].([]any); ok {
+			if instanceName != "" {
+				tags = append(tags, instanceName)
+				version["tags"] = tags
+			}
+			if membraneVisibility != "" && len(membraneExposeTags) > 0 && !entryTagsMatchExpose(tags, membraneExposeTags) {
+				version["visibility"] = "private"
+			}
+		}
+		version["source_agent"] = instanceName
+		// Only update takes evidence. An omitted field keeps the entry's
+		// current evidence on the server; {} clears it.
+		if ev, ok := args["evidence"].(map[string]any); ok && toolName == ToolWorkflowMemoryUpdate {
+			version["evidence"] = ev
 		}
 	}
 
@@ -646,6 +847,10 @@ func executeWorkflowMemoryTool(ctx context.Context, toolName string, argsJSON st
 			resp, err = workflowMemoryPost(ctx, "/store", args)
 		case ToolWorkflowMemoryList:
 			resp, err = workflowMemoryGet(ctx, "/list", args)
+		case ToolWorkflowMemoryUpdate:
+			resp, err = workflowMemoryPost(ctx, "/update", version)
+		case ToolWorkflowMemoryForget:
+			resp, err = workflowMemoryPost(ctx, "/forget", version)
 		default:
 			return fmt.Sprintf("Unknown workflow memory tool: %s", toolName)
 		}
@@ -692,6 +897,7 @@ func workflowMemoryPost(ctx context.Context, path string, body any) (*http.Respo
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setMemoryAuth(req, workflowMemoryWriterToken)
 	return memoryHTTPClient.Do(req)
 }
 
@@ -722,6 +928,7 @@ func workflowMemoryGet(ctx context.Context, path string, args map[string]any) (*
 	if err != nil {
 		return nil, err
 	}
+	setMemoryAuth(req, workflowMemoryWriterToken)
 	return memoryHTTPClient.Do(req)
 }
 
@@ -760,6 +967,7 @@ func queryWorkflowMemoryContext(parent context.Context, task string, maxResults 
 		return ""
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setMemoryAuth(req, workflowMemoryWriterToken)
 
 	resp, err := memoryHTTPClient.Do(req)
 	if err != nil {
@@ -822,6 +1030,7 @@ func initWorkflowMemoryTools() []ToolDef {
 		return nil
 	}
 	workflowMemoryServerURL = strings.TrimRight(workflowMemoryServerURL, "/")
+	workflowMemoryWriterToken = os.Getenv("WORKFLOW_MEMORY_WRITER_TOKEN")
 	workflowMemoryAccess = os.Getenv("WORKFLOW_MEMORY_ACCESS")
 	if workflowMemoryAccess == "" {
 		workflowMemoryAccess = "read-write"

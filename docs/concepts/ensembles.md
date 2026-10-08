@@ -208,22 +208,24 @@ All resources have `ownerReferences` to the Ensemble and are cleaned up on delet
 
 ### Agent Tools
 
-Agents in the pack receive three additional tools alongside their private memory tools:
+Agents in the pack receive these additional tools alongside their private memory tools:
 
 | Tool | Description | Access |
 |------|-------------|--------|
 | `workflow_memory_search` | Search shared team knowledge contributed by any persona | All |
 | `workflow_memory_store` | Store findings for other personas (auto-tagged with source persona) | read-write only |
 | `workflow_memory_list` | List shared entries, filterable by persona or tag | All |
+| `workflow_memory_update` | Correct an entry this persona stored; only the new version is returned afterwards | read-write only |
+| `workflow_memory_forget` | Remove an entry this persona stored from search and list | read-write only |
 
 ### Access Control
 
 Each persona can be granted `read-write` or `read-only` access via `accessRules`. If no rules are specified, all personas default to `read-write`.
 
 - **read-write**: Can search, list, and store entries
-- **read-only**: Can search and list, but cannot store (the `workflow_memory_store` tool is not registered)
+- **read-only**: Can search and list, but cannot store, update or forget (those tools are not registered)
 
-Access control is enforced client-side in the agent runner — sufficient because the memory server is in-cluster behind a ClusterIP with no untrusted clients.
+The shared memory server enforces write access itself. Writes need its writer token, and only read-write personas' agent-runner containers receive it; read-only personas, skill sidecars and other pods do not. Reads are not authenticated. See [Persistent Memory — Write access](persistent-memory.md#write-access).
 
 ## Synthetic Membrane
 
@@ -349,7 +351,7 @@ Every memory entry tracks its **source agent** and an optional **parent ID** for
 - **Lineage**: What chain of reasoning led to this conclusion?
 - **Monotonic sequencing**: Entries have a `seq` number for replay and event sourcing
 
-The memory server exposes a `/provenance?id=N` endpoint that returns the full derivation chain from root to the given entry.
+The memory server exposes a `/provenance?id=N` endpoint that returns the full derivation chain from root to the given entry. The chain shows the current version of each entry and leaves out forgotten ones; the admin-only `/history?id=N` endpoint returns every version (see [Persistent Memory — Correcting and Forgetting](persistent-memory.md#correcting-and-forgetting)).
 
 ### Further Reading
 

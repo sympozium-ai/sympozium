@@ -58,6 +58,12 @@ func (r *AgentRunReconciler) persistFailureMemory(ctx context.Context, log logr.
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	token, err := memoryWriterToken(storeCtx, r.Client, agentRun.Namespace, agentRun.Spec.AgentRef+"-memory")
+	if err != nil {
+		log.V(1).Info("failed to read memory writer token", "err", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := memoryStoreClient.Do(req)
 	if err != nil {

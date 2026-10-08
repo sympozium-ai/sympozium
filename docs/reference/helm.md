@@ -27,6 +27,8 @@ Both charts are kept in lockstep. Always upgrade `sympozium-crds` before `sympoz
 
 `--skip-crds` on the second command assumes the `sympozium-crds` release is installed. If you choose to use only the `sympozium` chart, omit `--skip-crds` so the CRDs bundled in that chart are applied — but you will then forfeit the ability to roll CRD schema changes forward via `helm upgrade`.
 
+> **Memory upgrade.** Upgrading to the release with versioned memory (update/forget) copies every memory database to a new file (`memory.v2.db`) and leaves the old `memory.db` unchanged, so `helm rollback` needs no restore. Memory written after the upgrade is not visible to the older release. Before upgrading again after a rollback, see [Persistent Memory — Upgrading and rolling back](../concepts/persistent-memory.md#upgrading-and-rolling-back).
+
 > **Uninstall ordering.** Removing `sympozium-crds` cascade-deletes every Agent, AgentRun, SkillPack, Ensemble, SympoziumPolicy, etc. across **all** namespaces. Always `helm uninstall sympozium` first, then `helm uninstall sympozium-crds`.
 
 > The legacy single-chart install (`helm install sympozium ./charts/sympozium`) still works for fresh clusters that will never need a CRD upgrade.
