@@ -338,3 +338,24 @@ origins, each with the Agent's own key. Mirrors cellninstall.DefaultMediatedRout
   (dict "provider" "deepseek" "protocol" "openai-chat" "models" (list "*") "endpointOrigins" (list "https://api.deepseek.com"))
 ) -}}
 {{- end }}
+
+{{/*
+sympozium.mediationTrustChecksum: changes whenever mediation trust is rotated
+- a new signing key id, or the trust Secrets/ConfigMap recreated (new UIDs) -
+so the controller and gateway, which copy their trust once at start, roll.
+lookup is empty under `helm template`; the key id still applies.
+*/}}
+{{- define "sympozium.mediationTrustChecksum" -}}
+{{- $m := .Values.celln.mediation | default dict -}}
+{{- $ns := include "sympozium.namespace" . -}}
+{{- $ids := list ($m.issuer | default dict).keyId -}}
+{{- range $secret := list $m.controllerSecret $m.gatewaySecret -}}
+{{- if $secret -}}
+{{- $ids = append $ids ((lookup "v1" "Secret" $ns $secret).metadata | default dict).uid -}}
+{{- end -}}
+{{- end -}}
+{{- if $m.trustConfigMap -}}
+{{- $ids = append $ids ((lookup "v1" "ConfigMap" $ns $m.trustConfigMap).metadata | default dict).uid -}}
+{{- end -}}
+{{- $ids | toJson | sha256sum -}}
+{{- end -}}

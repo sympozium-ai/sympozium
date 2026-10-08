@@ -2,6 +2,7 @@ package cellnscoped
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -104,5 +105,31 @@ func TestBrokeredToolNegotiationRequiresEveryNeededContract(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A receiver that rejects the controller's token, or cannot be reached over
+// trusted TLS, is reported as such - not as a backend lacking the contract -
+// so a rotated trust shows up as what it is.
+func TestPreflightNamesReceiverFaults(t *testing.T) {
+	decision := cellnauthority.PlatformDecision{Lifecycle: "enduring-initial", Route: cellnauthority.DecisionRouteBinding{Protocol: "openai-chat"}, Tools: []cellnauthority.DecisionToolBinding{{Limits: cellnauthority.DecisionToolLimits{Artifacts: &api.CellnArtifactLimits{Operation: "write"}}}}}
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+		native := &NativeClient{host: &hostClient{origin: server.URL, http: server.Client(), token: "stale"}}
+		err := native.PreflightArtifacts(context.Background(), decision)
+		server.Close()
+		var e *HTTPError
+		if IsUnsupported(err) || !IsReceiverMisconfigured(err) || !errors.As(err, &e) || e.Reason != ReasonReceiverAuthRejected {
+			t.Fatalf("HTTP %d: %v", status, err)
+		}
+	}
+	// A TLS receiver whose CA this client does not trust.
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	native := &NativeClient{host: &hostClient{origin: server.URL, http: &http.Client{}, token: "t"}}
+	err := native.PreflightArtifacts(context.Background(), decision)
+	var e *HTTPError
+	if IsUnsupported(err) || !errors.As(err, &e) || e.Reason != ReasonReceiverUnreachable {
+		t.Fatalf("untrusted TLS: %v", err)
 	}
 }

@@ -223,7 +223,7 @@ func (g *Gateway) Invoke(ctx context.Context, token cellncapability.Token, in In
 		return InvokeResponse{}, err
 	}
 	defer stopWatching()
-	allowPrivate := authority.AllowInsecure && privateOriginAllowed(authority.Endpoint, g.config.AllowPrivateOrigins)
+	allowPrivate := privateReachable(authority.Endpoint, authority.AllowInsecure, g.config.AllowPrivateOrigins)
 	httpClient, err := g.newClient(authority.Endpoint, allowPrivate, g.config.MaxProviderDuration, g.config.ProviderRootCAs)
 	if err != nil {
 		return InvokeResponse{}, err

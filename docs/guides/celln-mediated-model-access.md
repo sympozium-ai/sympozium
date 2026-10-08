@@ -206,6 +206,45 @@ admit your pod in the `celln-node-ingress` NetworkPolicy):
 curl --cacert ca.crt -X POST https://celln-scoped-receiver.celln-system.svc:9443/v1/scoped/read -d '{}'
 ```
 
+The gateway logs one line per refused call: status, reason code, operation
+(`register`, `invoke` or `close`), and the run, Agent and turn the call's
+decision names. A forged decision fails verification, so these are labelled as
+claims. No credential, route or request content is ever logged:
+
+```text
+model-gateway: refused status=403 reason=MODEL_CREDENTIAL_SOURCE_CHANGED op=invoke claimed_run=team-a/agent-a-x7k2p claimed_agent=agent-a claimed_turn=agent-a-x7k2p-recall
+```
+
+A run whose scoped receiver rejects the controller's token reports
+`ReceiverUnavailable` with `RECEIVER_AUTH_REJECTED`. If the receiver can't be
+reached over trusted TLS it reports `RECEIVER_UNREACHABLE` instead. Either way
+it waits rather than fails, because nothing was submitted.
+`AUTH_PROTOCOL_UNSUPPORTED` means only that the node answered without a
+contract the run needs, for example an older Celln.
+
+### A provider with a private CA
+
+A secret route always uses HTTPS. For an in-house model server whose
+certificate comes from a private CA:
+- put that CA in a ConfigMap in the gateway's namespace and name it in
+  `modelGateway.providerCA`;
+- list the server's exact origin in `privateOrigins`.
+
+The CA is trusted only for listed origins. A listed origin is reachable over
+HTTPS without the connection setting `allowInsecure`, while plain HTTP to it
+still needs `allowInsecure` and works only for keyless routes.
+
+```bash
+kubectl -n sympozium-system create configmap models-ca --from-file=ca.crt=./ca.crt
+sympozium install \
+  --celln-mediated-route "provider=vllm,protocol=openai-chat,origin=https://models.internal:8443,models=*" \
+  --set modelGateway.providerCA.configMap=models-ca \
+  --set 'modelGateway.privateOrigins[0]=https://models.internal:8443'
+```
+
+The system roots still apply. Public providers never trust the operator's
+CA.
+
 ## 5. Declare which providers Agents may bring a key for
 
 The resolver matches an Agent's `ModelConnection` against the `auth: secret`
@@ -563,9 +602,16 @@ to the list before its Agents use mediation.
   Size `spec.enduring` for the turns you expect.
 - **A dispatcher restart loses live scoped parents**, including the roll caused
   by toggling mediation or upgrading the fleet package.
-- **Rotation is manual** (delete, bootstrap or rerun the install, restart);
-  there is no overlap window tooling yet, although the verifiers accept a
-  multi-key JWKS. The default ten-year certificates make this rare.
+- **Rotation is manual**: delete, then bootstrap or rerun the install. There
+  is no overlap window tooling yet, although the verifiers accept a multi-key
+  JWKS. The default ten-year certificates make rotation rare.
+  - The controller and gateway pods carry a `checksum/mediation-trust`
+    annotation built from the signing key id and the trust objects' UIDs, so
+    the next `helm upgrade` or `sympozium upgrade` rolls them onto the new
+    trust.
+  - Trust recreated outside Helm still needs
+    `kubectl -n sympozium-system rollout restart deploy/sympozium-controller-manager deploy/sympozium-model-gateway`.
+    Until then, runs report `RECEIVER_AUTH_REJECTED`.
 - Secret volumes cannot be owned by a non-root user, and the controller and
   gateway refuse key or token files that are not owner-only. A non-root init
   step in each pod therefore copies the operator's files into an in-memory

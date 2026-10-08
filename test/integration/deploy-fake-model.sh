@@ -5,11 +5,26 @@
 # test-persistent-harness-session.sh at it instead of a small local LLM so the
 # lane tests Sympozium's persistence and lifecycle, not a model's memory
 # (issue #471). Real-model qualification is a separate, explicit run.
+#
+# FAKE_MODEL_TLS_SECRET names a kubernetes.io/tls Secret in TEST_NAMESPACE:
+# the fixture then serves HTTPS with it (as a provider receiving a key must)
+# on Service port 443, so its origin carries no port, as a mediated route's
+# must; e.g. the mediated-fleet journey's key canary. FAKE_MODEL_NAME names
+# the Deployment and Service (default fake-model).
 set -euo pipefail
 
 NAMESPACE="${TEST_NAMESPACE:-default}"
 KIND_CLUSTER="${KIND_CLUSTER_NAME:-sympozium-ci}"
 IMAGE="${FAKE_MODEL_IMAGE:-sympozium-fixture/fake-model:ci}"
+NAME="${FAKE_MODEL_NAME:-fake-model}"
+TLS_SECRET="${FAKE_MODEL_TLS_SECRET:-}"
+PORT=8080 SERVICE_PORT=8080 SCHEME=HTTP ARGS="[]" TLS_MOUNT="" TLS_VOLUME=""
+if [ -n "$TLS_SECRET" ]; then
+  PORT=8443 SERVICE_PORT=443 SCHEME=HTTPS
+  ARGS='["-listen", ":8443", "-tls-cert", "/tls/tls.crt", "-tls-key", "/tls/tls.key"]'
+  TLS_MOUNT='          volumeMounts: [{name: tls, mountPath: /tls, readOnly: true}]'
+  TLS_VOLUME="      volumes: [{name: tls, secret: {secretName: ${TLS_SECRET}}}]"
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 for command in go docker kind kubectl; do
@@ -27,18 +42,18 @@ kubectl apply -n "$NAMESPACE" -f - <<YAML
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fake-model
+  name: ${NAME}
   labels:
-    app: fake-model
+    app: ${NAME}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: fake-model
+      app: ${NAME}
   template:
     metadata:
       labels:
-        app: fake-model
+        app: ${NAME}
     spec:
       securityContext:
         runAsNonRoot: true
@@ -49,12 +64,14 @@ spec:
         - name: fake-model
           image: ${IMAGE}
           imagePullPolicy: IfNotPresent
+          args: ${ARGS}
           ports:
-            - containerPort: 8080
+            - containerPort: ${PORT}
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8080
+              port: ${PORT}
+              scheme: ${SCHEME}
             periodSeconds: 2
           resources:
             requests:
@@ -67,18 +84,20 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+${TLS_MOUNT}
+${TLS_VOLUME}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: fake-model
+  name: ${NAME}
 spec:
   selector:
-    app: fake-model
+    app: ${NAME}
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: ${SERVICE_PORT}
+      targetPort: ${PORT}
 YAML
-kubectl rollout status deployment/fake-model -n "$NAMESPACE" --timeout=120s
-echo "fake-model ready at http://fake-model.${NAMESPACE}.svc.cluster.local:8080/v1"
+kubectl rollout status "deployment/${NAME}" -n "$NAMESPACE" --timeout=120s
+echo "${NAME} ready at $(echo "$SCHEME" | tr A-Z a-z)://${NAME}.${NAMESPACE}.svc.cluster.local:${SERVICE_PORT}/v1"

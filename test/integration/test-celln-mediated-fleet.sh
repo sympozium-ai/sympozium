@@ -10,6 +10,10 @@
 #     conversation on another node carries on,
 #   - keep skills away from Secrets (admission policy present).
 #
+#   - prove two Agents' concurrent conversations each reach the provider with
+#     that Agent's own key and no other (an in-cluster HTTPS key canary that
+#     records which key arrived on every call; no real key needed),
+#
 # Inputs: CELLN_BUNDLE (a Celln release bundle: bin/celln + share/celln) and
 # a model: either DEEPSEEK_API_KEY (a real key; the starter Agent owns it and
 # the conversations call DeepSeek through the gateway) or LLAMA_ORIGIN +
@@ -105,10 +109,38 @@ for img in "$CELLN_IMAGE" "ghcr.io/sympozium-ai/sympozium/controller:$TAG" "ghcr
 done
 pass "images loaded"
 
+log "Key canary: an in-cluster HTTPS provider that records which key each call carries"
+# The gateway sends a key only over HTTPS to an approved origin, so the canary
+# has its own CA, which the gateway is told to trust (modelGateway.providerCA).
+CANARY_NS=canary-provider CANARY_ORIGIN="https://canary.canary-provider.svc"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj "/CN=journey canary CA" \
+	-keyout "$WORK/canary-ca.key" -out "$WORK/canary-ca.crt" >/dev/null 2>&1 || fail "canary CA"
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=canary.$CANARY_NS.svc" \
+	-keyout "$WORK/canary.key" -out "$WORK/canary.csr" >/dev/null 2>&1 || fail "canary key"
+printf 'subjectAltName=DNS:canary.%s.svc,DNS:canary.%s.svc.cluster.local\nextendedKeyUsage=serverAuth\n' "$CANARY_NS" "$CANARY_NS" >"$WORK/canary.ext"
+openssl x509 -req -in "$WORK/canary.csr" -CA "$WORK/canary-ca.crt" -CAkey "$WORK/canary-ca.key" -CAcreateserial -days 2 \
+	-extfile "$WORK/canary.ext" -out "$WORK/canary.crt" >/dev/null 2>&1 || fail "canary certificate"
+kc create namespace "$CANARY_NS" >/dev/null 2>&1 || true
+kc -n "$CANARY_NS" create secret tls canary-tls --cert "$WORK/canary.crt" --key "$WORK/canary.key" --dry-run=client -o yaml | kc apply -f - >/dev/null
+kc create namespace sympozium-system >/dev/null 2>&1 || true
+kc -n sympozium-system create configmap canary-provider-ca --from-file=ca.crt="$WORK/canary-ca.crt" --dry-run=client -o yaml | kc apply -f - >/dev/null
+kind get kubeconfig --name "$CLUSTER" >"$WORK/kubeconfig"
+KUBECONFIG="$WORK/kubeconfig" TEST_NAMESPACE="$CANARY_NS" KIND_CLUSTER_NAME="$CLUSTER" FAKE_MODEL_NAME=canary FAKE_MODEL_TLS_SECRET=canary-tls \
+	"$REPO/test/integration/deploy-fake-model.sh" >"$WORK/canary-deploy.log" 2>&1 || { tail -20 "$WORK/canary-deploy.log"; fail "canary provider"; }
+pass "canary provider serving $CANARY_ORIGIN"
+
 install_env=() install_args=()
+# Declaring a route replaces the built-in defaults, so each mode names its own
+# model's route as well as the canary's.
+canary_route=(--celln-mediated-route "provider=canary,protocol=openai-chat,auth=secret,origin=$CANARY_ORIGIN,models=canary-model"
+	--set modelGateway.providerCA.configMap=canary-provider-ca)
 if [ "$MODE" = keyless ]; then
 	install_env=(env -u DEEPSEEK_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY "SYMPOZIUM_CELLN_BACKEND=name=native,provider=llama-server,model=$LLAMA_MODEL,endpoint=$LLAMA_ORIGIN/v1/chat/completions,allow-insecure=true")
-	install_args=(--celln-mediated-route "provider=llama-server,protocol=openai-chat,auth=none,allowInsecure=true,origin=$LLAMA_ORIGIN,models=$LLAMA_MODEL" --set "modelGateway.privateOrigins[0]=$LLAMA_ORIGIN")
+	install_args=(--celln-mediated-route "provider=llama-server,protocol=openai-chat,auth=none,allowInsecure=true,origin=$LLAMA_ORIGIN,models=$LLAMA_MODEL"
+		--set "modelGateway.privateOrigins[0]=$LLAMA_ORIGIN" --set "modelGateway.privateOrigins[1]=$CANARY_ORIGIN" "${canary_route[@]}")
+else
+	install_args=(--celln-mediated-route "provider=deepseek,protocol=openai-chat,origin=https://api.deepseek.com,models=*"
+		--set "modelGateway.privateOrigins[0]=$CANARY_ORIGIN" "${canary_route[@]}")
 fi
 log "sympozium install — only a model backend in the environment ($MODE)"
 if [ -n "${FLEET_CERT_MANAGER_MANIFEST:-}" ]; then
@@ -365,6 +397,138 @@ fi
 log "Skills cannot reach Secrets"
 kc get validatingadmissionpolicy sympozium-skill-secret-references >/dev/null || fail "skill Secret admission policy missing"
 pass "skill Secret admission policy installed"
+
+log "Key canary: two Agents' concurrent conversations each reach the provider with their own key"
+canary_ns=canary
+kc create namespace "$canary_ns" >/dev/null 2>&1 || true
+IFS=$'\t' read -r canary_runtime canary_tools < <(toolbox_selection "$canary_ns")
+declare -A canary_fp=()
+for agent in canary-a canary-b; do
+	key="sk-canary-$(openssl rand -hex 16)"
+	canary_fp[$agent]="$(printf '%s' "$key" | sha256sum | cut -c1-16)"
+	kc -n "$canary_ns" create secret generic "$agent-key" --from-literal=OPENAI_API_KEY="$key" --dry-run=client -o yaml | kc apply -f - >/dev/null
+	kc -n "$canary_ns" apply -f - >/dev/null <<EOF
+apiVersion: sympozium.ai/v1alpha1
+kind: ModelConnection
+metadata:
+  name: $agent
+spec:
+  provider: canary
+  protocol: openai-chat
+  endpoint: $CANARY_ORIGIN/v1/chat/completions
+  secretRef: $agent-key
+  models: [canary-model]
+---
+apiVersion: sympozium.ai/v1alpha1
+kind: Agent
+metadata:
+  name: $agent
+spec:
+  runtimeRef: $canary_runtime
+  authRefs: [{provider: canary, secret: $agent-key}]
+  agents:
+    default:
+      model: canary-model
+  execution:
+    backend: celln
+    modelConnectionRef: $agent
+    model: canary-model
+    cellnSelection:
+      runtimeRef: $canary_runtime
+      toolRefs: []
+      clusterToolRefs: $canary_tools
+EOF
+done
+[ "${canary_fp[canary-a]}" != "${canary_fp[canary-b]}" ] || fail "canary keys collide"
+saved_ns="$starter_ns" saved_agent="$CONVO_AGENT"
+starter_ns="$canary_ns"
+CONVO_AGENT=canary-a; canary_run_a="$(start_conversation "CANARY:canary-a Remember this exact token for the next turn: cobalt-a1")" || fail "API refused canary-a"
+CONVO_AGENT=canary-b; canary_run_b="$(start_conversation "CANARY:canary-b Remember this exact token for the next turn: saffron-b2")" || fail "API refused canary-b"
+for run in "$canary_run_a" "$canary_run_b"; do
+	wait_for "first answer of $run" 420 bash -c "[ -n \"\$(kubectl --context kind-$CLUSTER -n $canary_ns get agentrun $run -o jsonpath='{.status.result}')\" ] || kubectl --context kind-$CLUSTER -n $canary_ns get agentrun $run -o jsonpath='{.status.phase}' | grep -q Failed"
+	[ "$(kc -n "$canary_ns" get agentrun "$run" -o jsonpath='{.status.phase}')" != Failed ] || fail "$run failed: $(kc -n "$canary_ns" get agentrun "$run" -o jsonpath='{.status.error}')"
+done
+for agent in canary-a canary-b; do
+	owner="$(kc -n "$canary_ns" get secret "$agent-key" -o jsonpath='{.metadata.annotations.sympozium\.ai/model-key-owner}')"
+	[ "$owner" = "Agent/$agent" ] || fail "$agent-key is owned by '$owner', not Agent/$agent"
+done
+send_turn "$canary_run_a" "$canary_run_a-recall" "What exact token did I ask you to remember?"
+send_turn "$canary_run_b" "$canary_run_b-recall" "What exact token did I ask you to remember?"
+for pair in "$canary_run_a-recall:cobalt-a1" "$canary_run_b-recall:saffron-b2"; do
+	turn="${pair%%:*}" token="${pair##*:}"
+	wait_for "turn $turn" 300 bash -c "kubectl --context kind-$CLUSTER -n $canary_ns get agentrunturn $turn -o json | grep -qiE '\"reason\": \"(Committed|ParentEnded)\"'"
+	turn_json "$turn" | grep -q "$token" || fail "$turn did not recall $token"
+done
+canary_records() { kubectl --context "kind-$CLUSTER" get --raw "/api/v1/namespaces/$CANARY_NS/services/https:canary:443/proxy/fixture/keys"; }
+records="$(canary_records)" || fail "could not read the canary's key records"
+echo "$records" | python3 -c '
+import json, sys
+records = json.load(sys.stdin)
+want = {"canary-a": sys.argv[1], "canary-b": sys.argv[2]}
+for agent, fp in want.items():
+    mine = [r for r in records if r["tag"] == agent]
+    wrong = [r for r in mine if r["key"] != fp]
+    if len(mine) < 2:
+        sys.exit(f"{agent}: only {len(mine)} provider call(s) recorded, want its first turn and its recall")
+    if wrong:
+        sys.exit(f"{agent}: {len(wrong)} of {len(mine)} calls carried a key other than its own: {wrong}")
+    print(f"{agent}: {len(mine)} calls, every one with its own key {fp}")
+untagged = [r for r in records if r["tag"] not in want and r["key"] in want.values()]
+if untagged:
+    sys.exit(f"an Agent key served an untagged conversation: {untagged}")' "${canary_fp[canary-a]}" "${canary_fp[canary-b]}" >"$WORK/canary-verdict" || fail "key canary: $(cat "$WORK/canary-verdict")"
+pass "the provider saw only each Agent's own key: $(tr '\n' ';' <"$WORK/canary-verdict")"
+
+log "Key canary: neither key exists outside its own Secret"
+kc get secrets -A -o json | python3 -c '
+import base64, hashlib, json, sys
+fps = set(sys.argv[1:])
+for i in json.load(sys.stdin)["items"]:
+    for k, v in (i.get("data") or {}).items():
+        raw = base64.b64decode(v).strip()
+        if hashlib.sha256(raw).hexdigest()[:16] in fps:
+            print(i["metadata"]["namespace"] + "/" + i["metadata"]["name"])' "${canary_fp[canary-a]}" "${canary_fp[canary-b]}" | sort >"$WORK/canary-holders"
+[ "$(tr '\n' ' ' <"$WORK/canary-holders")" = "canary/canary-a-key canary/canary-b-key " ] || fail "a canary key is held elsewhere: $(cat "$WORK/canary-holders")"
+for agent in canary-a canary-b; do
+	key="$(kc -n "$canary_ns" get secret "$agent-key" -o jsonpath='{.data.OPENAI_API_KEY}' | base64 -d)"
+	if kc get pods -A -o json | grep -qF "$key"; then fail "$agent's key appears in a pod spec"; fi
+done
+pass "each key is only in its own Secret; no pod spec carries either"
+
+log "Key canary: the cells view attributes each conversation's cells to its Agent"
+cells_by_agent="$(api "http://127.0.0.1:$api_port/api/v1/celln-platform/cells" | python3 -c '
+import json, sys
+runs = {sys.argv[1]: "canary-a", sys.argv[2]: "canary-b"}
+seen = {}
+for n in json.load(sys.stdin):
+    for c in n.get("cells") or []:
+        r = c.get("run") or {}
+        if r.get("name") in runs and r.get("agent") == runs[r["name"]]:
+            seen[runs[r["name"]]] = seen.get(runs[r["name"]], 0) + 1
+print(" ".join(f"{a}={seen.get(a, 0)}" for a in ("canary-a", "canary-b")))' "$canary_run_a" "$canary_run_b")"
+case "$cells_by_agent" in *"=0"*) fail "cells not attributed to both conversations: $cells_by_agent" ;; esac
+pass "cells attributed: $cells_by_agent"
+
+log "Key canary: re-owning canary-a's key stops canary-a, names it in the refusal, and leaves canary-b alone"
+before="$(canary_records | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+kc -n "$canary_ns" annotate secret canary-a-key sympozium.ai/model-key-owner=Agent/someone-else --overwrite >/dev/null
+send_turn "$canary_run_a" "$canary_run_a-reowned" "CANARY:canary-a Reply with LEAKED only"
+send_turn "$canary_run_b" "$canary_run_b-after" "What exact token did I ask you to remember?"
+wait_for "turn $canary_run_b-after" 300 bash -c "kubectl --context kind-$CLUSTER -n $canary_ns get agentrunturn $canary_run_b-after -o json | grep -qiE '\"reason\": \"(Committed|ParentEnded)\"'"
+turn_json "$canary_run_b-after" | grep -q saffron-b2 || fail "canary-b was affected by canary-a's key change"
+wait_for "a refusal naming $canary_run_a" 300 bash -c "kubectl --context kind-$CLUSTER -n sympozium-system logs deploy/sympozium-model-gateway --since=10m | grep 'refused' | grep -q 'claimed_run=$canary_ns/$canary_run_a '"
+# Only the turn's status: its spec carries the message, which names the word.
+if turn_json "$canary_run_a-reowned" | python3 -c 'import json,sys; sys.exit(0 if "LEAKED" in json.dumps(json.load(sys.stdin).get("status", {})) else 1)'; then
+	fail "canary-a was answered with a key it no longer owns"
+fi
+canary_records | python3 -c '
+import json, sys
+records = json.load(sys.stdin)[int(sys.argv[1]):]
+bad = [r for r in records if r["tag"] == "canary-a"]
+if bad:
+    sys.exit(f"canary-a reached the provider after its key was re-owned: {bad}")' "$before" || fail "re-owned key still reached the provider"
+kc -n "$canary_ns" annotate secret canary-a-key sympozium.ai/model-key-owner=Agent/canary-a --overwrite >/dev/null
+starter_ns="$saved_ns" CONVO_AGENT="$saved_agent"
+pass "canary-a was refused at the gateway ($(kc -n sympozium-system logs deploy/sympozium-model-gateway --since=10m | grep "claimed_run=$canary_ns/$canary_run_a " | tail -1 | cut -c1-160)), never reached the provider, and canary-b still recalled saffron-b2"
 
 if [ "${JOURNEY_TOOLS:-1}" = 1 ]; then
 log "A mediated Agent fetches a public web page with its own tools"

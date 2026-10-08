@@ -395,6 +395,12 @@ func (r *AgentRunReconciler) scopedUncertain(ctx context.Context, run *api.Agent
 		// re-placed elsewhere; the run ends and cleanup fences its allowance.
 		return ctrl.Result{}, r.failRun(ctx, run, "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.")
 	}
+	if cellnscoped.IsReceiverMisconfigured(cause) {
+		if err := r.scopedProgress(ctx, run, metav1.ConditionFalse, "ReceiverUnavailable", receiverMisconfiguredMessage(cause)); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
 	if cellnscoped.IsUnsupported(cause) {
 		if err := r.scopedProgress(ctx, run, metav1.ConditionFalse, "Unsupported", "AUTH_PROTOCOL_UNSUPPORTED: the native backend does not advertise the required scoped artifact contract; no fallback was submitted"); err != nil {
 			return ctrl.Result{}, err
@@ -680,4 +686,14 @@ func (r *AgentRunReconciler) scopedChildrenFinalized(ctx context.Context, run *a
 		}
 	}
 	return true, nil
+}
+
+// receiverMisconfiguredMessage tells an operator what to fix when the scoped
+// receiver refused or never answered the controller's capability preflight.
+func receiverMisconfiguredMessage(cause error) string {
+	var e *cellnscoped.HTTPError
+	if errors.As(cause, &e) && e.Reason == cellnscoped.ReasonReceiverAuthRejected {
+		return "RECEIVER_AUTH_REJECTED: the Celln scoped receiver rejected the controller's token. If mediation trust was rotated, restart the controller-manager and model gateway; nothing was submitted"
+	}
+	return "RECEIVER_UNREACHABLE: the Celln scoped receiver did not answer over trusted TLS. Check the celln-router and, if mediation trust was rotated, restart the controller-manager and model gateway; nothing was submitted"
 }

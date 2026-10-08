@@ -566,6 +566,8 @@ func (r *AgentRunTurnReconciler) updateTurnStatus(ctx context.Context, turn *api
 func (r *AgentRunTurnReconciler) turnUncertain(ctx context.Context, turn *api.AgentRunTurn, reason string, cause error) (ctrl.Result, error) {
 	if cellnscoped.IsUnsupported(cause) {
 		reason = "Unsupported"
+	} else if cellnscoped.IsReceiverMisconfigured(cause) {
+		reason = "ReceiverUnavailable"
 	}
 	if err := r.recordTurnObservationReason(ctx, turn, reason); err != nil {
 		return ctrl.Result{}, err

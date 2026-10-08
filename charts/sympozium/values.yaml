@@ -55,6 +55,13 @@ modelGateway:
   # -- Exact provider origins on private addresses the gateway may reach
   # (gateway.json privateOrigins). Only honoured with celln.mediation.
   privateOrigins: []
+  # -- Extra CA the gateway trusts for HTTPS providers listed in
+  # privateOrigins, e.g. an in-house model server with a private CA. A
+  # ConfigMap in the gateway's namespace; the system roots still apply, and
+  # public providers never trust it. Only honoured with celln.mediation.
+  providerCA:
+    configMap: ""
+    key: ca.crt
 
 imagePullSecrets: []
 nameOverride: ""

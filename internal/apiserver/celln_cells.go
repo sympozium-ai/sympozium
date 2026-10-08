@@ -134,7 +134,13 @@ func (s *Server) listCellnFleetCells(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, attributeCellnCells(nodes, runs.Items))
+	// Mediated runs record each continuation turn's cell on the turn.
+	var turns api.AgentRunTurnList
+	if err := s.client.List(r.Context(), &turns); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, attributeCellnCells(nodes, runs.Items, turns.Items))
 }
 
 // cellnNodeReports reads every node's report; no ConfigMap means no reports.
@@ -152,7 +158,7 @@ func (s *Server) cellnNodeReports(ctx context.Context) (map[string]string, error
 
 // joinCellnCells decodes every node's ConfigMap report and attributes it.
 func joinCellnCells(data map[string]string, runs []api.AgentRun, now time.Time) []CellnNodeCells {
-	return attributeCellnCells(decodeCellnNodeReports(data, now), runs)
+	return attributeCellnCells(decodeCellnNodeReports(data, now), runs, nil)
 }
 
 // decodeCellnNodeReports turns the ConfigMap's per-node JSON into node entries.
@@ -202,24 +208,60 @@ func normalizeCellnStage(stage string) string {
 }
 
 // attributeCellnCells attributes every node's parents, and the cells their
-// turns ran in, to AgentRuns by parent incarnation and child hash. It works on
+// turns ran in, to AgentRuns by parent incarnation and child hash. A mediated
+// (scoped) run records its parent incarnation, and its own and each turn's
+// cell and child, in cellnScoped status instead of cellnParent. It works on
 // the decoded model, so both sources share it. Nodes come back sorted by name.
-func attributeCellnCells(nodes []CellnNodeCells, runs []api.AgentRun) []CellnNodeCells {
+func attributeCellnCells(nodes []CellnNodeCells, runs []api.AgentRun, turns []api.AgentRunTurn) []CellnNodeCells {
 	type turnRef struct {
 		run          *CellnRunRef
 		parent, turn string
 	}
 	byIncarnation := map[string]*CellnRunRef{}
+	byUID := map[types.UID]*CellnRunRef{}
+	// A scoped cell is known by its cell id and its child hash.
+	scopedCells, scopedChildren := map[string]turnRef{}, map[string]turnRef{}
+	recordScoped := func(ref *CellnRunRef, scoped *api.CellnScopedStatus, incarnation string) {
+		if scoped == nil {
+			return
+		}
+		if incarnation == "" {
+			incarnation = scoped.ParentIncarnation
+		}
+		at := turnRef{run: ref, parent: incarnation, turn: scoped.TurnID}
+		if scoped.CellID != "" {
+			scopedCells[scoped.CellID] = at
+		}
+		if scoped.ChildID != "" {
+			scopedChildren[scoped.ChildID] = at
+		}
+	}
 	for i := range runs {
 		run := &runs[i]
-		parent := run.Status.CellnParent
-		if parent == nil || parent.Binding.Incarnation == "" {
+		incarnation := ""
+		if parent := run.Status.CellnParent; parent != nil {
+			incarnation = parent.Binding.Incarnation
+		} else if scoped := run.Status.CellnScoped; scoped != nil {
+			incarnation = scoped.ParentIncarnation
+		}
+		if incarnation == "" && run.Status.CellnScoped == nil {
 			continue
 		}
 		phase := string(run.Status.Phase)
-		byIncarnation[parent.Binding.Incarnation] = &CellnRunRef{
+		ref := &CellnRunRef{
 			Namespace: run.Namespace, Name: run.Name, Agent: run.Spec.AgentRef, Phase: phase,
 			Live: run.DeletionTimestamp == nil && phase != "Succeeded" && phase != "Failed",
+		}
+		if incarnation != "" {
+			byIncarnation[incarnation] = ref
+		}
+		byUID[run.UID] = ref
+		recordScoped(ref, run.Status.CellnScoped, incarnation)
+	}
+	for i := range turns {
+		turn := &turns[i]
+		if ref := byUID[types.UID(turn.Spec.RunUID)]; ref != nil && turn.Namespace == ref.Namespace {
+			recordScoped(ref, turn.Status.CellnScoped, turn.Status.ParentIncarnation)
 		}
 	}
 	for n := range nodes {
@@ -253,6 +295,18 @@ func attributeCellnCells(nodes []CellnNodeCells, runs []api.AgentRun) []CellnNod
 					if strings.HasPrefix(child, prefix) {
 						c.Run, c.Parent, c.Turn = ref.run, ref.parent, ref.turn
 						break
+					}
+				}
+			}
+			if c.Run == nil {
+				if ref, ok := scopedCells[c.ID]; ok && c.ID != "" {
+					c.Run, c.Parent, c.Turn = ref.run, ref.parent, ref.turn
+				} else if len(prefix) > len("blake3:") {
+					for child, ref := range scopedChildren {
+						if strings.HasPrefix(child, prefix) {
+							c.Run, c.Parent, c.Turn = ref.run, ref.parent, ref.turn
+							break
+						}
 					}
 				}
 			}

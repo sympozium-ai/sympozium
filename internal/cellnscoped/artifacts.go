@@ -22,6 +22,21 @@ const (
 	ScopedHTTPSContract      = "celln.scoped-https/v1"
 )
 
+// Receiver faults the capability preflight reports in place of
+// AUTH_PROTOCOL_UNSUPPORTED. Both precede any native or gateway work, and
+// both are the operator's to fix; a run waits rather than fails.
+const (
+	ReasonReceiverUnreachable  = "RECEIVER_UNREACHABLE"
+	ReasonReceiverAuthRejected = "RECEIVER_AUTH_REJECTED"
+)
+
+// IsReceiverMisconfigured reports a capability preflight the receiver
+// refused or never answered.
+func IsReceiverMisconfigured(err error) bool {
+	var target *HTTPError
+	return errors.As(err, &target) && (target.Reason == ReasonReceiverUnreachable || target.Reason == ReasonReceiverAuthRejected)
+}
+
 func IsUnsupported(err error) bool {
 	var target *HTTPError
 	return errors.As(err, &target) && target.Reason == "AUTH_PROTOCOL_UNSUPPORTED"
@@ -76,9 +91,15 @@ func (c *NativeClient) PreflightArtifacts(ctx context.Context, decision cellnaut
 	req.Header.Set("Accept", "application/json")
 	response, err := c.host.http.Do(req)
 	if err != nil {
-		return unsupported
+		// Unreachable, or its TLS is not trusted: say so, not "unsupported".
+		return &HTTPError{Status: http.StatusServiceUnavailable, Reason: ReasonReceiverUnreachable}
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		// The receiver rejected this controller's token: trust was rotated
+		// without restarting the controller, or the token is wrong.
+		return &HTTPError{Status: response.StatusCode, Reason: ReasonReceiverAuthRejected}
+	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil || len(data) > maxResponseBytes || response.StatusCode != http.StatusOK {
 		return unsupported

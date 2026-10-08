@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -219,5 +220,45 @@ func TestScriptNamesSentinel(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "SLOW:") {
 		t.Fatal("cancellation request no longer carries the fixture's SLOW marker")
+	}
+}
+
+// Each request's key is recorded as a fingerprint with its conversation's
+// canary tag, so the journey can prove which key served which Agent; the raw
+// key is never kept or served back.
+func TestKeyCanaryRecordsFingerprintAndTag(t *testing.T) {
+	ts := httptest.NewServer((&server{}).routes())
+	defer ts.Close()
+	send := func(key, tag string) {
+		body := `{"model":"canary","messages":[{"role":"user","content":"CANARY:` + tag + ` Reply with READY only"},{"role":"assistant","content":"READY"},{"role":"user","content":"Reply with OK only"}]}`
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/chat/completions", strings.NewReader(body))
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	send("sk-agent-a-secret", "agent-a")
+	send("sk-agent-b-secret", "agent-b")
+	send("", "agent-b")
+	resp, err := http.Get(ts.URL + "/fixture/keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(raw), "secret") {
+		t.Fatalf("raw key served back: %s", raw)
+	}
+	var records []KeyRecord
+	if err := json.Unmarshal(raw, &records); err != nil || len(records) != 3 {
+		t.Fatalf("records: %s %v", raw, err)
+	}
+	a, b := KeyFingerprint("Bearer sk-agent-a-secret"), KeyFingerprint("Bearer sk-agent-b-secret")
+	if len(a) != 16 || a == b || records[0] != (KeyRecord{1, a, "agent-a"}) || records[1] != (KeyRecord{2, b, "agent-b"}) || records[2] != (KeyRecord{3, "", "agent-b"}) {
+		t.Fatalf("records = %+v", records)
 	}
 }

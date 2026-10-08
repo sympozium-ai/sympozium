@@ -21,9 +21,18 @@
 //
 // GET /v1/models advertises a 128K context window because Hermes Agent
 // refuses models that report less than 64K.
+//
+// Key canary: every chat request's bearer key is recorded only as a short
+// SHA-256 fingerprint, with the CANARY:<tag> a message in the conversation
+// carries, and GET /fixture/keys lists them. The mediated-fleet journey tags
+// each Agent's conversation and asserts that every call for that tag carried
+// that Agent's own key. -tls-cert/-tls-key serve HTTPS, as a provider
+// receiving a key must (the model gateway sends a key only over HTTPS).
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -33,6 +42,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -56,6 +66,7 @@ var (
 	rememberPattern = regexp.MustCompile(`(?i)remember this exact token for the next turn:\s*([A-Za-z0-9][A-Za-z0-9_-]*[A-Za-z0-9])`)
 	slowPattern     = regexp.MustCompile(`\bSLOW:(\d{1,4})\b`)
 	replyPattern    = regexp.MustCompile(`(?i)reply with ([A-Za-z0-9_-]+) only`)
+	canaryPattern   = regexp.MustCompile(`\bCANARY:([a-z0-9][a-z0-9-]{0,62})\b`)
 )
 
 type message struct {
@@ -166,6 +177,37 @@ func Respond(messages []message) Reply {
 type server struct {
 	requests, cancelled, recallMisses atomic.Int64
 	tick                              time.Duration
+	keysMu                            sync.Mutex
+	keys                              []KeyRecord
+}
+
+// KeyRecord is one chat request's key, as a fingerprint only, and the canary
+// tag its conversation carries ("" when none).
+type KeyRecord struct {
+	Request int64  `json:"request"`
+	Key     string `json:"key"`
+	Tag     string `json:"tag"`
+}
+
+// KeyFingerprint is the first 16 hex characters of the SHA-256 of a bearer
+// key; "" when the request carried none. The raw key is never kept.
+func KeyFingerprint(authorization string) string {
+	key, ok := strings.CutPrefix(authorization, "Bearer ")
+	if !ok || key == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// CanaryTag is the first CANARY:<tag> in any message of the conversation.
+func CanaryTag(messages []message) string {
+	for _, m := range messages {
+		if found := canaryPattern.FindStringSubmatch(m.text()); found != nil {
+			return found[1]
+		}
+	}
+	return ""
 }
 
 func (s *server) routes() http.Handler {
@@ -175,6 +217,11 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /models", s.models)
 	mux.HandleFunc("POST /v1/chat/completions", s.chat)
 	mux.HandleFunc("POST /chat/completions", s.chat)
+	mux.HandleFunc("GET /fixture/keys", func(w http.ResponseWriter, _ *http.Request) {
+		s.keysMu.Lock()
+		defer s.keysMu.Unlock()
+		writeJSON(w, append([]KeyRecord{}, s.keys...))
+	})
 	mux.HandleFunc("GET /fixture/stats", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]int64{"requests": s.requests.Load(), "cancelled": s.cancelled.Load(), "recallMisses": s.recallMisses.Load()})
 	})
@@ -206,11 +253,15 @@ func (s *server) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := s.requests.Add(1)
+	record := KeyRecord{Request: n, Key: KeyFingerprint(r.Header.Get("Authorization")), Tag: CanaryTag(req.Messages)}
+	s.keysMu.Lock()
+	s.keys = append(s.keys, record)
+	s.keysMu.Unlock()
 	reply := Respond(req.Messages)
 	if reply.Text == NoTokenSentinel {
 		s.recallMisses.Add(1)
 	}
-	log.Printf("request=%d stream=%t messages=%d reply=%q slow=%s", n, req.Stream, len(req.Messages), reply.Text, reply.Slow)
+	log.Printf("request=%d stream=%t messages=%d reply=%q slow=%s key=%s tag=%s", n, req.Stream, len(req.Messages), reply.Text, reply.Slow, record.Key, record.Tag)
 	model := req.Model
 	if model == "" {
 		model = "fake-model"
@@ -295,8 +346,14 @@ func (s *server) cancel(n int64) {
 
 func main() {
 	listen := flag.String("listen", ":8080", "listen address")
+	cert := flag.String("tls-cert", "", "serve HTTPS with this certificate (PEM)")
+	key := flag.String("tls-key", "", "and this private key (PEM)")
 	flag.Parse()
 	srv := &http.Server{Addr: *listen, Handler: (&server{}).routes(), ReadHeaderTimeout: 10 * time.Second}
+	if *cert != "" || *key != "" {
+		log.Printf("fake-model listening on %s (HTTPS)", *listen)
+		log.Fatal(srv.ListenAndServeTLS(*cert, *key))
+	}
 	log.Printf("fake-model listening on %s", *listen)
 	log.Fatal(srv.ListenAndServe())
 }

@@ -34,6 +34,10 @@
 {{- if $tenantNamespaces }}
 {{- $_ := set $gatewayConfig "readinessNamespaces" $tenantNamespaces }}
 {{- end }}
+{{- $providerCA := .Values.modelGateway.providerCA | default dict }}
+{{- if $providerCA.configMap }}
+{{- $_ := set $gatewayConfig "providerCaFile" "/etc/model-gateway/provider-ca/ca.crt" }}
+{{- end }}
 {{- end }}
 apiVersion: v1
 kind: ServiceAccount
@@ -137,6 +141,7 @@ spec:
       {{- if $mediated }}
       annotations:
         checksum/configuration: {{ toJson $gatewayConfig | sha256sum | quote }}
+        checksum/mediation-trust: {{ include "sympozium.mediationTrustChecksum" . | quote }}
       {{- end }}
     spec:
       serviceAccountName: {{ $name }}
@@ -275,6 +280,11 @@ spec:
             - name: trust
               mountPath: /etc/model-gateway/trust
               readOnly: true
+            {{- if (.Values.modelGateway.providerCA | default dict).configMap }}
+            - name: provider-ca
+              mountPath: /etc/model-gateway/provider-ca
+              readOnly: true
+            {{- end }}
             - name: private
               mountPath: /run/model-gateway/private
               readOnly: true
@@ -296,6 +306,16 @@ spec:
             items:
               - key: jwks.json
                 path: jwks.json
+        {{- with (.Values.modelGateway.providerCA | default dict) }}
+        {{- if .configMap }}
+        - name: provider-ca
+          configMap:
+            name: {{ .configMap | quote }}
+            items:
+              - key: {{ .key | default "ca.crt" | quote }}
+                path: ca.crt
+        {{- end }}
+        {{- end }}
         # World-readable inside this volume only so UID 65532 can copy it; the
         # gateway container never mounts it.
         - name: operator

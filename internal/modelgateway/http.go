@@ -55,7 +55,7 @@ func (g *Gateway) Handler() http.Handler {
 		}
 		in.ExecutionToken = cellncapability.NewToken(r.Header.Get("X-Celln-Execution-Permit"))
 		if err := g.Register(r.Context(), in); err != nil {
-			writeFailure(w, err)
+			writeRefusal(w, err, "register", in.Decision)
 			return
 		}
 		w.WriteHeader(204)
@@ -72,7 +72,7 @@ func (g *Gateway) Handler() http.Handler {
 		}
 		token := cellncapability.NewToken(r.Header.Get("X-Celln-Execution-Permit"))
 		if err := g.Close(r.Context(), token, in); err != nil {
-			writeFailure(w, err)
+			writeRefusal(w, err, "close", in.Decision)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -90,7 +90,7 @@ func (g *Gateway) Handler() http.Handler {
 		}
 		out, err := g.Invoke(r.Context(), token, in)
 		if err != nil {
-			writeFailure(w, err)
+			writeRefusal(w, err, "invoke", in.Decision)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -128,6 +128,14 @@ func (g *Gateway) readRequest(w http.ResponseWriter, r *http.Request, out any) e
 	return nil
 }
 func writeFailure(w http.ResponseWriter, err error) {
+	writeRefusal(w, err, "", nil)
+}
+
+// writeRefusal answers a refused call and logs one line for it. The run and
+// Agent are as the request's decision names them: a forged decision fails
+// verification, but the line still says what it claimed, so it is labelled
+// a claim, and only Kubernetes-name characters are ever written.
+func writeRefusal(w http.ResponseWriter, err error, operation string, decision json.RawMessage) {
 	status, reason := 503, ReasonUnavailable
 	var e *Error
 	if errors.As(err, &e) {
@@ -149,8 +157,59 @@ func writeFailure(w http.ResponseWriter, err error) {
 	// One line per refusal, public reason code and status only: no request,
 	// decision, credential or provider detail. Operators otherwise cannot tell
 	// why a model call was refused.
-	fmt.Fprintf(os.Stderr, "model-gateway: refused status=%d reason=%s\n", status, reason)
+	fmt.Fprintf(os.Stderr, "model-gateway: refused status=%d reason=%s%s\n", status, reason, refusalSubject(operation, decision))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"reason": reason})
+}
+
+// refusalSubject renders the operation and the run and Agent a refused call's
+// decision names, for the refusal log line; never a credential, route or
+// request detail.
+func refusalSubject(operation string, decision json.RawMessage) string {
+	if operation == "" {
+		return ""
+	}
+	var claimed struct {
+		Run struct {
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+		} `json:"run"`
+		Agent struct {
+			Name string `json:"name"`
+		} `json:"agent"`
+		Parent *struct {
+			TurnID *string `json:"turnId"`
+		} `json:"parent"`
+	}
+	out := " op=" + operation
+	if json.Unmarshal(decision, &claimed) != nil {
+		return out
+	}
+	if ns, name := logName(claimed.Run.Namespace), logName(claimed.Run.Name); ns != "" && name != "" {
+		out += " claimed_run=" + ns + "/" + name
+	}
+	if agent := logName(claimed.Agent.Name); agent != "" {
+		out += " claimed_agent=" + agent
+	}
+	if claimed.Parent != nil && claimed.Parent.TurnID != nil {
+		if turn := logName(*claimed.Parent.TurnID); turn != "" {
+			out += " claimed_turn=" + turn
+		}
+	}
+	return out
+}
+
+// logName passes a Kubernetes object name (lower-case alphanumerics, '-' and
+// '.', at most 253 characters) and drops anything else.
+func logName(v string) string {
+	if v == "" || len(v) > 253 {
+		return ""
+	}
+	for _, c := range v {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.') {
+			return ""
+		}
+	}
+	return v
 }
