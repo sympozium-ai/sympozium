@@ -121,6 +121,8 @@ spec:
 
 Phase transitions: `Pending` → `Running` → `Succeeded` (or `Failed`). When [lifecycle hooks](lifecycle-hooks.md) with `postRun` are defined: `Pending` → `Running` → `PostRunning` → `Succeeded` (or `Failed`).
 
+A [response gate](lifecycle-hooks.md#retrying-a-rejected-response) can retry a rejected run. Each attempt is its own AgentRun, linked by `status.retryOf` and `status.attempt`; a superseded attempt ends `Failed` with `status.gateVerdict: retried`. Use `kubectl get agentruns -o wide` to see the chain.
+
 Setting `spec.backend: celln` routes the run to a hardware-isolated Celln microVM instead of a Job, and `spec.executionLifecycle` chooses `one-shot` or `enduring` (a leased parent cell that takes follow-up `AgentRunTurn`s). Celln runs use the model route of the Agent's Celln backend (`spec.model.connectionRef`), not a key in the run, and do not support SkillPacks, MCP, ensembles, delegation or shared memory. See [Celln Backend](celln-backend.md).
 
 Other fields worth knowing: `spec.task.mode: harness` or an `AgentRuntime` replaces `agent-runner` with an approved harness ([Harness Mode](../modes/harness.md)); `spec.mode: server` runs a long-lived Deployment ([Serving Mode](../guides/serving-mode.md)); `spec.tolerations` places the pod on tainted nodes; `spec.cleanup` is `delete` or `keep`.

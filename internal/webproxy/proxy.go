@@ -1,6 +1,7 @@
 package webproxy
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
 )
@@ -29,6 +31,18 @@ type Proxy struct {
 	log          logr.Logger
 	limiter      *RateLimiter
 	DensityCache *controller.DensityCache // optional: for capacity-aware routing
+}
+
+// answersRun reports whether a run lifecycle event settles the run this
+// request is waiting on, or a later attempt of it.
+//
+// A gate hook that returns {"action":"retry"} retires the run this request
+// created — it publishes neither a completion nor a failure — and the work
+// continues under a successor's name. Matching on the name alone would leave
+// the caller waiting for an event that is never published again, so the chain
+// is followed instead.
+func (p *Proxy) answersRun(ctx context.Context, run *sympoziumv1alpha1.AgentRun, event *eventbus.Event) bool {
+	return controller.RetryChainContains(ctx, p.k8s, run.Namespace, run.Name, event.Metadata["agentRunID"])
 }
 
 // NewProxy creates a new web proxy.

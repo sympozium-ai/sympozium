@@ -284,7 +284,7 @@ func (p *Proxy) executeAgentTask(ctx context.Context, task string, session *mcpS
 		case <-timeout:
 			return "", fmt.Errorf("agent run timed out")
 		case event := <-completedCh:
-			if event.Metadata["agentRunID"] != run.Name {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			var result struct {
@@ -296,7 +296,7 @@ func (p *Proxy) executeAgentTask(ctx context.Context, task string, session *mcpS
 			}
 			return result.Response, nil
 		case event := <-failedCh:
-			if event.Metadata["agentRunID"] != run.Name {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			var result struct {

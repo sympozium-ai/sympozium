@@ -163,9 +163,9 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	} else if existing != nil {
 		p.log.Info("Reusing AgentRun for duplicate web request", "run", existing.Name, "instance", inst.Name, "requestHash", requestHash)
 		if req.Stream {
-			p.streamResponse(w, r, existing.Name, completedCh, failedCh)
+			p.streamResponse(w, r, existing, completedCh, failedCh)
 		} else {
-			p.blockingResponse(w, r, existing.Name, inst.Spec.Agents.Default.Model, completedCh, failedCh)
+			p.blockingResponse(w, r, existing, inst.Spec.Agents.Default.Model, completedCh, failedCh)
 		}
 		return
 	}
@@ -222,14 +222,19 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	p.log.Info("Created AgentRun from web request", "run", run.Name, "instance", inst.Name)
 
 	if req.Stream {
-		p.streamResponse(w, r, run.Name, completedCh, failedCh)
+		p.streamResponse(w, r, run, completedCh, failedCh)
 	} else {
-		p.blockingResponse(w, r, run.Name, inst.Spec.Agents.Default.Model, completedCh, failedCh)
+		p.blockingResponse(w, r, run, inst.Spec.Agents.Default.Model, completedCh, failedCh)
 	}
 }
 
 // streamResponse writes SSE chunks as the agent produces output.
-func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, runName string, completedCh, failedCh <-chan *eventbus.Event) {
+// streamResponse relays the agent's chunks to the client as they arrive. When
+// a gate retries the run, the successor's chunks follow the rejected attempt's
+// — chunk delivery is not gate-suppressed, so what is already sent cannot be
+// taken back, and the last text the client sees is the attempt that passed.
+func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, run *sympoziumv1alpha1.AgentRun, completedCh, failedCh <-chan *eventbus.Event) {
+	runName := run.Name
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
@@ -258,7 +263,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, runName s
 		case <-timeout:
 			return
 		case event := <-chunkCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			var chunk struct {
@@ -283,7 +288,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, runName s
 			flusher.Flush()
 
 		case event := <-completedCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			// Send final chunk with finish_reason
@@ -303,7 +308,7 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, runName s
 			return
 
 		case event := <-failedCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			var result struct {
@@ -325,7 +330,8 @@ func (p *Proxy) streamResponse(w http.ResponseWriter, r *http.Request, runName s
 }
 
 // blockingResponse waits for the agent to complete and returns a single response.
-func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName, model string, completedCh, failedCh <-chan *eventbus.Event) {
+func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, run *sympoziumv1alpha1.AgentRun, model string, completedCh, failedCh <-chan *eventbus.Event) {
+	runName := run.Name
 	ctx := r.Context()
 	timeout := time.After(10 * time.Minute)
 
@@ -337,6 +343,8 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 	}
 
 	var contentParts []string
+	// The attempt the chunks collected so far belong to.
+	chunkRun := run.Name
 
 	for {
 		select {
@@ -347,8 +355,13 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 			writeError(w, http.StatusGatewayTimeout, "agent run timed out")
 			return
 		case event := <-chunkCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
+			}
+			// A retry starts the answer over, so chunks from the attempt the
+			// gate rejected must not be concatenated with its replacement's.
+			if id := event.Metadata["agentRunID"]; id != chunkRun {
+				chunkRun, contentParts = id, nil
 			}
 			var chunk struct {
 				Content string `json:"content"`
@@ -357,7 +370,7 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 				contentParts = append(contentParts, chunk.Content)
 			}
 		case event := <-completedCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			// Try to get the response from the event data first
@@ -391,7 +404,7 @@ func (p *Proxy) blockingResponse(w http.ResponseWriter, r *http.Request, runName
 			return
 
 		case event := <-failedCh:
-			if event.Metadata["agentRunID"] != runName {
+			if !p.answersRun(ctx, run, event) {
 				continue
 			}
 			var result struct {
