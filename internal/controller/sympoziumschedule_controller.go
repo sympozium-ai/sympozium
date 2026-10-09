@@ -12,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -357,6 +358,23 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			break
 		}
 		if !errors.IsAlreadyExists(err) {
+			// A permanent rejection (for example the admission webhook
+			// denying a session-only runtime) can't succeed on retry, so
+			// record it on the schedule the way applyAgentExecutionDefaults
+			// errors are, instead of retrying every 30s.
+			if errors.IsForbidden(err) || errors.IsInvalid(err) {
+				log.Error(err, "AgentRun was rejected; marking schedule in error")
+				schedule.Status.Phase = "Error"
+				meta.SetStatusCondition(&schedule.Status.Conditions, metav1.Condition{
+					Type:               sympoziumv1alpha1.SympoziumScheduleRunCreatedCondition,
+					Status:             metav1.ConditionFalse,
+					Reason:             "AdmissionDenied",
+					Message:            err.Error(),
+					ObservedGeneration: schedule.Generation,
+				})
+				_ = r.Status().Update(ctx, schedule)
+				return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+			}
 			log.Error(err, "failed to create AgentRun")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
@@ -387,6 +405,13 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	next := sched.Next(now)
 	nextMeta := metav1.NewTime(next)
 	schedule.Status.NextRunTime = &nextMeta
+	meta.SetStatusCondition(&schedule.Status.Conditions, metav1.Condition{
+		Type:               sympoziumv1alpha1.SympoziumScheduleRunCreatedCondition,
+		Status:             metav1.ConditionTrue,
+		Reason:             "Created",
+		Message:            "Created AgentRun " + runName,
+		ObservedGeneration: schedule.Generation,
+	})
 
 	_ = r.Status().Update(ctx, schedule)
 

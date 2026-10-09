@@ -2,17 +2,22 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
@@ -634,5 +639,111 @@ func TestSympoziumScheduleReconcile_ForbidBlocksOnNonTerminalPhases(t *testing.T
 					tc.phase, nextName)
 			}
 		})
+	}
+}
+
+// TestSympoziumScheduleReconcile_DoesNotRetryPermanentAdmissionRejection
+// pins the fix for #628: a schedule whose AgentRun create is permanently
+// rejected by the admission webhook (e.g. the Agent's runtime is session-only
+// and can never back an AgentRun) must be surfaced in the schedule status and
+// must NOT be retried every 30s forever. The webhook denial surfaces to the
+// controller as a Forbidden StatusError, which is permanent. Retrying it on
+// the same footing as a transient error produces unbounded controller log
+// noise and an invisible misconfiguration.
+func TestSympoziumScheduleReconcile_DoesNotRetryPermanentAdmissionRejection(t *testing.T) {
+	now := time.Now()
+	instance := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "inst-session-only",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{
+					Model: "claude-3-5-sonnet",
+				},
+			},
+			AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: "anthropic", Secret: "inst-session-only-anthropic-key"},
+			},
+		},
+	}
+	schedule := &sympoziumv1alpha1.SympoziumSchedule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "inst-session-only-heartbeat",
+			Namespace:         "default",
+			CreationTimestamp: metav1.NewTime(now.Add(-2 * time.Minute)),
+		},
+		Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+			AgentRef: "inst-session-only",
+			Schedule: "* * * * *",
+			Task:     "heartbeat",
+			Type:     "heartbeat",
+		},
+	}
+
+	// Simulate the admission webhook denying the AgentRun create with a
+	// permanent Forbidden error (the same shape a webhook denial produces).
+	denied := apierrors.NewForbidden(
+		sympoziumv1alpha1.GroupVersion.WithResource("agentruns").GroupResource(),
+		schedule.Name+"-1",
+		fmt.Errorf("harness: runtime %q is session-only (v1alpha2); start it as a HarnessSession instead of an AgentRun", "hermes-session-v0-20-6"),
+	)
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add sympozium scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(instance, schedule).
+		WithStatusSubresource(&sympoziumv1alpha1.SympoziumSchedule{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*sympoziumv1alpha1.AgentRun); ok {
+					return denied
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+	r := &SympoziumScheduleReconciler{
+		Client: cl,
+		Scheme: scheme,
+		Log:    logr.Discard(),
+	}
+
+	res, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: schedule.Name, Namespace: schedule.Namespace},
+	})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	// The permanent rejection must not be retried every 30s.
+	if res.RequeueAfter == 30*time.Second {
+		t.Fatalf("permanent admission rejection must not requeue every 30s; got RequeueAfter=%v", res.RequeueAfter)
+	}
+
+	// The misconfiguration must be surfaced in the schedule status.
+	got := &sympoziumv1alpha1.SympoziumSchedule{}
+	if err := cl.Get(context.Background(), types.NamespacedName{
+		Name:      schedule.Name,
+		Namespace: schedule.Namespace,
+	}, got); err != nil {
+		t.Fatalf("get schedule: %v", err)
+	}
+	if got.Status.Phase != "Error" {
+		t.Fatalf("schedule status phase = %q, want %q (permanent rejection must be surfaced)", got.Status.Phase, "Error")
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, sympoziumv1alpha1.SympoziumScheduleRunCreatedCondition)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "AdmissionDenied" {
+		t.Fatalf("RunCreated condition = %+v, want False/AdmissionDenied", cond)
+	}
+	if !strings.Contains(cond.Message, "session-only") {
+		t.Fatalf("RunCreated message %q does not carry the webhook's reason", cond.Message)
 	}
 }
