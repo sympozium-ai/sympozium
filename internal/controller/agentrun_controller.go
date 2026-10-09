@@ -3257,16 +3257,7 @@ func (r *AgentRunReconciler) buildContainers(
 				{Name: "ipc", MountPath: "/ipc"},
 				{Name: "tmp", MountPath: "/tmp"},
 			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("250m"),
-					corev1.ResourceMemory: resource.MustParse("512Mi"),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("1"),
-					corev1.ResourceMemory: resource.MustParse("1Gi"),
-				},
-			},
+			Resources: agentContainerResources(agentRun.Spec.Task),
 		},
 		// IPC bridge sidecar
 		{
@@ -3941,6 +3932,33 @@ func (r *AgentRunReconciler) buildContainers(
 	}
 
 	return containers, initContainers, nil
+}
+
+// agentContainerResources returns the requests/limits for the agent container.
+// A harness task carries a runtime-declared resources parameter, which only
+// NormalizeHarnessTask writes, from AgentRuntime.spec.resources; it is
+// honoured. Every other task keeps the platform defaults, so a run author
+// cannot size the pod through task parameters. An absent or unparseable
+// parameter also keeps the defaults.
+func agentContainerResources(task *sympoziumv1alpha1.TaskSpec) corev1.ResourceRequirements {
+	if task != nil && task.GetMode() == taskmodes.Harness {
+		if raw, present := task.Parameters["resources"]; present {
+			var rr corev1.ResourceRequirements
+			if err := json.Unmarshal([]byte(raw), &rr); err == nil {
+				return rr
+			}
+		}
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("250m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
 }
 
 // toCoreEnvVar converts a simplified API EnvVar into a corev1.EnvVar, honoring

@@ -1,6 +1,7 @@
 package taskmodes
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -896,4 +898,109 @@ func envValue(envs []corev1.EnvVar, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// NormalizeHarnessTask carries the runtime's resources into the task so the
+// agent container on the AgentRun path honours AgentRuntime.spec.resources.
+func TestNormalizeHarnessTask_CarriesRuntimeResources(t *testing.T) {
+	rt := readyRuntime("codex-v1", "persona")
+	rt.Spec.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi")},
+	}
+	runtimes := map[string]*sympoziumv1alpha1.AgentRuntime{"codex-v1": rt}
+	task := &sympoziumv1alpha1.TaskSpec{
+		Mode:       Harness,
+		Parameters: map[string]string{harnessParamPrompt: "do it", harnessParamRuntime: "codex-v1"},
+	}
+	got, err := NormalizeHarnessTask("default", task, func(ns, name string) (*sympoziumv1alpha1.AgentRuntime, error) {
+		r, ok := runtimes[name]
+		if !ok {
+			return nil, fmt.Errorf("not found")
+		}
+		return r, nil
+	})
+	if err != nil {
+		t.Fatalf("NormalizeHarnessTask returned error: %v", err)
+	}
+	raw, present := got.Parameters[harnessParamResources]
+	if !present {
+		t.Fatal("normalized task has no resources parameter")
+	}
+	var rr corev1.ResourceRequirements
+	if err := json.Unmarshal([]byte(raw), &rr); err != nil {
+		t.Fatalf("resources parameter is not valid JSON: %v", err)
+	}
+	if got := rr.Limits.Memory().String(); got != "4Gi" {
+		t.Errorf("normalized resources memory limit = %s, want 4Gi", got)
+	}
+}
+
+// A runtime that leaves resources unset produces no resources parameter, so
+// the agent container keeps the platform defaults.
+func TestNormalizeHarnessTask_OmitsResourcesWhenUnset(t *testing.T) {
+	runtimes := map[string]*sympoziumv1alpha1.AgentRuntime{"codex-v1": readyRuntime("codex-v1", "persona")}
+	task := &sympoziumv1alpha1.TaskSpec{
+		Mode:       Harness,
+		Parameters: map[string]string{harnessParamPrompt: "do it", harnessParamRuntime: "codex-v1"},
+	}
+	got, err := NormalizeHarnessTask("default", task, func(ns, name string) (*sympoziumv1alpha1.AgentRuntime, error) {
+		r, ok := runtimes[name]
+		if !ok {
+			return nil, fmt.Errorf("not found")
+		}
+		return r, nil
+	})
+	if err != nil {
+		t.Fatalf("NormalizeHarnessTask returned error: %v", err)
+	}
+	if _, present := got.Parameters[harnessParamResources]; present {
+		t.Error("normalized task carries a resources parameter when the runtime left resources unset")
+	}
+}
+
+// A resources parameter set by the run author never reaches the agent
+// container: with a runtime that declares no resources it is dropped, and with
+// no runtime at all it is dropped too. Only AgentRuntime.spec.resources may
+// size the pod.
+func TestNormalizeHarnessTask_DropsCallerResources(t *testing.T) {
+	caller := `{"limits":{"memory":"64Gi"}}`
+	runtimes := map[string]*sympoziumv1alpha1.AgentRuntime{"codex-v1": readyRuntime("codex-v1", "persona")}
+	get := func(ns, name string) (*sympoziumv1alpha1.AgentRuntime, error) {
+		return runtimes[name], nil
+	}
+
+	withRuntime := &sympoziumv1alpha1.TaskSpec{
+		Mode: Harness,
+		Parameters: map[string]string{
+			harnessParamPrompt:    "do it",
+			harnessParamRuntime:   "codex-v1",
+			harnessParamResources: caller,
+		},
+	}
+	got, err := NormalizeHarnessTask("default", withRuntime, get)
+	if err != nil {
+		t.Fatalf("NormalizeHarnessTask(runtime): %v", err)
+	}
+	if raw, present := got.Parameters[harnessParamResources]; present {
+		t.Errorf("caller resources survived a runtime without resources: %s", raw)
+	}
+
+	inline := &sympoziumv1alpha1.TaskSpec{
+		Mode: Harness,
+		Parameters: map[string]string{
+			harnessParamPrompt:    "do it",
+			harnessParamImage:     harnessTestImage,
+			harnessParamResources: caller,
+		},
+	}
+	got, err = NormalizeHarnessTask("default", inline, get)
+	if err != nil {
+		t.Fatalf("NormalizeHarnessTask(inline image): %v", err)
+	}
+	if raw, present := got.Parameters[harnessParamResources]; present {
+		t.Errorf("caller resources survived a task with no runtime: %s", raw)
+	}
+	if _, present := inline.Parameters[harnessParamResources]; !present {
+		t.Error("NormalizeHarnessTask mutated the caller's task parameters")
+	}
 }
