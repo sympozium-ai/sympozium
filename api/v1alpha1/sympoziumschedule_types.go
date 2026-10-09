@@ -58,6 +58,11 @@ const (
 	ScheduleFirstTickAfterInterval = "afterInterval"
 )
 
+// SympoziumScheduleRunCreatedCondition reports whether the last scheduled
+// AgentRun could be created. It is False with reason AdmissionDenied when the
+// API server permanently rejects the run, for example a session-only runtime.
+const SympoziumScheduleRunCreatedCondition = "RunCreated"
+
 // SympoziumScheduleStatus defines the observed state of a SympoziumSchedule.
 type SympoziumScheduleStatus struct {
 	// Phase is the current phase (Active, Suspended, Error).
