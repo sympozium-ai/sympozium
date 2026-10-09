@@ -792,3 +792,16 @@ func TestBuildContainers_HarnessKeepsDefaultsWithoutRuntimeResources(t *testing.
 		t.Errorf("agent memory request = %s, want the default 512Mi", got)
 	}
 }
+
+// Only a harness task may carry runtime resources. A non-harness task that sets
+// a resources parameter still gets the platform defaults, so a run author
+// cannot size the agent pod through task parameters.
+func TestAgentContainerResources_IgnoresResourcesOutsideHarness(t *testing.T) {
+	task := &sympoziumv1alpha1.TaskSpec{
+		Parameters: map[string]string{"resources": `{"limits":{"memory":"64Gi"}}`},
+	}
+	got := agentContainerResources(task)
+	if mem := got.Limits.Memory().String(); mem != "1Gi" {
+		t.Errorf("non-harness memory limit = %s, want the 1Gi default", mem)
+	}
+}

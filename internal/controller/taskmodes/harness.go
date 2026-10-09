@@ -397,7 +397,7 @@ func NormalizeHarnessTask(namespace string, task *sympoziumv1alpha1.TaskSpec, ge
 	}
 	runtimeName := strings.TrimSpace(task.Parameters[harnessParamRuntime])
 	if runtimeName == "" {
-		return task, nil
+		return withoutCallerResources(task), nil
 	}
 
 	rt, err := getRuntime(namespace, runtimeName)
@@ -421,7 +421,9 @@ func NormalizeHarnessTask(namespace string, task *sympoziumv1alpha1.TaskSpec, ge
 	normalized := *task
 	params := make(map[string]string, len(task.Parameters)+2)
 	for k, v := range task.Parameters {
-		if k == harnessParamRuntime {
+		// The runtime reference is resolved here, and resources may only come
+		// from the runtime below, never from the run author.
+		if k == harnessParamRuntime || k == harnessParamResources {
 			continue
 		}
 		params[k] = v
@@ -437,6 +439,25 @@ func NormalizeHarnessTask(namespace string, task *sympoziumv1alpha1.TaskSpec, ge
 	}
 	normalized.Parameters = params
 	return &normalized, nil
+}
+
+// withoutCallerResources drops a resources parameter the run author set on a
+// harness task that names no runtime. Only an AgentRuntime may size the agent
+// container, so the parameter is accepted solely when NormalizeHarnessTask
+// writes it from rt.Spec.Resources.
+func withoutCallerResources(task *sympoziumv1alpha1.TaskSpec) *sympoziumv1alpha1.TaskSpec {
+	if _, present := task.Parameters[harnessParamResources]; !present {
+		return task
+	}
+	normalized := *task
+	params := make(map[string]string, len(task.Parameters))
+	for k, v := range task.Parameters {
+		if k != harnessParamResources {
+			params[k] = v
+		}
+	}
+	normalized.Parameters = params
+	return &normalized
 }
 
 // harnessArgs parses task.parameters.args, a JSON array of strings appended

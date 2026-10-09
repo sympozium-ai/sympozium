@@ -3935,12 +3935,13 @@ func (r *AgentRunReconciler) buildContainers(
 }
 
 // agentContainerResources returns the requests/limits for the agent container.
-// When the task carries a runtime-declared resources parameter (set by
-// NormalizeHarnessTask from AgentRuntime.spec.resources), it is honoured. When
-// the parameter is absent or unparseable, the platform defaults apply, which
-// keeps today's behaviour for runtimes that leave resources unset.
+// A harness task carries a runtime-declared resources parameter, which only
+// NormalizeHarnessTask writes, from AgentRuntime.spec.resources; it is
+// honoured. Every other task keeps the platform defaults, so a run author
+// cannot size the pod through task parameters. An absent or unparseable
+// parameter also keeps the defaults.
 func agentContainerResources(task *sympoziumv1alpha1.TaskSpec) corev1.ResourceRequirements {
-	if task != nil {
+	if task != nil && task.GetMode() == taskmodes.Harness {
 		if raw, present := task.Parameters["resources"]; present {
 			var rr corev1.ResourceRequirements
 			if err := json.Unmarshal([]byte(raw), &rr); err == nil {
