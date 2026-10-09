@@ -745,3 +745,50 @@ func TestBuildContainers_AllowsOrdinaryMCPServerNames(t *testing.T) {
 		t.Errorf("buildContainers rejected ordinary server names: %v", err)
 	}
 }
+
+// The agent container honours AgentRuntime.spec.resources on the AgentRun
+// path. NormalizeHarnessTask encodes the runtime's resources into the task's
+// resources parameter, and buildContainers applies it to the agent container.
+// A runtime that leaves resources unset keeps today's hardcoded defaults.
+func TestBuildContainers_HarnessAppliesRuntimeResources(t *testing.T) {
+	params := map[string]string{
+		"prompt":    "summarise the incident",
+		"image":     harnessTestImage,
+		"resources": `{"limits":{"memory":"4Gi","cpu":"2"},"requests":{"memory":"1Gi","cpu":"500m"}}`,
+	}
+	r := &AgentRunReconciler{ImageTag: "v0.1.2"}
+	cs, _, err := r.buildContainers(harnessModeRun(params), false, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("buildContainers: %v", err)
+	}
+	agent := containerByName(cs, "agent")
+	if agent == nil {
+		t.Fatal("agent container not found")
+	}
+	if got := agent.Resources.Limits.Memory().String(); got != "4Gi" {
+		t.Errorf("agent memory limit = %s, want 4Gi from the runtime", got)
+	}
+	if got := agent.Resources.Requests.Memory().String(); got != "1Gi" {
+		t.Errorf("agent memory request = %s, want 1Gi from the runtime", got)
+	}
+}
+
+// A runtime that leaves resources unset keeps the platform defaults, so the
+// change does not alter existing runs.
+func TestBuildContainers_HarnessKeepsDefaultsWithoutRuntimeResources(t *testing.T) {
+	r := &AgentRunReconciler{ImageTag: "v0.1.2"}
+	cs, _, err := r.buildContainers(harnessModeRun(nil), false, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("buildContainers: %v", err)
+	}
+	agent := containerByName(cs, "agent")
+	if agent == nil {
+		t.Fatal("agent container not found")
+	}
+	if got := agent.Resources.Limits.Memory().String(); got != "1Gi" {
+		t.Errorf("agent memory limit = %s, want the default 1Gi", got)
+	}
+	if got := agent.Resources.Requests.Memory().String(); got != "512Mi" {
+		t.Errorf("agent memory request = %s, want the default 512Mi", got)
+	}
+}

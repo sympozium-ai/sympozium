@@ -3257,16 +3257,7 @@ func (r *AgentRunReconciler) buildContainers(
 				{Name: "ipc", MountPath: "/ipc"},
 				{Name: "tmp", MountPath: "/tmp"},
 			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("250m"),
-					corev1.ResourceMemory: resource.MustParse("512Mi"),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("1"),
-					corev1.ResourceMemory: resource.MustParse("1Gi"),
-				},
-			},
+			Resources: agentContainerResources(agentRun.Spec.Task),
 		},
 		// IPC bridge sidecar
 		{
@@ -3941,6 +3932,32 @@ func (r *AgentRunReconciler) buildContainers(
 	}
 
 	return containers, initContainers, nil
+}
+
+// agentContainerResources returns the requests/limits for the agent container.
+// When the task carries a runtime-declared resources parameter (set by
+// NormalizeHarnessTask from AgentRuntime.spec.resources), it is honoured. When
+// the parameter is absent or unparseable, the platform defaults apply, which
+// keeps today's behaviour for runtimes that leave resources unset.
+func agentContainerResources(task *sympoziumv1alpha1.TaskSpec) corev1.ResourceRequirements {
+	if task != nil {
+		if raw, present := task.Parameters["resources"]; present {
+			var rr corev1.ResourceRequirements
+			if err := json.Unmarshal([]byte(raw), &rr); err == nil {
+				return rr
+			}
+		}
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("250m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
 }
 
 // toCoreEnvVar converts a simplified API EnvVar into a corev1.EnvVar, honoring

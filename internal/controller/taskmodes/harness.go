@@ -107,6 +107,13 @@ const (
 	// the run's namespace by name. When set, the runtime supplies the image and
 	// capabilities; it is mutually exclusive with the inline harnessParamImage.
 	harnessParamRuntime = "runtime"
+	// harnessParamResources carries the runtime's primary-container
+	// requests/limits as a JSON-encoded corev1.ResourceRequirements. It is set
+	// by NormalizeHarnessTask when the runtime declares resources, so the agent
+	// container on the AgentRun path honours AgentRuntime.spec.resources the
+	// way the HarnessSession path already does. Absent when the runtime leaves
+	// resources unset, in which case the platform defaults apply.
+	harnessParamResources = "resources"
 )
 
 // HarnessHandler is the TaskModeHandler for harness mode. It leaves the
@@ -422,6 +429,11 @@ func NormalizeHarnessTask(namespace string, task *sympoziumv1alpha1.TaskSpec, ge
 	params[harnessParamImage] = rt.Spec.Image
 	if len(rt.Spec.Capabilities) > 0 {
 		params[harnessParamCapabilities] = strings.Join(rt.Spec.Capabilities, ",")
+	}
+	if rt.Spec.Resources != nil {
+		if enc, err := json.Marshal(rt.Spec.Resources); err == nil {
+			params[harnessParamResources] = string(enc)
+		}
 	}
 	normalized.Parameters = params
 	return &normalized, nil
