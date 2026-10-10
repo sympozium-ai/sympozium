@@ -89,7 +89,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: strip-finalizers
-          image: soldevelo/kubectl:1.36
+          image: {{ .Values.image.utility.kubectl | default "soldevelo/kubectl:1.36" | quote }}
           command:
             - /bin/sh
             - -c

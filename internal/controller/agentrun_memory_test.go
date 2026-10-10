@@ -283,3 +283,27 @@ func TestBuildContainers_NoWaitForMemoryWithoutSkill(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildContainers_BusyboxImageOverride(t *testing.T) {
+	t.Setenv("SYMPOZIUM_BUSYBOX_IMAGE", "registry.example.com/busybox:1.36")
+	r := &AgentRunReconciler{}
+	run := newTestRun()
+	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
+		{SkillPackRef: "memory"},
+	}
+
+	_, initCs, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+
+	var found bool
+	for _, ic := range initCs {
+		if ic.Name == "wait-for-memory" {
+			found = true
+			if ic.Image != "registry.example.com/busybox:1.36" {
+				t.Errorf("wait-for-memory image = %q, want the SYMPOZIUM_BUSYBOX_IMAGE override", ic.Image)
+			}
+		}
+	}
+	if !found {
+		t.Error("wait-for-memory init container not found when memory skill is attached")
+	}
+}

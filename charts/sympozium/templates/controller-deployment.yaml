@@ -161,6 +161,10 @@ spec:
             - name: SYMPOZIUM_IMAGE_TAG
               value: {{ $imgTag | quote }}
             {{- end }}
+            # Utility image for the containers the controller injects into
+            # AgentRun pods (wait-for-memory, postRun done), #348.
+            - name: SYMPOZIUM_BUSYBOX_IMAGE
+              value: {{ .Values.image.utility.busybox | default "busybox:1.36" | quote }}
             {{- if .Values.delegation.controllerExecutor }}
             # Opt-in fallback: spawn delegation-edge targets controller-side for
             # models that never emit the delegate_to_persona tool. Default off;

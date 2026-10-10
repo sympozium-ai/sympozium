@@ -3398,7 +3398,7 @@ func (r *AgentRunReconciler) buildContainers(
 		// Timeout after 120s to accommodate resource-constrained environments.
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "wait-for-memory",
-			Image:           "busybox:1.36",
+			Image:           busyboxImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			SecurityContext: &corev1.SecurityContext{
 				ReadOnlyRootFilesystem:   &readOnly,
@@ -6382,7 +6382,7 @@ func (r *AgentRunReconciler) buildPostRunJob(
 					Containers: []corev1.Container{
 						{
 							Name:            "done",
-							Image:           "busybox:1.36",
+							Image:           busyboxImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"true"},
 							SecurityContext: &corev1.SecurityContext{
