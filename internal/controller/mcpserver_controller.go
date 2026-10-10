@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/mcpbridge"
 	"k8s.io/apimachinery/pkg/api/meta"
 )
 
@@ -29,6 +31,10 @@ type MCPServerReconciler struct {
 	Scheme   *runtime.Scheme
 	Log      logr.Logger
 	ImageTag string
+
+	// discoveryURLOverride replaces the in-cluster Service URL for tool
+	// discovery. Tests set it to reach an httptest server.
+	discoveryURLOverride string
 }
 
 // mcpBridgeImage returns the fully-qualified mcp-bridge image reference.
@@ -131,6 +137,13 @@ func (r *MCPServerReconciler) reconcileSuspended(ctx context.Context, ms *sympoz
 		Message:            "MCP server is suspended",
 		ObservedGeneration: ms.Generation,
 	})
+	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
+		Type:               "ToolsDiscovered",
+		Status:             metav1.ConditionFalse,
+		Reason:             "Suspended",
+		Message:            "MCP server is suspended, no tools discovered",
+		ObservedGeneration: ms.Generation,
+	})
 
 	if err := r.Status().Update(ctx, ms); err != nil {
 		return ctrl.Result{}, err
@@ -143,7 +156,7 @@ func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympozi
 
 	ms.Status.Ready = true
 	ms.Status.URL = ms.Spec.URL
-	ms.Status.ToolCount = 0
+	discovered := r.discoverTools(ctx, ms, ms.Spec.URL, log)
 	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
@@ -154,7 +167,68 @@ func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympozi
 	if err := r.Status().Update(ctx, ms); err != nil {
 		return ctrl.Result{}, err
 	}
+	if !discovered {
+		return ctrl.Result{RequeueAfter: toolDiscoveryRetry}, nil
+	}
 	return ctrl.Result{}, nil
+}
+
+const (
+	// maxToolDiscoverySeconds bounds each tools/list call made by the controller.
+	maxToolDiscoverySeconds = 10
+	// toolDiscoveryRetry is how long to wait before retrying a failed discovery.
+	toolDiscoveryRetry = 30 * time.Second
+)
+
+// discoverTools queries the MCP server's tools/list endpoint and records the
+// discovered tool names in status. It sets a ToolsDiscovered condition with
+// the error as the message when discovery fails. Ready is intentionally left
+// independent of discovery so a slow initialize does not flap readiness.
+func (r *MCPServerReconciler) discoverTools(ctx context.Context, ms *sympoziumv1alpha1.MCPServer, url string, log logr.Logger) bool {
+	discoveryURL := url
+	if r.discoveryURLOverride != "" {
+		discoveryURL = r.discoveryURLOverride
+	}
+	// Discovery runs inside the reconcile, so keep it short even when the
+	// server's tool call timeout is long.
+	timeout := ms.Spec.Timeout
+	if timeout <= 0 || timeout > maxToolDiscoverySeconds {
+		timeout = maxToolDiscoverySeconds
+	}
+	client := mcpbridge.NewClient(mcpbridge.ServerConfig{
+		Name:    ms.Name,
+		URL:     discoveryURL,
+		Timeout: timeout,
+	})
+	tools, err := client.DiscoverTools(ctx)
+	if err != nil {
+		ms.Status.ToolCount = 0
+		ms.Status.Tools = nil
+		meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
+			Type:               "ToolsDiscovered",
+			Status:             metav1.ConditionFalse,
+			Reason:             "DiscoveryFailed",
+			Message:            err.Error(),
+			ObservedGeneration: ms.Generation,
+		})
+		log.Info("MCP tool discovery failed", "url", discoveryURL, "error", err.Error())
+		return false
+	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	ms.Status.ToolCount = len(tools)
+	ms.Status.Tools = names
+	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
+		Type:               "ToolsDiscovered",
+		Status:             metav1.ConditionTrue,
+		Reason:             "DiscoverySucceeded",
+		Message:            "MCP tools discovered",
+		ObservedGeneration: ms.Generation,
+	})
+	log.Info("MCP tool discovery succeeded", "url", discoveryURL, "count", len(tools))
+	return true
 }
 
 func (r *MCPServerReconciler) servicePort(ms *sympoziumv1alpha1.MCPServer) int32 {
@@ -439,7 +513,13 @@ func (r *MCPServerReconciler) updateStatus(ctx context.Context, ms *sympoziumv1a
 	ready := deploy.Status.ReadyReplicas > 0
 	ms.Status.Ready = ready
 	ms.Status.URL = fmt.Sprintf("http://%s.%s.svc:%d", ms.Name, ms.Namespace, port)
-	ms.Status.ToolCount = 0
+	discovered := false
+	if ready {
+		discovered = r.discoverTools(ctx, ms, ms.Status.URL, log)
+	} else {
+		ms.Status.ToolCount = 0
+		ms.Status.Tools = nil
+	}
 
 	deployedCondition := metav1.Condition{
 		Type:               "Deployed",
@@ -475,6 +555,9 @@ func (r *MCPServerReconciler) updateStatus(ctx context.Context, ms *sympoziumv1a
 
 	if !ready {
 		return ctrl.Result{RequeueAfter: 5_000_000_000}, nil // 5s
+	}
+	if !discovered {
+		return ctrl.Result{RequeueAfter: toolDiscoveryRetry}, nil
 	}
 	return ctrl.Result{}, nil
 }
