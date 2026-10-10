@@ -161,7 +161,7 @@ func (r *AgentRunReconciler) injectSharedMemory(ctx context.Context, agentRun *s
 	noPrivEsc := false
 	podSpec.InitContainers = append(podSpec.InitContainers, corev1.Container{
 		Name:            "wait-for-shared-memory",
-		Image:           "busybox:1.36",
+		Image:           busyboxImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		SecurityContext: &corev1.SecurityContext{
 			ReadOnlyRootFilesystem:   &readOnly,

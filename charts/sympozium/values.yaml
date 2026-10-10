@@ -4,6 +4,13 @@ image:
   pullPolicy: IfNotPresent
   # -- Override the image tag (defaults to .Chart.AppVersion)
   tag: ""
+  # -- Utility images injected by the controller and the chart. Point them at a
+  # private mirror for air-gapped clusters (#348).
+  utility:
+    # -- wait-for-memory, wait-for-shared-memory and postRun done containers
+    busybox: busybox:1.36
+    # -- pre-delete hook that strips finalizers
+    kubectl: soldevelo/kubectl:1.36
 
 # Dedicated gateway component only; does not enable mediated Celln admission
 # (celln.mediation.enabled does, and then deploys this gateway itself, from
