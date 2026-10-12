@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
@@ -156,7 +155,7 @@ func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympozi
 
 	ms.Status.Ready = true
 	ms.Status.URL = ms.Spec.URL
-	discovered := r.discoverTools(ctx, ms, ms.Spec.URL, log)
+	discoveryErr := r.discoverTools(ctx, ms, ms.Spec.URL, log)
 	meta.SetStatusCondition(&ms.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
@@ -167,8 +166,12 @@ func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympozi
 	if err := r.Status().Update(ctx, ms); err != nil {
 		return ctrl.Result{}, err
 	}
-	if !discovered {
-		return ctrl.Result{RequeueAfter: toolDiscoveryRetry}, nil
+	if discoveryErr != nil {
+		// Return the discovery error so controller-runtime's rate limiter
+		// (exponential backoff) paces reattempts. A fixed short RequeueAfter
+		// would re-hit an unreachable/unauthorized server on a steady cadence
+		// forever.
+		return ctrl.Result{}, discoveryErr
 	}
 	return ctrl.Result{}, nil
 }
@@ -176,15 +179,14 @@ func (r *MCPServerReconciler) reconcileExternal(ctx context.Context, ms *sympozi
 const (
 	// maxToolDiscoverySeconds bounds each tools/list call made by the controller.
 	maxToolDiscoverySeconds = 10
-	// toolDiscoveryRetry is how long to wait before retrying a failed discovery.
-	toolDiscoveryRetry = 30 * time.Second
 )
 
 // discoverTools queries the MCP server's tools/list endpoint and records the
 // discovered tool names in status. It sets a ToolsDiscovered condition with
-// the error as the message when discovery fails. Ready is intentionally left
+// the error as the message when discovery fails and returns that error so the
+// caller can let controller-runtime back off. Ready is intentionally left
 // independent of discovery so a slow initialize does not flap readiness.
-func (r *MCPServerReconciler) discoverTools(ctx context.Context, ms *sympoziumv1alpha1.MCPServer, url string, log logr.Logger) bool {
+func (r *MCPServerReconciler) discoverTools(ctx context.Context, ms *sympoziumv1alpha1.MCPServer, url string, log logr.Logger) error {
 	discoveryURL := url
 	if r.discoveryURLOverride != "" {
 		discoveryURL = r.discoveryURLOverride
@@ -212,7 +214,7 @@ func (r *MCPServerReconciler) discoverTools(ctx context.Context, ms *sympoziumv1
 			ObservedGeneration: ms.Generation,
 		})
 		log.Info("MCP tool discovery failed", "url", discoveryURL, "error", err.Error())
-		return false
+		return err
 	}
 	names := make([]string, 0, len(tools))
 	for _, t := range tools {
@@ -228,7 +230,7 @@ func (r *MCPServerReconciler) discoverTools(ctx context.Context, ms *sympoziumv1
 		ObservedGeneration: ms.Generation,
 	})
 	log.Info("MCP tool discovery succeeded", "url", discoveryURL, "count", len(tools))
-	return true
+	return nil
 }
 
 func (r *MCPServerReconciler) servicePort(ms *sympoziumv1alpha1.MCPServer) int32 {
@@ -513,9 +515,9 @@ func (r *MCPServerReconciler) updateStatus(ctx context.Context, ms *sympoziumv1a
 	ready := deploy.Status.ReadyReplicas > 0
 	ms.Status.Ready = ready
 	ms.Status.URL = fmt.Sprintf("http://%s.%s.svc:%d", ms.Name, ms.Namespace, port)
-	discovered := false
+	var discoveryErr error
 	if ready {
-		discovered = r.discoverTools(ctx, ms, ms.Status.URL, log)
+		discoveryErr = r.discoverTools(ctx, ms, ms.Status.URL, log)
 	} else {
 		ms.Status.ToolCount = 0
 		ms.Status.Tools = nil
@@ -556,8 +558,10 @@ func (r *MCPServerReconciler) updateStatus(ctx context.Context, ms *sympoziumv1a
 	if !ready {
 		return ctrl.Result{RequeueAfter: 5_000_000_000}, nil // 5s
 	}
-	if !discovered {
-		return ctrl.Result{RequeueAfter: toolDiscoveryRetry}, nil
+	if discoveryErr != nil {
+		// Return the discovery error so controller-runtime's rate limiter
+		// (exponential backoff) paces reattempts instead of a fixed 30s loop.
+		return ctrl.Result{}, discoveryErr
 	}
 	return ctrl.Result{}, nil
 }

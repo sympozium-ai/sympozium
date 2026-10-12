@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -208,13 +209,23 @@ func TestMCPServerManagedReadyDiscoversTools(t *testing.T) {
 	}
 }
 
-// TestMCPServerDiscoveryFailureSetsCondition verifies that when tools/list
-// fails, the ToolsDiscovered condition is False with the error as the message
-// and Ready is not affected.
-func TestMCPServerDiscoveryFailureSetsCondition(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// failingMCPServer returns an httptest server that fails every JSON-RPC call,
+// standing in for an external server the controller cannot authenticate to
+// (missing credentials / blocked by NetworkPolicy).
+func failingMCPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
+}
+
+// TestMCPServerExternalDiscoveryFailureReturnsError verifies that when
+// tools/list fails, the reconcile returns the discovery error so
+// controller-runtime's exponential backoff (not an endless fixed 30s retry)
+// paces the reattempts. It also pins that Ready stays true and that
+// ToolsDiscovered is False with the error as the message.
+func TestMCPServerExternalDiscoveryFailureReturnsError(t *testing.T) {
+	srv := failingMCPServer(t)
 	defer srv.Close()
 
 	ms := &sympoziumv1alpha1.MCPServer{
@@ -235,11 +246,16 @@ func TestMCPServerDiscoveryFailureSetsCondition(t *testing.T) {
 	res, err := r.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "broken", Namespace: "default"},
 	})
-	if err != nil {
-		t.Fatalf("reconcile: %v", err)
+	if err == nil {
+		t.Fatalf("expected discovery failure to return an error so controller-runtime backs off, got nil (result %+v)", res)
 	}
-	if res.RequeueAfter != toolDiscoveryRetry {
-		t.Fatalf("expected a requeue after %s to retry discovery, got %s", toolDiscoveryRetry, res.RequeueAfter)
+	if !strings.Contains(err.Error(), "500") {
+		t.Fatalf("expected the returned error to carry the discovery failure, got %v", err)
+	}
+	// The error return is what schedules the next attempt; there must be no
+	// fixed short RequeueAfter re-hitting the server on a steady cadence.
+	if res.RequeueAfter != 0 {
+		t.Fatalf("expected no fixed requeue once the error is returned, got %s", res.RequeueAfter)
 	}
 
 	var got sympoziumv1alpha1.MCPServer
@@ -254,11 +270,74 @@ func TestMCPServerDiscoveryFailureSetsCondition(t *testing.T) {
 	if cond.Status != metav1.ConditionFalse {
 		t.Fatalf("expected ToolsDiscovered False, got %s", cond.Status)
 	}
-	if cond.Message == "" {
-		t.Fatalf("expected ToolsDiscovered message to carry the error, got empty")
+	if !strings.Contains(cond.Message, "500") {
+		t.Fatalf("expected ToolsDiscovered message to carry the error, got %q", cond.Message)
 	}
 	// Ready must remain True for the external path regardless of discovery.
 	if !got.Status.Ready {
 		t.Fatalf("expected Ready to stay true independent of discovery")
+	}
+}
+
+// TestMCPServerManagedDiscoveryFailureReturnsError verifies the managed path
+// behaves the same: a ready Deployment keeps Ready=True while a failed
+// tools/list returns an error for controller-runtime backoff instead of a
+// fixed 30s retry loop.
+func TestMCPServerManagedDiscoveryFailureReturnsError(t *testing.T) {
+	srv := failingMCPServer(t)
+	defer srv.Close()
+
+	ms := &sympoziumv1alpha1.MCPServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "broken",
+			Namespace: "default",
+		},
+		Spec: sympoziumv1alpha1.MCPServerSpec{
+			TransportType: "stdio",
+			ToolsPrefix:   "dt",
+			Timeout:       5,
+			Deployment: &sympoziumv1alpha1.MCPServerDeployment{
+				Image: "example/broken:latest",
+			},
+		},
+	}
+
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "broken",
+			Namespace: "default",
+		},
+		Status: appsv1.DeploymentStatus{
+			ReadyReplicas: 1,
+		},
+	}
+
+	r, cl := newMCPServerTestReconciler(t, ms, deploy)
+	r.discoveryURLOverride = srv.URL
+
+	res, err := r.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "broken", Namespace: "default"},
+	})
+	if err == nil {
+		t.Fatalf("expected discovery failure to return an error so controller-runtime backs off, got nil (result %+v)", res)
+	}
+	if res.RequeueAfter != 0 {
+		t.Fatalf("expected no fixed requeue once the error is returned, got %s", res.RequeueAfter)
+	}
+
+	var got sympoziumv1alpha1.MCPServer
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "broken", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get mcpserver: %v", err)
+	}
+
+	if !got.Status.Ready {
+		t.Fatalf("expected Ready to stay true from Deployment readiness, independent of discovery")
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "ToolsDiscovered")
+	if cond == nil {
+		t.Fatalf("expected ToolsDiscovered condition, got %v", got.Status.Conditions)
+	}
+	if cond.Status != metav1.ConditionFalse {
+		t.Fatalf("expected ToolsDiscovered False, got %s", cond.Status)
 	}
 }
