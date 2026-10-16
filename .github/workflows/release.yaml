@@ -393,13 +393,20 @@ jobs:
           rm -f charts/sympozium-crds/templates/sympozium.ai_*.yaml
           cp config/crd/bases/*.yaml charts/sympozium-crds/templates/
 
+      # A note in NOTES.txt that names "the first release with this change" is
+      # written with a placeholder. main now carries this release's version in
+      # version.txt, so replace the placeholder with it and commit, before the
+      # chart is packaged from main.
+      - name: Stamp the release version into NOTES.txt
+        run: hack/stamp-release-version.sh
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add charts/
           git diff --cached --quiet && echo "No chart changes" && exit 0
-          git commit -m "chore: sync Helm chart CRDs for ${RELEASE_TAG}"
+          git commit -m "chore: sync Helm charts for ${RELEASE_TAG}"
           git push origin main
 
   # ── Publish Helm chart to GitHub Release ─────────────────────────────────────

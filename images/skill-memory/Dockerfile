@@ -1,7 +1,8 @@
 # Skill sidecar: memory
 # Provides SQLite-backed persistent memory with FTS5 full-text search.
 # Communicates with agent-runner via file-based IPC in /ipc/tools/.
-# The SQLite database is stored on a PersistentVolume at /data/memory.db.
+# The SQLite database is stored on a PersistentVolume at /data/memory.v2.db
+# (copied from the /data/memory.db of older releases on first start).
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH

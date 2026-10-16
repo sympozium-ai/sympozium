@@ -1133,6 +1133,15 @@ func (r *EnsembleReconciler) reconcileSharedMemory(ctx context.Context, log logr
 		}
 	}
 
+	// --- Writer token Secret ---
+	// Created before the Deployment, whose pod requires it to start.
+	if err := ensureMemoryWriterSecret(ctx, r.Client, r.Scheme, pack, deployName, map[string]string{
+		"sympozium.ai/component": "shared-memory-writer-token",
+		"sympozium.ai/ensemble":  ensembleName,
+	}); err != nil {
+		return err
+	}
+
 	// --- Deployment ---
 	var existingDeploy appsv1.Deployment
 	if err := r.Get(ctx, types.NamespacedName{Name: deployName, Namespace: ns}, &existingDeploy); err != nil {
@@ -1170,6 +1179,9 @@ func (r *EnsembleReconciler) reconcileSharedMemory(ctx context.Context, log logr
 									{Name: "http", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 								},
 								Env: []corev1.EnvVar{
+									// Names the pre-versioning database on purpose: the server works on
+									// memory.v2.db next to it, and an older release must keep opening
+									// memory.db after a rollback. Do not point it at memory.v2.db.
 									{Name: "MEMORY_DB_PATH", Value: "/data/memory.db"},
 									{Name: "MEMORY_PORT", Value: "8080"},
 								},
@@ -1239,6 +1251,10 @@ func (r *EnsembleReconciler) reconcileSharedMemory(ctx context.Context, log logr
 		// token, injected into the shared-memory pod only (never into agents), so
 		// workflow_memory_* entries are equally deletable and token-guarded.
 		deploy.Spec.Template.Spec.Containers[0].Env = append(deploy.Spec.Template.Spec.Containers[0].Env, memoryAdminTokenEnv()...)
+		// Writes are gated on the separate writer token; only read-write
+		// personas' agent containers get it (see injectSharedMemory).
+		deploy.Spec.Template.Spec.Containers[0].Env = append(deploy.Spec.Template.Spec.Containers[0].Env,
+			memoryWriterTokenEnv(memoryWriterTokenEnvName, deployName))
 
 		if err := controllerutil.SetControllerReference(pack, deploy, r.Scheme); err != nil {
 			return err
@@ -1249,8 +1265,9 @@ func (r *EnsembleReconciler) reconcileSharedMemory(ctx context.Context, log logr
 		}
 	} else {
 		// Already exists. The rest of the spec is deliberately left alone, but the
-		// admin-token env is reconciled so enabling adminDelete (or pointing it at a
-		// different Secret) takes effect without deleting the Deployment.
+		// image and token env are reconciled so a new image tag, enabling
+		// adminDelete (or pointing it at a different Secret), and the writer
+		// token after an upgrade take effect without deleting the Deployment.
 		if err := syncMemoryDeployment(ctx, r.Client, log, &existingDeploy, image); err != nil {
 			return err
 		}
@@ -1311,6 +1328,10 @@ func (r *EnsembleReconciler) cleanupSharedMemory(ctx context.Context, log logr.L
 	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: pvcName, Namespace: ns}}
 	if err := r.Delete(ctx, pvc); err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("delete shared memory pvc: %w", err)
+	}
+
+	if err := deleteMemoryWriterSecret(ctx, r.Client, ns, deployName); err != nil {
+		return err
 	}
 
 	log.Info("Cleaned up shared memory resources", "pack", ensembleName)

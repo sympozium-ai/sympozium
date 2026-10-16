@@ -63,8 +63,8 @@ func TestQueryMemoryContext_PropagatesTraceparent(t *testing.T) {
 
 func TestMemoryToolDefs(t *testing.T) {
 	tools := memoryToolDefs()
-	if len(tools) != 3 {
-		t.Fatalf("expected 3 tools, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("expected 5 tools, got %d", len(tools))
 	}
 
 	expected := []struct {
@@ -74,6 +74,8 @@ func TestMemoryToolDefs(t *testing.T) {
 		{ToolMemorySearch, "Search agent memory"},
 		{ToolMemoryStore, "Store a finding"},
 		{ToolMemoryList, "List recent memory"},
+		{ToolMemoryUpdate, "Correct an existing memory"},
+		{ToolMemoryForget, "Forget a memory"},
 	}
 
 	for i, want := range expected {
@@ -97,6 +99,8 @@ func TestIsMemoryTool(t *testing.T) {
 		{"memory_search", true},
 		{"memory_store", true},
 		{"memory_list", true},
+		{"memory_update", true},
+		{"memory_forget", true},
 		{"execute_command", false},
 		{"read_file", false},
 		{"", false},
@@ -124,8 +128,8 @@ func TestInitMemoryTools_WithEnv(t *testing.T) {
 	t.Setenv("MEMORY_SERVER_URL", "http://localhost:8080/")
 
 	tools := initMemoryTools()
-	if len(tools) != 3 {
-		t.Fatalf("expected 3 tools, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("expected 5 tools, got %d", len(tools))
 	}
 
 	// Verify trailing slash was stripped.
@@ -774,5 +778,284 @@ func TestWorkflowMemoryStore_ExposeTagsEnforcement(t *testing.T) {
 	}
 	if capturedBody["visibility"] != "public" {
 		t.Errorf("visibility = %v, want public (expose tags match)", capturedBody["visibility"])
+	}
+}
+
+// captureMemoryServer records the path and JSON body of each request.
+func captureMemoryServer(t *testing.T, paths *[]string, bodies *[]map[string]any) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		*paths = append(*paths, r.URL.Path)
+		*bodies = append(*bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "content": map[string]any{"id": 3, "seq": 7}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestExecuteMemoryTool_UpdateAndForget(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	srv := captureMemoryServer(t, &paths, &bodies)
+
+	old := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = old }()
+
+	// Extra fields from the model (source_agent, visibility, evidence) must not be forwarded.
+	result := executeMemoryTool(context.Background(), ToolMemoryUpdate,
+		`{"id":3,"content":"corrected","tags":["kafka"],"source_agent":"someone-else","visibility":"public","evidence":{"kind":"tool_result"}}`)
+	if strings.HasPrefix(result, "Error") || strings.HasPrefix(result, "Memory") {
+		t.Fatalf("unexpected result: %s", result)
+	}
+	result = executeMemoryTool(context.Background(), ToolMemoryForget, `{"id":"#3","content":"ignored"}`)
+	if strings.HasPrefix(result, "Error") || strings.HasPrefix(result, "Memory") {
+		t.Fatalf("unexpected result: %s", result)
+	}
+
+	if len(paths) != 2 || paths[0] != "/update" || paths[1] != "/forget" {
+		t.Fatalf("paths = %v, want [/update /forget]", paths)
+	}
+	want := []map[string]any{
+		{"id": float64(3), "content": "corrected", "tags": []any{"kafka"}},
+		{"id": float64(3)},
+	}
+	for i := range want {
+		if fmt.Sprint(bodies[i]) != fmt.Sprint(want[i]) {
+			t.Errorf("body[%d] = %v, want %v", i, bodies[i], want[i])
+		}
+	}
+}
+
+func TestExecuteMemoryTool_UpdateRejectsBadArgs(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	srv := captureMemoryServer(t, &paths, &bodies)
+
+	old := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = old }()
+
+	for _, args := range []string{`{"content":"x"}`, `{"id":0,"content":"x"}`, `{"id":1.5,"content":"x"}`, `{"id":"abc","content":"x"}`, `{"id":3}`} {
+		if result := executeMemoryTool(context.Background(), ToolMemoryUpdate, args); !strings.HasPrefix(result, "Error") {
+			t.Errorf("args %s: result = %q, want an error", args, result)
+		}
+	}
+	if len(paths) != 0 {
+		t.Errorf("invalid args should not reach the server, got %v", paths)
+	}
+}
+
+func TestWorkflowMemoryUpdate_Attribution(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	srv := captureMemoryServer(t, &paths, &bodies)
+
+	oldURL, oldVis, oldExpose, oldAccess := workflowMemoryServerURL, membraneVisibility, membraneExposeTags, workflowMemoryAccess
+	defer func() {
+		workflowMemoryServerURL, membraneVisibility, membraneExposeTags, workflowMemoryAccess = oldURL, oldVis, oldExpose, oldAccess
+	}()
+	t.Setenv("INSTANCE_NAME", "researcher")
+	workflowMemoryServerURL = srv.URL
+	membraneVisibility = "public"
+	workflowMemoryAccess = "read-write"
+	membraneExposeTags = []string{"findings"}
+
+	executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryUpdate,
+		`{"id":3,"content":"fixed","tags":["debug"],"source_agent":"lead","evidence":{"kind":"tool_result","tool_call":"kubectl get pods"}}`)
+	executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryForget, `{"id":3,"source_agent":"lead","evidence":{"kind":"tool_result"}}`)
+
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(bodies))
+	}
+	for i, b := range bodies {
+		if b["source_agent"] != "researcher" {
+			t.Errorf("body[%d] source_agent = %v, want researcher (not model-controlled)", i, b["source_agent"])
+		}
+	}
+	if fmt.Sprint(bodies[0]["tags"]) != "[debug researcher]" {
+		t.Errorf("tags = %v, want [debug researcher]", bodies[0]["tags"])
+	}
+	if bodies[0]["visibility"] != "private" {
+		t.Errorf("visibility = %v, want private (expose tags mismatch)", bodies[0]["visibility"])
+	}
+	if _, ok := bodies[1]["visibility"]; ok {
+		t.Errorf("forget should not send visibility, got %v", bodies[1]["visibility"])
+	}
+	// Update forwards evidence so a correction can restate how it is known;
+	// forget has no content, so it never carries evidence.
+	if ev, _ := bodies[0]["evidence"].(map[string]any); ev["kind"] != "tool_result" || ev["tool_call"] != "kubectl get pods" {
+		t.Errorf("update evidence = %v, want the model's evidence trace", bodies[0]["evidence"])
+	}
+	if _, ok := bodies[1]["evidence"]; ok {
+		t.Errorf("forget should not send evidence, got %v", bodies[1]["evidence"])
+	}
+
+	for _, def := range workflowMemoryToolDefs() {
+		if def.Name != ToolWorkflowMemoryUpdate {
+			continue
+		}
+		props := def.Parameters["properties"].(map[string]any)
+		if _, ok := props["evidence"]; !ok {
+			t.Errorf("%s should expose an evidence parameter", def.Name)
+		}
+	}
+}
+
+func TestWorkflowMemoryWriteTools_ReadOnly(t *testing.T) {
+	oldURL, oldAccess := workflowMemoryServerURL, workflowMemoryAccess
+	defer func() { workflowMemoryServerURL, workflowMemoryAccess = oldURL, oldAccess }()
+	workflowMemoryServerURL = "http://unused"
+	workflowMemoryAccess = "read-only"
+
+	for _, def := range workflowMemoryToolDefs() {
+		if isWorkflowMemoryWriteTool(def.Name) {
+			t.Errorf("read-only persona should not get %s", def.Name)
+		}
+	}
+	for _, name := range []string{ToolWorkflowMemoryStore, ToolWorkflowMemoryUpdate, ToolWorkflowMemoryForget} {
+		if result := executeWorkflowMemoryTool(context.Background(), name, `{"id":1,"content":"x"}`); !strings.Contains(result, "read-only") {
+			t.Errorf("%s: result = %q, want read-only error", name, result)
+		}
+	}
+}
+
+// TestWorkflowMemoryWrites_SourceAgentWithoutMembrane checks that store,
+// update and forget always carry the persona as source_agent, even without a
+// membrane. Otherwise every entry is stored with an empty source_agent and any
+// persona could update or forget any other persona's entry.
+func TestWorkflowMemoryWrites_SourceAgentWithoutMembrane(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	srv := captureMemoryServer(t, &paths, &bodies)
+
+	oldURL, oldVis, oldExpose, oldAccess := workflowMemoryServerURL, membraneVisibility, membraneExposeTags, workflowMemoryAccess
+	defer func() {
+		workflowMemoryServerURL, membraneVisibility, membraneExposeTags, workflowMemoryAccess = oldURL, oldVis, oldExpose, oldAccess
+	}()
+	t.Setenv("INSTANCE_NAME", "researcher")
+	workflowMemoryServerURL = srv.URL
+	membraneVisibility = ""
+	membraneExposeTags = nil
+	workflowMemoryAccess = "read-write"
+
+	executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryStore, `{"content":"finding","source_agent":"lead"}`)
+	executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryUpdate, `{"id":3,"content":"fixed","source_agent":"lead"}`)
+	executeWorkflowMemoryTool(context.Background(), ToolWorkflowMemoryForget, `{"id":3,"source_agent":"lead"}`)
+
+	if want := []string{"/store", "/update", "/forget"}; fmt.Sprint(paths) != fmt.Sprint(want) {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	for i, b := range bodies {
+		if b["source_agent"] != "researcher" {
+			t.Errorf("%s: source_agent = %v, want researcher", paths[i], b["source_agent"])
+		}
+	}
+}
+
+// TestExecuteMemoryTool_StoreSendsOnlyToolFields checks that a private store
+// forwards only content and tags. Server fields the tool does not expose
+// (source_agent, visibility, parent_id, evidence) cannot be set by the model;
+// a spoofed source_agent would make the entry impossible to update or forget.
+func TestExecuteMemoryTool_StoreSendsOnlyToolFields(t *testing.T) {
+	var paths []string
+	var bodies []map[string]any
+	srv := captureMemoryServer(t, &paths, &bodies)
+
+	old := memoryServerURL
+	memoryServerURL = srv.URL
+	defer func() { memoryServerURL = old }()
+
+	executeMemoryTool(context.Background(), ToolMemoryStore,
+		`{"content":"finding","tags":["kafka"],"source_agent":"lead","visibility":"private","parent_id":7,"evidence":{"kind":"tool_result"}}`)
+
+	if len(bodies) != 1 || paths[0] != "/store" {
+		t.Fatalf("requests = %v, want one /store", paths)
+	}
+	want := map[string]any{"content": "finding", "tags": []any{"kafka"}}
+	if fmt.Sprint(bodies[0]) != fmt.Sprint(want) {
+		t.Errorf("body = %v, want %v", bodies[0], want)
+	}
+}
+
+// authCaptureServer records "METHOD PATH -> Authorization" for every request.
+func authCaptureServer(t *testing.T, seen *[]string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.Path+" -> "+r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"success": true, "content": []any{}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestMemoryRequests_SendTheirServersWriterToken checks that every request to
+// a memory server carries that server's writer token, and never the other
+// server's: the private and shared tokens are separate secrets.
+func TestMemoryRequests_SendTheirServersWriterToken(t *testing.T) {
+	var privSeen, wfSeen []string
+	priv := authCaptureServer(t, &privSeen)
+	wf := authCaptureServer(t, &wfSeen)
+
+	oldURL, oldTok := memoryServerURL, memoryWriterToken
+	oldWfURL, oldWfTok, oldAccess, oldVis := workflowMemoryServerURL, workflowMemoryWriterToken, workflowMemoryAccess, membraneVisibility
+	defer func() {
+		memoryServerURL, memoryWriterToken = oldURL, oldTok
+		workflowMemoryServerURL, workflowMemoryWriterToken, workflowMemoryAccess, membraneVisibility = oldWfURL, oldWfTok, oldAccess, oldVis
+	}()
+	memoryServerURL, memoryWriterToken = priv.URL, "private-writer"
+	workflowMemoryServerURL, workflowMemoryWriterToken = wf.URL, "shared-writer"
+	workflowMemoryAccess, membraneVisibility = "read-write", ""
+	t.Setenv("INSTANCE_NAME", "researcher")
+
+	ctx := context.Background()
+	executeMemoryTool(ctx, ToolMemoryStore, `{"content":"a"}`)
+	executeMemoryTool(ctx, ToolMemoryUpdate, `{"id":1,"content":"b"}`)
+	executeMemoryTool(ctx, ToolMemoryForget, `{"id":1}`)
+	executeMemoryTool(ctx, ToolMemorySearch, `{"query":"a"}`)
+	executeMemoryTool(ctx, ToolMemoryList, `{}`)
+	queryMemoryContext(ctx, "task", 3)
+	executeWorkflowMemoryTool(ctx, ToolWorkflowMemoryStore, `{"content":"a"}`)
+	executeWorkflowMemoryTool(ctx, ToolWorkflowMemoryUpdate, `{"id":1,"content":"b"}`)
+	executeWorkflowMemoryTool(ctx, ToolWorkflowMemoryForget, `{"id":1}`)
+	executeWorkflowMemoryTool(ctx, ToolWorkflowMemorySearch, `{"query":"a"}`)
+	executeWorkflowMemoryTool(ctx, ToolWorkflowMemoryList, `{}`)
+	queryWorkflowMemoryContext(ctx, "task", 3)
+
+	for name, tc := range map[string]struct {
+		seen []string
+		want string
+	}{
+		"private memory": {privSeen, "Bearer private-writer"},
+		"shared memory":  {wfSeen, "Bearer shared-writer"},
+	} {
+		if len(tc.seen) != 6 {
+			t.Errorf("%s: %d requests, want 6: %v", name, len(tc.seen), tc.seen)
+		}
+		for _, s := range tc.seen {
+			if !strings.HasSuffix(s, " -> "+tc.want) {
+				t.Errorf("%s: %s, want %s", name, s, tc.want)
+			}
+		}
+	}
+}
+
+// TestMemoryRequests_NoAuthHeaderWithoutToken covers a runner with no writer
+// token (a read-only persona, or a memory server run outside the controller).
+func TestMemoryRequests_NoAuthHeaderWithoutToken(t *testing.T) {
+	var seen []string
+	srv := authCaptureServer(t, &seen)
+
+	oldURL, oldTok := memoryServerURL, memoryWriterToken
+	defer func() { memoryServerURL, memoryWriterToken = oldURL, oldTok }()
+	memoryServerURL, memoryWriterToken = srv.URL, ""
+
+	executeMemoryTool(context.Background(), ToolMemoryStore, `{"content":"a"}`)
+	if len(seen) != 1 || !strings.HasSuffix(seen[0], " -> ") {
+		t.Errorf("requests = %v, want one request with no Authorization header", seen)
 	}
 }
