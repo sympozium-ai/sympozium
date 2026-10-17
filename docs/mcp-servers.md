@@ -302,6 +302,8 @@ Shows:
 | `secretRefs` | []SecretRef | No | - | Kubernetes Secrets to mount as env vars |
 | `resources` | ResourceRequirements | No | - | CPU/memory requests and limits |
 | `serviceAccountName` | string | No | - | ServiceAccount for RBAC |
+| `volumes` | []Volume | No | - | Additional pod volumes, such as ConfigMaps or Secrets (`adapter-bin` is reserved for stdio servers) |
+| `volumeMounts` | []VolumeMount | No | - | Mount declared volumes into the MCP server container |
 
 ### SecretRef
 
@@ -858,3 +860,60 @@ spec:
         cpu: 250m
         memory: 256Mi
 ```
+
+### AWS MCP (IAM Roles Anywhere)
+
+For AWS API access without long-lived access keys. The MCP container uses an
+X.509 certificate and [IAM Roles Anywhere](https://docs.aws.amazon.com/rolesanywhere/latest/userguide/introduction.html)
+to obtain temporary credentials, then signs requests to the AWS MCP endpoint
+with SigV4. The IAM role's permissions policy is an authorization control;
+effective permissions also depend on applicable session policies, permissions
+boundaries, service control policies (SCPs), and explicit denies. Tool prefixes
+and MCP tool filters do not enforce AWS authorization.
+
+The certificate's private key is mounted as a read-only Secret volume with
+restrictive file permissions. Enable Kubernetes Secret encryption at rest or
+use an external secret provider, and tightly limit Secret RBAC. It is not
+injected through `secretRefs`, because those Secret values become container
+environment variables. See the [AWS MCP Roles Anywhere guide](guides/aws-mcp-roles-anywhere.md)
+for AWS provisioning, image, and deployment steps.
+
+```yaml
+apiVersion: sympozium.ai/v1alpha1
+kind: MCPServer
+metadata:
+  name: aws-mcp
+  namespace: sympozium-system
+spec:
+  transportType: stdio
+  toolsPrefix: aws
+  timeout: 180
+  deployment:
+    # Build and pin an image containing the AWS MCP proxy and aws_signing_helper.
+    image: registry.example.com/aws-mcp-roles-anywhere:1.0.0
+    cmd: /app/entrypoint.sh
+    env:
+      AWS_CONFIG_FILE: /config/config
+      AWS_PROFILE: sympozium-mcp
+      AWS_REGION: us-east-1
+      MCP_ENDPOINT: https://aws-mcp.us-east-1.api.aws/mcp
+    volumes:
+      - name: aws-config
+        configMap:
+          name: aws-mcp-config
+      - name: aws-certificate
+        secret:
+          secretName: aws-mcp-certificate
+          defaultMode: 0400
+    volumeMounts:
+      - name: aws-config
+        mountPath: /config
+        readOnly: true
+      - name: aws-certificate
+        mountPath: /certs
+        readOnly: true
+```
+
+Check the AWS MCP Server endpoint and region availability before choosing the
+endpoint. The example image is operator-built and maintained; Sympozium does
+not publish it.

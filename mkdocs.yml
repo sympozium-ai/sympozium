@@ -159,6 +159,7 @@ nav:
       - llama-server: guides/llama-server.md
       - Unsloth: guides/unsloth.md
       - AWS Bedrock: guides/aws-bedrock.md
+      - AWS MCP with IAM Roles Anywhere: guides/aws-mcp-roles-anywhere.md
     - Extending:
       - Writing Skills: guides/writing-skills.md
       - Writing Tools: guides/writing-tools.md
