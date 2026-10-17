@@ -83,6 +83,9 @@ export interface GateVerdictRequest {
   action: "approve" | "reject" | "rewrite";
   response?: string;
   reason?: string;
+  /** The attempt the operator judged. The server answers 409 when the run
+   *  has moved on to a later attempt since. */
+  attempt?: number;
 }
 
 export interface AgentConfig {
@@ -498,6 +501,19 @@ export interface DelegateStatus {
   error?: string;
 }
 
+/** One attempt of a retry chain that lives on a single AgentRun (in-pod gate
+ *  resume). Empty for successor-clone chains, where each attempt is its own run. */
+export interface AttemptStatus {
+  attempt: number;
+  startedAt?: string;
+  completedAt?: string;
+  result?: string;
+  gateVerdict?: string;
+  gateReason?: string;
+  tokenUsage?: TokenUsage;
+  costEstimate?: CostEstimate;
+}
+
 export interface AgentRunStatus {
   cellnScoped?: CellnScopedStatus;
   cellnParent?: {
@@ -533,6 +549,7 @@ export interface AgentRunStatus {
   gateVerdict?: string;
   attempt?: number;
   retryOf?: string;
+  attempts?: AttemptStatus[];
   delegates?: DelegateStatus[];
   conditions?: Condition[];
 }

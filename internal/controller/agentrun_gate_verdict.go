@@ -25,6 +25,12 @@ const (
 	// GateVerdictSecretKey is the key inside that Secret.
 	GateVerdictSecretKey = "token"
 
+	// GateAttemptKeySecretKey is the key, in the same Secret, holding the HMAC
+	// key that signs in-place retry messages (see ipc.GateKeyEnv). It reaches
+	// the agent container only; the gate hook gets GateVerdictSecretKey only,
+	// so neither side holds the other's credential.
+	GateAttemptKeySecretKey = "attempt-key"
+
 	// gateVerdictTokenBytes is the entropy behind the token, matching the
 	// web-proxy key in ensureServerAPIKeySecret.
 	gateVerdictTokenBytes = 24
@@ -58,7 +64,8 @@ func apiServerURL() string {
 // and no ServiceAccount token of its own.
 //
 // The token authorises one operation on one run: the API server accepts it only
-// for the run that owns this Secret, and only while that run is PostRunning. A
+// for the run that owns this Secret, and only while that run is PostRunning or
+// AwaitingGate. One token serves every attempt of an in-place retry chain. A
 // gate hook granted `patch` on agentruns — the mechanism this replaces — could
 // instead write any run's verdict in the namespace.
 //
@@ -66,9 +73,12 @@ func apiServerURL() string {
 // differs from ensureServerAPIKeySecret, whose Secret is named after the Agent
 // and deliberately outlives any single run.
 //
+// The same Secret holds the in-place retry signing key (GateAttemptKeySecretKey).
+//
 // Idempotent by design: an existing Secret is reused, never rotated. The gate
 // container reads the token once at startup, so re-minting mid-run would
-// invalidate a token the hook already holds.
+// invalidate a token the hook already holds. A Secret minted before the signing
+// key existed gets that key added, leaving its token alone.
 func (r *AgentRunReconciler) ensureGateVerdictToken(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) error {
 	if !hasResponseGateHook(agentRun) {
 		return nil
@@ -82,7 +92,18 @@ func (r *AgentRunReconciler) ensureGateVerdictToken(ctx context.Context, agentRu
 	switch {
 	case err == nil && metav1.IsControlledBy(&existing, agentRun):
 		// Ours already. Reuse it.
-		return nil
+		if len(existing.Data[GateAttemptKeySecretKey]) > 0 {
+			return nil
+		}
+		attemptKey, keyErr := randomHex(gateVerdictTokenBytes)
+		if keyErr != nil {
+			return fmt.Errorf("generate gate attempt key: %w", keyErr)
+		}
+		if existing.Data == nil {
+			existing.Data = map[string][]byte{}
+		}
+		existing.Data[GateAttemptKeySecretKey] = []byte(attemptKey)
+		return r.Update(ctx, &existing)
 	case err == nil:
 		// Someone else's. Secret names are derived from the run name, and run
 		// names are predictable, so a Secret sitting at this name that this
@@ -99,9 +120,13 @@ func (r *AgentRunReconciler) ensureGateVerdictToken(ctx context.Context, agentRu
 		return err
 	}
 
-	tokenBytes := make([]byte, gateVerdictTokenBytes)
-	if _, err := rand.Read(tokenBytes); err != nil {
+	token, err := randomHex(gateVerdictTokenBytes)
+	if err != nil {
 		return fmt.Errorf("generate gate verdict token: %w", err)
+	}
+	attemptKey, err := randomHex(gateVerdictTokenBytes)
+	if err != nil {
+		return fmt.Errorf("generate gate attempt key: %w", err)
 	}
 
 	secret := corev1.Secret{
@@ -114,8 +139,9 @@ func (r *AgentRunReconciler) ensureGateVerdictToken(ctx context.Context, agentRu
 				"sympozium.ai/instance":  agentRun.Spec.AgentRef,
 			},
 		},
-		StringData: map[string]string{
-			GateVerdictSecretKey: hex.EncodeToString(tokenBytes),
+		Data: map[string][]byte{
+			GateVerdictSecretKey:    []byte(token),
+			GateAttemptKeySecretKey: []byte(attemptKey),
 		},
 	}
 
@@ -139,4 +165,34 @@ func (r *AgentRunReconciler) ensureGateVerdictToken(ctx context.Context, agentRu
 		}
 	}
 	return nil
+}
+
+// gateAttemptKey returns the run's in-place retry signing key.
+//
+// Only a Secret this run controls counts, the same rule ensureGateVerdictToken
+// applies when minting: a Secret planted at the predictable name would
+// otherwise let its author sign attempts and verdicts for this run.
+func (r *AgentRunReconciler) gateAttemptKey(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) ([]byte, error) {
+	var secret corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{
+		Name: agentRunGateSecretName(agentRun), Namespace: agentRun.Namespace,
+	}, &secret); err != nil {
+		return nil, fmt.Errorf("reading gate Secret: %w", err)
+	}
+	if !metav1.IsControlledBy(&secret, agentRun) {
+		return nil, fmt.Errorf("gate Secret %s is not owned by this run", secret.Name)
+	}
+	key := secret.Data[GateAttemptKeySecretKey]
+	if len(key) == 0 {
+		return nil, fmt.Errorf("gate Secret %s has no %s", secret.Name, GateAttemptKeySecretKey)
+	}
+	return key, nil
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

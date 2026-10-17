@@ -88,6 +88,12 @@ type LLMProvider interface {
 	// are ignored.
 	ReplaceToolResults(replacements map[string]string)
 
+	// AddUserMessage appends a user turn without calling the model. It is how
+	// a parked run continues: the gate's rejection becomes the next turn, so the
+	// model corrects work it can still see. Unlike Prompt it only stages the
+	// turn — the next Chat call drives tools.
+	AddUserMessage(text string)
+
 	// ResetContext wipes the conversation history. After
 	// ResetContext the next Chat call behaves like a first-turn conversation.
 	// Used when a sidecar issues clearContext() between independent units of
@@ -125,6 +131,31 @@ type LLMProvider interface {
 // model can actually read it back from.
 //
 // Returns (responseText, inputTokens, outputTokens, toolCalls, error).
+// tokenBudget is the per-run token cap from the membrane config.
+type tokenBudget struct {
+	max    int64
+	action string
+}
+
+func loadTokenBudget() tokenBudget {
+	b := tokenBudget{action: "halt"}
+	if v := os.Getenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			b.max = n
+		}
+	}
+	if v := os.Getenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION"); v != "" {
+		b.action = v
+	}
+	return b
+}
+
+// halts reports whether runAgentLoop stops at this usage. It checks right
+// after Chat, so it can stop on a turn whose tool calls were never answered.
+func (b tokenBudget) halts(inputTokens, outputTokens int) bool {
+	return b.max > 0 && b.action == "halt" && int64(inputTokens+outputTokens) >= b.max
+}
+
 func runAgentLoop(ctx context.Context, p LLMProvider, tools []ToolDef) (string, int, int, int, error) {
 	totalInputTokens := 0
 	totalOutputTokens := 0
@@ -162,16 +193,7 @@ func runAgentLoop(ctx context.Context, p LLMProvider, tools []ToolDef) (string, 
 	}()
 
 	// Per-run token budget enforcement from membrane config.
-	maxTokensPerRun := int64(0)
-	tokenBudgetAction := "halt"
-	if v := os.Getenv("WORKFLOW_MEMBRANE_MAX_TOKENS_PER_RUN"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-			maxTokensPerRun = n
-		}
-	}
-	if v := os.Getenv("WORKFLOW_MEMBRANE_TOKEN_BUDGET_ACTION"); v != "" {
-		tokenBudgetAction = v
-	}
+	budget := loadTokenBudget()
 
 	roundLogThreshold := int(float64(maxToolIterations) * 0.9)
 	for i := 0; i < maxToolIterations; i++ {
@@ -225,11 +247,11 @@ func runAgentLoop(ctx context.Context, p LLMProvider, tools []ToolDef) (string, 
 		chatSpan.End()
 
 		// Per-run token budget check.
-		if maxTokensPerRun > 0 {
+		if budget.max > 0 {
 			used := int64(totalInputTokens + totalOutputTokens)
-			if used >= maxTokensPerRun {
-				msg := fmt.Sprintf("Per-run token budget exceeded (%d/%d tokens used)", used, maxTokensPerRun)
-				if tokenBudgetAction == "halt" {
+			if used >= budget.max {
+				msg := fmt.Sprintf("Per-run token budget exceeded (%d/%d tokens used)", used, budget.max)
+				if budget.halts(totalInputTokens, totalOutputTokens) {
 					log.Printf("TOKEN BUDGET HALT: %s", msg)
 					text := accumulated.String()
 					if trimmed := strings.TrimSpace(res.Text); trimmed != "" {

@@ -811,11 +811,9 @@ func (r *EnsembleReconciler) cleanupPersona(
 	if err := r.List(ctx, &runList, client.InNamespace(pack.Namespace), client.MatchingLabels{"sympozium.ai/instance": instanceName}); err == nil {
 		for i := range runList.Items {
 			run := &runList.Items[i]
-			switch run.Status.Phase {
-			case sympoziumv1alpha1.AgentRunPhaseRunning,
-				sympoziumv1alpha1.AgentRunPhaseAwaitingDelegate,
-				sympoziumv1alpha1.AgentRunPhasePending,
-				sympoziumv1alpha1.AgentRunPhaseServing:
+			// Any non-terminal phase, including AwaitingGate, where a pod sits
+			// parked on a response gate.
+			if !run.Status.Phase.IsTerminal() {
 				log.Info("Cancelling running AgentRun for disabled persona", "agentrun", run.Name)
 				if run.Status.PodName != "" {
 					pod := &corev1.Pod{}

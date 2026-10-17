@@ -1429,7 +1429,8 @@ function TopologyCanvas() {
           phase === "Pending" ||
           phase === "Serving" ||
           phase === "PostRunning" ||
-          phase === "AwaitingDelegate"
+          phase === "AwaitingDelegate" ||
+          phase === "AwaitingGate"
         );
       }),
     [runs],

@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -32,15 +34,21 @@ func gateVerdictFixture(t *testing.T, phase sympoziumv1alpha1.AgentRunPhase, wit
 	}
 
 	run := &sympoziumv1alpha1.AgentRun{
-		ObjectMeta: metav1.ObjectMeta{Name: "demo-run", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-run", Namespace: "default", UID: "uid-demo-run"},
 		Status:     sympoziumv1alpha1.AgentRunStatus{Phase: phase},
 	}
 	objs := []runtime.Object{run}
 	if withSecret {
-		objs = append(objs, &corev1.Secret{
+		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "sympozium-run-gate-demo-run", Namespace: "default"},
 			Data:       map[string][]byte{"token": []byte(testGateToken)},
-		})
+		}
+		controller := true
+		secret.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion: sympoziumv1alpha1.GroupVersion.String(), Kind: "AgentRun",
+			Name: run.Name, UID: run.UID, Controller: &controller,
+		}}
+		objs = append(objs, secret)
 	}
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
@@ -130,6 +138,43 @@ func TestGateVerdict_RejectsAnotherRunsToken(t *testing.T) {
 	rec := postVerdict(t, srv, "ffffffffffffffffffffffffffffffffffffffffffffffff", `{"action":"approve"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A Secret at the run's predictable name that the run does not control is not
+// its token, the same rule ensureGateVerdictToken applies when minting.
+func TestGateVerdict_RejectsATokenFromASecretTheRunDoesNotOwn(t *testing.T) {
+	srv := gateVerdictFixture(t, sympoziumv1alpha1.AgentRunPhasePostRunning, false)
+
+	planted := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "sympozium-run-gate-demo-run", Namespace: "default"},
+		Data:       map[string][]byte{"token": []byte(testGateToken)},
+	}
+	if err := srv.client.Create(t.Context(), planted); err != nil {
+		t.Fatalf("create planted secret: %v", err)
+	}
+
+	rec := postVerdict(t, srv, testGateToken, `{"action":"approve"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// AwaitingGate is the in-place retry phase: the pod is parked while the gate
+// decides, and the hook reports from there.
+func TestGateVerdict_AcceptsAwaitingGate(t *testing.T) {
+	srv := gateVerdictFixture(t, sympoziumv1alpha1.AgentRunPhaseAwaitingGate, true)
+	rec := postVerdict(t, srv, testGateToken, `{"action":"retry","reason":"tests fail"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+
+	var got sympoziumv1alpha1.AgentRun
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Annotations["sympozium.ai/gate-verdict-attempt"] != "1" {
+		t.Errorf("verdict attempt stamp = %q, want 1", got.Annotations["sympozium.ai/gate-verdict-attempt"])
 	}
 }
 
@@ -293,5 +338,56 @@ func TestGateVerdict_DotDotNameIsRefusedAtTheHandler(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// setRunAttempt moves the fixture run to a later attempt of an in-place chain.
+func setRunAttempt(t *testing.T, srv *Server, attempt int) {
+	t.Helper()
+	var run sympoziumv1alpha1.AgentRun
+	key := types.NamespacedName{Name: "demo-run", Namespace: "default"}
+	if err := srv.client.Get(context.Background(), key, &run); err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	run.Status.Attempt = attempt
+	if err := srv.client.Update(context.Background(), &run); err != nil {
+		t.Fatalf("update run: %v", err)
+	}
+}
+
+// A tab still showing attempt 1 must not approve attempt 2: the operator
+// never saw it. The client names the attempt it judged; a mismatch is a 409.
+func TestGateVerdict_RefusesAVerdictForAnAttemptThatIsNoLongerCurrent(t *testing.T) {
+	srv := gateVerdictFixture(t, sympoziumv1alpha1.AgentRunPhaseAwaitingGate, true)
+	setRunAttempt(t, srv, 2)
+
+	rec := postVerdict(t, srv, "global-token", `{"action":"approve","attempt":1}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+
+	var run sympoziumv1alpha1.AgentRun
+	if err := srv.client.Get(context.Background(), types.NamespacedName{Name: "demo-run", Namespace: "default"}, &run); err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if v, has := run.Annotations["sympozium.ai/gate-verdict"]; has {
+		t.Errorf("a stale verdict was recorded: %s", v)
+	}
+}
+
+func TestGateVerdict_AcceptsAVerdictForTheCurrentAttempt(t *testing.T) {
+	srv := gateVerdictFixture(t, sympoziumv1alpha1.AgentRunPhaseAwaitingGate, true)
+	setRunAttempt(t, srv, 2)
+
+	rec := postVerdict(t, srv, "global-token", `{"action":"approve","attempt":2}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var got sympoziumv1alpha1.AgentRun
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Annotations["sympozium.ai/gate-verdict-attempt"] != "2" {
+		t.Errorf("verdict attempt stamp = %q, want 2", got.Annotations["sympozium.ai/gate-verdict-attempt"])
 	}
 }

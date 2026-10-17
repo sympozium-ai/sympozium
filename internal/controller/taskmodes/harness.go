@@ -347,6 +347,25 @@ func HarnessRuntimeRef(task *sympoziumv1alpha1.TaskSpec) string {
 	return strings.TrimSpace(task.Parameters[harnessParamRuntime])
 }
 
+// HarnessPrompt returns a harness task's prompt, or "" for any other task.
+func HarnessPrompt(task *sympoziumv1alpha1.TaskSpec) string {
+	if task == nil || task.IsString() || task.GetMode() != Harness {
+		return ""
+	}
+	return task.Parameters[harnessParamPrompt]
+}
+
+// WithHarnessPrompt returns a copy of a harness task with its prompt replaced.
+// Everything else, including the runtime or image, is kept.
+func WithHarnessPrompt(task *sympoziumv1alpha1.TaskSpec, prompt string) *sympoziumv1alpha1.TaskSpec {
+	cp := task.DeepCopy()
+	if cp.Parameters == nil {
+		cp.Parameters = map[string]string{}
+	}
+	cp.Parameters[harnessParamPrompt] = prompt
+	return cp
+}
+
 // ApplyAgentRuntime applies an Agent's default runtime to a task. String-form
 // tasks are converted to harness mode while preserving their prompt; this is
 // the path used by channels, schedules, the API, the UI, and other ordinary run

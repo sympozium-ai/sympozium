@@ -1,6 +1,9 @@
 package ipc
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Protocol types for IPC file-based communication.
 
@@ -58,6 +61,76 @@ type AgentResult struct {
 		SubagentSpawns int   `json:"subagentSpawns"`
 	} `json:"metrics"`
 }
+
+// AttemptResult is written to /ipc/output/result-{Attempt}.json by a parked
+// agent-runner. The run has a response gate and lifecycle.retry, so instead of
+// writing result.json and exiting it publishes the attempt and waits.
+//
+// Deliberately not AgentResult: the bridge tells them apart by filename, and
+// only result.json means the agent is finished and the bridge may exit.
+type AttemptResult struct {
+	// Attempt is the 1-based attempt this result belongs to.
+	Attempt int `json:"attempt"`
+
+	Status   string `json:"status"` // "success" or "error"
+	Response string `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Metrics  struct {
+		DurationMs   int64 `json:"durationMs"`
+		InputTokens  int   `json:"inputTokens"`
+		OutputTokens int   `json:"outputTokens"`
+		ToolCalls    int   `json:"toolCalls"`
+	} `json:"metrics"`
+
+	// MAC authenticates the result as the runner's own — see Sign.
+	MAC string `json:"mac,omitempty"`
+}
+
+// GateDir is where the agent container mounts the run's gate ConfigMap,
+// read-only. The controller writes each verdict into that ConfigMap; nothing
+// in the pod can write here.
+const GateDir = "/gate"
+
+// GateVerdictFile names the ConfigMap key, and so the file under GateDir, that
+// carries the verdict for attempt.
+func GateVerdictFile(attempt int) string {
+	return fmt.Sprintf("verdict-%d.json", attempt)
+}
+
+// GateVerdict reaches the agent-runner as GateDir/GateVerdictFile(Attempt),
+// written by the controller. The agent-runner injects Reason + Output as a
+// user message and re-enters the agent loop.
+//
+// Attempt names the attempt the verdict judges, not the one it starts. A runner
+// parked on attempt N reads only verdict-N.json, so a stale or duplicated
+// delivery is harmless.
+//
+// Action is "continue" to run another attempt, or "stop" when the chain is over
+// — approved, rejected, rewritten, or out of attempts/budget. It is not the
+// hook's vocabulary: by the time this is written the controller has already
+// applied maxAttempts and maxChainTokens, so an exhausted "retry" arrives here
+// as "stop". An unknown action is treated as "stop", so a verdict the runner
+// cannot read still releases the pod.
+type GateVerdict struct {
+	Attempt int    `json:"attempt"`
+	Action  string `json:"action"`
+	Reason  string `json:"reason,omitempty"`
+	Output  string `json:"output,omitempty"`
+
+	// MaxAttempts lets the runner's card say "attempt 2 of 3" without holding
+	// policy it does not own.
+	MaxAttempts int `json:"maxAttempts,omitempty"`
+
+	// MAC authenticates the verdict as the controller's own — see Sign.
+	MAC string `json:"mac,omitempty"`
+}
+
+// GateVerdictActionContinue and GateVerdictActionStop are the two GateVerdict
+// actions the agent-runner acts on.
+const (
+	GateVerdictActionContinue = "continue"
+	GateVerdictActionStop     = "stop"
+)
 
 // StreamChunk is written to /ipc/output/stream-*.json for streaming responses.
 type StreamChunk struct {

@@ -262,3 +262,59 @@ func TestEnsureGateVerdictToken_ReplacesAnotherRunsSecret(t *testing.T) {
 		t.Errorf("owner references = %+v, want a single AgentRun/demo-run", owners)
 	}
 }
+
+// The signing key is minted next to the token, and is a separate value: the
+// agent holds one, the gate hook the other, and neither can stand in for the
+// other's.
+func TestEnsureGateVerdictToken_MintsADistinctAttemptKey(t *testing.T) {
+	run := gateTokenRun("demo-run", true)
+	r := newAgentRunTestReconciler(t, run)
+
+	if err := r.ensureGateVerdictToken(context.Background(), run); err != nil {
+		t.Fatalf("ensureGateVerdictToken: %v", err)
+	}
+	secret := gateSecret(t, r, "demo-run")
+	if secret == nil {
+		t.Fatal("no gate Secret was created")
+	}
+	key := secret.Data[GateAttemptKeySecretKey]
+	if len(key) != gateVerdictTokenBytes*2 {
+		t.Errorf("attempt key length = %d, want %d hex chars", len(key), gateVerdictTokenBytes*2)
+	}
+	if string(key) == string(secret.Data[GateVerdictSecretKey]) {
+		t.Error("the attempt key equals the verdict token")
+	}
+}
+
+// A run that minted its Secret before the signing key existed gets the key
+// added, and keeps the token a hook may already hold.
+func TestEnsureGateVerdictToken_AddsTheAttemptKeyToAnOlderSecret(t *testing.T) {
+	run := gateTokenRun("demo-run", true)
+	older := gateSecretFor(run)
+	delete(older.Data, GateAttemptKeySecretKey)
+	r := newAgentRunTestReconciler(t, run, older)
+
+	if err := r.ensureGateVerdictToken(context.Background(), run); err != nil {
+		t.Fatalf("ensureGateVerdictToken: %v", err)
+	}
+	got := gateSecret(t, r, "demo-run")
+	if string(got.Data[GateVerdictSecretKey]) != "test-token" {
+		t.Errorf("token = %q, want the original test-token kept", got.Data[GateVerdictSecretKey])
+	}
+	if len(got.Data[GateAttemptKeySecretKey]) == 0 {
+		t.Error("no attempt key was added to the older Secret")
+	}
+}
+
+// The reader applies the minter's rule: a Secret this run does not control is
+// not its key, or whoever planted it could sign attempts and verdicts.
+func TestGateAttemptKey_RefusesASecretTheRunDoesNotOwn(t *testing.T) {
+	run := gateTokenRun("demo-run", true)
+	planted := gateSecretFor(run)
+	planted.OwnerReferences = nil
+	r := newAgentRunTestReconciler(t, run, planted)
+
+	if key, err := r.gateAttemptKey(context.Background(), run); err == nil {
+		t.Fatalf("got key %q from a Secret the run does not own", key)
+	}
+}

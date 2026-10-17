@@ -243,6 +243,13 @@ func (b *Bridge) handleOutputFile(ctx context.Context, fe FileEvent) {
 		default:
 		}
 
+	case strings.HasPrefix(filename, "result-"):
+		// A parked attempt's result (see AttemptResult). Not a completion: the
+		// runner is still alive awaiting a verdict, and signalling agentDone
+		// would tear the bridge down mid-chain. The controller reads the
+		// attempt from the runner's stdout marker instead.
+		b.Log.Info("parked attempt result observed; holding the bridge open", "file", filename)
+
 	case filename == "status.json":
 		// Status update
 		event, _ := eventbus.NewEvent("agent.status.update", metadata, json.RawMessage(data))

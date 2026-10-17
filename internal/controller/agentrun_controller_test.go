@@ -1627,6 +1627,67 @@ func TestBuildVolumes_WorkspaceEmptyDirWhenNoPostRun(t *testing.T) {
 	}
 }
 
+func TestWorkspaceClaimName(t *testing.T) {
+	postRun := []sympoziumv1alpha1.LifecycleHookContainer{{Name: "check", Image: "busybox:1.36"}}
+	session := map[string]string{WorkspacePVCAnnotation: "ws-alice-abc-1"}
+
+	cases := []struct {
+		name        string
+		postRun     []sympoziumv1alpha1.LifecycleHookContainer
+		annotations map[string]string
+		wantClaim   string
+		wantOwns    bool
+	}{
+		{"no hooks, no session", nil, nil, "", false},
+		{"postRun hooks", postRun, nil, "test-run-workspace", true},
+		{"session only", nil, session, "ws-alice-abc-1", false},
+		// The case that used to split: the agent pod took the session PVC and
+		// the postRun Job took an empty test-run-workspace.
+		{"session and postRun hooks", postRun, session, "ws-alice-abc-1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run := newTestRunWithLifecycle(nil, tc.postRun, nil)
+			run.Annotations = tc.annotations
+			if got := workspaceClaimName(run); got != tc.wantClaim {
+				t.Errorf("workspaceClaimName = %q, want %q", got, tc.wantClaim)
+			}
+			if got := ownsRunWorkspacePVC(run); got != tc.wantOwns {
+				t.Errorf("ownsRunWorkspacePVC = %v, want %v", got, tc.wantOwns)
+			}
+		})
+	}
+}
+
+// A postRun hook must read the workspace the agent wrote. With a per-session
+// PVC that is the session's claim, not the run's own.
+func TestBuildPostRunJob_WorkspaceMatchesAgentPodOnSessionPVC(t *testing.T) {
+	r := &AgentRunReconciler{}
+	run := newTestRunWithLifecycle(nil,
+		[]sympoziumv1alpha1.LifecycleHookContainer{{Name: "check", Image: "busybox:1.36", Command: []string{"true"}}},
+		nil)
+	run.Annotations = map[string]string{WorkspacePVCAnnotation: "ws-alice-abc-1"}
+
+	claimOf := func(vols []corev1.Volume) string {
+		for _, v := range vols {
+			if v.Name == "workspace" && v.PersistentVolumeClaim != nil {
+				return v.PersistentVolumeClaim.ClaimName
+			}
+		}
+		return ""
+	}
+
+	agentClaim := claimOf(r.buildVolumes(run, false, nil, nil))
+	hookClaim := claimOf(r.buildPostRunJob(run, 0, "done").Spec.Template.Spec.Volumes)
+	if agentClaim != "ws-alice-abc-1" {
+		t.Errorf("agent pod claim = %q, want ws-alice-abc-1", agentClaim)
+	}
+	if hookClaim != agentClaim {
+		t.Errorf("postRun Job claim = %q, agent pod claim = %q; the hook would judge a workspace the agent never wrote",
+			hookClaim, agentClaim)
+	}
+}
+
 func TestBuildPostRunJob_ContainerSpec(t *testing.T) {
 	r := &AgentRunReconciler{}
 	run := newTestRunWithLifecycle(

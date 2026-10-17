@@ -11,6 +11,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -231,6 +232,14 @@ func TestRunRetryFieldsRoundTrip(t *testing.T) {
 	if len(retry.On) != 1 || retry.On[0] != "gate" {
 		t.Errorf("on = %v, want [gate]", retry.On)
 	}
+	// inPlace is the switch the controller reads to decide between parking and
+	// a successor run. An unset field must come back defaulted to false, not
+	// nil, so a run written for successor retry keeps it.
+	if retry.InPlace == nil {
+		t.Error("retry.inPlace was not defaulted by the apiserver")
+	} else if *retry.InPlace {
+		t.Errorf("retry.inPlace = %v, want the documented default false", *retry.InPlace)
+	}
 
 	// Assert on the object the apiserver returns from the status write rather
 	// than on a later Get: the live controller reconciles this run and will
@@ -317,5 +326,313 @@ func TestPolicyRetryCeilingRoundTrips(t *testing.T) {
 	})
 	if got.Spec.LifecyclePolicy == nil || got.Spec.LifecyclePolicy.MaxRetryAttempts != 3 {
 		t.Errorf("lifecyclePolicy = %+v, want maxRetryAttempts 3", got.Spec.LifecyclePolicy)
+	}
+}
+
+// TestGateInPlaceAttemptsRoundTrip proves the apiserver serves status.attempts[]
+// — the per-attempt record that replaces the cross-CR retryOf walk when a
+// retry chain lives on one run. If the schema pruned it, maxChainTokens would
+// sum an empty slice and an operator-owned budget would silently stop being
+// enforced.
+func TestGateInPlaceAttemptsRoundTrip(t *testing.T) {
+	inPlace := true // off by default
+	ns := createTestNamespace(t)
+
+	run := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "sys-run-inplace", Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentRunSpec{
+			AgentRef: "sys-inplace-agent",
+			Task:     sympoziumv1alpha1.NewStringTask("Verify attempts round-trip"),
+			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
+				GateDefault: "block",
+				Retry:       &sympoziumv1alpha1.RetrySpec{MaxAttempts: 3, On: []string{"gate"}, InPlace: &inPlace},
+				PostRun: []sympoziumv1alpha1.LifecycleHookContainer{
+					{Name: "check", Image: "check:latest", Gate: true},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(testCtx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
+
+	var got sympoziumv1alpha1.AgentRun
+	started := metav1.Now()
+	// The live controller reconciles this run and overwrites status at any
+	// moment, so the write retries and the assertions are made against the
+	// object the apiserver returned from the write itself.
+	pollUntil(t, 15*time.Second, 100*time.Millisecond, func() bool {
+		if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(run), &got); err != nil {
+			return false
+		}
+		got.Status.Phase = sympoziumv1alpha1.AgentRunPhaseAwaitingGate
+		got.Status.Attempt = 2
+		got.Status.Attempts = []sympoziumv1alpha1.AttemptStatus{
+			{
+				Attempt:     1,
+				StartedAt:   &started,
+				CompletedAt: &started,
+				Result:      "first draft",
+				GateVerdict: "retried",
+				GateReason:  "tests fail",
+				TokenUsage:  &sympoziumv1alpha1.TokenUsage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15, ToolCalls: 2},
+			},
+			{Attempt: 2, StartedAt: &started},
+		}
+		return k8sClient.Status().Update(testCtx, &got) == nil
+	})
+
+	if got.Status.Phase != sympoziumv1alpha1.AgentRunPhaseAwaitingGate {
+		t.Errorf("status.phase = %q, want AwaitingGate (rejected by the schema?)", got.Status.Phase)
+	}
+	if len(got.Status.Attempts) != 2 {
+		t.Fatalf("status.attempts has %d entries, want 2 (pruned by the apiserver?)", len(got.Status.Attempts))
+	}
+	first := got.Status.Attempts[0]
+	if first.GateVerdict != "retried" || first.GateReason != "tests fail" {
+		t.Errorf("attempt 1 = %+v, want the gate verdict and reason preserved", first)
+	}
+	if first.TokenUsage == nil || first.TokenUsage.TotalTokens != 15 {
+		t.Errorf("attempt 1 tokenUsage = %+v, want 15 total tokens — the field maxChainTokens sums", first.TokenUsage)
+	}
+	if got.Status.Attempts[1].Attempt != 2 {
+		t.Errorf("attempt 2 = %+v, want the in-flight attempt recorded", got.Status.Attempts[1])
+	}
+}
+
+// TestGateInPlaceWorkspaceIsAPVC proves an in-place retry run gets a
+// PersistentVolumeClaim for /workspace rather than an emptyDir. Without it the
+// retried attempt reads back an empty workspace — every artifact it is meant to
+// correct gone at exactly the moment it is needed.
+func TestGateInPlaceWorkspaceIsAPVC(t *testing.T) {
+	inPlace := true // off by default
+	ns := createTestNamespace(t)
+	agentName := "sys-inplace-pvc-agent"
+
+	agentBody := map[string]any{
+		"name":     agentName,
+		"provider": "lm-studio",
+		"model":    "test-model",
+		"baseURL":  "http://fake-lmstudio:1234/v1",
+	}
+	requireStatus(t, httpDo(t, http.MethodPost, fmt.Sprintf("/api/v1/agents?namespace=%s", ns), agentBody), http.StatusCreated)
+	t.Cleanup(func() {
+		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns), nil)
+	})
+
+	run := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "sys-run-inplace-pvc", Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentRunSpec{
+			AgentRef: agentName,
+			AgentID:  agentName,
+			Task:     sympoziumv1alpha1.NewStringTask("Write a file, then survive a gate"),
+			Model: sympoziumv1alpha1.ModelSpec{
+				Provider: "lm-studio",
+				Model:    "test-model",
+				BaseURL:  "http://fake-lmstudio:1234/v1",
+			},
+			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
+				GateDefault: "block",
+				Retry:       &sympoziumv1alpha1.RetrySpec{MaxAttempts: 3, On: []string{"gate"}, InPlace: &inPlace},
+				PostRun: []sympoziumv1alpha1.LifecycleHookContainer{
+					{Name: "check", Image: "check:latest", Gate: true},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(testCtx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
+
+	var job batchv1.Job
+	pollUntil(t, 30*time.Second, 200*time.Millisecond, func() bool {
+		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: run.Name}, &job) == nil
+	})
+
+	var workspace *corev1.Volume
+	for i := range job.Spec.Template.Spec.Volumes {
+		if job.Spec.Template.Spec.Volumes[i].Name == "workspace" {
+			workspace = &job.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	if workspace == nil {
+		t.Fatal("the agent pod has no workspace volume")
+	}
+	if workspace.PersistentVolumeClaim == nil {
+		t.Fatalf("workspace = %+v, want a PVC so it survives the gate cycle", workspace.VolumeSource)
+	}
+
+	var pvc corev1.PersistentVolumeClaim
+	pollUntil(t, 15*time.Second, 200*time.Millisecond, func() bool {
+		return k8sClient.Get(testCtx, client.ObjectKey{
+			Namespace: ns, Name: workspace.PersistentVolumeClaim.ClaimName,
+		}, &pvc) == nil
+	})
+	if pvc.Name == "" {
+		t.Errorf("PVC %q was never created", workspace.PersistentVolumeClaim.ClaimName)
+	}
+
+	// The agent container must be told to park, or it exits after attempt 1
+	// and the controller falls back to cloning a successor.
+	var agentEnv []corev1.EnvVar
+	for _, c := range job.Spec.Template.Spec.Containers {
+		if c.Name == "agent" {
+			agentEnv = c.Env
+		}
+	}
+	var parked bool
+	for _, e := range agentEnv {
+		if e.Name == "GATE_IN_PLACE_ENABLED" && e.Value == "true" {
+			parked = true
+		}
+	}
+	if !parked {
+		t.Error("GATE_IN_PLACE_ENABLED is not set on the agent container")
+	}
+}
+
+// TestPostRunWorkspaceFollowsSessionPVC proves a run on a per-session PVC with
+// postRun hooks mounts the session's claim and provisions no run PVC of its
+// own. The postRun Job used to mount <run>-workspace regardless, so a hook
+// judged an empty workspace the agent had never written to.
+func TestPostRunWorkspaceFollowsSessionPVC(t *testing.T) {
+	ns := createTestNamespace(t)
+	agentName := "sys-session-postrun-agent"
+
+	agent := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			Agents: sympoziumv1alpha1.AgentsSpec{
+				Default: sympoziumv1alpha1.AgentConfig{
+					Model:   "test-model",
+					BaseURL: "http://fake-lmstudio:1234/v1",
+				},
+			},
+			Workspace: &sympoziumv1alpha1.WorkspaceSpec{PerSessionPVC: true},
+		},
+	}
+	if err := k8sClient.Create(testCtx, agent); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, agent) })
+
+	run := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "sys-run-session-postrun", Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentRunSpec{
+			AgentRef:   agentName,
+			AgentID:    agentName,
+			SessionKey: "session-a",
+			Task:       sympoziumv1alpha1.NewStringTask("Write a file for the hook to check"),
+			Model: sympoziumv1alpha1.ModelSpec{
+				Provider: "lm-studio",
+				Model:    "test-model",
+				BaseURL:  "http://fake-lmstudio:1234/v1",
+			},
+			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
+				PostRun: []sympoziumv1alpha1.LifecycleHookContainer{
+					{Name: "check", Image: "check:latest"},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(testCtx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
+
+	var job batchv1.Job
+	pollUntil(t, 30*time.Second, 200*time.Millisecond, func() bool {
+		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: run.Name}, &job) == nil
+	})
+
+	var got sympoziumv1alpha1.AgentRun
+	if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(run), &got); err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	sessionPVC := got.Annotations["sympozium.ai/workspace-pvc"]
+	if sessionPVC == "" {
+		t.Fatal("run was not stamped with a per-session PVC; the fixture does not exercise the session path")
+	}
+
+	var claim string
+	for _, v := range job.Spec.Template.Spec.Volumes {
+		if v.Name == "workspace" && v.PersistentVolumeClaim != nil {
+			claim = v.PersistentVolumeClaim.ClaimName
+		}
+	}
+	if claim != sessionPVC {
+		t.Errorf("agent pod workspace claim = %q, want the session PVC %q", claim, sessionPVC)
+	}
+
+	// The run PVC is created in the same reconcile that creates the Job, and
+	// k8sClient reads the apiserver directly, so its absence here is final.
+	var pvc corev1.PersistentVolumeClaim
+	err := k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: run.Name + "-workspace"}, &pvc)
+	if !apierrors.IsNotFound(err) {
+		t.Errorf("get %s-workspace: err = %v, want NotFound — a session run must not provision a run PVC it never mounts",
+			run.Name, err)
+	}
+}
+
+// TestGateInPlaceFalseFallsBackToSuccessors proves the CRD switch is what
+// selects the mechanism. With inPlace: false the pod must not be told to park,
+// so the run takes the successor-clone path instead.
+func TestGateInPlaceFalseFallsBackToSuccessors(t *testing.T) {
+	ns := createTestNamespace(t)
+	agentName := "sys-inplace-off-agent"
+
+	agentBody := map[string]any{
+		"name":     agentName,
+		"provider": "lm-studio",
+		"model":    "test-model",
+		"baseURL":  "http://fake-lmstudio:1234/v1",
+	}
+	requireStatus(t, httpDo(t, http.MethodPost, fmt.Sprintf("/api/v1/agents?namespace=%s", ns), agentBody), http.StatusCreated)
+	t.Cleanup(func() {
+		httpDo(t, http.MethodDelete, fmt.Sprintf("/api/v1/agents/%s?namespace=%s", agentName, ns), nil)
+	})
+
+	inPlace := false
+	run := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "sys-run-inplace-off", Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentRunSpec{
+			AgentRef: agentName,
+			AgentID:  agentName,
+			Task:     sympoziumv1alpha1.NewStringTask("Retry via successors"),
+			Model: sympoziumv1alpha1.ModelSpec{
+				Provider: "lm-studio",
+				Model:    "test-model",
+				BaseURL:  "http://fake-lmstudio:1234/v1",
+			},
+			Lifecycle: &sympoziumv1alpha1.LifecycleHooks{
+				GateDefault: "block",
+				Retry:       &sympoziumv1alpha1.RetrySpec{MaxAttempts: 3, On: []string{"gate"}, InPlace: &inPlace},
+				PostRun: []sympoziumv1alpha1.LifecycleHookContainer{
+					{Name: "check", Image: "check:latest", Gate: true},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(testCtx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
+
+	var job batchv1.Job
+	pollUntil(t, 30*time.Second, 200*time.Millisecond, func() bool {
+		return k8sClient.Get(testCtx, client.ObjectKey{Namespace: ns, Name: run.Name}, &job) == nil
+	})
+
+	for _, c := range job.Spec.Template.Spec.Containers {
+		if c.Name != "agent" {
+			continue
+		}
+		for _, e := range c.Env {
+			if e.Name == "GATE_IN_PLACE_ENABLED" {
+				t.Errorf("GATE_IN_PLACE_ENABLED=%q was set despite inPlace: false", e.Value)
+			}
+		}
 	}
 }

@@ -472,6 +472,8 @@ func (r *SympoziumScheduleReconciler) nextScheduledRunNumber(ctx context.Context
 //   - PostRunning: the agent is done but its postRun lifecycle hooks are not.
 //   - AwaitingDelegate: the run is parked while a delegate_to_persona child
 //     works. An orchestrator can sit here for tens of minutes.
+//   - AwaitingGate: the pod is parked holding its conversation while a
+//     response gate judges an attempt of an in-place retry chain.
 //   - "": the AgentRun controller has not observed the run yet.
 //
 // Treating a live phase as finished makes a Forbid schedule stack a second run

@@ -644,7 +644,7 @@ export function GlobalEnsembleCanvas() {
 
 		// Count active sub-agent runs per persona (agentRef).
 		const subagentCounts = new Map<string, number>();
-		const activePhases = new Set(["Running", "Pending", "AwaitingDelegate"]);
+		const activePhases = new Set(["Running", "Pending", "AwaitingDelegate", "AwaitingGate"]);
 		for (const run of runs || []) {
 			if (
 				run.spec?.parent &&
@@ -839,7 +839,7 @@ export function DashboardEnsembleCanvas() {
 
 		// Count active sub-agent runs per persona (agentRef).
 		const subagentCounts = new Map<string, number>();
-		const activePhases = new Set(["Running", "Pending", "AwaitingDelegate"]);
+		const activePhases = new Set(["Running", "Pending", "AwaitingDelegate", "AwaitingGate"]);
 		for (const run of runs || []) {
 			if (
 				run.spec?.parent &&

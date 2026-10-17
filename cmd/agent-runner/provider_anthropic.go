@@ -195,6 +195,17 @@ func (p *anthropicProvider) ReplaceToolResults(replacements map[string]string) {
 	}
 }
 
+// AddUserMessage appends a user turn so the next Chat call sees it. Anthropic
+// rejects consecutive user turns. No merge is needed: driveInPlaceGate calls
+// this only after an attempt ended on a final assistant turn with no tool
+// calls, and it does not park after a token-budget halt.
+func (p *anthropicProvider) AddUserMessage(text string) {
+	if text == "" {
+		return
+	}
+	p.messages = append(p.messages, anthropic.NewUserMessage(anthropic.NewTextBlock(text)))
+}
+
 // ResetContext rebuilds the message slice to the seed state so
 // the next Chat or Prompt call behaves as if the conversation just began.
 func (p *anthropicProvider) ResetContext() {

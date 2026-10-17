@@ -119,9 +119,9 @@ spec:
   timeout: "5m"
 ```
 
-Phase transitions: `Pending` → `Running` → `Succeeded` (or `Failed`). When [lifecycle hooks](lifecycle-hooks.md) with `postRun` are defined: `Pending` → `Running` → `PostRunning` → `Succeeded` (or `Failed`).
+Phase transitions: `Pending` → `Running` → `Succeeded` (or `Failed`). When [lifecycle hooks](lifecycle-hooks.md) with `postRun` are defined: `Pending` → `Running` → `PostRunning` → `Succeeded` (or `Failed`). A gate with `lifecycle.retry.inPlace` uses `AwaitingGate` in place of `PostRunning` and may loop back to `Running`.
 
-A [response gate](lifecycle-hooks.md#retrying-a-rejected-response) can retry a rejected run. Each attempt is its own AgentRun, linked by `status.retryOf` and `status.attempt`; a superseded attempt ends `Failed` with `status.gateVerdict: retried`. Use `kubectl get agentruns -o wide` to see the chain.
+A [response gate](lifecycle-hooks.md#retrying-a-rejected-response) can retry a rejected run. With `lifecycle.retry.inPlace: true` the pod parks in `AwaitingGate` and continues on the same conversation, so the whole chain is one AgentRun and each attempt is an entry in `status.attempts[]`. Otherwise (the default) each attempt is its own AgentRun, linked by `status.retryOf` and `status.attempt`; a superseded attempt ends `Failed` with `status.gateVerdict: retried`.
 
 Setting `spec.backend: celln` routes the run to a hardware-isolated Celln microVM instead of a Job, and `spec.executionLifecycle` chooses `one-shot` or `enduring` (a leased parent cell that takes follow-up `AgentRunTurn`s). Celln runs use the model route of the Agent's Celln backend (`spec.model.connectionRef`), not a key in the run, and do not support SkillPacks, MCP, ensembles, delegation or shared memory. See [Celln Backend](celln-backend.md).
 
