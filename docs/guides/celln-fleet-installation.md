@@ -138,7 +138,7 @@ live conversations are kept`). If the wait expires, label a node, read the
 | `--celln-fleet-replace-package` | `false` | Approve moving an installed scope to another package or scope; ends every live parent |
 | `--celln-fleet-output-dir` | `~/.sympozium/celln-fleet/<scope>` | Private directory for the materialized configuration and installation records |
 | `--celln-fleet-wait` | `15m` | How long to wait for the first labeled node |
-| `--celln-router-image` | `ghcr.io/sympozium-ai/celln:v0.5.34` | Router image (`repo:tag` or `repo@sha256:…`) |
+| `--celln-router-image` | `ghcr.io/sympozium-ai/celln:v0.5.35` | Router image (`repo:tag` or `repo@sha256:…`) |
 | `--celln-installer-image` | `ghcr.io/sympozium-ai/sympozium/celln-installer:<release>` | The fleet node image (the `celln` binary and its runtime assets); a source build uses the embedded chart's `appVersion`, never `latest` |
 | `--celln-router-replicas` | `1` | Router replicas for the generated ownership PVC |
 

@@ -58,7 +58,7 @@ gateway adds to its requests and no node ever holds. See
 | `--celln-fleet-replace-package` | `false` | Approve moving an installed scope to another package or scope (ends live parents) |
 | `--celln-fleet-output-dir` | `~/.sympozium/celln-fleet/<scope>` | Private directory for configuration and install records |
 | `--celln-fleet-wait` | `15m` | How long to wait for the first labeled node |
-| `--celln-router-image` | `ghcr.io/sympozium-ai/celln:v0.5.34` | Router image, `repo:tag` or `repo@sha256:…` |
+| `--celln-router-image` | `ghcr.io/sympozium-ai/celln:v0.5.35` | Router image, `repo:tag` or `repo@sha256:…` |
 | `--celln-installer-image` | `ghcr.io/sympozium-ai/sympozium/celln-installer:<release>` | The fleet node image (the `celln` binary and runtime assets); a source build uses the embedded chart's `appVersion` |
 | `--celln-router-replicas` | `1` | Router replicas for the generated ownership PVC |
 

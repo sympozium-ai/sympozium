@@ -12,14 +12,14 @@ func TestSplitImageRef(t *testing.T) {
 		ref    string
 		digest bool
 	}{
-		{"", "ghcr.io/sympozium-ai/celln", "v0.5.34", false},
-		{"ghcr.io/sympozium-ai/celln:v0.5.34", "ghcr.io/sympozium-ai/celln", "v0.5.34", false},
+		{"", "ghcr.io/sympozium-ai/celln", "v0.5.35", false},
+		{"ghcr.io/sympozium-ai/celln:v0.5.35", "ghcr.io/sympozium-ai/celln", "v0.5.35", false},
 		{"ghcr.io/sympozium-ai/celln@sha256:abcdef", "ghcr.io/sympozium-ai/celln", "sha256:abcdef", true},
-		{"localhost:5000/celln", "localhost:5000/celln", "v0.5.34", false},
+		{"localhost:5000/celln", "localhost:5000/celln", "v0.5.35", false},
 		{"localhost:5000/celln:v1", "localhost:5000/celln", "v1", false},
 	}
 	for _, c := range cases {
-		repo, ref, digest := splitImageRef(c.in, "ghcr.io/sympozium-ai/celln", "v0.5.34")
+		repo, ref, digest := splitImageRef(c.in, "ghcr.io/sympozium-ai/celln", "v0.5.35")
 		if repo != c.repo || ref != c.ref || digest != c.digest {
 			t.Fatalf("splitImageRef(%q) = (%q,%q,%v), want (%q,%q,%v)", c.in, repo, ref, digest, c.repo, c.ref, c.digest)
 		}
@@ -27,7 +27,7 @@ func TestSplitImageRef(t *testing.T) {
 }
 
 func TestCellnInstallSetValues(t *testing.T) {
-	vals, err := cellnInstallSetValues(context.Background(), "ghcr.io/sympozium-ai/celln:v0.5.34", "", 1)
+	vals, err := cellnInstallSetValues(context.Background(), "ghcr.io/sympozium-ai/celln:v0.5.35", "", 1)
 	if err != nil {
 		t.Fatalf("cellnInstallSetValues: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestCellnInstallSetValues(t *testing.T) {
 		}
 	}
 	router, _ := celln["router"].(map[string]interface{})
-	if router["external"] != false || router["image"].(map[string]interface{})["tag"] != "v0.5.34" {
+	if router["external"] != false || router["image"].(map[string]interface{})["tag"] != "v0.5.35" {
 		t.Fatalf("router values: %#v", router)
 	}
 	if _, has := router["backends"]; has {
