@@ -482,11 +482,29 @@ five seconds for ever as "PreparationUnconfirmed" (now refused at once as
 now carries the turn's own reason in its error and through the OpenAI
 endpoint, instead of only "cleanup confirmed".
 
-Left as follow-ups, all on the guest or the provider side: the per-turn
-tool-call budget (five calls, six model requests, a constant of the shared
-permit contract) is tight for multi-step work and the guest harness should
-answer an over-budget request with a tool error rather than ending the turn;
-the worker hashes every lent tool before it runs (a toolbox profile requires a run to
+With the provider taken out of the picture (the same tests against DeepSeek:
+solo 16.6 s, three-way 18 s, multi-tool 24 s), the guest's share stood out:
+pilot took 4.6 s to verify the worker's 24-member closure and the turn
+harness another 5.7 s re-reading and re-hashing the same tools before its
+first request. A probe in pilot showed why: `read()` on the sealed tool
+window (a DAX mount over legacy e820 pmem) runs at four to five megabytes a
+second in the guest, steady state, while hashing the same bytes through a
+mapping of the file takes a millisecond. Pilot now verifies through a
+mapping (24 members in 52 ms), and the harness, told by pilot that the
+closure it was exec'd from is verified, skips its own re-read, which the
+code already described as diagnostics only. Against DeepSeek a solo
+one-shot now takes 8.5 s warm, three concurrent runs 12 s, and the
+multi-tool task 13 to 18 s; about 2.5 s of a solo run is Sympozium and
+Celln (admission 1.5 s, the rest observation and cleanup), the remainder the
+provider and the web. Proven first as a dev starter package on the real
+fleet through the same build the release uses, then released as Celln
+v0.5.35 and pinned here, so the CI-built starter package carries it.
+
+Left as follow-ups: the per-turn tool-call budget (five calls, six model
+requests, a constant of the shared permit contract) is tight for multi-step
+work and the guest harness should answer an over-budget request with a tool
+error rather than ending the turn; admission could lose most of its 1.5 s by
+caching the resolver's reads; the worker hashes every lent tool before it runs (a toolbox profile requires a run to
 select all of its tools, so a leaner per-Agent toolbox needs a resolver
 design change); the worker spends about 3.5 s building its prompt before the
 first request; llama-server runs two slots for three cells and generates at
