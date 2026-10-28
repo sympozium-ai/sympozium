@@ -75,7 +75,8 @@ type mediationPlan struct {
 	// auto: the installer derives the values and bootstraps the trust.
 	auto bool
 	// operator: --set celln.mediation.enabled=true; the operator's values
-	// are used as given and nothing is derived or bootstrapped.
+	// are used as given and nothing is derived or bootstrapped, except the
+	// gateway image, which the install still pins when they name none.
 	operator bool
 	image    string
 	notice   string
@@ -94,8 +95,6 @@ func planMediation(in mediationInputs) (mediationPlan, error) {
 	switch {
 	case explicit && !setEnabled:
 		return mediationPlan{}, fmt.Errorf("--set celln.mediation.enabled=false: the Celln fleet serves model requests only through the model gateway, so it cannot be installed without one")
-	case explicit:
-		return mediationPlan{operator: true, notice: "Model gateway: wired with the operator's celln.mediation values (--set); the installer bootstraps nothing."}, nil
 	}
 	image, source, err := selectModelGatewayImage(in.flagImage, setImage, in.pinned, in.deployedImage)
 	if err != nil {
@@ -103,6 +102,12 @@ func planMediation(in mediationInputs) (mediationPlan, error) {
 	}
 	if image == "" {
 		return mediationPlan{}, fmt.Errorf("this build (a source build) pins no model gateway image and the release names none: pass --model-gateway-image %s@sha256:<digest>; the fleet serves model requests only through the gateway", defaultModelGatewayRepo)
+	}
+	if explicit {
+		// The operator's values wire the trust; the gateway image is still
+		// this release's unless they name one. An install from a release
+		// never leaves the chart without a digest-pinned image.
+		return mediationPlan{operator: true, image: image, notice: fmt.Sprintf("Model gateway: wired with the operator's celln.mediation values (--set), image %s (from %s); the installer bootstraps nothing.", image, source)}, nil
 	}
 	return mediationPlan{auto: true, image: image, notice: fmt.Sprintf("Model gateway: %s (from %s); every Agent's own key is added there and never reaches a node.", image, source)}, nil
 }

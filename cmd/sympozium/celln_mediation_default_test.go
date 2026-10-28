@@ -64,7 +64,9 @@ func TestPlanMediation(t *testing.T) {
 	}{
 		{name: "the release pin", in: mediationInputs{pinned: pinnedGateway}, auto: true, image: pinnedGateway, notice: "never reaches a node"},
 		{name: "explicit false is refused: the fleet has no other model path", in: mediationInputs{pinned: pinnedGateway, setValues: []string{"celln.mediation.enabled=false"}}, refused: "cannot be installed without one"},
-		{name: "operator values", in: mediationInputs{pinned: pinnedGateway, setValues: []string{"celln.mediation.enabled=true", "celln.mediation.clusterId=c"}}, op: true, notice: "bootstraps nothing"},
+		{name: "operator values keep the release's gateway pin", in: mediationInputs{pinned: pinnedGateway, setValues: []string{"celln.mediation.enabled=true", "celln.mediation.clusterId=c"}}, op: true, image: pinnedGateway, notice: "bootstraps nothing"},
+		{name: "operator values with their own gateway image", in: mediationInputs{pinned: pinnedGateway, setValues: []string{"celln.mediation.enabled=true", "modelGateway.image=" + flagGateway}}, op: true, image: flagGateway, notice: "--set modelGateway.image"},
+		{name: "operator values on a source build need an image too", in: mediationInputs{setValues: []string{"celln.mediation.enabled=true"}}, refused: "--model-gateway-image"},
 		{name: "a source build needs the flag", in: mediationInputs{}, refused: "--model-gateway-image"},
 		{name: "a source build with the flag", in: mediationInputs{flagImage: flagGateway}, auto: true, image: flagGateway},
 		{name: "a source build rerun keeps the deployed gateway", in: mediationInputs{deployedImage: deployedGateway, clusterMediated: true}, auto: true, image: deployedGateway},

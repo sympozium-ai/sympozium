@@ -160,6 +160,10 @@ func installCellnFleet(ctx context.Context, f cellnFleetFlags, imageTag string, 
 		}
 		trustOptions = cellninstall.MediationOptions{ClusterID: clusterID, SystemNamespace: systemNamespace, GatewayHosts: gatewayHosts, ReceiverHosts: receiverHosts, KeyID: keyID}
 	}
+	if plan.operator {
+		// Last, so it also settles a flag against a --set of the image.
+		mediationValues = []string{"modelGateway.image=" + plan.image}
+	}
 	values := append(append(append([]string{}, setValues...), fleetValues...), mediationValues...)
 	if replacing {
 		fmt.Printf("  Moving the fleet from package %s to %s in scope %s; every live parent on the fleet is lost.\n", publication.Package, f.options.PackageHash, f.options.Scope)
