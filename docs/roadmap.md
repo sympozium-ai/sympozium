@@ -9,21 +9,37 @@ notes and GitHub issues; this is the map, not the territory.
 
 ## Direction
 
-Sympozium runs LLM agents as Kubernetes resources. Two things set the
-direction for 0.12 and beyond:
+Sympozium is the **coordination layer** for agents on Kubernetes: it decides
+what agents do. Agents and their own model keys, policy and tool gating,
+ensembles and delegation, channels, schedules, memory and the console, all as
+Kubernetes resources under your RBAC and GitOps. See
+[Positioning](positioning.md).
 
-- **Hardware-isolated execution.** Agent turns run in [Celln](https://github.com/sympozium-ai/celln)
-  micro-VMs on a model-free fleet. An Agent brings its own
-  `ModelConnection` and key; nothing on a node ever holds a model credential,
-  and every model request leaves through the model gateway under that Agent's
-  identity. See [Agent-bound model access](design/celln-agent-bound-model-access.md).
+Decision of 2026-10-30: **isolation and density are an execution plane, and
+the execution plane is pluggable.** Sandboxed, suspendable agent runtimes now
+exist with far more people behind them than this project has: Google's
+[Agent Substrate](https://github.com/agent-substrate/substrate) (which
+[kagent](https://kagent.dev/) is rebuilding on) and Kubernetes
+[Agent Sandbox](https://agent-sandbox.sigs.k8s.io/). Sympozium already runs
+an `AgentRun` as a Job, as an Agent Sandbox, or as a
+[Celln](https://github.com/sympozium-ai/celln) micro-VM cell. The plan is to
+add Agent Substrate as an optional backend, keep Celln as the self-hosted,
+zero-dependency option rather than the default, and spend the effort that
+frees up on the coordination layer. The reasoning is in
+[Sympozium vs Google AX and Agent Substrate](sympozium-vs-google-ax.md); the
+work is tracked in [epic #692](https://github.com/sympozium-ai/sympozium/issues/692).
+
+Two threads carry on from 0.12 unchanged:
+
+- **Agent-bound model access.** An Agent brings its own `ModelConnection`
+  and key; nothing on an execution node ever holds a model credential, and
+  every model request leaves through the model gateway under that Agent's
+  identity. This holds for every backend, including Substrate. See
+  [Agent-bound model access](design/celln-agent-bound-model-access.md).
 - **Bring-your-own harness.** External runtimes (Codex, Claude Code, Pi,
   Hermes, Goose and friends) run under an administrator-approved
-  `AgentRuntime` with a versioned adapter contract, instead of the built-in
-  agent-runner. See the [harness epic (#349)](https://github.com/sympozium-ai/sympozium/issues/349).
-
-Everything else (channels, ensembles, schedules, memory, the console) is kept
-working on top of those two, and grows where users ask for it.
+  `AgentRuntime` with a versioned adapter contract. See the
+  [harness epic (#349)](https://github.com/sympozium-ai/sympozium/issues/349).
 
 ## Shipped in 2026
 
@@ -38,6 +54,16 @@ working on top of those two, and grows where users ask for it.
 
 ## In progress
 
+- **Pluggable execution plane, Substrate spike** ([#692](https://github.com/sympozium-ai/sympozium/issues/692)).
+  Four weeks with exit criteria: an `AgentRun` runs as a Substrate actor on
+  the maintainer's cluster, under a `SympoziumPolicy`, with the Agent's key
+  never inside the sandbox, phases and logs on the `AgentRun`, and a written
+  go/no-go with latency and idle-cost numbers against the Job and Celln
+  backends. No-go is a valid outcome.
+- **Celln becomes an option, not the default** ([#693](https://github.com/sympozium-ai/sympozium/issues/693)).
+  `sympozium install` deploys the fleet only with `--celln-fleet`; the Job
+  backend is the default for new Agents; onboarding offers Celln alongside
+  Agent Sandbox and, later, Substrate. Existing fleet installs keep their fleet.
 - **Celln turn latency.** With the provider out of the picture, a one-shot
   turn costs about 2.5 s of Sympozium and Celln time (admission 1.5 s, the
   rest observation and cleanup). Next: cache the resolver's reads during
@@ -59,10 +85,10 @@ working on top of those two, and grows where users ask for it.
 
 Ordered by what unblocks the most users. Each has, or will get, an issue.
 
-1. **Pi and Hermes in a cell** ([#687](https://github.com/sympozium-ai/sympozium/issues/687)).
-   Deferred from 0.12 because the only host-to-guest data path is the dispatch
-   frame protocol; needs a bounded workspace channel first.
-   [Why it was deferred](design/celln-agent-bound-model-access.md#harnesses-in-a-cell-pi-hermes-deferred).
+1. **Substrate as a released backend** (phase 1 of #692, only on a go):
+   `spec.backend: substrate`, validation and parity tests, install wiring or a
+   documented external install, backend choice in the console, and enduring
+   runs as suspended actors instead of leased parents.
 2. **Fleet operations.** A per-namespace spend ceiling and refusal events on the
    run ([#688](https://github.com/sympozium-ai/sympozium/issues/688)); a KVM CI
    lane that boots cells on an enforcing CNI and publishes release evidence
@@ -98,6 +124,13 @@ is listed on the
   it on purpose; see the threat model in the design note.
 - Agent pods with host networking, host PID, or privileged SkillPacks under an
   external runtime.
+- Growing Celln's scope. It stays maintained as the self-hosted isolation
+  option (turn latency, fleet operations), but harness-in-a-cell for Pi and
+  Hermes ([#687](https://github.com/sympozium-ai/sympozium/issues/687), closed)
+  and other new data paths into the cell are not planned; a sandbox runtime
+  with a community behind it is where that belongs.
+- Competing with Agent Substrate or Agent Sandbox on density or isolation
+  depth. Sympozium sits above them.
 - Reviving the February 2026 OpenClaw gap list as a plan. Its items are either
   shipped (dashboard, doctor, usage tracking, delegation), folded into the
   lists above, or not wanted; the

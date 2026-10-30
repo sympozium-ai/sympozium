@@ -64,7 +64,7 @@ spec:
       secret: my-openai-key
   skills:
     - skillPackRef: k8s-ops
-  policyRef: default-policy
+  policyRef: permissive
 ```
 
 Apply it:

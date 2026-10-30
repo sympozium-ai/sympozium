@@ -330,7 +330,7 @@ Agents in an Ensemble can delegate tasks to other personas using the `delegate_t
 | **One Pod per agent run** | Job | Blast-radius isolation, resource limits, automatic cleanup — each agent is as ephemeral as a CronJob pod |
 | **Filesystem IPC** | emptyDir volume | Agent writes to `/ipc/`, bridge sidecar watches via fsnotify and publishes to NATS — language-agnostic, zero dependencies in agent container |
 | **NATS JetStream** | StatefulSet | Durable pub/sub with replay — channels and control plane communicate without direct coupling |
-| **NetworkPolicy isolation** | NetworkPolicy | Agent pods get deny-all egress; only the IPC bridge connects to the event bus — agents cannot reach the internet or other pods |
+| **NetworkPolicy isolation** | NetworkPolicy | Agent pods start from deny-all egress; the chart's policy then allows the event bus and HTTPS egress for model providers (ports 443, 8080, 9473, 6443). Agents cannot reach other pods except through those openings; Celln runs route model traffic through the gateway only |
 | **Policy-as-CRD** | Admission Webhook | `SympoziumPolicy` resources gate tools, sandboxes, and features — enforced at admission time, not at runtime |
 | **Memory-as-SQLite** | PersistentVolume + Deployment per Agent | Persistent agent memory uses SQLite with FTS5 full-text search on a PVC — supports semantic search via `memory_search`, tagging via `memory_store`, and is upgradeable to vector search. Legacy ConfigMap fallback preserved for migration |
 | **Shared Workflow Memory** | PVC + Deployment + Service per Ensemble | Pack-level shared memory pool enables cross-persona knowledge sharing. Same `skill-memory` binary, separate PVC. Per-persona access control (read-write / read-only) enforced client-side. Auto-tagged with source persona for attribution |
@@ -387,8 +387,7 @@ sympozium/
 │   ├── skills/             # Built-in SkillPack definitions
 │   ├── policies/           # Default SympoziumPolicy presets
 │   ├── samples/            # Example CRs
-│   ├── celln/, ergoz/      # Pinned Celln and ergoz releases
-│   └── host/               # systemd units for host-side Celln components
+│   └── celln/, ergoz/      # Pinned Celln and ergoz releases
 ├── migrations/             # PostgreSQL schema migrations
 ├── test/integration/       # Kind-based integration journeys
 ├── docs/                   # Documentation (this site)

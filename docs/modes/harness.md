@@ -147,7 +147,7 @@ Nothing new was built for this. The mode reuses what the platform already had:
 | MCP servers | the registry ConfigMap the controller already generates, mounted at `MCP_CONFIG_PATH`, plus one `MCP_AUTH_<SERVER>` per authenticated server. A replaced agent container gets the **JSON** rendering (`mcp-servers.json`) because its adapter is a shell script with `jq`; the mcp-bridge sidecar keeps reading the YAML one |
 | Skills | `/skills/`, as today. SkillPack **tools** arrive through the skill tool server — see [SkillPack tools](#skillpack-tools). The raw tool manifest is deliberately *not* mounted: it lists tools the policy denies, and a harness has no way to dispatch them anyway |
 | Sandbox / pod security | unchanged — non-root, `readOnlyRootFilesystem`, `drop: [ALL]`, RuntimeDefault seccomp |
-| Writable `$HOME` | an `emptyDir` at `/home/agent` (volume `harness-home`), with `HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` pointed at it — **not** a relaxed security context |
+| Writable `$HOME` | `/home/agent` (volume `harness-home`), with `HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` pointed at it — **not** a relaxed security context. An `emptyDir` for a one-shot run; a run-owned 1Gi PVC when `lifecycle.retry.inPlace` is set and the runtime declares `resume`, so a gate retry starts a new pod on the same home (see [harness adapters](harness-adapters.md)) |
 | Adapter contract | `SYMPOZIUM_HARNESS_CONTRACT_VERSION=v1alpha1`; reject versions the adapter does not understand |
 | Working directory | `/workspace`, regardless of the image's own `WORKDIR` |
 | Result | `/ipc/output/result.json` plus the `__SYMPOZIUM_RESULT__` stdout marker |
@@ -207,9 +207,10 @@ Checked in two places, because they fail in different circumstances:
 
 Only what an AgentRun states unambiguously is counted as a request: `spec.systemPrompt` →
 `persona`, a non-empty `spec.toolPolicy` → `toolFilter`, and `spec.toolPolicy.allow` naming
-`spawn_subagents` or `delegate_to_persona` → `subagents`. `outputSchema` and `resume` are not
-expressible on an AgentRun today — the first is requested per call over `/ipc/prompts/`, the
-second is decided by the gate machinery — so neither is checked yet.
+`spawn_subagents` or `delegate_to_persona` → `subagents`, and `lifecycle.retry.inPlace` →
+`resume`, which the controller checks against the runtime's declared `status.harnessCapabilities`
+before it retries a gate in place. `outputSchema` is requested per call over `/ipc/prompts/` and
+is not checked.
 
 Harness mode is deliberately **absent** from `GET /api/v1/capabilities`. That endpoint
 reports *environmental* availability — is the Celln router dialable, is the Sandbox CRD

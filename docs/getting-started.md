@@ -328,7 +328,7 @@ spec:
   skills:
     - skillPackRef: k8s-ops
     - skillPackRef: incident-response
-  policyRef: default-policy
+  policyRef: permissive
 ```
 
 **Heartbeat** — every 30 minutes:

@@ -36,7 +36,7 @@ type TaskModeHandler interface {
 }
 ```
 
-- `Capabilities` declares what your mode honours from the AgentRun spec: `OutputSchema`, `ToolFilter`, `Persona`, `Subagents`, `Resume`. Be honest — a run asking for something you declare is admitted, and if you then ignore it the field is silently dropped, which is exactly what this descriptor exists to prevent. Declare `Resume: false` unless your mode can genuinely be parked mid-run.
+- `Capabilities` declares what your mode honours from the AgentRun spec: `OutputSchema`, `ToolFilter`, `Persona`, `Subagents`, `Resume`. Be honest — a run asking for something you declare is admitted, and if you then ignore it the field is silently dropped, which is exactly what this descriptor exists to prevent. Declare `Resume: false` unless your mode can genuinely retry a gate in place: a new pod per attempt on the same writable home, the way harness mode does since the resume gate landed.
 - `Validate` runs before `Configure*`. Return a clear error so the reconcile loop can surface it on `AgentRun.status.error`.
 - `ConfigureAgentContainer` mutates the agent env slice in place. Use `append`, don't replace — the central loop has already set `TASK`, `MODEL_*`, `SYSTEM_PROMPT`, etc.
 - `AdjustSidecars` returns per-sidecar mutations the controller applies during container build. Return `nil, nil` if your mode doesn't touch sidecars.

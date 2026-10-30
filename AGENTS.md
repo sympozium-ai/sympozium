@@ -30,8 +30,8 @@ cmd/
   mcp-bridge/           # MCP bridge sidecar
   web-proxy/            # Web proxy (OpenAI-compat API + MCP gateway)
   node-probe/           # Node probe DaemonSet (inference discovery, celln.dev/kvm labels)
-  model-gateway/        # Celln model gateway (opt-in)
-  celln-*/              # Celln parent proxy, scoped controller, review/evidence tools
+  model-gateway/        # Model gateway: the only model path for Celln runs (default on, digest-pinned)
+  celln-*/              # Celln scoped receiver and authorisation fixture
   sympozium/            # CLI + TUI (Bubble Tea), incl. `install` and the Celln fleet installer
 channels/               # Channel pods — telegram, slack, discord, whatsapp
 charts/
@@ -46,7 +46,6 @@ config/
   samples/              # Sample CR YAML files
   celln/release.json    # Pinned Celln release
   ergoz/release.json    # Pinned ergoz release
-  host/                 # systemd units for host-side Celln components
 hack/                   # Build helpers (e.g. build-celln-starter.sh)
 images/                 # Dockerfiles for all components
 internal/

@@ -16,7 +16,7 @@ are in the `sympozium.ai/v1alpha1` API group.
 | `Model` | Deployment + Service | [Cluster-local inference](../guides/local-models.md) — declares a model (GGUF or HuggingFace), controller deploys an inference server (llama.cpp, vLLM, or TGI) and exposes an OpenAI-compatible endpoint |
 | `MCPServer` | Deployment + Service | Managed [Model Context Protocol](../mcp-servers.md) server — external tool providers with auto-discovery and allow/deny filtering |
 | `SympoziumConfig` | Cluster configuration | Platform-wide singleton — gateway, canary, and pricing settings |
-| `ModelConnection` | ExternalName Service | Namespaced, reusable model route — provider, protocol, endpoint, models, and an optional Secret or host credential profile |
+| `ModelConnection` | ExternalName Service | Namespaced, reusable model route — provider, protocol, endpoint, models, and an optional Secret whose key is pinned to that endpoint's origin |
 
 ### Execution and sessions
 
@@ -67,7 +67,7 @@ spec:
   skills:
     - skillPackRef: k8s-ops
     - skillPackRef: code-review
-  policyRef: default-policy
+  policyRef: permissive
 ```
 
 ### Placing agent pods
