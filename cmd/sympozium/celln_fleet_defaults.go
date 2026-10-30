@@ -79,6 +79,11 @@ func deployedFleetEnabledFrom(read func() (*releaseInfo, error)) (bool, error) {
 	if rel == nil {
 		return false, nil
 	}
-	enabled, _ := nestedValue(rel.Config, "celln", "fleet", "enabled").(bool)
-	return enabled, nil
+	// Both switches must be on (the chart defaults both to false). A release
+	// disabled with --reuse-values --set celln.enabled=false still carries
+	// celln.fleet.enabled=true; counting that as deployed would bring the
+	// privileged DaemonSets back on the next plain install.
+	celln, _ := nestedValue(rel.Config, "celln", "enabled").(bool)
+	fleet, _ := nestedValue(rel.Config, "celln", "fleet", "enabled").(bool)
+	return celln && fleet, nil
 }

@@ -135,11 +135,16 @@ alone is not proof.
 
 A fresh `sympozium install` deploys no Celln, and a plain `sympozium install`
 on a cluster that already runs the fleet keeps it. To remove an installed
-fleet, turn Celln off in the release:
+fleet, turn off both Celln and the fleet in the release:
 
 ```bash
-helm upgrade sympozium sympozium/sympozium --reuse-values --set celln.enabled=false
+helm upgrade sympozium sympozium/sympozium --reuse-values \
+  --set celln.enabled=false --set celln.fleet.enabled=false
 ```
+
+`celln.enabled=false` alone already stops rendering the fleet, and
+`sympozium install` treats a fleet as deployed only when both values are
+true. Setting both keeps the stored release values unambiguous.
 
 `--no-celln` is deprecated now that Celln is opt-in. It is kept for
 compatibility, and on a cluster that runs the fleet it still has the side

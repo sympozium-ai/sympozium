@@ -75,7 +75,7 @@ values, publishes trust the chart never renders and installs the scope's
 catalogue; prefer `sympozium install`. See
 [Celln Fleet Installation](../guides/celln-fleet-installation.md).
 
-Disable all Celln resources with `--set celln.enabled=false`.
+Disable all Celln resources with `--set celln.enabled=false`; to remove an installed fleet, also set `celln.fleet.enabled=false` so the stored release values say so (see [Celln backend](../concepts/celln-backend.md#disabling)).
 
 ### Energy collector (ergoz)
 

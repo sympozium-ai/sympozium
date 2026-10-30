@@ -78,9 +78,33 @@ func TestDeployedFleetEnabledOnlyTreatsNotFoundAsAbsent(t *testing.T) {
 	if got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return nil, nil }); err != nil || got {
 		t.Fatalf("no release: got %v, %v; want false, nil", got, err)
 	}
-	fleet := &releaseInfo{Config: map[string]interface{}{"celln": map[string]interface{}{"fleet": map[string]interface{}{"enabled": true}}}}
-	if got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return fleet, nil }); err != nil || !got {
-		t.Fatalf("fleet release: got %v, %v; want true, nil", got, err)
+	release := func(celln, fleet interface{}) *releaseInfo {
+		values := map[string]interface{}{"fleet": map[string]interface{}{}}
+		if celln != nil {
+			values["enabled"] = celln
+		}
+		if fleet != nil {
+			values["fleet"].(map[string]interface{})["enabled"] = fleet
+		}
+		return &releaseInfo{Config: map[string]interface{}{"celln": values}}
+	}
+	for _, tc := range []struct {
+		name         string
+		celln, fleet interface{}
+		want         bool
+	}{
+		{name: "Celln and fleet on", celln: true, fleet: true, want: true},
+		// Disabled with --reuse-values --set celln.enabled=false: the fleet
+		// flag is still set but nothing runs; a plain install must not
+		// bring the DaemonSets back.
+		{name: "Celln disabled, fleet flag still set", celln: false, fleet: true},
+		{name: "fleet flag only (chart default celln off)", fleet: true},
+		{name: "Celln on, no fleet", celln: true, fleet: false},
+	} {
+		rel := release(tc.celln, tc.fleet)
+		if got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return rel, nil }); err != nil || got != tc.want {
+			t.Fatalf("%s: got %v, %v; want %v, nil", tc.name, got, err, tc.want)
+		}
 	}
 	// A transient Helm or RBAC read error must abort, never read as "no
 	// fleet": that would render celln.enabled=false and remove a live fleet.
