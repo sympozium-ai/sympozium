@@ -1297,7 +1297,11 @@ it proceeds. A source build needs --model-gateway-image
 			if !fleet.enabled && !noCelln {
 				// Celln is opt-in (#693), but a rerun must not tear down a
 				// fleet that is already deployed: keep it.
-				fleet.enabled = fleet.keepDeployedFleet(deployedFleetEnabled())
+				deployed, err := deployedFleetEnabled()
+				if err != nil {
+					return err
+				}
+				fleet.enabled = fleet.keepDeployedFleet(deployed)
 			}
 			if note := sourceBuildInstallerNote(cellnInstallerImage); note != "" && fleet.enabled {
 				fmt.Println(note)

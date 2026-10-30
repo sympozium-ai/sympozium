@@ -133,13 +133,19 @@ alone is not proof.
 
 ## Disabling
 
-A fresh `sympozium install` deploys no Celln. To remove an installed fleet:
+A fresh `sympozium install` deploys no Celln, and a plain `sympozium install`
+on a cluster that already runs the fleet keeps it. To remove an installed
+fleet, turn Celln off in the release:
 
 ```bash
-sympozium install --no-celln
-# or, with Helm
 helm upgrade sympozium sympozium/sympozium --reuse-values --set celln.enabled=false
 ```
+
+`--no-celln` is deprecated now that Celln is opt-in. It is kept for
+compatibility, and on a cluster that runs the fleet it still has the side
+effect of not keeping it, which removes the fleet's chart components (see the
+[CLI reference](../reference/cli.md)). Prefer the Helm command above when
+removal is what you mean.
 
 Disabling does not remove `celln` as a valid `backend` value; such runs are
 schema-valid but refused at dispatch. There is never a fallback to a Job.

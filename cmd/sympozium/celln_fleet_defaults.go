@@ -63,12 +63,22 @@ func (f *cellnFleetFlags) keepDeployedFleet(deployed bool) bool {
 }
 
 // deployedFleetEnabled reports whether the deployed release runs the Celln
-// fleet. A missing or unreadable release counts as not deployed.
-func deployedFleetEnabled() bool {
-	rel, err := helmReleaseInfo()
-	if err != nil || rel == nil {
-		return false
+// fleet. Only a missing release (helmReleaseInfo returns nil, nil for
+// release-not-found) counts as not deployed. Any other read error aborts:
+// guessing "not deployed" on a transient Helm or RBAC error would render
+// celln.enabled=false and tear a live fleet down.
+func deployedFleetEnabled() (bool, error) {
+	return deployedFleetEnabledFrom(helmReleaseInfo)
+}
+
+func deployedFleetEnabledFrom(read func() (*releaseInfo, error)) (bool, error) {
+	rel, err := read()
+	if err != nil {
+		return false, fmt.Errorf("reading the deployed Sympozium release to check for a Celln fleet: %w; refusing to continue, because a plain install on a cluster that runs the fleet would remove it. Fix access to the release (or pass --celln-fleet to keep a fleet, --no-celln to remove it) and rerun", err)
+	}
+	if rel == nil {
+		return false, nil
 	}
 	enabled, _ := nestedValue(rel.Config, "celln", "fleet", "enabled").(bool)
-	return enabled
+	return enabled, nil
 }

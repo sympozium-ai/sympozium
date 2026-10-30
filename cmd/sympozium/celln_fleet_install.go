@@ -38,7 +38,7 @@ type cellnFleetFlags struct {
 	// kept is set when a bare `sympozium install` kept an already deployed
 	// fleet.
 	kept bool
-	wait      time.Duration
+	wait time.Duration
 }
 
 // noKVMNodeHintAfter is how long a fleet wait runs before an empty fleet is

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +71,32 @@ func TestBareInstallKeepsOnlyADeployedFleet(t *testing.T) {
 	var existing cellnFleetFlags
 	if !existing.keepDeployedFleet(true) || !existing.kept {
 		t.Fatal("a rerun on a cluster that runs the fleet must keep it")
+	}
+}
+
+func TestDeployedFleetEnabledOnlyTreatsNotFoundAsAbsent(t *testing.T) {
+	if got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return nil, nil }); err != nil || got {
+		t.Fatalf("no release: got %v, %v; want false, nil", got, err)
+	}
+	fleet := &releaseInfo{Config: map[string]interface{}{"celln": map[string]interface{}{"fleet": map[string]interface{}{"enabled": true}}}}
+	if got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return fleet, nil }); err != nil || !got {
+		t.Fatalf("fleet release: got %v, %v; want true, nil", got, err)
+	}
+	// A transient Helm or RBAC read error must abort, never read as "no
+	// fleet": that would render celln.enabled=false and remove a live fleet.
+	readErr := errors.New("secrets is forbidden")
+	got, err := deployedFleetEnabledFrom(func() (*releaseInfo, error) { return nil, readErr })
+	if err == nil || !errors.Is(err, readErr) || got {
+		t.Fatalf("read error: got %v, %v; want an error wrapping the read error", got, err)
+	}
+}
+
+func TestDoctorPlainInstallPreviewsNoCelln(t *testing.T) {
+	set, from, err := doctorDefaultValues(defaultFleetScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set) != 1 || set[0] != "celln.enabled=false" || !strings.Contains(from, "--celln-fleet") {
+		t.Fatalf("doctor preview of a plain install = %v (%q); want Celln off", set, from)
 	}
 }
