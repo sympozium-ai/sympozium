@@ -1,0 +1,27 @@
+# Rendered by hack/celln-lane/kind-cluster.sh (@...@ placeholders replaced).
+# kindnet does not enforce NetworkPolicy, so it is disabled and Calico is
+# installed instead, with its IPv4 pool set to the pod subnet below. The pod
+# and service subnets are chosen not to overlap the KVM host's own ranges
+# (on framework: the kubeadm cluster's 10.244.0.0/16 pods and 10.96.0.0/12
+# services, docker 172.17-172.19, LAN 192.168.1.0/24, tailscale 100.64/10).
+# Kind nodes are privileged containers, so the host's /dev/kvm is visible
+# inside them. The containerd patch lets the journeys point the nodes at the
+# lane's local registry through /etc/containerd/certs.d.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  ipFamily: ipv4
+  disableDefaultCNI: true
+  podSubnet: "@POD_SUBNET@"
+  serviceSubnet: "@SERVICE_SUBNET@"
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    image: "@NODE_IMAGE@"
+  - role: worker
+    image: "@NODE_IMAGE@"
+  - role: worker
+    image: "@NODE_IMAGE@"
