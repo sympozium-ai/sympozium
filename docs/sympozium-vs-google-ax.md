@@ -178,9 +178,14 @@ runtime on it. Sympozium already chooses between several execution backends per 
 another one. It would bring suspend/resume density underneath Sympozium's
 policy and coordination.
 
-**No such integration exists today.** It is not on the
-[roadmap](roadmap.md), and it would first need Substrate's APIs and security
-model to stabilise.
+**No such integration exists today, but it is now the plan.** On 2026-10-30
+the project decided to treat the execution plane as pluggable: a four-week
+spike brings Substrate in as an optional `AgentRun` backend, with exit
+criteria and a written go/no-go
+([epic #692](https://github.com/sympozium-ai/sympozium/issues/692)), while
+Celln stays as the self-hosted option rather than the default. See the
+[roadmap](roadmap.md). Substrate's APIs and security model are still pre-1.0,
+so the spike also decides how much of their surface the backend may depend on.
 
 ---
 
