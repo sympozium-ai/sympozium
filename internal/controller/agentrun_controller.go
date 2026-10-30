@@ -380,7 +380,8 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Shared-catalogue one-shot selection is decided before model connection
 	// normalization and every legacy/OCI prerequisite. Once a scoped identity is
 	// present it remains on this path even if mutable intent is later edited.
-	sharedScoped, selectionErr := r.sharedCatalogueSelected(ctx, agentRun)
+	backends := r.executionBackends()
+	sharedScoped, selectionErr := backends.celln.Owns(ctx, agentRun)
 	if selectionErr != nil {
 		return ctrl.Result{}, selectionErr
 	}
@@ -390,9 +391,9 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		switch phase := agentRun.Status.Phase; {
 		case phase == "" || phase == sympoziumv1alpha1.AgentRunPhasePending:
-			return r.reconcilePendingScoped(ctx, log, agentRun)
+			return backends.celln.Start(ctx, log, agentRun, executionStartInput{})
 		case phase == sympoziumv1alpha1.AgentRunPhaseRunning:
-			return r.reconcileRunningScoped(ctx, log, agentRun)
+			return backends.celln.Observe(ctx, log, agentRun)
 		case phase.IsTerminal():
 			return r.reconcileCompleted(ctx, log, agentRun)
 		default:
@@ -960,6 +961,74 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		return r.reconcilePendingAgentSandbox(ctx, log, agentRun, harnessRuntimeRef, inheritedHarnessRuntime)
 	}
 
+	return r.executionBackends().job.Start(ctx, log, agentRun, executionStartInput{
+		agent:                   &runtimeInstance,
+		harnessRuntimeRef:       harnessRuntimeRef,
+		inheritedHarnessRuntime: inheritedHarnessRuntime,
+	})
+}
+
+// recordHarnessExecution records the exact harness artifact that is about to
+// execute, so run detail and audit can show which digest ran rather than which
+// tag was requested. task is the resolved task, which is never written back to
+// spec; later reconciles read what it declared from here (harnessResumes).
+func recordHarnessExecution(ar *sympoziumv1alpha1.AgentRun, task *sympoziumv1alpha1.TaskSpec, runtimeRef string, inherited bool) {
+	d := taskmodes.HarnessImageDigest(task)
+	if d == "" {
+		return
+	}
+	ar.Status.HarnessImageDigest = d
+	ar.Status.HarnessRuntimeRef = runtimeRef
+	ar.Status.HarnessContractVersion = taskmodes.HarnessContractVersion
+	ar.Status.HarnessCapabilities = taskmodes.CapabilitiesFor(taskmodes.NewHarnessHandler(), task).Names()
+	if inherited {
+		ar.Status.HarnessRuntimeSource = "agent-default"
+	} else {
+		ar.Status.HarnessRuntimeSource = "run"
+	}
+}
+
+// reconcileRunning checks on a running Job and updates status.
+func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
+	ctx, span := controllerTracer.Start(ctx, "agentrun.extract_result",
+		trace.WithAttributes(
+			attribute.String("agentrun.name", agentRun.Name),
+			attribute.String("instance.name", agentRun.Spec.AgentRef),
+		),
+	)
+	defer span.End()
+
+	log.Info("Checking running AgentRun")
+	// A Running Celln run is reconciled by the scoped path before this point.
+	// One that is not bound to it was started by an execution plane this
+	// controller no longer has (the native parent or the one-shot router):
+	// its outcome cannot be observed, so it ends here rather than being
+	// mistaken for a Job.
+	if agentRun.Status.CellnParent != nil {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnNativeParentRemoved)
+	}
+	if agentRun.Spec.Backend == "celln" || agentRun.Spec.ExecutionLifecycle == "enduring" {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnRouterPlaneRemoved)
+	}
+
+	// Agent Sandbox mode — check Sandbox CR status instead of Job.
+	if agentRun.Status.SandboxName != "" || agentRun.Status.SandboxClaimName != "" {
+		return r.reconcileRunningAgentSandbox(ctx, log, agentRun)
+	}
+
+	return r.executionBackends().job.Observe(ctx, log, agentRun)
+}
+
+// startJob is the Job backend's Start: everything reconcilePending does for a
+// Job-backed run after the shared admission (runtime resolution, policy,
+// gates, budgets and key authorisation). Moved here unchanged behind the
+// ExecutionBackend seam; see docs/design/execution-backend-seam.md.
+func (r *AgentRunReconciler) startJob(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun, in executionStartInput) (ctrl.Result, error) {
+	span := trace.SpanFromContext(ctx)
+	runtimeInstance := in.agent
+	harnessRuntimeRef := in.harnessRuntimeRef
+	inheritedHarnessRuntime := in.inheritedHarnessRuntime
+
 	// Setup shared with the agentSandbox backend — see prepareRunPrerequisites.
 	prereqs, err := r.prepareRunPrerequisites(ctx, log, span, agentRun)
 	if err != nil {
@@ -993,7 +1062,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	//   2. Resolves (or creates) the WorkspaceSession that owns the PVC,
 	//      and stamps the PVC name onto an annotation so buildVolumes
 	//      mounts it at /workspace in place of the emptyDir.
-	if agentRunQualifiesForSessionPVC(agentRun, &runtimeInstance) {
+	if agentRunQualifiesForSessionPVC(agentRun, runtimeInstance) {
 		hash := sessionkey.Hash(agentRun.Spec.SessionKey)
 
 		// Stamp the session-key-hash label so peer lookups are cheap.
@@ -1053,7 +1122,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		}
 
 		// Ensure the WorkspaceSession + PVC exist.
-		pvcName, wsName, err := ensureWorkspaceSession(ctx, r.Client, r.Scheme, &runtimeInstance, agentRun.Spec.SessionKey)
+		pvcName, wsName, err := ensureWorkspaceSession(ctx, r.Client, r.Scheme, runtimeInstance, agentRun.Spec.SessionKey)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring workspace session: %w", err)
 		}
@@ -1184,54 +1253,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-// recordHarnessExecution records the exact harness artifact that is about to
-// execute, so run detail and audit can show which digest ran rather than which
-// tag was requested. task is the resolved task, which is never written back to
-// spec; later reconciles read what it declared from here (harnessResumes).
-func recordHarnessExecution(ar *sympoziumv1alpha1.AgentRun, task *sympoziumv1alpha1.TaskSpec, runtimeRef string, inherited bool) {
-	d := taskmodes.HarnessImageDigest(task)
-	if d == "" {
-		return
-	}
-	ar.Status.HarnessImageDigest = d
-	ar.Status.HarnessRuntimeRef = runtimeRef
-	ar.Status.HarnessContractVersion = taskmodes.HarnessContractVersion
-	ar.Status.HarnessCapabilities = taskmodes.CapabilitiesFor(taskmodes.NewHarnessHandler(), task).Names()
-	if inherited {
-		ar.Status.HarnessRuntimeSource = "agent-default"
-	} else {
-		ar.Status.HarnessRuntimeSource = "run"
-	}
-}
-
-// reconcileRunning checks on a running Job and updates status.
-func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
-	ctx, span := controllerTracer.Start(ctx, "agentrun.extract_result",
-		trace.WithAttributes(
-			attribute.String("agentrun.name", agentRun.Name),
-			attribute.String("instance.name", agentRun.Spec.AgentRef),
-		),
-	)
-	defer span.End()
-
-	log.Info("Checking running AgentRun")
-	// A Running Celln run is reconciled by the scoped path before this point.
-	// One that is not bound to it was started by an execution plane this
-	// controller no longer has (the native parent or the one-shot router):
-	// its outcome cannot be observed, so it ends here rather than being
-	// mistaken for a Job.
-	if agentRun.Status.CellnParent != nil {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnNativeParentRemoved)
-	}
-	if agentRun.Spec.Backend == "celln" || agentRun.Spec.ExecutionLifecycle == "enduring" {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnRouterPlaneRemoved)
-	}
-
-	// Agent Sandbox mode — check Sandbox CR status instead of Job.
-	if agentRun.Status.SandboxName != "" || agentRun.Status.SandboxClaimName != "" {
-		return r.reconcileRunningAgentSandbox(ctx, log, agentRun)
-	}
-
+// observeJob is the Job backend's Observe: reconcileRunning for a Job-backed
+// run. Moved here unchanged behind the ExecutionBackend seam.
+func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	// Find the Job
 	job := &batchv1.Job{}
 	jobName := client.ObjectKey{
@@ -2293,7 +2317,7 @@ func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, 
 func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Reconciling AgentRun deletion")
 	if agentRun.Status.CellnScoped != nil {
-		done, err := r.cleanupScoped(ctx, agentRun)
+		done, err := r.executionBackends().celln.Release(ctx, log, agentRun)
 		if err != nil {
 			log.Error(err, "Scoped Celln deletion cleanup uncertain")
 			_ = r.scopedProgress(ctx, agentRun, metav1.ConditionUnknown, "CleanupUnconfirmed", scopedOutcomeUnconfirmed)
@@ -2307,16 +2331,8 @@ func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logge
 	r.cleanupSkillRBAC(ctx, log, agentRun)
 
 	// Delete the Job if it exists
-	if agentRun.Status.JobName != "" {
-		job := &batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      agentRun.Status.JobName,
-				Namespace: agentRun.Namespace,
-			},
-		}
-		if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil && !errors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
+	if _, err := r.executionBackends().job.Release(ctx, log, agentRun); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Clean up server-mode resources (Deployment, Service, HTTPRoute).
