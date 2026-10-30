@@ -52,15 +52,20 @@ sympozium install
 ```
 
 This creates the `sympozium-system` namespace and deploys the control plane,
-the built-in Ensembles, SkillPacks and policies, the
-[Celln](concepts/celln-backend.md) hardware-isolated execution plane, and
+the built-in Ensembles, SkillPacks and policies, and
 [ergoz](https://github.com/sympozium-ai/ergoz) accelerator power telemetry
-(`--no-celln` / `--no-ergoz` skip them). It is idempotent — safe to run again
-to upgrade.
+(`--no-ergoz` skips it). Agents run as Kubernetes Jobs: nothing beyond
+Kubernetes is needed, and no node needs KVM. It is idempotent — safe to run
+again to upgrade.
 
-The same command installs the **Celln fleet**: every node with `/dev/kvm`
-and a kernel under `/boot` runs one-shot and long-running, hardware-isolated
-agents for every namespace, on any number of nodes. The fleet's two
+### Optional: the Celln fleet
+
+[Celln](concepts/celln-backend.md) is an opt-in, hardware-isolated execution
+plane. `sympozium install --celln-fleet` also installs the **Celln fleet**:
+every node with `/dev/kvm` and a kernel under `/boot` runs one-shot and
+long-running, hardware-isolated agents for every namespace, on any number of
+nodes. A cluster that already runs the fleet keeps it when you rerun
+`sympozium install`. The fleet's two
 DaemonSets are privileged (booting micro-VMs needs `/dev/kvm`, `/boot` and
 `/lib/modules`), and the install says so before it proceeds. On Kind, copy
 the host kernel into each node first — see

@@ -114,7 +114,7 @@ at two different layers, and they compose with different things:
 | Changes | **where** the run executes | **what process runs** inside the Job |
 | Composes with | Celln's own runtime profiles and borrowed tools — it bypasses the pod entirely | `agentSandbox`, gates, ensembles, MCP, skills, memory |
 | Runtime owned in | [the celln repo](https://github.com/sympozium-ai/celln) (the in-cell harness comes from the reviewed starter package) | the adapter's repo |
-| Footprint when unused | zero with `--no-celln` (`celln.enabled=false`) | zero (no image, no chart resource) |
+| Footprint when unused | zero by default (Celln is opt-in with `--celln-fleet`; `celln.enabled=false`) | zero (no image, no chart resource) |
 
 Two consequences worth knowing:
 
@@ -130,7 +130,7 @@ Two consequences worth knowing:
 Harness mode requires an explicit policy opt-in because it changes the trusted primary
 process and exposes the run's model and MCP credentials to that process. Celln's gates are its own: the
 namespace's `CellnExecutionPolicy`, the runtime profile and the lent tool revisions decide what a
-cell may do, and `--no-celln` keeps its privileged node components off the cluster entirely. The
+cell may do, and without `--celln-fleet` (the default) its privileged node components stay off the cluster entirely. The
 two gates protect different boundaries.
 
 ## What Sympozium supplies

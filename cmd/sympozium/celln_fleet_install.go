@@ -35,8 +35,9 @@ type cellnFleetFlags struct {
 	authorise      string
 	// gatewayImage overrides the model gateway image this build pins.
 	gatewayImage string
-	// defaulted is set when a bare `sympozium install` chose the fleet.
-	defaulted bool
+	// kept is set when a bare `sympozium install` kept an already deployed
+	// fleet.
+	kept bool
 	wait      time.Duration
 }
 
@@ -50,11 +51,10 @@ const noKVMNodeHintAfter = 45 * time.Second
 const fleetPrivilegeNotice = `  Celln fleet: on every node labeled celln.dev/kvm=true this deploys two privileged DaemonSets
   (celln-node, celln-node-configure) that mount /dev/kvm, /boot, /lib/modules and a state directory
   under /var/lib/sympozium-celln, because booting micro-VMs needs them. Nodes hold no model key:
-  every Agent's model requests leave through the model gateway with that Agent's own key.
-  Pass --no-celln to install without the fleet.`
+  every Agent's model requests leave through the model gateway with that Agent's own key.`
 
 func (f *cellnFleetFlags) register(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&f.enabled, "celln-fleet", false, "Deploy the Celln fleet explicitly (it is the default whenever this build pins a starter package; use this with the --celln-fleet-package-* flags for another package)")
+	cmd.Flags().BoolVar(&f.enabled, "celln-fleet", false, "Deploy the opt-in Celln fleet (hardware-isolated micro-VMs on KVM nodes). Uses the starter package this build pins, or pass the --celln-fleet-package-* flags for another package. Without it, Agents run on the Kubernetes Job backend")
 	cmd.Flags().StringVar(&f.options.Scope, "celln-fleet-scope", "", "Stable installation identity; node state lives at /var/lib/sympozium-celln/<scope> (default starter)")
 	cmd.Flags().StringVar(&f.options.PackageImage, "celln-fleet-package-image", "", "Digest-pinned OCI image (repository@sha256:...) carrying the reviewed 'celln starter-package' output at /package (default: the starter package this build pins)")
 	cmd.Flags().StringVar(&f.options.PackageHash, "celln-fleet-package-hash", "", "Exact operator-approved package BLAKE3 identity from 'celln starter-inspect'")

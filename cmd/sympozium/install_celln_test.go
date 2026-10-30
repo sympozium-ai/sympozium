@@ -60,3 +60,14 @@ func TestCellnInstallSetValues(t *testing.T) {
 		t.Fatalf("router.backends is set; the router discovers fleet nodes by DNS: %#v", router["backends"])
 	}
 }
+
+func TestBareInstallKeepsOnlyADeployedFleet(t *testing.T) {
+	var fresh cellnFleetFlags
+	if fresh.keepDeployedFleet(false) || fresh.kept {
+		t.Fatal("a fresh bare install must not deploy the Celln fleet (#693)")
+	}
+	var existing cellnFleetFlags
+	if !existing.keepDeployedFleet(true) || !existing.kept {
+		t.Fatal("a rerun on a cluster that runs the fleet must keep it")
+	}
+}

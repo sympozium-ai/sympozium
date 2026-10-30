@@ -404,7 +404,7 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// the exact route first so YAML and HTTP creation freeze the same spec.
 	if !isTerminal && agentRun.Spec.Model.ConnectionRef != "" && (agentRun.Status.Phase == "" || agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhasePending) {
 		if agentRun.Spec.Backend != "celln" {
-			return ctrl.Result{}, r.failRun(ctx, agentRun, "model connections currently require native Celln execution")
+			return ctrl.Result{}, r.failRun(ctx, agentRun, modelConnectionNeedsGatewayMessage)
 		}
 		reader := r.APIReader
 		if reader == nil {
@@ -453,6 +453,13 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	return result, err
 }
+
+// modelConnectionNeedsGatewayMessage refuses a model connection on a backend
+// with no model gateway route. A ModelConnection's key is read only by the
+// gateway and is never mounted into a pod (modelconnection.Resolve), and the
+// Job backend still calls the provider directly from the pod, so it cannot
+// use one yet. Routing Job through a gateway is tracked under #692.
+const modelConnectionNeedsGatewayMessage = "spec.model.connectionRef is gateway-only: a ModelConnection's key is never mounted into a pod, and the Kubernetes Job backend has no model gateway route yet. Use backend celln with a cellnSelection, or give the Agent an inline provider, model and authRef for the Job backend."
 
 // agentRunInputs holds the values derived from the backing Agent that both
 // execution backends need in order to render a pod.

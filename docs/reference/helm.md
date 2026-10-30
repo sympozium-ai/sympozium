@@ -37,8 +37,9 @@ See [`charts/sympozium/values.yaml`](https://github.com/sympozium-ai/sympozium/b
 
 ### Celln (hardware-isolated execution)
 
-The raw chart default is `celln.enabled: false`; `sympozium install` turns it
-on and sets every value below (`--no-celln` leaves it off). Celln's two
+The raw chart default is `celln.enabled: false`, and so is `sympozium
+install`'s: `sympozium install --celln-fleet` turns it on and sets every
+value below (a release that already runs the fleet keeps it on a bare rerun). Celln's two
 DaemonSets are **privileged** (they mount `/dev/kvm`, `/boot`, `/lib/modules`
 and a state directory to boot micro-VMs) and schedule only on nodes labelled
 `celln.dev/kvm=true`; the node probe applies that label to nodes with

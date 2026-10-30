@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 )
 
-// The one-liner: a build that pins a starter package turns a bare
-// `sympozium install` into a fleet install. The package identity comes from
-// the build and every node the probe finds KVM on joins by itself. Nothing
-// about models is asked: the fleet calls no provider, and each Agent brings
-// its own connection and key.
+// `sympozium install --celln-fleet` on a build that pins a starter package
+// needs no package flags: the package identity comes from the build and every
+// node the probe finds KVM on joins by itself. Nothing about models is asked:
+// the fleet calls no provider, and each Agent brings its own connection and
+// key. A bare `sympozium install` deploys no Celln (#693).
 
 const defaultFleetScope = "starter"
 
@@ -46,12 +46,29 @@ func (f *cellnFleetFlags) applyStarterDefaults() error {
 	return nil
 }
 
-// enableByDefault decides whether a bare `sympozium install` runs the fleet:
-// whenever this build pins a starter package. It reports what it chose.
-func (f *cellnFleetFlags) enableByDefault() bool {
-	if !defaultCellnStarter().complete() {
+// cellnNotDeployedSummary is printed after an install that did not deploy
+// Celln: the Job backend is the default and Celln is an option (#693).
+const cellnNotDeployedSummary = "  Celln: not deployed. Agents run on the Kubernetes Job backend. To add the hardware-isolated Celln fleet on KVM nodes later, rerun with --celln-fleet."
+
+// keepDeployedFleet decides whether a bare `sympozium install` runs the fleet.
+// Celln is opt-in, so only a cluster whose release already runs the fleet
+// keeps it; a fresh install never deploys it. It reports what it chose.
+func (f *cellnFleetFlags) keepDeployedFleet(deployed bool) bool {
+	if !deployed {
 		return false
 	}
-	f.defaulted = true
+	f.kept = true
+	fmt.Println("  Celln fleet: already deployed on this cluster; keeping it (Celln is otherwise opt-in with --celln-fleet).")
 	return true
+}
+
+// deployedFleetEnabled reports whether the deployed release runs the Celln
+// fleet. A missing or unreadable release counts as not deployed.
+func deployedFleetEnabled() bool {
+	rel, err := helmReleaseInfo()
+	if err != nil || rel == nil {
+		return false
+	}
+	enabled, _ := nestedValue(rel.Config, "celln", "fleet", "enabled").(bool)
+	return enabled
 }
