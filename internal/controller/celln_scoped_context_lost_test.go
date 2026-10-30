@@ -26,11 +26,24 @@ func TestScopedContextLossEndsTheRun(t *testing.T) {
 	if stored.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed || !strings.Contains(stored.Status.Error, "AUTH_CONTEXT_LOST") {
 		t.Fatalf("phase %q error %q", stored.Status.Phase, stored.Status.Error)
 	}
+	// Through the seam the run is ContextLost, not a plain failure.
+	if p := (cellnBackend{}).Phase(&stored); p != ExecutionContextLost {
+		t.Fatalf("seam phase = %s, want ContextLost", p)
+	}
+	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionContextLost || res.PublicReason != "AUTH_CONTEXT_LOST" {
+		t.Fatalf("seam result = %+v", res)
+	}
 
 	other := newTestRun()
 	other.Name = "uncertain-run"
 	r = newAgentRunTestReconciler(t, parityAgent(), other)
 	if _, err := r.scopedUncertain(context.Background(), other, "ExecutionOutcomeUnconfirmed", &cellnscoped.HTTPError{Status: 502, Reason: "HOST_REQUEST_REFUSED"}); err == nil {
 		t.Fatal("an uncertain outcome must be retried")
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(other), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if p := (cellnBackend{}).Phase(&stored); p == ExecutionContextLost || p == ExecutionFailed {
+		t.Fatalf("a retried uncertain outcome reads as %s through the seam", p)
 	}
 }

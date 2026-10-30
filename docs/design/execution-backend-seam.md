@@ -101,6 +101,7 @@ What step 1 implements versus what is a target:
 | "Celln success requires a receipt" enforced in `Result` | target; `Result` reports whatever status holds |
 | `ErrBackendTemporarilyUnavailable` | declared, not returned yet: backend holds (e.g. `ScopedDispatchDisabled`) still show as `Pending` |
 | `Capabilities` | Job reports `ready`; Celln is hard-coded to `unknown` |
+| Typed outcome markers (`ModelKeyAuthorized`, `CellnContextLost`) | done. `failRun` writes them in the same status update as the `Failed` phase, stamped with `LastTransitionTime == completedAt`; the seam reads a marker only when the two match, so a crash cannot leave one without the transition and a stale one never relabels a later failure |
 | One release path | not yet: `reconcileCompleted` still calls `cleanupScoped` directly, a second Celln release path beside `Release` in `reconcileDelete`, to fold in later |
 
 ### Next steps

@@ -394,14 +394,11 @@ func (r *AgentRunReconciler) scopedUncertain(ctx context.Context, run *api.Agent
 		// The node that held this run's native state is gone. Nothing is
 		// re-placed elsewhere; the run ends and cleanup fences its allowance.
 		r.Log.Info("Scoped Celln run ended: its receiver reported the context lost", "run", run.Name, "namespace", run.Namespace, "step", reason, "cause", cause.Error())
-		// A separate condition type: cleanup later rewrites
-		// CellnScopedExecution, and the seam reads this one as ContextLost.
-		if err := r.updateStatusWithRetry(ctx, run, func(current *api.AgentRun) {
-			meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: conditionCellnContextLost, Status: metav1.ConditionTrue, Reason: "AUTH_CONTEXT_LOST", Message: "The receiver reported the node holding this run's native context gone", ObservedGeneration: current.Generation})
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, r.failRun(ctx, run, "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.")
+		// A separate condition type, because cleanup later rewrites
+		// CellnScopedExecution; written in the same update as Failed, and
+		// read by the seam as ContextLost.
+		return ctrl.Result{}, r.failRun(ctx, run, "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.",
+			metav1.Condition{Type: conditionCellnContextLost, Status: metav1.ConditionTrue, Reason: "AUTH_CONTEXT_LOST", Message: "The receiver reported the node holding this run's native context gone"})
 	}
 	if cellnscoped.IsReceiverMisconfigured(cause) {
 		if err := r.scopedProgress(ctx, run, metav1.ConditionFalse, "ReceiverUnavailable", receiverMisconfiguredMessage(cause)); err != nil {

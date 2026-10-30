@@ -598,14 +598,11 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 
 // refuseRun ends a run that shared admission refused before any work. The
 // ModelKeyAuthorized condition carries the typed code so backends report the
-// run as Refused, not Failed, without parsing status.error.
+// run as Refused, not Failed, without parsing status.error. It is written in
+// the same status update as the Failed phase (see failRun), so a crash can
+// never leave the marker without the terminal transition or the reverse.
 func (r *AgentRunReconciler) refuseRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, refusal *Refusal) error {
-	if err := r.updateStatusWithRetry(ctx, agentRun, func(current *sympoziumv1alpha1.AgentRun) {
-		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: conditionModelKeyAuthorized, Status: metav1.ConditionFalse, Reason: string(refusal.Code), Message: refusal.Message, ObservedGeneration: current.Generation})
-	}); err != nil {
-		return err
-	}
-	return r.failRun(ctx, agentRun, refusal.Message)
+	return r.failRun(ctx, agentRun, refusal.Message, metav1.Condition{Type: conditionModelKeyAuthorized, Status: metav1.ConditionFalse, Reason: string(refusal.Code), Message: refusal.Message})
 }
 
 // resolveProviderHeaders merges the providerHeadersSecretRef contents into
@@ -5369,13 +5366,27 @@ func recordChannelAccess(ctx context.Context, decision, channel, instance string
 	))
 }
 
-func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string) error {
+// failRun ends the run as Failed with a tenant-visible reason.
+//
+// marks are typed outcome conditions (ModelKeyAuthorized, CellnContextLost)
+// recorded in the same status update as the Failed phase, each stamped with
+// LastTransitionTime == CompletedAt. The seam reads a mark only when the two
+// match (terminalMark), so a mark from any other transition is never read.
+func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string, marks ...metav1.Condition) error {
 	now := metav1.Now()
 
 	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
 		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
 		ar.Status.CompletedAt = &now
 		ar.Status.Error = reason
+		for _, mark := range marks {
+			mark.LastTransitionTime = now
+			mark.ObservedGeneration = ar.Generation
+			// Remove first: SetStatusCondition keeps an older transition
+			// time when the status is unchanged.
+			meta.RemoveStatusCondition(&ar.Status.Conditions, mark.Type)
+			meta.SetStatusCondition(&ar.Status.Conditions, mark)
+		}
 	})
 	if err != nil {
 		return err

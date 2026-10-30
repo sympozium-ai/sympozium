@@ -145,4 +145,58 @@ func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
 	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyConflict) {
 		t.Fatalf("scoped key refusal through the seam = %+v, want Refused/%s", res, RefusalModelKeyConflict)
 	}
+
+	// A key the Agent owns but pinned to another origin is refused as an
+	// origin mismatch, whoever owns it.
+	pinned := keyFor("Agent/my-instance")
+	pinned.Annotations[modelkey.OriginAnnotation] = "https://api.openai.com"
+	run = parityRun()
+	run.Spec.Model = sympoziumv1alpha1.ModelSpec{ConnectionRef: "conn", Model: "deepseek-chat"}
+	r = newAgentRunTestReconciler(t, agent, connection, pinned, run)
+	r.ScopedDispatcher = &cellnscoped.Dispatcher{}
+	run.Spec.Backend = "celln"
+	run.Spec.ExecutionLifecycle = "enduring"
+	run.Spec.CellnSelection = &sympoziumv1alpha1.CellnCatalogueSelection{RuntimeRef: "celln-native", ToolRefs: []sympoziumv1alpha1.CellnCatalogueToolRef{}}
+	if err := r.Update(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.reconcilePendingScoped(context.Background(), logr.Discard(), run); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyOriginMismatch) {
+		t.Fatalf("pinned-elsewhere key through the seam = %+v (error %q), want Refused/%s", res, stored.Status.Error, RefusalModelKeyOriginMismatch)
+	}
+}
+
+// A harness run naming a model credential its Agent does not declare is
+// refused, typed, on the pod path, before any Job is created.
+func TestHarnessCredentialRefusalIsTyped(t *testing.T) {
+	run := harnessModeRun(nil)
+	if run.Spec.Model.AuthSecretRef == "" {
+		t.Fatal("test run names no credential")
+	}
+	policy := policyWithRegistries("harness-ok", "ghcr.io/acme")
+	agent := parityAgent()
+	agent.Spec.PolicyRef = policy.Name
+	r := newAgentRunTestReconciler(t, agent, policy, run)
+	if _, err := r.reconcilePending(context.Background(), logr.Discard(), run); err != nil {
+		t.Fatalf("reconcilePending: %v", err)
+	}
+	var stored sympoziumv1alpha1.AgentRun
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Status.Error, "harness model credential") {
+		t.Fatalf("phase %q error %q, want the harness credential refusal", stored.Status.Phase, stored.Status.Error)
+	}
+	var job batchv1.Job
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &job); err == nil {
+		t.Fatal("a Job was created for a refused harness run")
+	}
+	if res := (jobBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyNotGranted) {
+		t.Fatalf("seam result = %+v, want Refused/%s", res, RefusalModelKeyNotGranted)
+	}
 }

@@ -94,13 +94,25 @@ func modelKeyRefusal(err error) *Refusal {
 	return refusal
 }
 
-// admissionRefusal reads a shared admission refusal off a failed run.
-func admissionRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
-	if run.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed {
+// terminalMark returns a typed outcome condition only when failRun wrote it
+// with this run's Failed transition: same status update, LastTransitionTime
+// equal to CompletedAt. A mark from any other transition is ignored, so a
+// stale marker can never relabel a later, unrelated failure.
+func terminalMark(run *sympoziumv1alpha1.AgentRun, conditionType string, status metav1.ConditionStatus) *metav1.Condition {
+	if run.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed || run.Status.CompletedAt == nil {
 		return nil
 	}
-	c := meta.FindStatusCondition(run.Status.Conditions, conditionModelKeyAuthorized)
-	if c == nil || c.Status != metav1.ConditionFalse {
+	c := meta.FindStatusCondition(run.Status.Conditions, conditionType)
+	if c == nil || c.Status != status || !c.LastTransitionTime.Equal(run.Status.CompletedAt) {
+		return nil
+	}
+	return c
+}
+
+// admissionRefusal reads a shared admission refusal off a failed run.
+func admissionRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
+	c := terminalMark(run, conditionModelKeyAuthorized, metav1.ConditionFalse)
+	if c == nil {
 		return nil
 	}
 	return &Refusal{Code: RefusalCode(c.Reason), Message: c.Message}
@@ -379,7 +391,7 @@ func (cellnBackend) Phase(run *sympoziumv1alpha1.AgentRun) ExecutionPhase {
 	}
 	// A receiver-reported AUTH_CONTEXT_LOST ends the run through failRun and
 	// is marked by its own condition.
-	if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed && meta.IsStatusConditionTrue(run.Status.Conditions, conditionCellnContextLost) {
+	if terminalMark(run, conditionCellnContextLost, metav1.ConditionTrue) != nil {
 		return ExecutionContextLost
 	}
 	// Unknown on a live run (NativeOwnerUncertain is the grace period, which

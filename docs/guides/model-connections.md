@@ -106,7 +106,9 @@ connection, Secret, Agent, owner and origin pin. Three things must hold:
   (an empty `provider` grants it for any provider). The Secret is owned by
   exactly one Agent (`sympozium.ai/model-key-owner`) and pinned to one
   endpoint origin (`sympozium.ai/model-key-origin`); another Agent, or a
-  connection to another origin, is refused.
+  connection to another origin, is refused (`MODEL_KEY_NOT_GRANTED`,
+  `MODEL_KEY_CONFLICT`, `MODEL_KEY_ORIGIN_MISMATCH`; see
+  [Refusals](celln-mediated-model-access.md#refusals)).
 - **The policy admits the origin**: the scope's `CellnExecutionPolicy` may
   list `allowedOrigins`/`deniedOrigins` host patterns; empty admits any
   origin the gateway reaches. A keyed endpoint must be HTTPS; a private
