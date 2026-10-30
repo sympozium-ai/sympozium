@@ -33,11 +33,12 @@ func TestRunsUseOnlyTheirAgentsOwnKey(t *testing.T) {
 		secret    *corev1.Secret
 		parent    bool
 		wantError string
+		wantCode  RefusalCode
 	}{
 		{name: "own granted key is claimed and used", grants: "own-key", secret: keySecret("own-key", "")},
 		{name: "a sub-agent run shares its parent's key", grants: "own-key", secret: keySecret("own-key", "Agent/my-instance"), parent: true},
-		{name: "another Agent's key is refused even if granted", grants: "shared", secret: keySecret("shared", "Agent/other-agent"), wantError: "belongs to Agent/other-agent"},
-		{name: "an ungranted key is refused", secret: keySecret("someone-elses", ""), wantError: "is not declared in Agent"},
+		{name: "another Agent's key is refused even if granted", grants: "shared", secret: keySecret("shared", "Agent/other-agent"), wantError: "belongs to Agent/other-agent", wantCode: RefusalModelKeyConflict},
+		{name: "an ungranted key is refused", secret: keySecret("someone-elses", ""), wantError: "is not declared in Agent", wantCode: RefusalModelKeyNotGranted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := parityAgent()
@@ -65,6 +66,13 @@ func TestRunsUseOnlyTheirAgentsOwnKey(t *testing.T) {
 				}
 				if !strings.Contains(stored.Status.Error, tc.wantError) {
 					t.Fatalf("status error %q, want %q", stored.Status.Error, tc.wantError)
+				}
+				// A shared admission refusal reads as Refused, typed, not Failed.
+				if p := (jobBackend{}).Phase(&stored); p != ExecutionRefused {
+					t.Fatalf("seam phase = %s, want Refused", p)
+				}
+				if res := (jobBackend{}).Result(&stored); res == nil || res.PublicReason != string(tc.wantCode) {
+					t.Fatalf("seam result = %+v, want code %s", res, tc.wantCode)
 				}
 				return
 			}
@@ -101,8 +109,8 @@ func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
 
 	// The shared helper claims an unowned key the Agent grants.
 	r := newAgentRunTestReconciler(t, agent, connection, keyFor(""), run)
-	if refusal, err := r.authorizeRunKeys(context.Background(), run, agent); err != nil || refusal != "" {
-		t.Fatalf("claim: refusal %q err %v", refusal, err)
+	if refusal, err := r.authorizeRunKeys(context.Background(), run, agent); err != nil || refusal != nil {
+		t.Fatalf("claim: refusal %+v err %v", refusal, err)
 	}
 	var claimed corev1.Secret
 	if err := r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "key"}, &claimed); err != nil || claimed.Annotations[modelkey.OwnerAnnotation] != "Agent/my-instance" {
@@ -133,5 +141,8 @@ func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
 	}
 	if !strings.Contains(stored.Status.Error, "belongs to Agent/other") {
 		t.Fatalf("scoped run with another Agent's key: phase %q error %q", stored.Status.Phase, stored.Status.Error)
+	}
+	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyConflict) {
+		t.Fatalf("scoped key refusal through the seam = %+v, want Refused/%s", res, RefusalModelKeyConflict)
 	}
 }

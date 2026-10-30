@@ -200,9 +200,9 @@ func (r *AgentRunReconciler) reconcilePendingScoped(ctx context.Context, log log
 			}
 			return ctrl.Result{}, err
 		}
-		if refusal, err := r.authorizeRunKeys(ctx, run, &agent); err != nil || refusal != "" {
-			if refusal != "" {
-				return ctrl.Result{}, r.failRun(ctx, run, refusal)
+		if refusal, err := r.authorizeRunKeys(ctx, run, &agent); err != nil || refusal != nil {
+			if refusal != nil {
+				return ctrl.Result{}, r.refuseRun(ctx, run, refusal)
 			}
 			return ctrl.Result{}, err
 		}
@@ -394,6 +394,13 @@ func (r *AgentRunReconciler) scopedUncertain(ctx context.Context, run *api.Agent
 		// The node that held this run's native state is gone. Nothing is
 		// re-placed elsewhere; the run ends and cleanup fences its allowance.
 		r.Log.Info("Scoped Celln run ended: its receiver reported the context lost", "run", run.Name, "namespace", run.Namespace, "step", reason, "cause", cause.Error())
+		// A separate condition type: cleanup later rewrites
+		// CellnScopedExecution, and the seam reads this one as ContextLost.
+		if err := r.updateStatusWithRetry(ctx, run, func(current *api.AgentRun) {
+			meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: conditionCellnContextLost, Status: metav1.ConditionTrue, Reason: "AUTH_CONTEXT_LOST", Message: "The receiver reported the node holding this run's native context gone", ObservedGeneration: current.Generation})
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, r.failRun(ctx, run, "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.")
 	}
 	if cellnscoped.IsReceiverMisconfigured(cause) {

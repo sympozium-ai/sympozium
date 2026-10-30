@@ -29,6 +29,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -566,15 +567,16 @@ func (r *AgentRunReconciler) resolveAgentRunInputs(ctx context.Context, agentRun
 // authorizeRunKeys holds every model credential a run names to one key per
 // Agent (shared only with the Agent's sub-agents), claiming an unowned key the
 // Agent grants. Both the pod and the scoped Celln paths call it before any
-// work. It returns a refusal to fail the run with, or a transient error.
-func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) (string, error) {
+// work. It returns a typed refusal to end the run with (refuseRun), or a
+// transient error.
+func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) (*Refusal, error) {
 	model := agentRun.Spec.Model
 	for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
 		if err := modelkey.Authorize(ctx, r.Client, agent, "", secret); err != nil {
 			if modelkey.IsRefusal(err) {
-				return err.Error(), nil
+				return modelKeyRefusal(err), nil
 			}
-			return "", fmt.Errorf("checking model key ownership: %w", err)
+			return nil, fmt.Errorf("checking model key ownership: %w", err)
 		}
 	}
 	// The connection's key is claimed with the origin it goes to: the
@@ -585,13 +587,25 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 		if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: model.ConnectionRef}, &connection); err == nil {
 			if err := modelkey.AuthorizeConnection(ctx, r.Client, agent, &connection); err != nil {
 				if modelkey.IsRefusal(err) {
-					return err.Error(), nil
+					return modelKeyRefusal(err), nil
 				}
-				return "", fmt.Errorf("checking model key ownership: %w", err)
+				return nil, fmt.Errorf("checking model key ownership: %w", err)
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// refuseRun ends a run that shared admission refused before any work. The
+// ModelKeyAuthorized condition carries the typed code so backends report the
+// run as Refused, not Failed, without parsing status.error.
+func (r *AgentRunReconciler) refuseRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, refusal *Refusal) error {
+	if err := r.updateStatusWithRetry(ctx, agentRun, func(current *sympoziumv1alpha1.AgentRun) {
+		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: conditionModelKeyAuthorized, Status: metav1.ConditionFalse, Reason: string(refusal.Code), Message: refusal.Message, ObservedGeneration: current.Generation})
+	}); err != nil {
+		return err
+	}
+	return r.failRun(ctx, agentRun, refusal.Message)
 }
 
 // resolveProviderHeaders merges the providerHeadersSecretRef contents into
@@ -947,11 +961,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	if taskmodes.HarnessImage(agentRun.Spec.Task) != "" && !agentAllowsModelCredential(&runtimeInstance, agentRun.Spec.Model.Provider, agentRun.Spec.Model.AuthSecretRef) {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider))
+		return ctrl.Result{}, r.refuseRun(ctx, agentRun, &Refusal{Code: RefusalModelKeyNotGranted, Message: fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider)})
 	}
-	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != "" {
-		if refusal != "" {
-			return ctrl.Result{}, r.failRun(ctx, agentRun, refusal)
+	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != nil {
+		if refusal != nil {
+			return ctrl.Result{}, r.refuseRun(ctx, agentRun, refusal)
 		}
 		return ctrl.Result{}, err
 	}

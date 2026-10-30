@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 )
 
 // The ExecutionBackend seam separates what Sympozium coordinates (Agents and
@@ -44,22 +45,66 @@ const (
 	ExecutionRunning   ExecutionPhase = "Running"
 	ExecutionSucceeded ExecutionPhase = "Succeeded"
 	ExecutionFailed    ExecutionPhase = "Failed"
-	// ExecutionRefused: the backend refused admission before any work
-	// started (for Celln, an AUTH_* reason). Distinct from Failed: no work
-	// ran, so retry policy and spend accounting treat it differently.
+	// ExecutionRefused: the run was refused rather than failed: by shared
+	// admission (a MODEL_KEY_* code) or by the backend (for Celln, a native
+	// Refused phase, possibly after StartAttempted). Retry policy and spend
+	// accounting treat it differently from Failed.
 	ExecutionRefused ExecutionPhase = "Refused"
-	// ExecutionUncertain: the backend cannot confirm the outcome. Nothing may
-	// be replayed or replaced; an operator has to look.
+	// ExecutionUncertain: the backend cannot confirm the outcome yet (Celln:
+	// CellnScopedExecution Unknown, including the NativeOwnerUncertain grace
+	// period). Nothing may be replayed or replaced.
 	ExecutionUncertain ExecutionPhase = "Uncertain"
 	// ExecutionContextLost: the backend reports the run's execution context
-	// gone (Celln: NativeOwnerUncertain). Also not a plain failure.
+	// gone and the run ended (Celln: the receiver's AUTH_CONTEXT_LOST). Also
+	// not a plain failure.
 	ExecutionContextLost ExecutionPhase = "ContextLost"
 	ExecutionUnknown     ExecutionPhase = "Unknown"
 )
 
-// RefusalCode is a public, closed-set reason for refusing a run before it
-// starts. Celln's AUTH_* codes (internal/cellnauthority) are RefusalCodes.
+// RefusalCode is a public reason for refusing a run. Celln's AUTH_* codes
+// (internal/cellnauthority) and the shared model-key codes below are
+// RefusalCodes. A closed enum is a target, not done.
 type RefusalCode string
+
+// Shared admission refusals: authorizeRunKeys, on every backend.
+const (
+	RefusalModelKeyNotGranted     RefusalCode = "MODEL_KEY_NOT_GRANTED"
+	RefusalModelKeyConflict       RefusalCode = "MODEL_KEY_CONFLICT"
+	RefusalModelKeyOriginMismatch RefusalCode = "MODEL_KEY_ORIGIN_MISMATCH"
+)
+
+// Conditions that carry typed outcomes the seam reads instead of parsing
+// status.error.
+const (
+	conditionModelKeyAuthorized = "ModelKeyAuthorized"
+	conditionCellnContextLost   = "CellnContextLost"
+)
+
+// modelKeyRefusal types a modelkey refusal error.
+func modelKeyRefusal(err error) *Refusal {
+	refusal := &Refusal{Code: RefusalModelKeyNotGranted, Message: err.Error()}
+	var conflict *modelkey.ConflictError
+	var origin *modelkey.OriginMismatchError
+	switch {
+	case errors.As(err, &conflict):
+		refusal.Code = RefusalModelKeyConflict
+	case errors.As(err, &origin):
+		refusal.Code = RefusalModelKeyOriginMismatch
+	}
+	return refusal
+}
+
+// admissionRefusal reads a shared admission refusal off a failed run.
+func admissionRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
+	if run.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed {
+		return nil
+	}
+	c := meta.FindStatusCondition(run.Status.Conditions, conditionModelKeyAuthorized)
+	if c == nil || c.Status != metav1.ConditionFalse {
+		return nil
+	}
+	return &Refusal{Code: RefusalCode(c.Reason), Message: c.Message}
+}
 
 // Refusal is an admission refusal: the run never started.
 type Refusal struct {
@@ -135,8 +180,12 @@ type RunIdentity struct {
 }
 
 // executionStartInput is what the coordination layer hands a backend's Start
-// after shared admission. It never carries a model key or Secret reference;
-// the agent is used only by backends that render a pod from it today.
+// after shared admission. It carries no key material, but it is not yet
+// Secret-free: agent (and the run the backend also receives) still name
+// Secrets, spec.model.authSecretRef among them, because the Job backend
+// renders the pod from them and injects the Agent's key into the container
+// env (the documented Job exception in docs/design/execution-backend-seam.md).
+// Narrowing this to Secret-free fields is a target; Celln ignores agent.
 type executionStartInput struct {
 	agent                   *sympoziumv1alpha1.Agent
 	harnessRuntimeRef       string
@@ -246,15 +295,22 @@ func (b jobBackend) Logs(ctx context.Context, log logr.Logger, run *sympoziumv1a
 }
 
 func (jobBackend) Phase(run *sympoziumv1alpha1.AgentRun) ExecutionPhase {
+	if admissionRefusal(run) != nil {
+		return ExecutionRefused
+	}
 	return coordinationPhase(run.Status.Phase)
 }
 
 func (b jobBackend) Result(run *sympoziumv1alpha1.AgentRun) *ExecutionResult {
 	phase := b.Phase(run)
-	if phase != ExecutionSucceeded && phase != ExecutionFailed {
+	if phase != ExecutionSucceeded && phase != ExecutionFailed && phase != ExecutionRefused {
 		return nil
 	}
-	return &ExecutionResult{Outcome: phase, Output: run.Status.Result}
+	res := &ExecutionResult{Outcome: phase, Output: run.Status.Result}
+	if refusal := admissionRefusal(run); refusal != nil {
+		res.PublicReason = string(refusal.Code)
+	}
+	return res
 }
 
 func (jobBackend) Identity(run *sympoziumv1alpha1.AgentRun) RunIdentity {
@@ -297,30 +353,38 @@ func (cellnBackend) Logs(context.Context, logr.Logger, *sympoziumv1alpha1.AgentR
 	return "", ErrLogsUnsupported
 }
 
-// celln refusal codes are public AUTH_* reasons written to status.error by
-// scopedFailureSummary before any start was attempted.
+// cellnRefusal reports a Celln run the backend refused: a shared admission
+// refusal (model keys), or a terminal owner record whose native phase is
+// Refused, before or after StartAttempted (a receiver may refuse once asked
+// to start). The code is the public AUTH_* reason scopedFailureSummary put
+// first in status.error when it mapped one; status does not store the code
+// typed yet, so an unmapped refusal has an empty code.
 func cellnRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
-	if run.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed {
+	if refusal := admissionRefusal(run); refusal != nil {
+		return refusal
+	}
+	if run.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed || run.Status.CellnScoped == nil || run.Status.CellnScoped.NativePhase != "Refused" {
 		return nil
 	}
-	if run.Status.CellnScoped != nil && run.Status.CellnScoped.StartAttempted {
-		return nil
+	refusal := &Refusal{Message: run.Status.Error}
+	if code, _, found := strings.Cut(run.Status.Error, ":"); found && strings.HasPrefix(code, "AUTH_") {
+		refusal.Code = RefusalCode(code)
 	}
-	code, _, found := strings.Cut(run.Status.Error, ":")
-	if !found || !strings.HasPrefix(code, "AUTH_") {
-		return nil
-	}
-	return &Refusal{Code: RefusalCode(code), Message: run.Status.Error}
+	return refusal
 }
 
 func (cellnBackend) Phase(run *sympoziumv1alpha1.AgentRun) ExecutionPhase {
 	if cellnRefusal(run) != nil {
 		return ExecutionRefused
 	}
+	// A receiver-reported AUTH_CONTEXT_LOST ends the run through failRun and
+	// is marked by its own condition.
+	if run.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed && meta.IsStatusConditionTrue(run.Status.Conditions, conditionCellnContextLost) {
+		return ExecutionContextLost
+	}
+	// Unknown on a live run (NativeOwnerUncertain is the grace period, which
+	// can still end as a LeaseElapsed success) is Uncertain, not ContextLost.
 	if c := meta.FindStatusCondition(run.Status.Conditions, "CellnScopedExecution"); c != nil && c.Status == metav1.ConditionUnknown && !run.Status.Phase.IsTerminal() {
-		if c.Reason == "NativeOwnerUncertain" {
-			return ExecutionContextLost
-		}
 		return ExecutionUncertain
 	}
 	return coordinationPhase(run.Status.Phase)
@@ -334,6 +398,8 @@ func (b cellnBackend) Result(run *sympoziumv1alpha1.AgentRun) *ExecutionResult {
 	res := &ExecutionResult{Outcome: phase, Output: run.Status.Result}
 	if refusal := cellnRefusal(run); refusal != nil {
 		res.PublicReason = string(refusal.Code)
+	} else if phase == ExecutionContextLost {
+		res.PublicReason = "AUTH_CONTEXT_LOST"
 	}
 	if run.Status.CellnScoped != nil {
 		res.Receipt = ExecutionReceipt{Digest: run.Status.CellnScoped.ReceiptDigest}

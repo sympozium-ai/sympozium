@@ -35,6 +35,10 @@ never delegated to a backend:
   not (see [Known exceptions](#known-exceptions-and-gaps-not-fixed-by-the-first-change)).
 - **Policy and tool gating.** `SympoziumPolicy` admission and tool allow/deny
   run before `Start` and in our tool server.
+- **Model key authorisation** (`authorizeRunKeys`). Target: above the seam
+  for every backend. Today it is above the seam for Job only; for Celln it
+  still runs inside `reconcilePendingScoped` (`celln_scoped.go`), that is
+  below the seam, and moves up with the `Admit` split.
 - **Spend.** See [Backend-neutral spend ceiling](#backend-neutral-spend-ceiling-688).
 - **Ensembles, delegation, channels, schedules, memory, gates, postRun hooks.**
   The reconciler drives these from the run's phase and result, whatever
@@ -79,9 +83,25 @@ reconcile-shaped, because they wrap today's functions unchanged:
 `Reconcile`, `reconcilePending`, `reconcileRunning` and `reconcileDelete`
 call the backends in today's order: a persisted or selected Celln scoped
 binding first (before model connection normalisation), then Agent Sandbox
-(still inline), then Job. Shared admission (runtime resolution, policy,
-gate validation, token budget, key authorisation) stays in
-`reconcilePending` above the seam.
+(still inline), then Job. For Job, shared admission (runtime resolution,
+policy, gate validation, token budget, key authorisation) stays in
+`reconcilePending` above the seam. Celln is selected before that code runs,
+so its admission, including `authorizeRunKeys`, happens inside
+`reconcilePendingScoped`, below the seam, until `Admit` is split out.
+
+What step 1 implements versus what is a target:
+
+| Item | Status |
+|---|---|
+| `Phase`: `Refused`, `Uncertain`, `ContextLost` for Celln | done. `Refused` = a shared admission refusal (`ModelKeyAuthorized=False`, typed `MODEL_KEY_*` code, Job and Celln alike) or `status.cellnScoped.nativePhase == "Refused"` (also after `StartAttempted`); `ContextLost` = a receiver-reported `AUTH_CONTEXT_LOST` (`CellnContextLost` condition); `Uncertain` = `CellnScopedExecution` Unknown on a live run, including the `NativeOwnerUncertain` grace period, which can still end in a lease-elapsed success |
+| `Result` with an opaque `Receipt` | done, read-only from status |
+| `Admit`, the idempotency key on `Start`, `Cancel`, and the `Unknown` phase | target; not implemented |
+| Closed enums for `RefusalCode` / `PublicReason` | target. Today `RefusalCode` is a string; Celln's code is the `AUTH_*` prefix `scopedFailureSummary` writes, empty when it mapped none |
+| A bound on `Result.Output` size | target |
+| "Celln success requires a receipt" enforced in `Result` | target; `Result` reports whatever status holds |
+| `ErrBackendTemporarilyUnavailable` | declared, not returned yet: backend holds (e.g. `ScopedDispatchDisabled`) still show as `Pending` |
+| `Capabilities` | Job reports `ready`; Celln is hard-coded to `unknown` |
+| One release path | not yet: `reconcileCompleted` still calls `cleanupScoped` directly, a second Celln release path beside `Release` in `reconcileDelete`, to fold in later |
 
 ### Next steps
 
@@ -101,25 +121,26 @@ gate validation, token budget, key authorisation) stays in
 - **Admission / Refusal.** `Admit` returns an `Admission` that `Start`
   consumes, or a `Refusal{Code, Message}`. Refusal is a distinct result from
   failing after start: the backend did no work, a spend ledger must not
-  charge it, and retry policy differs. Codes are a closed enum; Celln's
-  `AUTH_*` codes (`internal/cellnplatform` resolver, `celln_scoped.go`
-  admission) map onto it.
-- **Start is idempotent.** The caller persists "attempted" with an
+  charge it, and retry policy differs. Target: codes are a closed enum;
+  Celln's `AUTH_*` codes (`internal/cellnplatform` resolver, `celln_scoped.go`
+  admission) and the shared `MODEL_KEY_*` codes map onto it.
+- **Start is idempotent** (target). The caller persists "attempted" with an
   idempotency key before calling `Start`, as `celln_scoped.go` already does
   before dispatch, so a replayed reconcile never creates a second execution.
 - **Phase** is `Pending | Running | Succeeded | Failed | Refused | Uncertain |
   ContextLost | Unknown`. `Uncertain` (the backend cannot confirm the
   outcome) and `ContextLost` (the owner reports the context gone) are
   distinct from `Failed`: nothing may be replayed or replaced, and an
-  operator has to look. Celln's `scopedUncertain` and `NativeOwnerUncertain`
-  already model both.
+  operator has to look. Celln: `scopedUncertain` (including the
+  `NativeOwnerUncertain` grace period) is `Uncertain`; a receiver-reported
+  `AUTH_CONTEXT_LOST` is `ContextLost`.
 - **Result** is `{Outcome, PublicReason, Output, Receipt}`. `PublicReason`
-  is a closed enum; free-text native diagnostics never reach tenant-visible
+  is to be a closed enum (target) and `Output` bounded in size (target); free-text native diagnostics never reach tenant-visible
   status (as `scopedFailureSummary` does today). `Receipt` is opaque and
   write-once: Sympozium stores it (Celln: `status.cellnScoped.receiptDigest`;
   request ID, resolved hashes, verdict) but never interprets it, and rejects a
-  change to it. A backend may require a receipt on success; Celln does, and a
-  success without one is rejected.
+  change to it. Target: a backend may require a receipt on success (Celln
+  would), and `Result` rejects a success without one; not enforced yet.
 - **Release** is idempotent cleanup that returns whether cleanup is
   confirmed, separate from `Cancel` (stop the work). Celln's
   `cleanupScoped` / `CleanupConfirmed` already work this way.
@@ -128,10 +149,15 @@ gate validation, token budget, key authorisation) stays in
   unknown` (Agent Sandbox without its CRDs is `not_installed`; a Celln
   receiver with invalid configuration is `transport_invalid`). A
   temporarily-unavailable error tells the caller to requeue, not to fail.
+  Today Celln's `Capabilities` is hard-coded to `unknown`, and
+  `ErrBackendTemporarilyUnavailable` is declared but never returned.
 - **Logs** may be unsupported or terminal-only, and anything returned must be
   tenant-safe by contract.
-- **No secrets in the input.** Nothing the seam takes carries a Secret name,
-  key or UID; the platform decision already strips those for Celln.
+- **No secrets in the input** (target). No key material crosses the seam,
+  but `executionStartInput` still carries the Agent and the run, which name
+  Secrets (`spec.model.authSecretRef`), because the Job backend renders its
+  pod from them (the Job exception below). Celln ignores them; its platform
+  decision already strips Secret names.
 
 ### Known exceptions and gaps (not fixed by the first change)
 
@@ -147,6 +173,9 @@ gate validation, token budget, key authorisation) stays in
   gateway, start, release, close happens inside `internal/cellnscoped`'s
   dispatcher today. The next step is to lift that sequence above the seam
   into the generic controller, where it becomes the hook for #688.
+- **Second Celln release path.** `reconcileCompleted` still calls
+  `cleanupScoped` directly, beside `Release` in `reconcileDelete`. Fold it
+  into `Release` with the `Cancel`/`Release` split.
 - **Backend immutability.** The "backend cannot change after the first
   reconcile" guard (`status.cellnOnly`) covers Celln only; it should become
   a per-backend record set once and checked for every backend.

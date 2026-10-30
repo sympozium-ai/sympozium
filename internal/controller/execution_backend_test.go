@@ -64,20 +64,50 @@ func TestJobBackendViews(t *testing.T) {
 func TestCellnBackendTypedOutcomes(t *testing.T) {
 	b := cellnBackend{}
 	receipt := "sha256:" + strings.Repeat("ab", 32)
+	capacity := "AUTH_CAPACITY: native cell, memory or broker capacity is currently reserved."
 	refused := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
-		Phase: sympoziumv1alpha1.AgentRunPhaseFailed,
-		Error: "AUTH_CAPACITY: native cell, memory or broker capacity is currently reserved.",
+		Phase:       sympoziumv1alpha1.AgentRunPhaseFailed,
+		Error:       capacity,
+		CellnScoped: &sympoziumv1alpha1.CellnScopedStatus{NativePhase: "Refused"},
 	}}
 	if p := b.Phase(refused); p != ExecutionRefused {
 		t.Fatalf("refusal phase = %s", p)
 	}
-	if res := b.Result(refused); res == nil || res.PublicReason != "AUTH_CAPACITY" {
+	if res := b.Result(refused); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != "AUTH_CAPACITY" {
 		t.Fatalf("refusal result = %+v", res)
 	}
-	// The same code after a start attempt is a failure, not a refusal.
-	refused.Status.CellnScoped = &sympoziumv1alpha1.CellnScopedStatus{StartAttempted: true}
-	if p := b.Phase(refused); p != ExecutionFailed {
-		t.Fatalf("post-start AUTH failure phase = %s, want Failed", p)
+	// A receiver may refuse after it was asked to start: still Refused.
+	refused.Status.CellnScoped.StartAttempted = true
+	if p := b.Phase(refused); p != ExecutionRefused {
+		t.Fatalf("post-start receiver refusal phase = %s, want Refused", p)
+	}
+	// The classification is the native phase, not the error text: an AUTH_
+	// summary on a natively Failed run is a failure.
+	failed := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
+		Phase:       sympoziumv1alpha1.AgentRunPhaseFailed,
+		Error:       capacity,
+		CellnScoped: &sympoziumv1alpha1.CellnScopedStatus{NativePhase: "Failed", StartAttempted: true},
+	}}
+	if p := b.Phase(failed); p != ExecutionFailed {
+		t.Fatalf("native failure phase = %s, want Failed", p)
+	}
+	if res := b.Result(failed); res == nil || res.PublicReason != "" {
+		t.Fatalf("native failure result = %+v", res)
+	}
+
+	// Shared admission: a model key refusal is typed, on Celln and Job alike.
+	keyRefused := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
+		Phase:      sympoziumv1alpha1.AgentRunPhaseFailed,
+		Error:      `model key Secret "k" is not declared in Agent "a" spec.authRefs`,
+		Conditions: []metav1.Condition{{Type: conditionModelKeyAuthorized, Status: metav1.ConditionFalse, Reason: string(RefusalModelKeyNotGranted)}},
+	}}
+	for _, backend := range []ExecutionBackend{b, jobBackend{}} {
+		if p := backend.Phase(keyRefused); p != ExecutionRefused {
+			t.Fatalf("%s key refusal phase = %s, want Refused", backend.Name(), p)
+		}
+		if res := backend.Result(keyRefused); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyNotGranted) {
+			t.Fatalf("%s key refusal result = %+v", backend.Name(), res)
+		}
 	}
 
 	uncertain := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
@@ -87,9 +117,28 @@ func TestCellnBackendTypedOutcomes(t *testing.T) {
 	if p := b.Phase(uncertain); p != ExecutionUncertain {
 		t.Fatalf("uncertain phase = %s", p)
 	}
+	// NativeOwnerUncertain is the grace period; it can still end as a
+	// LeaseElapsed success, so it is Uncertain, never ContextLost.
 	uncertain.Status.Conditions[0].Reason = "NativeOwnerUncertain"
-	if p := b.Phase(uncertain); p != ExecutionContextLost {
+	if p := b.Phase(uncertain); p != ExecutionUncertain {
+		t.Fatalf("grace-period phase = %s, want Uncertain", p)
+	}
+
+	// A receiver-reported AUTH_CONTEXT_LOST ends the run through failRun and
+	// marks it; cleanup rewriting CellnScopedExecution does not hide it.
+	lost := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
+		Phase: sympoziumv1alpha1.AgentRunPhaseFailed,
+		Error: "Celln node holding this run is gone (AUTH_CONTEXT_LOST); no replacement execution is permitted. Start a new run.",
+		Conditions: []metav1.Condition{
+			{Type: conditionCellnContextLost, Status: metav1.ConditionTrue, Reason: "AUTH_CONTEXT_LOST"},
+			{Type: "CellnScopedExecution", Status: metav1.ConditionTrue, Reason: "CleanupConfirmed"},
+		},
+	}}
+	if p := b.Phase(lost); p != ExecutionContextLost {
 		t.Fatalf("context-lost phase = %s", p)
+	}
+	if res := b.Result(lost); res == nil || res.Outcome != ExecutionContextLost || res.PublicReason != "AUTH_CONTEXT_LOST" {
+		t.Fatalf("context-lost result = %+v", res)
 	}
 
 	done := &sympoziumv1alpha1.AgentRun{Status: sympoziumv1alpha1.AgentRunStatus{
