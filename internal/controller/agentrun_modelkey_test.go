@@ -33,11 +33,12 @@ func TestRunsUseOnlyTheirAgentsOwnKey(t *testing.T) {
 		secret    *corev1.Secret
 		parent    bool
 		wantError string
+		wantCode  RefusalCode
 	}{
 		{name: "own granted key is claimed and used", grants: "own-key", secret: keySecret("own-key", "")},
 		{name: "a sub-agent run shares its parent's key", grants: "own-key", secret: keySecret("own-key", "Agent/my-instance"), parent: true},
-		{name: "another Agent's key is refused even if granted", grants: "shared", secret: keySecret("shared", "Agent/other-agent"), wantError: "belongs to Agent/other-agent"},
-		{name: "an ungranted key is refused", secret: keySecret("someone-elses", ""), wantError: "is not declared in Agent"},
+		{name: "another Agent's key is refused even if granted", grants: "shared", secret: keySecret("shared", "Agent/other-agent"), wantError: "belongs to Agent/other-agent", wantCode: RefusalModelKeyConflict},
+		{name: "an ungranted key is refused", secret: keySecret("someone-elses", ""), wantError: "is not declared in Agent", wantCode: RefusalModelKeyNotGranted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := parityAgent()
@@ -65,6 +66,13 @@ func TestRunsUseOnlyTheirAgentsOwnKey(t *testing.T) {
 				}
 				if !strings.Contains(stored.Status.Error, tc.wantError) {
 					t.Fatalf("status error %q, want %q", stored.Status.Error, tc.wantError)
+				}
+				// A shared admission refusal reads as Refused, typed, not Failed.
+				if p := (jobBackend{}).Phase(&stored); p != ExecutionRefused {
+					t.Fatalf("seam phase = %s, want Refused", p)
+				}
+				if res := (jobBackend{}).Result(&stored); res == nil || res.PublicReason != string(tc.wantCode) {
+					t.Fatalf("seam result = %+v, want code %s", res, tc.wantCode)
 				}
 				return
 			}
@@ -101,8 +109,8 @@ func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
 
 	// The shared helper claims an unowned key the Agent grants.
 	r := newAgentRunTestReconciler(t, agent, connection, keyFor(""), run)
-	if refusal, err := r.authorizeRunKeys(context.Background(), run, agent); err != nil || refusal != "" {
-		t.Fatalf("claim: refusal %q err %v", refusal, err)
+	if refusal, err := r.authorizeRunKeys(context.Background(), run, agent); err != nil || refusal != nil {
+		t.Fatalf("claim: refusal %+v err %v", refusal, err)
 	}
 	var claimed corev1.Secret
 	if err := r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "key"}, &claimed); err != nil || claimed.Annotations[modelkey.OwnerAnnotation] != "Agent/my-instance" {
@@ -133,5 +141,62 @@ func TestScopedRunsClaimTheirAgentsKey(t *testing.T) {
 	}
 	if !strings.Contains(stored.Status.Error, "belongs to Agent/other") {
 		t.Fatalf("scoped run with another Agent's key: phase %q error %q", stored.Status.Phase, stored.Status.Error)
+	}
+	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyConflict) {
+		t.Fatalf("scoped key refusal through the seam = %+v, want Refused/%s", res, RefusalModelKeyConflict)
+	}
+
+	// A key the Agent owns but pinned to another origin is refused as an
+	// origin mismatch, whoever owns it.
+	pinned := keyFor("Agent/my-instance")
+	pinned.Annotations[modelkey.OriginAnnotation] = "https://api.openai.com"
+	run = parityRun()
+	run.Spec.Model = sympoziumv1alpha1.ModelSpec{ConnectionRef: "conn", Model: "deepseek-chat"}
+	r = newAgentRunTestReconciler(t, agent, connection, pinned, run)
+	r.ScopedDispatcher = &cellnscoped.Dispatcher{}
+	run.Spec.Backend = "celln"
+	run.Spec.ExecutionLifecycle = "enduring"
+	run.Spec.CellnSelection = &sympoziumv1alpha1.CellnCatalogueSelection{RuntimeRef: "celln-native", ToolRefs: []sympoziumv1alpha1.CellnCatalogueToolRef{}}
+	if err := r.Update(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.reconcilePendingScoped(context.Background(), logr.Discard(), run); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if res := (cellnBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyOriginMismatch) {
+		t.Fatalf("pinned-elsewhere key through the seam = %+v (error %q), want Refused/%s", res, stored.Status.Error, RefusalModelKeyOriginMismatch)
+	}
+}
+
+// A harness run naming a model credential its Agent does not declare is
+// refused, typed, on the pod path, before any Job is created.
+func TestHarnessCredentialRefusalIsTyped(t *testing.T) {
+	run := harnessModeRun(nil)
+	if run.Spec.Model.AuthSecretRef == "" {
+		t.Fatal("test run names no credential")
+	}
+	policy := policyWithRegistries("harness-ok", "ghcr.io/acme")
+	agent := parityAgent()
+	agent.Spec.PolicyRef = policy.Name
+	r := newAgentRunTestReconciler(t, agent, policy, run)
+	if _, err := r.reconcilePending(context.Background(), logr.Discard(), run); err != nil {
+		t.Fatalf("reconcilePending: %v", err)
+	}
+	var stored sympoziumv1alpha1.AgentRun
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Status.Error, "harness model credential") {
+		t.Fatalf("phase %q error %q, want the harness credential refusal", stored.Status.Phase, stored.Status.Error)
+	}
+	var job batchv1.Job
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(run), &job); err == nil {
+		t.Fatal("a Job was created for a refused harness run")
+	}
+	if res := (jobBackend{}).Result(&stored); res == nil || res.Outcome != ExecutionRefused || res.PublicReason != string(RefusalModelKeyNotGranted) {
+		t.Fatalf("seam result = %+v, want Refused/%s", res, RefusalModelKeyNotGranted)
 	}
 }

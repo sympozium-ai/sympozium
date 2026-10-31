@@ -29,6 +29,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -380,7 +381,8 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Shared-catalogue one-shot selection is decided before model connection
 	// normalization and every legacy/OCI prerequisite. Once a scoped identity is
 	// present it remains on this path even if mutable intent is later edited.
-	sharedScoped, selectionErr := r.sharedCatalogueSelected(ctx, agentRun)
+	backends := r.executionBackends()
+	sharedScoped, selectionErr := backends.celln.Owns(ctx, agentRun)
 	if selectionErr != nil {
 		return ctrl.Result{}, selectionErr
 	}
@@ -390,9 +392,9 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		switch phase := agentRun.Status.Phase; {
 		case phase == "" || phase == sympoziumv1alpha1.AgentRunPhasePending:
-			return r.reconcilePendingScoped(ctx, log, agentRun)
+			return backends.celln.Start(ctx, log, agentRun, executionStartInput{})
 		case phase == sympoziumv1alpha1.AgentRunPhaseRunning:
-			return r.reconcileRunningScoped(ctx, log, agentRun)
+			return backends.celln.Observe(ctx, log, agentRun)
 		case phase.IsTerminal():
 			return r.reconcileCompleted(ctx, log, agentRun)
 		default:
@@ -565,15 +567,16 @@ func (r *AgentRunReconciler) resolveAgentRunInputs(ctx context.Context, agentRun
 // authorizeRunKeys holds every model credential a run names to one key per
 // Agent (shared only with the Agent's sub-agents), claiming an unowned key the
 // Agent grants. Both the pod and the scoped Celln paths call it before any
-// work. It returns a refusal to fail the run with, or a transient error.
-func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) (string, error) {
+// work. It returns a typed refusal to end the run with (refuseRun), or a
+// transient error.
+func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) (*Refusal, error) {
 	model := agentRun.Spec.Model
 	for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
 		if err := modelkey.Authorize(ctx, r.Client, agent, "", secret); err != nil {
 			if modelkey.IsRefusal(err) {
-				return err.Error(), nil
+				return modelKeyRefusal(err), nil
 			}
-			return "", fmt.Errorf("checking model key ownership: %w", err)
+			return nil, fmt.Errorf("checking model key ownership: %w", err)
 		}
 	}
 	// The connection's key is claimed with the origin it goes to: the
@@ -584,13 +587,22 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 		if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: model.ConnectionRef}, &connection); err == nil {
 			if err := modelkey.AuthorizeConnection(ctx, r.Client, agent, &connection); err != nil {
 				if modelkey.IsRefusal(err) {
-					return err.Error(), nil
+					return modelKeyRefusal(err), nil
 				}
-				return "", fmt.Errorf("checking model key ownership: %w", err)
+				return nil, fmt.Errorf("checking model key ownership: %w", err)
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// refuseRun ends a run that shared admission refused before any work. The
+// ModelKeyAuthorized condition carries the typed code so backends report the
+// run as Refused, not Failed, without parsing status.error. It is written in
+// the same status update as the Failed phase (see failRun), so a crash can
+// never leave the marker without the terminal transition or the reverse.
+func (r *AgentRunReconciler) refuseRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, refusal *Refusal) error {
+	return r.failRun(ctx, agentRun, refusal.Message, metav1.Condition{Type: conditionModelKeyAuthorized, Status: metav1.ConditionFalse, Reason: string(refusal.Code), Message: refusal.Message})
 }
 
 // resolveProviderHeaders merges the providerHeadersSecretRef contents into
@@ -946,11 +958,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 
 	if taskmodes.HarnessImage(agentRun.Spec.Task) != "" && !agentAllowsModelCredential(&runtimeInstance, agentRun.Spec.Model.Provider, agentRun.Spec.Model.AuthSecretRef) {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider))
+		return ctrl.Result{}, r.refuseRun(ctx, agentRun, &Refusal{Code: RefusalModelKeyNotGranted, Message: fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider)})
 	}
-	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != "" {
-		if refusal != "" {
-			return ctrl.Result{}, r.failRun(ctx, agentRun, refusal)
+	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != nil {
+		if refusal != nil {
+			return ctrl.Result{}, r.refuseRun(ctx, agentRun, refusal)
 		}
 		return ctrl.Result{}, err
 	}
@@ -959,6 +971,74 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	if agentRun.Spec.AgentSandbox != nil && agentRun.Spec.AgentSandbox.Enabled {
 		return r.reconcilePendingAgentSandbox(ctx, log, agentRun, harnessRuntimeRef, inheritedHarnessRuntime)
 	}
+
+	return r.executionBackends().job.Start(ctx, log, agentRun, executionStartInput{
+		agent:                   &runtimeInstance,
+		harnessRuntimeRef:       harnessRuntimeRef,
+		inheritedHarnessRuntime: inheritedHarnessRuntime,
+	})
+}
+
+// recordHarnessExecution records the exact harness artifact that is about to
+// execute, so run detail and audit can show which digest ran rather than which
+// tag was requested. task is the resolved task, which is never written back to
+// spec; later reconciles read what it declared from here (harnessResumes).
+func recordHarnessExecution(ar *sympoziumv1alpha1.AgentRun, task *sympoziumv1alpha1.TaskSpec, runtimeRef string, inherited bool) {
+	d := taskmodes.HarnessImageDigest(task)
+	if d == "" {
+		return
+	}
+	ar.Status.HarnessImageDigest = d
+	ar.Status.HarnessRuntimeRef = runtimeRef
+	ar.Status.HarnessContractVersion = taskmodes.HarnessContractVersion
+	ar.Status.HarnessCapabilities = taskmodes.CapabilitiesFor(taskmodes.NewHarnessHandler(), task).Names()
+	if inherited {
+		ar.Status.HarnessRuntimeSource = "agent-default"
+	} else {
+		ar.Status.HarnessRuntimeSource = "run"
+	}
+}
+
+// reconcileRunning checks on a running Job and updates status.
+func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
+	ctx, span := controllerTracer.Start(ctx, "agentrun.extract_result",
+		trace.WithAttributes(
+			attribute.String("agentrun.name", agentRun.Name),
+			attribute.String("instance.name", agentRun.Spec.AgentRef),
+		),
+	)
+	defer span.End()
+
+	log.Info("Checking running AgentRun")
+	// A Running Celln run is reconciled by the scoped path before this point.
+	// One that is not bound to it was started by an execution plane this
+	// controller no longer has (the native parent or the one-shot router):
+	// its outcome cannot be observed, so it ends here rather than being
+	// mistaken for a Job.
+	if agentRun.Status.CellnParent != nil {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnNativeParentRemoved)
+	}
+	if agentRun.Spec.Backend == "celln" || agentRun.Spec.ExecutionLifecycle == "enduring" {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnRouterPlaneRemoved)
+	}
+
+	// Agent Sandbox mode — check Sandbox CR status instead of Job.
+	if agentRun.Status.SandboxName != "" || agentRun.Status.SandboxClaimName != "" {
+		return r.reconcileRunningAgentSandbox(ctx, log, agentRun)
+	}
+
+	return r.executionBackends().job.Observe(ctx, log, agentRun)
+}
+
+// startJob is the Job backend's Start: everything reconcilePending does for a
+// Job-backed run after the shared admission (runtime resolution, policy,
+// gates, budgets and key authorisation). Moved here unchanged behind the
+// ExecutionBackend seam; see docs/design/execution-backend-seam.md.
+func (r *AgentRunReconciler) startJob(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun, in executionStartInput) (ctrl.Result, error) {
+	span := trace.SpanFromContext(ctx)
+	runtimeInstance := in.agent
+	harnessRuntimeRef := in.harnessRuntimeRef
+	inheritedHarnessRuntime := in.inheritedHarnessRuntime
 
 	// Setup shared with the agentSandbox backend — see prepareRunPrerequisites.
 	prereqs, err := r.prepareRunPrerequisites(ctx, log, span, agentRun)
@@ -993,7 +1073,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	//   2. Resolves (or creates) the WorkspaceSession that owns the PVC,
 	//      and stamps the PVC name onto an annotation so buildVolumes
 	//      mounts it at /workspace in place of the emptyDir.
-	if agentRunQualifiesForSessionPVC(agentRun, &runtimeInstance) {
+	if agentRunQualifiesForSessionPVC(agentRun, runtimeInstance) {
 		hash := sessionkey.Hash(agentRun.Spec.SessionKey)
 
 		// Stamp the session-key-hash label so peer lookups are cheap.
@@ -1053,7 +1133,7 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		}
 
 		// Ensure the WorkspaceSession + PVC exist.
-		pvcName, wsName, err := ensureWorkspaceSession(ctx, r.Client, r.Scheme, &runtimeInstance, agentRun.Spec.SessionKey)
+		pvcName, wsName, err := ensureWorkspaceSession(ctx, r.Client, r.Scheme, runtimeInstance, agentRun.Spec.SessionKey)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("ensuring workspace session: %w", err)
 		}
@@ -1184,54 +1264,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-// recordHarnessExecution records the exact harness artifact that is about to
-// execute, so run detail and audit can show which digest ran rather than which
-// tag was requested. task is the resolved task, which is never written back to
-// spec; later reconciles read what it declared from here (harnessResumes).
-func recordHarnessExecution(ar *sympoziumv1alpha1.AgentRun, task *sympoziumv1alpha1.TaskSpec, runtimeRef string, inherited bool) {
-	d := taskmodes.HarnessImageDigest(task)
-	if d == "" {
-		return
-	}
-	ar.Status.HarnessImageDigest = d
-	ar.Status.HarnessRuntimeRef = runtimeRef
-	ar.Status.HarnessContractVersion = taskmodes.HarnessContractVersion
-	ar.Status.HarnessCapabilities = taskmodes.CapabilitiesFor(taskmodes.NewHarnessHandler(), task).Names()
-	if inherited {
-		ar.Status.HarnessRuntimeSource = "agent-default"
-	} else {
-		ar.Status.HarnessRuntimeSource = "run"
-	}
-}
-
-// reconcileRunning checks on a running Job and updates status.
-func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
-	ctx, span := controllerTracer.Start(ctx, "agentrun.extract_result",
-		trace.WithAttributes(
-			attribute.String("agentrun.name", agentRun.Name),
-			attribute.String("instance.name", agentRun.Spec.AgentRef),
-		),
-	)
-	defer span.End()
-
-	log.Info("Checking running AgentRun")
-	// A Running Celln run is reconciled by the scoped path before this point.
-	// One that is not bound to it was started by an execution plane this
-	// controller no longer has (the native parent or the one-shot router):
-	// its outcome cannot be observed, so it ends here rather than being
-	// mistaken for a Job.
-	if agentRun.Status.CellnParent != nil {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnNativeParentRemoved)
-	}
-	if agentRun.Spec.Backend == "celln" || agentRun.Spec.ExecutionLifecycle == "enduring" {
-		return ctrl.Result{}, r.failRun(ctx, agentRun, cellnRouterPlaneRemoved)
-	}
-
-	// Agent Sandbox mode — check Sandbox CR status instead of Job.
-	if agentRun.Status.SandboxName != "" || agentRun.Status.SandboxClaimName != "" {
-		return r.reconcileRunningAgentSandbox(ctx, log, agentRun)
-	}
-
+// observeJob is the Job backend's Observe: reconcileRunning for a Job-backed
+// run. Moved here unchanged behind the ExecutionBackend seam.
+func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	// Find the Job
 	job := &batchv1.Job{}
 	jobName := client.ObjectKey{
@@ -2293,7 +2328,7 @@ func (r *AgentRunReconciler) pruneOldRuns(ctx context.Context, log logr.Logger, 
 func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun) (ctrl.Result, error) {
 	log.Info("Reconciling AgentRun deletion")
 	if agentRun.Status.CellnScoped != nil {
-		done, err := r.cleanupScoped(ctx, agentRun)
+		done, err := r.executionBackends().celln.Release(ctx, log, agentRun)
 		if err != nil {
 			log.Error(err, "Scoped Celln deletion cleanup uncertain")
 			_ = r.scopedProgress(ctx, agentRun, metav1.ConditionUnknown, "CleanupUnconfirmed", scopedOutcomeUnconfirmed)
@@ -2307,16 +2342,8 @@ func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logge
 	r.cleanupSkillRBAC(ctx, log, agentRun)
 
 	// Delete the Job if it exists
-	if agentRun.Status.JobName != "" {
-		job := &batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      agentRun.Status.JobName,
-				Namespace: agentRun.Namespace,
-			},
-		}
-		if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); err != nil && !errors.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
+	if _, err := r.executionBackends().job.Release(ctx, log, agentRun); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Clean up server-mode resources (Deployment, Service, HTTPRoute).
@@ -5339,13 +5366,27 @@ func recordChannelAccess(ctx context.Context, decision, channel, instance string
 	))
 }
 
-func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string) error {
+// failRun ends the run as Failed with a tenant-visible reason.
+//
+// marks are typed outcome conditions (ModelKeyAuthorized, CellnContextLost)
+// recorded in the same status update as the Failed phase, each stamped with
+// LastTransitionTime == CompletedAt. The seam reads a mark only when the two
+// match (terminalMark), so a mark from any other transition is never read.
+func (r *AgentRunReconciler) failRun(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, reason string, marks ...metav1.Condition) error {
 	now := metav1.Now()
 
 	err := r.updateStatusWithRetry(ctx, agentRun, func(ar *sympoziumv1alpha1.AgentRun) {
 		ar.Status.Phase = sympoziumv1alpha1.AgentRunPhaseFailed
 		ar.Status.CompletedAt = &now
 		ar.Status.Error = reason
+		for _, mark := range marks {
+			mark.LastTransitionTime = now
+			mark.ObservedGeneration = ar.Generation
+			// Remove first: SetStatusCondition keeps an older transition
+			// time when the status is unchanged.
+			meta.RemoveStatusCondition(&ar.Status.Conditions, mark.Type)
+			meta.SetStatusCondition(&ar.Status.Conditions, mark)
+		}
 	})
 	if err != nil {
 		return err

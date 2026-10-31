@@ -419,9 +419,17 @@ content) and the turn fails:
 model-gateway: refused status=403 reason=MODEL_CREDENTIAL_SOURCE_CHANGED op=invoke claimed_run=team-a/researcher-x7k2p claimed_agent=researcher claimed_turn=researcher-x7k2p-recall
 ```
 
+The controller refuses a run's model key the same way on every backend (Job,
+Agent Sandbox, Celln), before any work: the run fails with the message as
+`status.error` and the `ModelKeyAuthorized` condition set to `False` with one
+of the `MODEL_KEY_*` codes below as its reason. The API and webhook refuse
+the same cases with `409` and the same message.
+
 | Reason | Meaning |
 | --- | --- |
-| `model key Secret … belongs to …` / `… is not declared in Agent … spec.authRefs` / `… is pinned to … and cannot be sent to …` | Ownership, grant or origin pin refused by the API (`409`), the webhook or the controller |
+| `MODEL_KEY_NOT_GRANTED` | The run names a key (or a harness model credential) its Agent does not declare in `spec.authRefs`: `model key Secret … is not declared in Agent … spec.authRefs` |
+| `MODEL_KEY_CONFLICT` | The key belongs to another Agent: `model key Secret … belongs to …` |
+| `MODEL_KEY_ORIGIN_MISMATCH` | The key is pinned to another endpoint origin: `model key Secret … is pinned to … and cannot be sent to …` |
 | `AUTH_ROUTE_MISMATCH` | The connection cannot be the route: a policy's `allowedOrigins`/`deniedOrigins` refuses its origin, a keyed endpoint is not HTTPS, the connection is disabled or malformed, or the run's model is not among its `models` |
 | `AUTH_LIMIT_OUT_OF_RANGE` | `spec.enduring` asks for more than the policy's ceilings, or cannot pay for one turn at the connection's `maxOutputTokens` |
 | `AUTH_TOOL_ORDER_MISMATCH`, `AUTH_TOOL_UNKNOWN` | `clusterToolRefs` is not exactly the toolbox's tools in its order |
