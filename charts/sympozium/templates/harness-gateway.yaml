@@ -1,0 +1,310 @@
+{{- if (.Values.harnessGateway | default dict).enabled }}
+{{- $name := "harness-gateway" }}
+{{- $ns := include "sympozium.namespace" . }}
+{{- $tlsSecret := include "sympozium.harnessGatewayTLSSecret" . }}
+{{- $tenantNamespaces := .Values.harnessGateway.namespaces }}
+{{- $allowed := .Files.Get "files/harness-gateway/allowed.yaml" | fromYaml }}
+# Provider profiles. These decide where a real key goes, so they live here and
+# nowhere a tenant can write. Add entries with values harnessGateway.profiles.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sympozium-harness-gateway-profiles
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: harness-gateway
+data:
+  profiles.yaml: |
+    privateOrigins: {{ toJson (.Values.harnessGateway.privateOrigins | default list) }}
+    insecureOrigins: {{ toJson (.Values.harnessGateway.insecureOrigins | default list) }}
+    allowedResponseHeaders: {{ toJson (concat $allowed.allowedResponseHeaders (.Values.harnessGateway.extraAllowedResponseHeaders | default list)) }}
+    allowedEnvNames: {{ toJson (concat $allowed.allowedEnvNames (.Values.harnessGateway.extraAllowedEnvNames | default list)) }}
+    allowedAuthHeaders: {{ toJson (concat $allowed.allowedAuthHeaders (.Values.harnessGateway.extraAllowedAuthHeaders | default list)) }}
+    profiles:
+{{ .Files.Get "files/harness-gateway/profiles.yaml" | indent 6 }}
+{{- with .Values.harnessGateway.profiles }}
+{{ toYaml . | indent 6 }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+---
+# The profiles, in the gateway's own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-profiles
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [sympozium-harness-gateway-profiles]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-profiles
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-profiles
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+{{- if $tenantNamespaces }}
+{{- range $tenant := $tenantNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $tenant | quote }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns, agents, ensembles]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $tenant | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+{{- end }}
+{{- else }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+  - apiGroups: [sympozium.ai]
+    resources: [agentruns, agents, ensembles]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ $ns }}
+{{- end }}
+{{- if and (not .Values.harnessGateway.tls.secretName) .Values.certManager.enabled }}
+---
+# A CA of its own, not a self-signed leaf like the webhook's: each run trusts
+# ca.crt, and renewing a self-signed leaf would change what runs trust.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: sympozium-harness-gateway-selfsigned
+  namespace: {{ $ns }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sympozium-harness-gateway-ca
+  namespace: {{ $ns }}
+spec:
+  isCA: true
+  commonName: sympozium-harness-gateway-ca
+  secretName: sympozium-harness-gateway-ca
+  duration: {{ .Values.harnessGateway.tls.caDuration }}
+  issuerRef:
+    name: sympozium-harness-gateway-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: sympozium-harness-gateway-ca
+  namespace: {{ $ns }}
+spec:
+  ca:
+    secretName: sympozium-harness-gateway-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tlsSecret }}
+  namespace: {{ $ns }}
+spec:
+  secretName: {{ $tlsSecret }}
+  issuerRef:
+    name: sympozium-harness-gateway-ca
+    kind: Issuer
+  dnsNames:
+    - harness-gateway.{{ $ns }}.svc
+    - harness-gateway.{{ $ns }}.svc.cluster.local
+  duration: {{ .Values.certManager.certificate.duration }}
+  renewBefore: {{ .Values.certManager.certificate.renewBefore }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: harness-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: {{ include "sympozium.harnessGatewayImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with .Values.harnessGateway.maxConcurrent }}
+            - name: HARNESS_GATEWAY_MAX_CONCURRENT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.harnessGateway.maxConcurrentPerRun }}
+            - name: HARNESS_GATEWAY_MAX_CONCURRENT_PER_RUN
+              value: {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/harness-gateway/tls
+              readOnly: true
+          resources:
+            {{- toYaml .Values.harnessGateway.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $tlsSecret }}
+            defaultMode: 0440
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+      {{- with .Values.harnessGateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.harnessGateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.harnessGateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+---
+# Only run pods reach the gateway. A stolen run token is useless from outside
+# the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  policyTypes: [Ingress{{ if .Values.harnessGateway.egress }}, Egress{{ end }}]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchExpressions:
+              - key: sympozium.ai/agent-run
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: 8443
+  {{- with .Values.harnessGateway.egress }}
+  egress:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

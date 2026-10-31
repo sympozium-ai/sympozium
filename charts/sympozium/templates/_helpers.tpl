@@ -90,6 +90,28 @@ Web proxy image.
 {{- end }}
 
 {{/*
+Harness gateway image.
+*/}}
+{{- define "sympozium.harnessGatewayImage" -}}
+{{- $repo := .Values.harnessGateway.image.repository | default (printf "%s/harness-gateway" .Values.image.registry) }}
+{{- $tag := .Values.harnessGateway.image.tag | default (include "sympozium.imageTag" .) }}
+{{- printf "%s:%s" $repo $tag }}
+{{- end }}
+
+{{/*
+The Secret holding the harness gateway's tls.crt, tls.key and ca.crt.
+*/}}
+{{- define "sympozium.harnessGatewayTLSSecret" -}}
+{{- if .Values.harnessGateway.tls.secretName -}}
+{{- .Values.harnessGateway.tls.secretName -}}
+{{- else if .Values.certManager.enabled -}}
+sympozium-harness-gateway-cert
+{{- else -}}
+{{- fail "harnessGateway.enabled needs certManager.enabled or harnessGateway.tls.secretName" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Node probe image.
 */}}
 {{- define "sympozium.nodeProbeImage" -}}

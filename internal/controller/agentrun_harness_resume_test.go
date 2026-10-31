@@ -125,8 +125,27 @@ func TestReconcile_AResumingHarnessRetriesInANewPodOfTheSameRun(t *testing.T) {
 	}
 }
 
+// harnessChainHooks lets a test watch the chain from inside, without repeating it.
+type harnessChainHooks struct {
+	// setup changes the run and its objects, before the reconciler exists.
+	setup func(*sympoziumv1alpha1.AgentRun, *sympoziumv1alpha1.Agent, *sympoziumv1alpha1.SympoziumPolicy) []client.Object
+	// configure runs once the reconciler exists.
+	configure func(*AgentRunReconciler)
+	// step reports each stage. job is the attempt's Job, where there is one.
+	step func(stage string, job *batchv1.Job)
+}
+
 func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult string) {
+	driveHarnessChainWith(t, finalVerdict, wantVerdict, wantResult, harnessChainHooks{})
+}
+
+func driveHarnessChainWith(t *testing.T, finalVerdict, wantVerdict, wantResult string, hooks harnessChainHooks) {
 	ctx := context.Background()
+	step := func(stage string, job *batchv1.Job) {
+		if hooks.step != nil {
+			hooks.step(stage, job)
+		}
+	}
 
 	agent := parityAgent()
 	agent.Spec.PolicyRef = "harness-ok"
@@ -148,8 +167,15 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 		PostRun:     []sympoziumv1alpha1.LifecycleHookContainer{{Name: "check", Image: "check:latest", Gate: true}},
 	}
 
-	r := newAgentRunTestReconciler(t, run, agent, policy, runtime)
+	objects := []client.Object{run, agent, policy, runtime}
+	if hooks.setup != nil {
+		objects = append(objects, hooks.setup(run, agent, policy)...)
+	}
+	r := newAgentRunTestReconciler(t, objects...)
 	r.EventBus = &recordingEventBus{}
+	if hooks.configure != nil {
+		hooks.configure(r)
+	}
 	logs := &podLogs{Interface: kubefake.NewClientset(), byPod: map[string]string{}}
 	r.Clientset = logs
 
@@ -210,6 +236,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 		if got.Status.PostRunJobName != gate {
 			t.Fatalf("postRunJobName = %q, want %q", got.Status.PostRunJobName, gate)
 		}
+		step("awaiting-gate", job)
 		reconcile()
 		if jobExists(t, r, gate) {
 			t.Fatalf("attempt %d's gate started while a container of its pod was still running", currentAttempt(got))
@@ -251,6 +278,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 		return ar.Status.Phase == sympoziumv1alpha1.AgentRunPhaseRunning
 	})
 	firstJob := getJob(run.Name)
+	step("attempt-1-running", firstJob)
 	if got.Status.JobName != firstJob.Name {
 		t.Fatalf("status.jobName = %q, want %q", got.Status.JobName, firstJob.Name)
 	}
@@ -264,6 +292,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 	got = reconcileUntil("attempt 2 pending", func(ar *sympoziumv1alpha1.AgentRun) bool {
 		return ar.Status.Attempt == 2
 	})
+	step("attempt-2-pending", nil)
 	if got.Status.Phase != sympoziumv1alpha1.AgentRunPhasePending {
 		t.Fatalf("phase = %s after a retry verdict, want the run back in Pending for its next pod", got.Status.Phase)
 	}
@@ -282,6 +311,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 		return ar.Status.Phase == sympoziumv1alpha1.AgentRunPhaseRunning
 	})
 	secondJob := getJob(agentJobName(got))
+	step("attempt-2-running", secondJob)
 	if secondJob.Name == firstJob.Name || got.Status.JobName != secondJob.Name {
 		t.Fatalf("attempt 2 Job = %q, status.jobName = %q, want a Job of its own", secondJob.Name, got.Status.JobName)
 	}
@@ -305,6 +335,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 	got = reconcileUntil("the run ended", func(ar *sympoziumv1alpha1.AgentRun) bool {
 		return ar.Status.Phase.IsTerminal()
 	})
+	step("terminal", nil)
 	if got.Status.Phase != sympoziumv1alpha1.AgentRunPhaseSucceeded || got.Status.GateVerdict != wantVerdict {
 		t.Errorf("phase = %s gateVerdict = %q, want Succeeded with %q", got.Status.Phase, got.Status.GateVerdict, wantVerdict)
 	}
@@ -323,6 +354,7 @@ func driveHarnessChain(t *testing.T, finalVerdict, wantVerdict, wantResult strin
 	}
 
 	reconcile() // reconcileCompleted
+	step("completed", nil)
 	err := r.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: harnessHomePVCName(run)}, &corev1.PersistentVolumeClaim{})
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("harness HOME PVC after the run: err = %v, want it deleted", err)

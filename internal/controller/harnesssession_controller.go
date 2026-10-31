@@ -282,6 +282,17 @@ func (r *HarnessSessionReconciler) resolveInputs(ctx context.Context, session *s
 		}
 		return nil, nil, "", err
 	}
+	// A session's pod receives the provider key, and the gateway mediates only
+	// AgentRuns so far. Refuse rather than quietly break the policy's promise.
+	if model.AuthSecretRef != "" {
+		required, err := modelMediationRequired(ctx, r.Client, session.Namespace, agent.Name)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if required {
+			return nil, nil, "harnessPolicy.modelMediation is required, and HarnessSession does not support it yet", nil
+		}
+	}
 	return agent, runtime, "", nil
 }
 

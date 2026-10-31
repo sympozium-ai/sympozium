@@ -15,6 +15,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -25,6 +26,7 @@ import (
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/apiserver"
 	"github.com/sympozium-ai/sympozium/internal/controller"
+	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 )
 
@@ -95,6 +97,7 @@ func TestMain(m *testing.M) {
 		Clientset:       clientset,
 		ImageTag:        "test",
 		RunHistoryLimit: controller.DefaultRunHistoryLimit,
+		HarnessGateway:  harnessGatewayConfig(mgr.GetAPIReader()),
 	}).SetupWithManager(mgr))
 
 	must((&controller.EnsembleReconciler{
@@ -188,5 +191,35 @@ func must(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+const (
+	harnessGatewayCASecret    = "sys-harness-gateway-cert"
+	harnessGatewayCANamespace = "default"
+)
+
+type systemProfiles struct{ set *harnessgateway.Set }
+
+func (p systemProfiles) Load(context.Context) (*harnessgateway.Set, error) { return p.set, nil }
+
+func harnessGatewayConfig(reader client.Reader) *controller.HarnessGatewayConfig {
+	set, err := harnessgateway.ParseSet([]byte(`allowedEnvNames: [ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY]
+allowedAuthHeaders: [x-api-key]
+profiles:
+  - name: anthropic
+    providers: [anthropic]
+    upstream: https://api.anthropic.com
+    secretKeys: [ANTHROPIC_API_KEY]
+    auth: {type: header, header: x-api-key}
+    paths: [/v1/messages]
+    env: {baseURL: [ANTHROPIC_BASE_URL], apiKey: [ANTHROPIC_API_KEY]}
+`))
+	must(err)
+	return &controller.HarnessGatewayConfig{
+		URL:      "https://harness-gateway.test.svc",
+		Profiles: systemProfiles{set},
+		CASecret: types.NamespacedName{Namespace: harnessGatewayCANamespace, Name: harnessGatewayCASecret},
+		Reader:   reader,
 	}
 }

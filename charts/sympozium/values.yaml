@@ -194,6 +194,72 @@ certManager:
     duration: 8760h0m0s    # 1 year
     renewBefore: 720h  # 30 days
 
+# -- Keeps model keys out of harness pods. A harness whose policy sets
+# harnessPolicy.modelMediation: required holds a per-run token; this gateway
+# swaps it for the key and forwards the request. Unrelated to modelGateway,
+# which serves Celln. See docs/modes/harness-adapters.md.
+harnessGateway:
+  enabled: false
+  image:
+    repository: ""                # defaults to <registry>/harness-gateway
+    tag: ""
+  tls:
+    # -- Secret in the Sympozium namespace with tls.crt, tls.key and ca.crt,
+    # valid for harness-gateway.<namespace>.svc. Empty needs certManager.enabled,
+    # and the chart then issues one from its own CA. ca.crt is copied into each
+    # run's token Secret, so keep the CA for longer than any run.
+    secretName: ""
+    # -- Lifetime of the chart's CA. Replacing it breaks runs in flight.
+    caDuration: 87600h0m0s
+  # -- Provider profiles appended to files/harness-gateway/profiles.yaml. A later
+  # entry for a provider replaces an earlier one. Changes apply to new runs with
+  # no restart. A malformed entry is skipped and logged, so its provider fails
+  # closed.
+  profiles: []
+  # -- Variable names a profile may set, on top of
+  # files/harness-gateway/allowed.yaml. Anything not listed is refused. Listing a
+  # name is a decision to let it reach harness pods, so don't list one that
+  # changes how a process runs, such as PATH, LD_PRELOAD or HTTPS_PROXY.
+  extraAllowedEnvNames: []
+  # -- Headers a profile may send the key in, on top of allowed.yaml. Don't list
+  # one that changes where a request goes, such as Host.
+  extraAllowedAuthHeaders: []
+  # -- Provider response headers relayed to harnesses, on top of allowed.yaml.
+  extraAllowedResponseHeaders: []
+  # -- Origins (scheme://host[:port]) the gateway may reach on private addresses,
+  # over HTTPS. The system CAs must trust them.
+  privateOrigins: []
+  # -- Origins the gateway may send a key to over plain HTTP, on private addresses
+  # only, such as a local llama-server that has a key. The key crosses the network
+  # in clear text.
+  insecureOrigins: []
+  # -- Calls in flight across all runs before the gateway answers 503, matching
+  # the Celln gateway's default. A streaming call counts until it ends, so raise
+  # this for more concurrent harnesses. No duration limit applies to a call; a
+  # harness's own timeouts bound it.
+  maxConcurrent: 32
+  # -- Calls in flight for one run before the gateway answers 503, so one run or
+  # a stolen token can't take every slot. A run that starts many subagents may
+  # need more.
+  maxConcurrentPerRun: 16
+  # -- Tenant namespaces whose model Secrets and AgentRuns the gateway may read.
+  # Empty keeps a cluster-wide get ClusterRole; a list replaces it with one
+  # Role/RoleBinding per namespace (least privilege).
+  namespaces: []
+  # -- NetworkPolicy egress rules for the gateway. Empty allows any destination.
+  # Set a list (DNS, Kubernetes API, providers) to restrict it.
+  egress: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # -- Model pricing for AgentRun cost estimation
 # Accelerator power draw, read from an out-of-tree energy collector.
 #

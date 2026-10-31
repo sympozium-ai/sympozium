@@ -197,6 +197,8 @@ type AgentRunReconciler struct {
 	// Pricing loads the cluster price table for cost estimation.
 	// Optional — nil when no pricing ConfigMap is configured.
 	Pricing *pricing.Loader
+	// HarnessGateway is nil unless the chart deploys the harness gateway.
+	HarnessGateway *HarnessGatewayConfig
 }
 
 const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
@@ -805,6 +807,13 @@ func (r *AgentRunReconciler) prepareTaskPrerequisites(
 		return nil, &ctrl.Result{}, r.failRun(ctx, agentRun,
 			fmt.Sprintf("failed to create the gate verdict token — the response gate hook "+
 				"would have no way to report its verdict. Underlying error: %v", err))
+	}
+
+	// Mint the token a mediated harness holds in place of its model key, before
+	// the pod that references it.
+	if err := r.ensureRunModelToken(ctx, agentRun); err != nil {
+		return nil, &ctrl.Result{}, r.failRun(ctx, agentRun,
+			fmt.Sprintf("model mediation failed: %v", err))
 	}
 
 	// An in-place run parks between attempts and reads each verdict from this
@@ -1498,6 +1507,8 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 	}
 	// Clean up cluster-scoped RBAC created for skill sidecars.
 	r.cleanupSkillRBAC(ctx, log, agentRun)
+
+	r.cleanupRunModelToken(ctx, agentRun)
 
 	// Clean up the workspace PVC. Reached only from a terminal phase, which for
 	// a retry chain means the chain is over — reclaiming it while a parked pod
@@ -3180,6 +3191,10 @@ func (r *AgentRunReconciler) buildAgentPodTemplate(
 	// registered in agentrun_pod_mutators.go.
 	r.applyPodMutators(ctx, agentRun, &tmpl.Spec)
 	configureRunAPIAccess(agentRun, sidecars, &tmpl.Spec)
+	// Last, so nothing added above can put the key back.
+	if err := r.applyModelMediation(ctx, agentRun, &tmpl.Spec); err != nil {
+		return corev1.PodTemplateSpec{}, fmt.Errorf("model mediation failed: %w", err)
+	}
 
 	return tmpl, nil
 }

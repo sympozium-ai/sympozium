@@ -187,7 +187,8 @@ the same AgentRun field.
 
 ## Model routing is yours
 
-Sympozium sets `MODEL_*` and injects the model credential, then stops. Remote
+Sympozium sets `MODEL_*` and injects the model credential (or, under
+[model mediation](#keeping-the-model-key-out-of-the-pod), a token for the gateway), then stops. Remote
 MCP credentials are not injected into adapters: a harness run with
 `Agent.spec.mcpServers` is rejected until those connections have a trusted
 local mediator. Sympozium cannot verify that your
@@ -198,6 +199,110 @@ over what you pass.
 Map the values explicitly, prefer them over ambient config where the harness lets you, and
 say in your README what happens if it does not. A harness running against a model the
 manifest never named still *succeeds*, which is the worst way for this to be wrong.
+
+## Keeping the model key out of the pod
+
+Without mediation, the model shares a container with its provider key, and one shell command
+reads it. Set `harnessPolicy.modelMediation: required` on the policy and `harnessGateway.enabled`
+in the chart, and the key stays out of the run pod. The harness gateway holds it instead.
+
+An adapter needs no change if its client reads the usual variables. The harness receives:
+
+| | |
+|---|---|
+| `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, … | The gateway, as named by the provider's profile. |
+| `MODEL_BASE_URL` | The same URL. Never the real upstream on a mediated run. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, … | A per-run token, not the key. It works only through the gateway, only for this run, and only while the run is `Pending` or `Running`. |
+| `SYMPOZIUM_MODEL_MEDIATED` | `true`. The key is a token and the base URL is the gateway, so an adapter that refuses to send a real credential to a third party can tell this case apart. |
+| `NODE_EXTRA_CA_CERTS` | The gateway's CA. A client that isn't Node must be pointed at this file another way. Don't replace the system roots with it, or your tools' calls to the internet stop verifying. |
+
+`MODEL_PROVIDER_HEADERS` is not set. The gateway adds `providerHeaders` and
+`providerHeadersSecretRef` to each request itself.
+
+An adapter that ignores the base URL sends the token to the provider and gets a 401. A client
+that doesn't trust the CA gets a TLS error. Neither exposes the key.
+
+A mediated run still needs `allowUnmetered`, because the gateway doesn't measure usage yet.
+
+Limits today:
+
+- A run that names no `authSecretRef` has no key to protect, and connects directly.
+- `HarnessSession` and the Agent Sandbox backend aren't mediated. Under `required` they fail
+  rather than receive the key.
+
+### Provider profiles
+
+A profile says how one family of providers is reached. Profiles are data in the ConfigMap
+`sympozium-harness-gateway-profiles`, so adding one needs no release, and it applies to new runs
+within about 30 seconds. The chart ships `anthropic`, `openai` and `deepseek`. Add others with
+`harnessGateway.profiles`. A later entry for a provider replaces an earlier one.
+
+```yaml
+harnessGateway:
+  profiles:
+    - name: openrouter
+      providers: [openrouter]            # values of spec.model.provider
+      upstream: https://openrouter.ai/api  # spec.model.baseURL replaces it
+      secretKeys: [OPENROUTER_API_KEY, API_KEY]  # first one present in authSecretRef
+      auth: {type: header, header: Authorization, prefix: "Bearer "}
+      paths: [/v1/chat/completions]      # the allowlist; * matches one segment
+      env:
+        baseURL: [OPENAI_BASE_URL]       # every name is set
+        apiKey: [OPENAI_API_KEY]
+      clientBasePath: /v1                # appended to the gateway URL in env.baseURL
+```
+
+Some adapters choose their mode from the key's format. `credentials` keeps that working, by choosing
+a variant from the real key's prefix:
+
+```yaml
+credentials:
+  - keyPrefix: sk-ant-oat                  # a real key that starts like this...
+    fakeKeyPattern: "sk-ant-oat01-{token}" # ...gets a token shaped like this
+    auth: {type: header, header: Authorization, prefix: "Bearer "}  # ...and is sent like this
+  - keyPrefix: sk-ant-api
+    fakeKeyPattern: "sk-ant-api03-{token}"
+```
+
+The first match applies. `{token}` is random and appears once, and nothing from the key itself reaches
+the token. The controller shapes the token once, when it mints it. The gateway chooses `auth` from the
+key on each call. A key that matches no variant gets the profile's `auth` and a plain token. The
+shipped `anthropic` profile has the two variants above.
+
+A malformed entry is skipped and logged, and its provider then has no profile, so its runs fail.
+`upstream` must be `https`, unless its origin is in `harnessGateway.insecureOrigins`. A private
+address also needs `harnessGateway.privateOrigins` (HTTPS) or `insecureOrigins` (plain HTTP, which
+sends the key in clear text). A profile may
+use only the variable names and auth headers on an allowlist. The chart lists what its own profiles
+use, in `files/harness-gateway/allowed.yaml`. Add others with `harnessGateway.extraAllowedEnvNames`
+and `harnessGateway.extraAllowedAuthHeaders`. A variable the controller sets is refused even if
+listed. The first run to use a key pins it to its origin, and the gateway then sends
+that key nowhere else.
+
+The gateway puts no time limit on a model call. `spec.timeout`, `RUN_TIMEOUT` and
+`LLM_REQUEST_TIMEOUT` keep working as they do without it. A call ends when the harness hangs up or
+when the run stops being `Pending` or `Running`.
+
+The gateway answers 503 past `harnessGateway.maxConcurrent` calls in flight across all runs (32 by
+default), or past `harnessGateway.maxConcurrentPerRun` calls for one run (16 by default), with a
+`Retry-After` header. A streaming call counts until it ends, so raise these for more concurrent
+harnesses, or for a run that starts many subagents.
+
+A provider's 401, 403 and 407 keep their status, but the body is replaced, because auth errors are
+where a key gets echoed. Other error bodies pass through the echo check, so a harness can still act
+on messages such as "prompt is too long". Only `Content-Type` and the headers listed in
+`allowedResponseHeaders` reach the harness. Add others with
+`harnessGateway.extraAllowedResponseHeaders`.
+
+A token is bound to the Agent, the key Secret and the origin it was minted for. Recreating the
+Secret or the Agent, or editing the run to point elsewhere, stops the run's model calls. Rotating
+the key inside the same Secret does not.
+
+`auth.type` is `header` today. AWS SigV4 for Bedrock would be a new type, and needs a release.
+
+The gateway's certificate comes from cert-manager when `certManager.enabled` is true. Otherwise
+set `harnessGateway.tls.secretName` to a Secret with `tls.crt`, `tls.key` and `ca.crt`, valid for
+`harness-gateway.<namespace>.svc`.
 
 ## A minimal adapter
 

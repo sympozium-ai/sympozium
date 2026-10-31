@@ -207,6 +207,47 @@ func TestHarnessSessionFailsClosedForOneShotRuntime(t *testing.T) {
 	}
 }
 
+// A session's pod receives the key, and the gateway doesn't mediate sessions yet.
+func TestHarnessSessionFailsClosedWhenMediationIsRequired(t *testing.T) {
+	scheme := harnessSessionTestScheme(t)
+	runtime := readySessionRuntime()
+	agent := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "analyst", Namespace: "default"},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			PolicyRef: "mediated",
+			Agents:    sympoziumv1alpha1.AgentsSpec{Default: sympoziumv1alpha1.AgentConfig{Model: "qwen"}},
+			AuthRefs:  []sympoziumv1alpha1.SecretRef{{Provider: runtime.Spec.Model.Provider, Secret: runtime.Spec.Model.AuthSecretRef}},
+		},
+	}
+	policy := &sympoziumv1alpha1.SympoziumPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "mediated", Namespace: "default"},
+		Spec: sympoziumv1alpha1.SympoziumPolicySpec{HarnessPolicy: &sympoziumv1alpha1.HarnessPolicySpec{
+			Enabled: true, ModelMediation: sympoziumv1alpha1.ModelMediationRequired,
+		}},
+	}
+	session := &sympoziumv1alpha1.HarnessSession{
+		ObjectMeta: metav1.ObjectMeta{Name: "analyst-session", Namespace: "default"},
+		Spec:       sympoziumv1alpha1.HarnessSessionSpec{AgentRef: "analyst", RuntimeRef: "pi-session", DesiredState: "running"},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, policy, runtime, session).Build()
+	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
+	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatal(err)
+	}
+	var got sympoziumv1alpha1.HarnessSession
+	if err := cl.Get(context.Background(), key, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status.Phase != "Failed" || !strings.Contains(got.Status.Conditions[0].Message, "modelMediation") {
+		t.Fatalf("unexpected status: %#v", got.Status)
+	}
+	var deployment appsv1.Deployment
+	if err := cl.Get(context.Background(), key, &deployment); err == nil {
+		t.Error("a workload holding the key was created")
+	}
+}
+
 func TestResolveSessionModelInheritsSingleAgentCredential(t *testing.T) {
 	agent := &sympoziumv1alpha1.Agent{
 		Spec: sympoziumv1alpha1.AgentSpec{
