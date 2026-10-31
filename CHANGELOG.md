@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.13.0](https://github.com/sympozium-ai/sympozium/compare/v0.12.2...v0.13.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **install:** Celln fleet opt-in (--celln-fleet), Job backend default ([#704](https://github.com/sympozium-ai/sympozium/issues/704))
+
+### Features
+
+* ExecutionBackend seam ([#702](https://github.com/sympozium-ai/sympozium/issues/702)) ([49c4ade](https://github.com/sympozium-ai/sympozium/commit/49c4ade26aa0e237320f700f9cf61a6c70ba8487)), closes [#692](https://github.com/sympozium-ai/sympozium/issues/692)
+* **install:** Celln fleet opt-in (--celln-fleet), Job backend default ([#704](https://github.com/sympozium-ai/sympozium/issues/704)) ([3226408](https://github.com/sympozium-ai/sympozium/commit/3226408ba6332d3d336a1e47e5a3e373cfc0bee9)), closes [#693](https://github.com/sympozium-ai/sympozium/issues/693)
+
+
+### Performance Improvements
+
+* **celln:** cache resolver reads within one admission ([#703](https://github.com/sympozium-ai/sympozium/issues/703)) ([9f91ae6](https://github.com/sympozium-ai/sympozium/commit/9f91ae60e0b9b84919d43f99c3d35bbd5f9dfa54))
+
 ## [0.12.2](https://github.com/sympozium-ai/sympozium/compare/v0.12.1...v0.12.2) (2026-10-30)
 
 
