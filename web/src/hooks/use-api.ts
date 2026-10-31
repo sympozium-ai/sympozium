@@ -617,10 +617,10 @@ export function useInstallDefaultMcpServers() {
   });
 }
 
-export function useMcpServerAuthStatus(name: string) {
+export function useMcpServerAuthStatus(name: string, namespace?: string) {
   return useQuery({
-    queryKey: ["mcpServers", name, "authStatus"],
-    queryFn: () => api.mcpServers.authStatus(name),
+    queryKey: ["mcpServers", name, namespace, "authStatus"],
+    queryFn: () => api.mcpServers.authStatus(name, namespace),
     enabled: !!name,
   });
 }
@@ -628,10 +628,19 @@ export function useMcpServerAuthStatus(name: string) {
 export function useMcpServerAuthToken() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, token }: { name: string; token: string }) =>
-      api.mcpServers.authToken(name, token),
-    onSuccess: (_result, { name }) => {
-      qc.invalidateQueries({ queryKey: ["mcpServers", name, "authStatus"] });
+    mutationFn: ({
+      name,
+      token,
+      namespace,
+    }: {
+      name: string;
+      token: string;
+      namespace?: string;
+    }) => api.mcpServers.authToken(name, token, namespace),
+    onSuccess: (_result, { name, namespace }) => {
+      qc.invalidateQueries({
+        queryKey: ["mcpServers", name, namespace, "authStatus"],
+      });
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       toast.success("Token saved");
     },
@@ -643,10 +652,10 @@ export function useMcpServers() {
   return useQuery({ queryKey: ["mcpServers"], queryFn: api.mcpServers.list });
 }
 
-export function useMcpServer(name: string) {
+export function useMcpServer(name: string, namespace?: string) {
   return useQuery({
-    queryKey: ["mcpServers", name],
-    queryFn: () => api.mcpServers.get(name),
+    queryKey: ["mcpServers", name, namespace],
+    queryFn: () => api.mcpServers.get(name, namespace),
     enabled: !!name,
   });
 }
@@ -666,7 +675,8 @@ export function useCreateMcpServer() {
 export function useDeleteMcpServer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.mcpServers.delete,
+    mutationFn: ({ name, namespace }: { name: string; namespace?: string }) =>
+      api.mcpServers.delete(name, namespace),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       toast.success("MCP server deleted");
@@ -680,9 +690,11 @@ export function usePatchMcpServer() {
   return useMutation({
     mutationFn: ({
       name,
+      namespace,
       ...data
     }: {
       name: string;
+      namespace?: string;
       transportType?: string;
       url?: string;
       toolsPrefix?: string;
@@ -690,7 +702,7 @@ export function usePatchMcpServer() {
       toolsAllow?: string[];
       toolsDeny?: string[];
       suspended?: boolean;
-    }) => api.mcpServers.patch(name, data),
+    }) => api.mcpServers.patch(name, data, namespace),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mcpServers"] });
       toast.success("MCP server updated");

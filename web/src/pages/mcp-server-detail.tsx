@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useMcpServer, usePatchMcpServer } from "@/hooks/use-api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,11 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function McpServerDetailPage() {
   const { name } = useParams<{ name: string }>();
-  const { data: mcp, isLoading } = useMcpServer(name || "");
+  // The list links here with the server's namespace, since MCPServers are
+  // listed across namespaces; without it the namespace selector applies.
+  const [searchParams] = useSearchParams();
+  const namespace = searchParams.get("namespace") || undefined;
+  const { data: mcp, isLoading } = useMcpServer(name || "", namespace);
   const patchMutation = usePatchMcpServer();
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -78,6 +82,7 @@ export function McpServerDetailPage() {
             onClick={() =>
               patchMutation.mutate({
                 name: mcp.metadata.name,
+                namespace: mcp.metadata.namespace,
                 suspended: false,
               })
             }
