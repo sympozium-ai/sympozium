@@ -5,10 +5,10 @@ microVMs ("cells") instead of Kubernetes pods. An `AgentRun` selects it with
 `spec.backend: celln` (or inherits it from the Agent's
 `spec.execution.backend`). The default `job` backend is unchanged.
 
-Celln is installed as part of Sympozium: `sympozium install` deploys the
-per-node **fleet** on every node labeled `celln.dev/kvm=true`, the router
-and the model gateway, and asks nothing about models. `sympozium install
---no-celln` skips it. The fleet is privileged (two DaemonSets mount
+Celln is an opt-in execution backend: `sympozium install --celln-fleet`
+deploys the per-node **fleet** on every node labeled `celln.dev/kvm=true`,
+the router and the model gateway, and asks nothing about models. A plain
+`sympozium install` deploys none of it, and Agents run on the Job backend. The fleet is privileged (two DaemonSets mount
 `/dev/kvm`, `/boot`, `/lib/modules` and a state directory, because booting
 micro-VMs needs them) and the install says so before it proceeds. The full
 operator reference is [Celln Fleet Installation](../guides/celln-fleet-installation.md).
@@ -133,11 +133,24 @@ alone is not proof.
 
 ## Disabling
 
+A fresh `sympozium install` deploys no Celln, and a plain `sympozium install`
+on a cluster that already runs the fleet keeps it. To remove an installed
+fleet, turn off both Celln and the fleet in the release:
+
 ```bash
-sympozium install --no-celln
-# or, with Helm
-helm upgrade sympozium sympozium/sympozium --reuse-values --set celln.enabled=false
+helm upgrade sympozium sympozium/sympozium --reuse-values \
+  --set celln.enabled=false --set celln.fleet.enabled=false
 ```
+
+`celln.enabled=false` alone already stops rendering the fleet, and
+`sympozium install` treats a fleet as deployed only when both values are
+true. Setting both keeps the stored release values unambiguous.
+
+`--no-celln` is deprecated now that Celln is opt-in. It is kept for
+compatibility, and on a cluster that runs the fleet it still has the side
+effect of not keeping it, which removes the fleet's chart components (see the
+[CLI reference](../reference/cli.md)). Prefer the Helm command above when
+removal is what you mean.
 
 Disabling does not remove `celln` as a valid `backend` value; such runs are
 schema-valid but refused at dispatch. There is never a fallback to a Job.

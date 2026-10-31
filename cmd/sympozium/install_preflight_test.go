@@ -32,11 +32,11 @@ func preflightClient(t *testing.T, objects ...client.Object) client.Client {
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
-// testInstallValues are the --set values of a plain `sympozium install` on a
-// build that pins a starter package: the router and the model-free fleet.
+// testInstallValues are the --set values of `sympozium install --celln-fleet`
+// on a build that pins a starter package: the router and the model-free fleet.
 func testInstallValues(t *testing.T) []string {
 	t.Helper()
-	set, _, err := doctorValuesFor(defaultFleetScope, cellnStarter{
+	set, _, err := doctorFleetValuesFor(defaultFleetScope, cellnStarter{
 		Image:       "registry.example/celln/starter@sha256:" + strings.Repeat("a", 64),
 		PackageHash: "blake3:" + strings.Repeat("b", 64),
 		Publisher:   "ed25519:test",
@@ -47,7 +47,7 @@ func testInstallValues(t *testing.T) []string {
 	return set
 }
 
-// defaultInstallValues are the values of a plain `sympozium install`.
+// defaultInstallValues are the values of `sympozium install --celln-fleet`.
 func defaultInstallValues(t *testing.T) map[string]interface{} {
 	t.Helper()
 	set := testInstallValues(t)
