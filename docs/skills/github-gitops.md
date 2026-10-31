@@ -850,8 +850,9 @@ RUN apk add --no-cache \
          "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh" \
     && chmod +x /usr/local/bin/gh
 
+COPY pkg/sidecartools/tool-executor.sh /usr/local/bin/sympozium-tool-executor.sh
 COPY images/skill-github-gitops/tool-executor.sh /usr/local/bin/tool-executor.sh
-RUN chmod +x /usr/local/bin/tool-executor.sh
+RUN chmod +x /usr/local/bin/sympozium-tool-executor.sh /usr/local/bin/tool-executor.sh
 
 USER 1000
 WORKDIR /workspace
@@ -861,25 +862,26 @@ CMD ["/usr/local/bin/tool-executor.sh"]
 
 ### `images/skill-github-gitops/tool-executor.sh`
 
-The script is identical to `images/skill-k8s-ops/tool-executor.sh` with one
-addition at startup — it sources the token from the mounted secret before
-processing any request:
+A wrapper around the shared executor (`pkg/sidecartools/tool-executor.sh`, installed
+as `/usr/local/bin/sympozium-tool-executor.sh`). It prepares the environment the
+sidecar's commands need, then `exec`s the executor, which inherits it:
 
 ```bash
 #!/bin/bash
-# tool-executor.sh — github-gitops variant
-# Loads GH_TOKEN from the mounted Secret before processing exec requests.
-
 # Load GitHub token from mounted Secret (written by the auth flow).
 if [[ -f /secrets/github-token/GH_TOKEN ]]; then
+    GH_TOKEN="$(cat /secrets/github-token/GH_TOKEN)"
     export GH_TOKEN
-    GH_TOKEN=$(cat /secrets/github-token/GH_TOKEN)
-    echo "[tool-executor] GH_TOKEN loaded from secret mount"
-else
-    echo "[tool-executor] WARNING: /secrets/github-token/GH_TOKEN not found — gh commands will fail"
 fi
 
-# ... rest is identical to skill-k8s-ops/tool-executor.sh ...
+sympozium_fingerprint() { ... }      # see 9.4 Fingerprint Helper in the Sidecar
+export -f sympozium_fingerprint
+
+# git and gh operations run longer than the executor's defaults.
+export TOOL_EXECUTOR_DEFAULT_TIMEOUT="${TOOL_EXECUTOR_DEFAULT_TIMEOUT:-60}"
+export TOOL_EXECUTOR_MAX_TIMEOUT="${TOOL_EXECUTOR_MAX_TIMEOUT:-300}"
+
+exec /usr/local/bin/sympozium-tool-executor.sh
 ```
 
 ---

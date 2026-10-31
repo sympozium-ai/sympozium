@@ -245,8 +245,8 @@ Report what you find.
 ```
 
 ```
-Use the read_file tool to read /skills/k8s-ops.yaml and report
-the first line of the file.
+Use the read_file tool to read /skills/k8s-ops/cluster-overview.md
+and report the first line of the file.
 ```
 
 ### Bad examples

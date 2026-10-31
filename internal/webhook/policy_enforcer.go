@@ -38,6 +38,16 @@ var reservedVolumeNames = map[string]struct{}{
 	"sidecar-tools":            {},
 	"harness-home":             {},
 	"sympozium-run-api-access": {},
+	"sympozium-tool-executor":  {},
+}
+
+// skillVolumePrefix mirrors the controller's per-ConfigMap skill volume
+// prefix; every name starting with it is reserved.
+const skillVolumePrefix = "sympozium-skill-"
+
+func isReservedVolumeName(name string) bool {
+	_, reserved := reservedVolumeNames[name]
+	return reserved || strings.HasPrefix(name, skillVolumePrefix)
 }
 
 // builtinToolNames are the tool names Sympozium may register for the agent
@@ -62,6 +72,7 @@ var builtinToolNames = map[string]struct{}{
 	"schedule_task":        {},
 	"delegate_to_persona":  {},
 	"spawn_subagents":      {},
+	"skills":               {}, // registered when the run has skills and its policy allows it
 	// Memory tools (cmd/agent-runner/memory_tools.go).
 	"memory_search":          {},
 	"memory_store":           {},
@@ -358,8 +369,8 @@ func (pe *PolicyEnforcer) validateVolumes(ctx context.Context, run *sympoziumv1a
 	declarations := make(map[string][]volumeOrigin)
 
 	for _, v := range run.Spec.Volumes {
-		if _, reserved := reservedVolumeNames[v.Name]; reserved {
-			return fmt.Errorf("AgentRun.spec.volumes[%q]: name is reserved by Sympozium (including workspace, ipc, skills, tmp, memory, mcp-config, and sympozium-run-api-access)", v.Name)
+		if isReservedVolumeName(v.Name) {
+			return fmt.Errorf("AgentRun.spec.volumes[%q]: name is reserved by Sympozium (including workspace, ipc, skills, tmp, memory, mcp-config, sympozium-run-api-access, and names starting with %s)", v.Name, skillVolumePrefix)
 		}
 		declarations[v.Name] = append(declarations[v.Name], volumeOrigin{
 			source: "AgentRun.spec.volumes",
@@ -385,8 +396,8 @@ func (pe *PolicyEnforcer) validateVolumes(ctx context.Context, run *sympoziumv1a
 			continue
 		}
 		for _, v := range sp.Spec.Sidecar.Volumes {
-			if _, reserved := reservedVolumeNames[v.Name]; reserved {
-				return fmt.Errorf("SkillPack %q sidecar volume %q: name is reserved by Sympozium (including workspace, ipc, skills, tmp, memory, mcp-config, and sympozium-run-api-access)", spName, v.Name)
+			if isReservedVolumeName(v.Name) {
+				return fmt.Errorf("SkillPack %q sidecar volume %q: name is reserved by Sympozium (including workspace, ipc, skills, tmp, memory, mcp-config, sympozium-run-api-access, and names starting with %s)", spName, v.Name, skillVolumePrefix)
 			}
 			declarations[v.Name] = append(declarations[v.Name], volumeOrigin{
 				source: fmt.Sprintf("SkillPack/%s.spec.sidecar.volumes", spName),

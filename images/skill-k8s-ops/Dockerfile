@@ -16,7 +16,7 @@ RUN apk add --no-cache \
        -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl
 
-COPY images/skill-k8s-ops/tool-executor.sh /usr/local/bin/tool-executor.sh
+COPY pkg/sidecartools/tool-executor.sh /usr/local/bin/tool-executor.sh
 RUN chmod +x /usr/local/bin/tool-executor.sh
 
 USER 1000

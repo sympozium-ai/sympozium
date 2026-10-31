@@ -1,17 +1,39 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 )
 
 const defaultSkillsDir = "/skills"
 
-// loadSkills reads all skill files from the skills directory and returns
-// their concatenated content suitable for prepending to the system prompt.
-func loadSkills(skillsDir string) string {
+// skillEntry is one indexed skill file. The controller mounts each skill
+// ConfigMap (one per SkillPack or configMapRef) at /skills/<ref>/, so Name is
+// "<ref>/<file>" with a trailing .md dropped. A file directly under /skills
+// (the flat layout of older controllers) keeps its bare name.
+type skillEntry struct {
+	Name        string
+	Path        string
+	Description string
+}
+
+// skillMeta is the YAML frontmatter the SkillPack controller writes at the top
+// of every skill file. Hand-authored ConfigMaps may carry their own or none.
+type skillMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// loadSkillIndex scans skillsDir one pack deep and returns the skills sorted by
+// name. Bodies stay on disk: the model loads them through the skills tool, or
+// inlineSkills reads them when that tool is unavailable.
+func loadSkillIndex(skillsDir string) []skillEntry {
 	if skillsDir == "" {
 		skillsDir = defaultSkillsDir
 	}
@@ -19,51 +41,165 @@ func loadSkills(skillsDir string) string {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		slog.Info("skills.dir.not_found", "dir", skillsDir, "error", err)
-		return ""
+		return nil
 	}
 
-	var sb strings.Builder
-	count := 0
+	var skills []skillEntry
 	for _, entry := range entries {
-		// Skip directories and hidden files (Kubernetes projected volumes
-		// create ..data, ..timestamp, etc.).
-		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+		// Skip hidden entries (ConfigMap volumes create ..data, ..timestamp, etc.).
+		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 		path := filepath.Join(skillsDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			slog.Warn("skills.file.read_failed", "path", path, "error", err)
+		if entry.IsDir() {
+			skills = append(skills, loadPackSkills(path, entry.Name())...)
 			continue
 		}
-		content := strings.TrimSpace(string(data))
-		if content == "" {
+		if s, ok := readSkillEntry(path, skillName("", entry.Name())); ok {
+			skills = append(skills, s)
+		}
+	}
+
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	if len(skills) > 0 {
+		slog.Info("skills.indexed", "count", len(skills), "dir", skillsDir)
+	}
+	return skills
+}
+
+// loadPackSkills indexes the files of one mounted skill ConfigMap. They are
+// symlinks into the volume's ..data directory, which DirEntry reports as
+// non-directories.
+func loadPackSkills(packDir, pack string) []skillEntry {
+	entries, err := os.ReadDir(packDir)
+	if err != nil {
+		slog.Warn("skills.pack.read_failed", "dir", packDir, "error", err)
+		return nil
+	}
+	var skills []skillEntry
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
+		}
+		if s, ok := readSkillEntry(filepath.Join(packDir, entry.Name()), skillName(pack, entry.Name())); ok {
+			skills = append(skills, s)
+		}
+	}
+	return skills
+}
+
+func skillName(pack, file string) string {
+	name := strings.TrimSuffix(file, ".md")
+	if pack == "" {
+		return name
+	}
+	return pack + "/" + name
+}
+
+// readSkillEntry indexes one skill file, skipping unreadable or empty ones.
+func readSkillEntry(path, name string) (skillEntry, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		slog.Warn("skills.file.read_failed", "path", path, "error", err)
+		return skillEntry{}, false
+	}
+	meta, body := splitFrontmatter(string(data))
+	if strings.TrimSpace(body) == "" {
+		return skillEntry{}, false
+	}
+	desc := meta.Description
+	if desc == "" {
+		desc = legacySkillSummary(body)
+	}
+	return skillEntry{Name: name, Path: path, Description: desc}, true
+}
+
+// splitFrontmatter separates a leading YAML frontmatter block (fenced by "---"
+// lines) from the Markdown body. Content without a block, or whose block is
+// unterminated or does not parse, is returned whole as the body.
+func splitFrontmatter(content string) (skillMeta, string) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimRight(lines[0], " \t") != "---" {
+		return skillMeta{}, content
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], " \t") != "---" {
+			continue
+		}
+		var meta skillMeta
+		if err := yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &meta); err != nil {
+			return skillMeta{}, content
+		}
+		meta.Description = strings.Join(strings.Fields(meta.Description), " ")
+		return meta, strings.Join(lines[i+1:], "\n")
+	}
+	return skillMeta{}, content
+}
+
+// legacySkillSummary describes a skill file that has no frontmatter description:
+// the "> description" line older SkillPack controllers wrote under the heading,
+// otherwise the first line that is not a heading.
+func legacySkillSummary(body string) string {
+	for _, raw := range strings.Split(body, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimPrefix(line, ">"))
+	}
+	return ""
+}
+
+// inlineSkills renders every skill body for the system prompt, the delivery
+// used when the run cannot call the skills tool. A skill with a frontmatter
+// description gets the "# name / > description" header older controllers
+// baked into the file, so the inlined prompt matches what it was before.
+func inlineSkills(skills []skillEntry) string {
+	var sb strings.Builder
+	for _, s := range skills {
+		data, err := os.ReadFile(s.Path)
+		if err != nil {
+			slog.Warn("skills.file.read_failed", "path", s.Path, "error", err)
+			continue
+		}
+		meta, body := splitFrontmatter(string(data))
+		content := strings.TrimSpace(body)
+		if meta.Description != "" {
+			title := meta.Name
+			if title == "" {
+				title = s.Name
+			}
+			content = fmt.Sprintf("# %s\n\n> %s\n\n%s", title, meta.Description, content)
 		}
 		if sb.Len() > 0 {
 			sb.WriteString("\n\n---\n\n")
 		}
 		sb.WriteString(content)
-		count++
-	}
-
-	if count > 0 {
-		slog.Info("skills.loaded", "count", count, "dir", skillsDir)
 	}
 	return sb.String()
 }
 
 // buildSystemPrompt assembles the full system prompt from the base prompt,
-// loaded skills, and tool availability.
-func buildSystemPrompt(base string, skills string, toolsEnabled bool) string {
+// the indexed skills, and tool availability. With skillsTool the prompt only
+// points at the skills tool, whose description carries the catalog; without
+// it the skill bodies are inlined.
+func buildSystemPrompt(base string, skills []skillEntry, skillsTool, toolsEnabled bool) string {
 	var sb strings.Builder
 
 	sb.WriteString(base)
 
-	if skills != "" {
+	if len(skills) > 0 && skillsTool {
+		sb.WriteString("\n\n## Your Skills\n\n")
+		fmt.Fprintf(&sb, "You have %d skill(s): operator-written instructions for specific kinds of work, "+
+			"listed with a one-line summary each in the description of the `%s` tool. "+
+			"When a task matches a skill, call `%s` with its name to load the full instructions "+
+			"before starting the work, and follow them rather than working from the summary.",
+			len(skills), ToolSkills, ToolSkills)
+	} else if inlined := inlineSkills(skills); inlined != "" {
 		sb.WriteString("\n\n## Your Skills\n\n")
 		sb.WriteString("The following skill instructions have been loaded. Follow them when they are relevant to the task:\n\n")
-		sb.WriteString(skills)
+		sb.WriteString(inlined)
 	}
 
 	if toolsEnabled {

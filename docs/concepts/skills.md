@@ -27,6 +27,34 @@ Agent has skills: [k8s-ops]
     → On completion/deletion: all skill RBAC cleaned up
 ```
 
+## How the Agent Reads Skills
+
+Each SkillPack (or `configMapRef`) attached to a run is mounted read-only at
+`/skills/<pack>/`, one Markdown file per skill. The SkillPack controller writes
+each file with YAML frontmatter carrying the skill's `name` and `description`:
+
+```markdown
+---
+name: k8s-troubleshoot
+description: Diagnose crash-looping and pending pods
+---
+
+## Steps
+...
+```
+
+The agent-runner does not paste every skill into the system prompt. It lists
+them, one line each, in the description of a `skills` tool, and the model calls
+`skills` with a name such as `k8s-ops/k8s-troubleshoot` to load the full
+instructions when a task needs them. The prompt cost of a SkillPack is then its
+catalog line, not its whole body.
+
+When the run cannot call `skills` — tools are disabled, or its
+[tool policy](security.md#policies) denies `skills` or has an allow list that does not
+name it — the bodies are inlined into the system prompt instead, as before.
+Add `skills` to a policy's allow list to get on-demand loading under a
+default-deny policy.
+
 ## Built-in Tools
 
 Every agent pod has these tools available out of the box (no skill sidecar required for native tools):
@@ -41,6 +69,7 @@ Every agent pod has these tools available out of the box (no skill sidecar requi
 | `fetch_url` | Native | Fetch web pages or API endpoints. HTML is converted to readable plain text |
 | `send_channel_message` | IPC (bridge) | Send a message through a connected channel |
 | `schedule_task` | IPC (bridge) | Create, update, suspend, resume, or delete recurring `SympoziumSchedule` tasks |
+| `skills` | Native | Load the full instructions of one of the agent's skills. Offered when the agent has skills and its tool policy allows it — see [How the Agent Reads Skills](#how-the-agent-reads-skills) |
 
 !!! note
     **Native** tools run directly in the agent container. **IPC** tools communicate with sidecars or the IPC bridge via the shared `/ipc` volume. See the [Tool Authoring Guide](../guides/writing-tools.md) for how to add your own, or the [Tool Sidecar Authoring Guide](../sidecars/writing-tool-sidecars.md) to build a custom sidecar that processes IPC calls.

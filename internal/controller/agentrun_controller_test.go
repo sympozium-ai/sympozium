@@ -767,18 +767,29 @@ func TestBuildVolumes_SkillsWithRefs(t *testing.T) {
 	run := newTestRun()
 	run.Spec.Skills = []sympoziumv1alpha1.SkillRef{
 		{ConfigMapRef: "my-skills"},
+		{SkillPackRef: "k8s-ops"},
 	}
 	vols := r.buildVolumes(run, false, nil, nil)
 
+	byName := map[string]corev1.Volume{}
 	for _, v := range vols {
-		if v.Name == "skills" {
-			if v.Projected == nil {
-				t.Fatal("skills volume should be projected when refs exist")
-			}
-			return
+		byName[v.Name] = v
+	}
+	if parent, ok := byName["skills"]; !ok || parent.EmptyDir == nil {
+		t.Errorf("skills parent volume should be an emptyDir, got %#v", parent.VolumeSource)
+	}
+	for _, ref := range []string{"my-skills", "k8s-ops"} {
+		v, ok := byName[skillVolumeName(ref)]
+		if !ok {
+			t.Errorf("missing volume for skill ConfigMap %q", ref)
+			continue
+		}
+		if v.ConfigMap == nil || v.ConfigMap.Name != ref {
+			t.Errorf("volume %q should mount ConfigMap %q, got %#v", v.Name, ref, v.VolumeSource)
+		} else if v.ConfigMap.Optional == nil || !*v.ConfigMap.Optional {
+			t.Errorf("volume %q should be optional so a missing ConfigMap does not block the pod", v.Name)
 		}
 	}
-	t.Error("skills volume not found")
 }
 
 func TestBuildVolumes_SkillsEmptyWhenNoRefs(t *testing.T) {

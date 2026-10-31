@@ -55,7 +55,7 @@ The agent writes a request file to `/ipc/tools/exec-request-{id}.json`:
 | `argv` | string[] | no | Argument vector executed **without a shell** (argv mode — see below) |
 | `stdin` | string | no | Payload piped to the process stdin in argv mode |
 | `workDir` | string | no | Working directory (default: `/workspace`) |
-| `timeout` | int | no | Timeout in seconds, 1–120 (default: 30) |
+| `timeout` | int | no | Timeout in seconds (default: 30), capped at `TOOL_EXECUTOR_MAX_TIMEOUT` (120 unless the sidecar raises it) |
 | `target` | string | no | SkillPack name for routing (see [Target-Based Routing](#target-based-routing)) |
 
 \* `command` is required in **shell mode**. When `argv` is a non-empty array the request is in **argv mode** and `command`/`args` are ignored.
@@ -111,13 +111,57 @@ Key details:
 
 ---
 
+## Using a Stock Image
+
+You may not need a custom image at all. The controller mounts the canonical
+`tool-executor.sh` ([`pkg/sidecartools/tool-executor.sh`](https://github.com/sympozium-ai/sympozium/blob/main/pkg/sidecartools/tool-executor.sh))
+read-only into **every** skill sidecar at `/sympozium/bin/tool-executor.sh`. An image
+that has the script's dependencies can serve `execute_command` and native tools by
+running it:
+
+```yaml
+sidecar:
+  image: bitnami/kubectl:latest   # pin a digest in production
+  command: ["/sympozium/bin/tool-executor.sh"]
+  mountWorkspace: true
+```
+
+The mount never changes a sidecar's entrypoint: a sidecar without `command` keeps
+running its image's own `CMD`, so set `command` as above to opt in. Build a custom image
+when you need your own binaries or startup steps (loading credentials, for example) — it
+can still `exec /sympozium/bin/tool-executor.sh` once setup is done, as the github-gitops
+image does.
+
+### What the image needs
+
+| Needed | Notes |
+|--------|-------|
+| `bash` | The script is bash; `sh`-only images (Alpine's default, BusyBox) do not run it. |
+| `jq` | Parses requests and writes results. Rarely preinstalled. |
+| `base64`, `timeout` | coreutils or BusyBox versions both work. |
+| `mktemp`, `basename`, `cat`, `tr`, `mv`, `rm`, `sleep` | Present in any image with coreutils or BusyBox. |
+
+- **Debian/Ubuntu-based images** usually have everything except `jq`; check before relying on them. `bitnami/kubectl:latest` has all of it. Bitnami's free catalogue only publishes `latest` (versioned tags such as `bitnami/kubectl:1.31` were moved to `bitnamilegacy/`), so pin it by digest.
+- **Alpine-based images** need `apk add bash jq`; BusyBox provides the rest. The built-in skill images are built this way.
+- **Distroless and `scratch` images** have no shell at all and cannot run the script. Build a small image on top of a base that has the tools, or use one of the built-in skill images.
+
+The script reads these environment variables (set them under `sidecar.env` or in your image):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TOOL_EXECUTOR_DEFAULT_TIMEOUT` | `30` | Timeout, in seconds, for a request that sets none. The github-gitops image sets `60`. |
+| `TOOL_EXECUTOR_MAX_TIMEOUT` | `120` | Upper bound, in seconds, on a request's `timeout`. The llmfit image sets `180`, github-gitops `300`. |
+| `SYMPOZIUM_SKILL_PACK` | set by the controller | This sidecar's SkillPack name, for [target-based routing](#target-based-routing). |
+
+---
+
 ## Building a Sidecar Image
 
 A sidecar needs two things: your application logic, and `tool-executor.sh` to bridge the IPC protocol.
 
 ### Step 1: The tool executor
 
-Copy the standard `tool-executor.sh` into your image. This script handles polling, request parsing, claiming, timeout enforcement, and response writing — you don't need to implement the IPC protocol yourself.
+Copy the standard `tool-executor.sh` ([`pkg/sidecartools/tool-executor.sh`](https://github.com/sympozium-ai/sympozium/blob/main/pkg/sidecartools/tool-executor.sh); every built-in skill image runs this file, github-gitops through a wrapper that loads its token first) into your image, or run the copy mounted at `/sympozium/bin/tool-executor.sh` (see [Using a Stock Image](#using-a-stock-image)). This script handles polling, request parsing, claiming, timeout enforcement, and response writing — you don't need to implement the IPC protocol yourself.
 
 Here's a minimal version:
 
@@ -229,7 +273,7 @@ CMD ["/usr/local/bin/tool-executor.sh"]
 ```
 
 !!! warning "Required packages"
-    Your sidecar image **must** include `bash`, `jq`, and `coreutils` for `tool-executor.sh` to work. The image must run as UID 1000 (`runAsNonRoot: true` is enforced).
+    Your sidecar image **must** include `bash`, `jq`, `base64` and `timeout` (coreutils or BusyBox) for `tool-executor.sh` to work — see [What the image needs](#what-the-image-needs). The image must run as UID 1000 (`runAsNonRoot: true` is enforced).
 
 ### Step 3: Build and push
 
@@ -283,7 +327,7 @@ spec:
 |-------|------|---------|-------------|
 | `image` | string | — | Container image reference (required) |
 | `imagePullPolicy` | string | — | Kubernetes pull policy |
-| `command` | string[] | — | Override container entrypoint |
+| `command` | string[] | — | Override container entrypoint. Set `["/sympozium/bin/tool-executor.sh"]` to run the mounted executor in a stock image (see [Using a Stock Image](#using-a-stock-image)) |
 | `env` | EnvVar[] | — | Additional environment variables |
 | `mountWorkspace` | bool | `false` | Mount the shared `/workspace` volume |
 | `resources.cpu` | string | — | CPU request/limit |
@@ -415,6 +459,13 @@ Agent: execute_command(command="node /app/cli.js analyze", target="my-analysis")
 ```
 
 Comparison is **case-insensitive** and **whitespace-trimmed**. An empty `target` means any sidecar can claim the request (legacy behavior).
+
+The agent-runner also knows which sidecars the pod has: the controller lists their
+SkillPack names in `SYMPOZIUM_SKILL_TARGETS`. It offers those names to the model as the
+allowed values of `target`, accepts a short name that uniquely ends one of them (for
+example `github-gitops` for a SkillPack installed as `team-a-github-gitops`), and fails a
+call whose `target` matches no attached sidecar immediately — with the list of valid
+targets — instead of writing a request that no sidecar claims and waiting out its timeout.
 
 ---
 

@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -749,6 +750,14 @@ func (r *AgentRunReconciler) prepareTaskPrerequisites(
 	if sidecarsHaveTools(sidecars) {
 		if err := r.ensureSidecarToolsConfigMap(ctx, agentRun, sidecars); err != nil {
 			return nil, &ctrl.Result{}, fmt.Errorf("creating sidecar tools ConfigMap: %w", err)
+		}
+	}
+	if len(sidecars) > 0 {
+		if err := r.ensureToolExecutorConfigMap(ctx, agentRun); err != nil {
+			if isToolExecutorConfigMapConflict(err) {
+				return nil, &ctrl.Result{}, r.failRun(ctx, agentRun, err.Error())
+			}
+			return nil, &ctrl.Result{}, err
 		}
 	}
 
@@ -3426,13 +3435,8 @@ func (r *AgentRunReconciler) buildContainers(
 				{Name: "ENSEMBLE_NAME", Value: agentRun.Labels["sympozium.ai/ensemble"]},
 				{Name: "AGENT_NAMESPACE", Value: agentRun.Namespace},
 			},
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: "workspace", MountPath: "/workspace"},
-				{Name: "skills", MountPath: "/skills", ReadOnly: true},
-				{Name: "ipc", MountPath: "/ipc"},
-				{Name: "tmp", MountPath: "/tmp"},
-			},
-			Resources: agentContainerResources(agentRun.Spec.Task),
+			VolumeMounts: agentVolumeMounts(agentRun.Spec.Skills),
+			Resources:    agentContainerResources(agentRun.Spec.Task),
 		},
 		// IPC bridge sidecar
 		{
@@ -3935,6 +3939,7 @@ func (r *AgentRunReconciler) buildContainers(
 		mounts := []corev1.VolumeMount{
 			{Name: "ipc", MountPath: "/ipc"},
 			{Name: "tmp", MountPath: "/tmp"},
+			toolExecutorVolumeMount(),
 		}
 		if sc.sidecar.MountWorkspace {
 			mounts = append(mounts, corev1.VolumeMount{Name: "workspace", MountPath: "/workspace"})
@@ -4533,46 +4538,25 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, 
 			},
 		},
 	}
-	// Build skills projected volume from skill references
-	var sources []corev1.VolumeProjection
-	for _, skill := range agentRun.Spec.Skills {
-		if skill.SkillPackRef != "" {
-			sources = append(sources, corev1.VolumeProjection{
-				ConfigMap: &corev1.ConfigMapProjection{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: skill.SkillPackRef,
-					},
-					Optional: boolPtr(true),
-				},
-			})
-		}
-		if skill.ConfigMapRef != "" {
-			sources = append(sources, corev1.VolumeProjection{
-				ConfigMap: &corev1.ConfigMapProjection{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: skill.ConfigMapRef,
-					},
-					Optional: boolPtr(true),
-				},
-			})
-		}
-	}
-
-	if len(sources) > 0 {
+	// Skills: each referenced ConfigMap gets its own volume, mounted at
+	// /skills/<ref>/ (see agentVolumeMounts), so skills are namespaced by pack
+	// and same-named files in two packs no longer overwrite each other. The
+	// "skills" emptyDir is the parent that holds those mountpoints, and keeps
+	// /skills present when no skills are attached.
+	volumes = append(volumes, corev1.Volume{
+		Name: "skills",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+	for _, ref := range skillConfigMapRefs(agentRun.Spec.Skills) {
 		volumes = append(volumes, corev1.Volume{
-			Name: "skills",
+			Name: skillVolumeName(ref),
 			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{
-					Sources: sources,
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ref},
+					Optional:             boolPtr(true),
 				},
-			},
-		})
-	} else {
-		// Empty skills volume
-		volumes = append(volumes, corev1.Volume{
-			Name: "skills",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		})
 	}
@@ -4641,6 +4625,11 @@ func (r *AgentRunReconciler) buildVolumes(agentRun *sympoziumv1alpha1.AgentRun, 
 				},
 			},
 		})
+	}
+
+	// Every skill sidecar mounts the canonical tool-executor script.
+	if len(sidecars) > 0 {
+		volumes = append(volumes, toolExecutorVolume(agentRun))
 	}
 
 	// Add the read-only sidecar-tools manifest volume when any sidecar declares
@@ -4780,22 +4769,90 @@ var reservedVolumeNames = map[string]struct{}{
 	"harness-home":         {},
 	gateChannelVolume:      {},
 	runAPIAccessVolumeName: {},
+	toolExecutorVolumeName: {},
 }
 
 func isReservedVolumeName(name string) bool {
 	_, ok := reservedVolumeNames[name]
-	return ok
+	return ok || strings.HasPrefix(name, skillVolumePrefix)
 }
 
 // reservedVolumeNamesList returns a deterministic, sorted slice of reserved
 // volume names for use in log messages.
 func reservedVolumeNamesList() []string {
-	names := make([]string, 0, len(reservedVolumeNames))
+	names := make([]string, 0, len(reservedVolumeNames)+1)
 	for n := range reservedVolumeNames {
 		names = append(names, n)
 	}
+	names = append(names, skillVolumePrefix+"*")
 	sort.Strings(names)
 	return names
+}
+
+// skillVolumePrefix names the per-ConfigMap skill volumes. The whole prefix is
+// reserved, like the names in reservedVolumeNames.
+const skillVolumePrefix = "sympozium-skill-"
+
+// skillVolumeName returns the pod volume name for a skill ConfigMap. Volume
+// names are DNS-1123 labels (at most 63 characters, no dots) while ConfigMap
+// names may be longer and dotted, so a ref that does not fit is shortened and
+// suffixed with a hash of the full name to keep it unique.
+func skillVolumeName(ref string) string {
+	if len(validation.IsDNS1123Label(skillVolumePrefix+ref)) == 0 {
+		return skillVolumePrefix + ref
+	}
+	sum := sha256.Sum256([]byte(ref))
+	short := strings.Trim(strings.ReplaceAll(ref, ".", "-"), "-")
+	if limit := validation.DNS1123LabelMaxLength - len(skillVolumePrefix) - 11; len(short) > limit {
+		short = strings.TrimRight(short[:limit], "-")
+	}
+	return skillVolumePrefix + short + "-" + hex.EncodeToString(sum[:])[:10]
+}
+
+// skillConfigMapRefs returns the ConfigMap names an AgentRun's skills
+// reference, deduplicated, in first-seen order.
+func skillConfigMapRefs(skills []sympoziumv1alpha1.SkillRef) []string {
+	seen := make(map[string]struct{}, len(skills))
+	var refs []string
+	for _, s := range skills {
+		for _, ref := range [...]string{s.SkillPackRef, s.ConfigMapRef} {
+			if ref == "" {
+				continue
+			}
+			if _, dup := seen[ref]; dup {
+				continue
+			}
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
+// agentVolumeMounts returns the agent container's core mounts, with each skill
+// ConfigMap read-only at /skills/<ref>/. The /skills parent is not read-only:
+// the container runtime has to create each /skills/<ref> mountpoint inside it,
+// and with a read-only parent on the agent's read-only root filesystem the
+// container fails to start (StartError, exit code 128). The per-ref mounts are
+// what protect the skill content.
+func agentVolumeMounts(skills []sympoziumv1alpha1.SkillRef) []corev1.VolumeMount {
+	refs := skillConfigMapRefs(skills)
+	mounts := make([]corev1.VolumeMount, 0, 4+len(refs))
+	mounts = append(mounts,
+		corev1.VolumeMount{Name: "workspace", MountPath: "/workspace"},
+		corev1.VolumeMount{Name: "skills", MountPath: "/skills"},
+	)
+	for _, ref := range refs {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      skillVolumeName(ref),
+			MountPath: "/skills/" + ref,
+			ReadOnly:  true,
+		})
+	}
+	return append(mounts,
+		corev1.VolumeMount{Name: "ipc", MountPath: "/ipc"},
+		corev1.VolumeMount{Name: "tmp", MountPath: "/tmp"},
+	)
 }
 
 func derivePodHostAccess(sidecars []resolvedSidecar) (hostNetwork bool, hostPID bool) {

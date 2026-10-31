@@ -347,9 +347,11 @@ func main() {
 		}
 	}
 
-	// Load skill files and build enhanced system prompt.
-	skills := loadSkills(defaultSkillsDir)
-	systemPrompt = buildSystemPrompt(systemPrompt, skills, toolsEnabled)
+	// Index skill files and build enhanced system prompt. When the run can call
+	// the skills tool the model loads bodies on demand; otherwise they are inlined.
+	skills := loadSkillIndex(defaultSkillsDir)
+	lazySkills := skillsToolEnabled(skills, toolsEnabled, os.Getenv("TOOL_POLICY_ALLOW"), os.Getenv("TOOL_POLICY_DENY"))
+	systemPrompt = buildSystemPrompt(systemPrompt, skills, lazySkills, toolsEnabled)
 
 	// If this run was triggered from a channel, inject context so the
 	// agent knows how to reply through the originating channel.
@@ -390,7 +392,12 @@ func main() {
 	// Resolve tool definitions.
 	var tools []ToolDef
 	if toolsEnabled {
+		loadSkillTargets()
 		tools = defaultTools()
+		if lazySkills {
+			registerSkills(skills)
+			tools = append(tools, skillsToolDef(skills))
+		}
 		// Load MCP tools from manifest if the mcp-bridge sidecar is running
 		if mcpTools := loadMCPTools("/ipc/tools/mcp-tools.json"); len(mcpTools) > 0 {
 			tools = append(tools, mcpTools...)

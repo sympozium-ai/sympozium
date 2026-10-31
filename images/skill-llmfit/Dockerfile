@@ -23,13 +23,16 @@ RUN set -eux; \
     chmod +x /usr/local/bin/llmfit; \
     rm -rf /tmp/llmfit.tar.gz /tmp/llmfit-${LLMFIT_VERSION}-${LLMFIT_ARCH}-unknown-linux-musl
 
-COPY images/skill-llmfit/tool-executor.sh /usr/local/bin/tool-executor.sh
+COPY pkg/sidecartools/tool-executor.sh /usr/local/bin/tool-executor.sh
 COPY images/skill-llmfit/llmfit-probe-json.sh /usr/local/bin/llmfit-probe-json.sh
 COPY images/skill-llmfit/llmfit-cluster-fit.sh /usr/local/bin/llmfit-cluster-fit.sh
 RUN chmod +x /usr/local/bin/tool-executor.sh /usr/local/bin/llmfit-probe-json.sh /usr/local/bin/llmfit-cluster-fit.sh
 
 USER 1000
 WORKDIR /workspace
+
+# llmfit's cluster probes outlast the executor's default 120s cap.
+ENV TOOL_EXECUTOR_MAX_TIMEOUT=180
 
 # The tool executor watches /ipc/tools/ for exec-request JSON files,
 # executes them, and writes exec-result JSON files back.

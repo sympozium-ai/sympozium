@@ -241,3 +241,37 @@ func TestPolicyEnforcer_RejectsDuplicateVolume_WhenSourcesDiffer(t *testing.T) {
 		t.Fatalf("expected denial message to mention 'vault-creds' and 'different VolumeSource'; got %q", msg)
 	}
 }
+
+// Per-pack skill volumes are named with a reserved prefix; a user volume using
+// it could collide with one, so admission rejects it like any reserved name.
+func TestPolicyEnforcer_RejectsSkillVolumePrefix(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	instance := &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+	}
+	run := &sympoziumv1alpha1.AgentRun{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
+		Spec: sympoziumv1alpha1.AgentRunSpec{
+			AgentRef: "inst",
+			Task:     sympoziumv1alpha1.NewStringTask("x"),
+			Volumes: []corev1.Volume{{
+				Name:         skillVolumePrefix + "k8s-ops",
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			}},
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance).Build()
+	pe := &PolicyEnforcer{Client: cl, Log: logr.Discard(), Decoder: decoderFor(t, scheme)}
+
+	resp := pe.Handle(context.Background(), admissionRequestFor(t, run))
+	if resp.Allowed {
+		t.Fatal("expected denial for a volume using the reserved skill volume prefix")
+	}
+	if !strings.Contains(resp.Result.Message, skillVolumePrefix) {
+		t.Errorf("denial should name the reserved prefix; got %q", resp.Result.Message)
+	}
+}
