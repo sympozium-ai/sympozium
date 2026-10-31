@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +39,8 @@ type staticProfiles struct{ set *Set }
 
 func (s staticProfiles) Load(context.Context) (*Set, error) { return s.set, nil }
 
+var publicUpstream = regexp.MustCompile(`upstream: https://[a-z]\S*`)
+
 // shippedProfiles returns what the chart ships, with extra entries appended.
 func shippedProfiles(t *testing.T, privateOrigin, extra string) *Set {
 	t.Helper()
@@ -50,7 +53,11 @@ func shippedProfiles(t *testing.T, privateOrigin, extra string) *Set {
 		t.Fatal(err)
 	}
 	// The tests' own extra profiles use names an operator would add.
-	file := string(allowed) + "insecureOrigins: [\"" + privateOrigin + "\"]\nprofiles:\n" + indent(string(shipped)) + indent(extra)
+	// A profile has one origin, so point the profiles at the test's server.
+	atServer := func(profiles string) string {
+		return publicUpstream.ReplaceAllString(profiles, "upstream: "+privateOrigin)
+	}
+	file := string(allowed) + "insecureOrigins: [\"" + privateOrigin + "\"]\nprofiles:\n" + indent(atServer(string(shipped))) + indent(atServer(extra))
 	file = strings.Replace(file, "allowedEnvNames:\n", "allowedEnvNames:\n  - AZURE_OPENAI_ENDPOINT\n  - AZURE_OPENAI_API_KEY\n", 1)
 	set, err := ParseSet([]byte(file))
 	if err != nil {
@@ -78,7 +85,10 @@ type fixture struct {
 }
 
 func newFixture(provider, secretKey, upstream string) *fixture {
-	agent := &api.Agent{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "ns", UID: "agent-uid"}}
+	agent := &api.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: "ns", UID: "agent-uid"},
+		Spec:       api.AgentSpec{AuthRefs: []api.SecretRef{{Provider: provider, Secret: "key"}, {Provider: provider, Secret: "headers"}}},
+	}
 	run := &api.AgentRun{
 		ObjectMeta: metav1.ObjectMeta{Name: "run", Namespace: "ns", UID: "run-uid"},
 		Spec: api.AgentRunSpec{
@@ -455,7 +465,7 @@ func TestProviderHeaders(t *testing.T) {
 		f.run.Spec.Model.ProviderHeaders = map[string]string{"X-Inline": "inline", "x-api-key": "stolen", "Host": "evil.example", "X-Shared": "from-inline"}
 		f.run.Spec.Model.ProviderHeadersSecretRef = "headers"
 		f.extras = append(f.extras, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "ns", UID: "headers-uid", Annotations: map[string]string{modelkey.OwnerAnnotation: modelkey.Owner(f.agent)}},
+			ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "ns", UID: "headers-uid", Annotations: map[string]string{modelkey.OwnerAnnotation: modelkey.Owner(f.agent), modelkey.OriginAnnotation: upstreamOrigin(upstream.URL)}},
 			Data:       map[string][]byte{"X-Secret": []byte(headerSecretValue), "X-Shared": []byte("from-secret")},
 		})
 		return f.serve(t, shippedProfiles(t, upstream.URL, "")), got, f
@@ -816,6 +826,7 @@ func TestConcurrentCallsStreamSideBySide(t *testing.T) {
 		runKey := base.key.DeepCopy()
 		runKey.Name, runKey.UID = name+"-key", types.UID(name+"-key-uid")
 		runKey.Data["OPENAI_API_KEY"] = []byte(key(i))
+		base.agent.Spec.AuthRefs = append(base.agent.Spec.AuthRefs, api.SecretRef{Provider: "openai", Secret: runKey.Name})
 		objects = append(objects, run, runToken, runKey)
 	}
 	scheme := runtime.NewScheme()
@@ -1083,4 +1094,140 @@ func profilesReader(t *testing.T, before func(context.Context) error) client.Rea
 			return c.Get(ctx, key, obj, opts...)
 		},
 	}).Build()
+}
+
+// A decoded ? in a * segment would end the path early and pass the rest as a
+// query, reaching a path the allowlist never named.
+func TestAnEncodedDelimiterCannotPassAWildcard(t *testing.T) {
+	const azure = `- name: azure
+  providers: [azure-openai]
+  upstream: https://example.openai.azure.com
+  secretKeys: [OPENROUTER_API_KEY]
+  auth: {type: header, header: Api-Key}
+  paths: [/openai/deployments/*/chat/completions]
+  env: {baseURL: [AZURE_OPENAI_ENDPOINT], apiKey: [AZURE_OPENAI_API_KEY]}
+`
+	for _, segment := range []string{"models%3Fx=", "models%23", "models%25", "%2e%2e"} {
+		t.Run(segment, func(t *testing.T) {
+			var reached atomic.Bool
+			upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Store(true) }))
+			defer upstream.Close()
+			f := newFixture("azure-openai", "OPENROUTER_API_KEY", upstream.URL)
+			gateway := f.serve(t, shippedProfiles(t, upstream.URL, azure))
+			response, _ := call(t, gateway, "/runs/ns/run/openai/deployments/"+segment+"/chat/completions", bearer())
+			if response.StatusCode == http.StatusOK {
+				t.Errorf("status = %d", response.StatusCode)
+			}
+			if reached.Load() {
+				t.Error("the call reached the upstream")
+			}
+		})
+	}
+}
+
+// A pin can come from a ModelConnection an API caller created, so it doesn't show
+// that an operator named the origin.
+func TestAPinnedKeyStillNeedsAnOriginAnOperatorNamed(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	f := newFixture("openai", "OPENAI_API_KEY", "https://evil.example")
+	gateway := f.serve(t, shippedProfiles(t, upstream.URL, ""))
+	response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", bearer())
+	if response.StatusCode != http.StatusForbidden || got.path != "" {
+		t.Errorf("status = %d, upstream saw %q", response.StatusCode, got.path)
+	}
+}
+
+// A headers Secret is sent upstream whole, so it answers to the same pin as the key.
+func TestAHeadersSecretCannotCarryAKeyPastItsPin(t *testing.T) {
+	for name, tc := range map[string]struct {
+		origin func(upstream string) string
+		data   map[string][]byte
+	}{
+		"pinned elsewhere": {
+			origin: func(string) string { return "https://api.anthropic.com" },
+			data:   map[string][]byte{"X-Tenant": []byte("tenant-value")},
+		},
+		"not pinned": {
+			origin: func(string) string { return "" },
+			data:   map[string][]byte{"X-Tenant": []byte("tenant-value")},
+		},
+		"holding a model key": {
+			origin: upstreamOrigin,
+			data:   map[string][]byte{"ANTHROPIC_API_KEY": []byte("another-real-key")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			upstream, got := recordingUpstream(t, "ok")
+			f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+			f.run.Spec.Model.ProviderHeadersSecretRef = "headers"
+			annotations := map[string]string{modelkey.OwnerAnnotation: modelkey.Owner(f.agent)}
+			if origin := tc.origin(upstream.URL); origin != "" {
+				annotations[modelkey.OriginAnnotation] = origin
+			}
+			f.extras = append(f.extras, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "ns", UID: "headers-uid", Annotations: annotations},
+				Data:       tc.data,
+			})
+			gateway := f.serve(t, shippedProfiles(t, upstream.URL, ""))
+			response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", bearer())
+			if response.StatusCode != http.StatusForbidden || got.path != "" {
+				t.Errorf("status = %d, upstream saw %q", response.StatusCode, got.path)
+			}
+		})
+	}
+}
+
+// The Agent's owner decides which provider a Secret is for, not whoever creates
+// the run.
+func TestTheAgentMustNameTheRunsProvider(t *testing.T) {
+	for name, refs := range map[string][]api.SecretRef{
+		"the key with no provider":     {{Secret: "key"}, {Provider: "openai", Secret: "headers"}},
+		"the key for another provider": {{Provider: "anthropic", Secret: "key"}, {Provider: "openai", Secret: "headers"}},
+		"headers with no provider":     {{Provider: "openai", Secret: "key"}, {Secret: "headers"}},
+		"headers for another provider": {{Provider: "openai", Secret: "key"}, {Provider: "anthropic", Secret: "headers"}},
+		"the key not listed":           {{Provider: "openai", Secret: "headers"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			upstream, got := recordingUpstream(t, "ok")
+			f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+			f.agent.Spec.AuthRefs = refs
+			f.run.Spec.Model.ProviderHeadersSecretRef = "headers"
+			f.extras = append(f.extras, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "ns", UID: "headers-uid", Annotations: map[string]string{
+					modelkey.OwnerAnnotation:  modelkey.Owner(f.agent),
+					modelkey.OriginAnnotation: upstreamOrigin(upstream.URL),
+				}},
+				Data: map[string][]byte{"X-Tenant": []byte("tenant-value")},
+			})
+			gateway := f.serve(t, shippedProfiles(t, upstream.URL, ""))
+			response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", bearer())
+			if response.StatusCode != http.StatusForbidden || got.path != "" {
+				t.Errorf("status = %d, upstream saw %q", response.StatusCode, got.path)
+			}
+		})
+	}
+}
+
+// A listed origin says it may be reached, not whose keys may go there.
+func TestAnOriginBelongsToItsProfile(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	// insecureOrigins lists this server, and the shipped anthropic profile doesn't name it.
+	file := "insecureOrigins: [\"" + upstream.URL + "\"]\nallowedEnvNames: [X_URL, X_KEY]\nallowedAuthHeaders: [x-api-key]\nprofiles:\n" + indent(`- name: anthropic
+  providers: [anthropic]
+  upstream: https://api.anthropic.com
+  secretKeys: [ANTHROPIC_API_KEY]
+  auth: {type: header, header: x-api-key}
+  paths: [/v1/messages]
+  env: {baseURL: [X_URL], apiKey: [X_KEY]}
+`)
+	set, err := ParseSet([]byte(file))
+	if err != nil || len(set.Rejected) != 0 {
+		t.Fatalf("%v %v", err, set)
+	}
+	f := newFixture("anthropic", "ANTHROPIC_API_KEY", upstream.URL)
+	gateway := f.serve(t, set)
+	response, _ := call(t, gateway, "/runs/ns/run/v1/messages", map[string]string{"x-api-key": testToken})
+	if response.StatusCode != http.StatusForbidden || got.path != "" {
+		t.Errorf("status = %d, upstream saw %q", response.StatusCode, got.path)
+	}
 }

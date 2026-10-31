@@ -812,6 +812,9 @@ func (r *AgentRunReconciler) prepareTaskPrerequisites(
 	// Mint the token a mediated harness holds in place of its model key, before
 	// the pod that references it.
 	if err := r.ensureRunModelToken(ctx, agentRun); err != nil {
+		if !isModelMediationRefusal(err) {
+			return nil, &ctrl.Result{}, fmt.Errorf("preparing model mediation: %w", err)
+		}
 		return nil, &ctrl.Result{}, r.failRun(ctx, agentRun,
 			fmt.Sprintf("model mediation failed: %v", err))
 	}
@@ -1130,6 +1133,9 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 	}
 	job, err := r.buildJob(ctx, podRun, prereqs.inputs.memoryEnabled, prereqs.inputs.observability,
 		sidecars, prereqs.mcpServers, prereqs.inputs.allowedOutboundChannels)
+	if modelMediationCanRetry(err) {
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		// buildJob (which calls buildContainers) rejected the spec — most
 		// commonly an unknown task.mode or a handler validation failure.
@@ -3193,7 +3199,7 @@ func (r *AgentRunReconciler) buildAgentPodTemplate(
 	configureRunAPIAccess(agentRun, sidecars, &tmpl.Spec)
 	// Last, so nothing added above can put the key back.
 	if err := r.applyModelMediation(ctx, agentRun, &tmpl.Spec); err != nil {
-		return corev1.PodTemplateSpec{}, fmt.Errorf("model mediation failed: %w", err)
+		return corev1.PodTemplateSpec{}, &modelMediationError{err: err}
 	}
 
 	return tmpl, nil

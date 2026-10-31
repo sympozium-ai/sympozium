@@ -67,6 +67,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("HARNESS_GATEWAY_MAX_CONCURRENT_PER_RUN: %w", err)
 	}
+	// The chart sets the Pod's grace period from this same value.
+	drainSeconds, err := strconv.Atoi(env("HARNESS_GATEWAY_DRAIN_SECONDS", "30"))
+	if err != nil {
+		return fmt.Errorf("HARNESS_GATEWAY_DRAIN_SECONDS: %w", err)
+	}
 	gateway := &harnessgateway.Gateway{
 		Reader:              reader,
 		MaxConcurrent:       maxConcurrent,
@@ -98,14 +103,27 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdown)
-	}()
-	if err := server.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
-		return err
+	return serve(ctx, server, time.Duration(drainSeconds)*time.Second, func() error { return server.ListenAndServeTLS("", "") })
+}
+
+// serve runs the server until ctx ends, then lets calls in flight finish.
+// ListenAndServeTLS returns as soon as Shutdown starts, so the wait is on Shutdown.
+func serve(ctx context.Context, server *http.Server, drain time.Duration, listen func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- listen() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
 	}
+	shutdown, cancel := context.WithTimeout(context.Background(), drain)
+	defer cancel()
+	if err := server.Shutdown(shutdown); err != nil {
+		_ = server.Close()
+	}
+	<-done
 	return nil
 }

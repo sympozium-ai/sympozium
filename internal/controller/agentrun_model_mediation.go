@@ -87,23 +87,72 @@ func (r *AgentRunReconciler) uncachedReader() client.Reader {
 	return r.Client
 }
 
+// modelMediationRefusal is a reason this run can't be mediated. It fails the run.
+// Any other error from this file may pass, such as an API server blip, so the
+// reconcile returns it and tries again. No pod exists in the meantime, so waiting
+// is as closed as failing.
+type modelMediationRefusal struct{ err error }
+
+func (e *modelMediationRefusal) Error() string { return e.err.Error() }
+func (e *modelMediationRefusal) Unwrap() error { return e.err }
+
+func refuseMediation(format string, args ...any) error {
+	return &modelMediationRefusal{err: fmt.Errorf(format, args...)}
+}
+
+// refuseIfNotFound treats a missing object as a refusal: retrying won't create
+// it. Any other read error is left to retry.
+func refuseIfNotFound(err error) error {
+	if errors.IsNotFound(err) {
+		return &modelMediationRefusal{err: err}
+	}
+	return err
+}
+
+func isModelMediationRefusal(err error) bool {
+	var refusal *modelMediationRefusal
+	var mismatch *modelkey.OriginMismatchError
+	return stderrors.As(err, &refusal) || stderrors.As(err, &mismatch)
+}
+
+// modelMediationError marks an error as coming from mediation when it passes
+// through the pod template, whose other errors all reject the run's spec.
+type modelMediationError struct{ err error }
+
+func (e *modelMediationError) Error() string { return "model mediation failed: " + e.err.Error() }
+func (e *modelMediationError) Unwrap() error { return e.err }
+
+// modelMediationCanRetry reports whether rendering a pod failed only for a reason
+// that may pass.
+func modelMediationCanRetry(err error) bool {
+	var mediation *modelMediationError
+	return stderrors.As(err, &mediation) && !isModelMediationRefusal(err)
+}
+
 // mediationRoute resolves where the run's calls go, refusing what can't be
 // mediated. The controller never falls back to injecting the key.
 func (r *AgentRunReconciler) mediationRoute(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) (*harnessgateway.Route, error) {
 	if r.HarnessGateway == nil {
-		return nil, stderrors.New("harnessPolicy.modelMediation is required, but the harness gateway is not enabled; set harnessGateway.enabled in the chart")
+		return nil, refuseMediation("harnessPolicy.modelMediation is required, but the harness gateway is not enabled; set harnessGateway.enabled in the chart")
 	}
 	if agentRun.Spec.AgentSandbox != nil && agentRun.Spec.AgentSandbox.Enabled {
-		return nil, stderrors.New("harnessPolicy.modelMediation does not support the Agent Sandbox backend yet")
+		return nil, refuseMediation("harnessPolicy.modelMediation does not support the Agent Sandbox backend yet")
 	}
 	if agentRun.Spec.Model.AuthSecretRef == "" {
-		return nil, stderrors.New("harnessPolicy.modelMediation needs spec.model.authSecretRef when providerHeadersSecretRef is set")
+		return nil, refuseMediation("harnessPolicy.modelMediation needs spec.model.authSecretRef when providerHeadersSecretRef is set")
 	}
 	profiles, err := r.HarnessGateway.Profiles.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading harness gateway profiles: %w", err)
 	}
-	return profiles.Route(agentRun.Spec.Model.Provider, agentRun.Spec.Model.BaseURL)
+	route, err := profiles.Route(agentRun.Spec.Model.Provider, agentRun.Spec.Model.BaseURL)
+	if err != nil {
+		return nil, &modelMediationRefusal{err: err}
+	}
+	if !route.OperatorNamed {
+		return nil, refuseMediation("spec.model.baseURL origin %s is not the upstream of the profile for provider %q; an operator must add a profile for it", route.Origin, agentRun.Spec.Model.Provider)
+	}
+	return route, nil
 }
 
 // ensureRunModelToken prepares a mediated run: it pins the key to the origin the
@@ -122,20 +171,24 @@ func (r *AgentRunReconciler) ensureRunModelToken(ctx context.Context, agentRun *
 	if err != nil {
 		return err
 	}
-	if err := r.pinRunModelKey(ctx, agentRun, route); err != nil {
+	if err := r.checkRunSecrets(ctx, agentRun, route); err != nil {
 		return err
 	}
 	var caSecret corev1.Secret
 	if err := r.HarnessGateway.Reader.Get(ctx, r.HarnessGateway.CASecret, &caSecret); err != nil {
-		return fmt.Errorf("reading the harness gateway CA: %w", err)
+		return refuseIfNotFound(fmt.Errorf("reading the harness gateway CA: %w", err))
 	}
 	ca := caSecret.Data[harnessgateway.CASecretKey]
 	if len(ca) == 0 {
-		return fmt.Errorf("Secret %s has no %s", r.HarnessGateway.CASecret, harnessgateway.CASecretKey)
+		return refuseMediation("Secret %s has no %s", r.HarnessGateway.CASecret, harnessgateway.CASecretKey)
 	}
 
 	bound, realKey, err := r.runModelBinding(ctx, agentRun, route)
 	if err != nil {
+		return err
+	}
+	// Last of the checks, so a refused run leaves no pin behind.
+	if err := r.pinRunModelKey(ctx, agentRun, route); err != nil {
 		return err
 	}
 
@@ -197,7 +250,7 @@ func (r *AgentRunReconciler) ensureRunModelToken(ctx context.Context, agentRun *
 			return getErr
 		}
 		if !metav1.IsControlledBy(&raced, agentRun) {
-			return fmt.Errorf("run model token Secret %s exists and is not owned by this run", secretName)
+			return refuseMediation("run model token Secret %s exists and is not owned by this run", secretName)
 		}
 	}
 	return nil
@@ -213,11 +266,11 @@ func (r *AgentRunReconciler) runModelBinding(ctx context.Context, agentRun *symp
 	reader := r.uncachedReader()
 	var agent sympoziumv1alpha1.Agent
 	if err := reader.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.AgentRef}, &agent); err != nil {
-		return nil, "", fmt.Errorf("reading Agent %q: %w", agentRun.Spec.AgentRef, err)
+		return nil, "", refuseIfNotFound(fmt.Errorf("reading Agent %q: %w", agentRun.Spec.AgentRef, err))
 	}
 	var key corev1.Secret
 	if err := reader.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.Model.AuthSecretRef}, &key); err != nil {
-		return nil, "", fmt.Errorf("reading model key Secret %q: %w", agentRun.Spec.Model.AuthSecretRef, err)
+		return nil, "", refuseIfNotFound(fmt.Errorf("reading model key Secret %q: %w", agentRun.Spec.Model.AuthSecretRef, err))
 	}
 	bound := map[string]string{
 		harnessgateway.AgentUIDAnnotation:     string(agent.UID),
@@ -227,24 +280,70 @@ func (r *AgentRunReconciler) runModelBinding(ctx context.Context, agentRun *symp
 	if name := agentRun.Spec.Model.ProviderHeadersSecretRef; name != "" {
 		var headers corev1.Secret
 		if err := reader.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: name}, &headers); err != nil {
-			return nil, "", fmt.Errorf("reading provider headers Secret %q: %w", name, err)
+			return nil, "", refuseIfNotFound(fmt.Errorf("reading provider headers Secret %q: %w", name, err))
 		}
 		bound[harnessgateway.HeadersSecretUIDAnnotation] = string(headers.UID)
 	}
 	return bound, route.Profile.Key(key.Data), nil
 }
 
-// pinRunModelKey records the origin on the key. authorizeRunKeys has already
-// held the key to this Agent. The gateway sends a key only to its pinned origin,
-// so a later run that points the same key elsewhere is refused.
+// checkRunSecrets refuses a run whose key or provider headers Secret it may not
+// use, and writes nothing. mediationRoute has already refused an origin no
+// operator named.
+func (r *AgentRunReconciler) checkRunSecrets(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, route *harnessgateway.Route) error {
+	model := agentRun.Spec.Model
+	var agent sympoziumv1alpha1.Agent
+	if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.AgentRef}, &agent); err != nil {
+		return refuseIfNotFound(fmt.Errorf("reading Agent %q: %w", agentRun.Spec.AgentRef, err))
+	}
+	check := func(name string, usable func(*corev1.Secret) error) error {
+		if !harnessgateway.AgentNamesProvider(&agent, model.Provider, name) {
+			return refuseMediation("Agent %q must list Secret %q in spec.authRefs with provider %q under harnessPolicy.modelMediation", agent.Name, name, model.Provider)
+		}
+		var secret corev1.Secret
+		if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: name}, &secret); err != nil {
+			return refuseIfNotFound(fmt.Errorf("reading Secret %q: %w", name, err))
+		}
+		if err := usable(&secret); err != nil {
+			return err
+		}
+		if pinned := modelkey.PinnedOrigin(&secret); pinned != "" && pinned != route.Origin {
+			return &modelkey.OriginMismatchError{Secret: name, Pinned: pinned, Origin: route.Origin}
+		}
+		return nil
+	}
+	err := check(model.AuthSecretRef, func(secret *corev1.Secret) error {
+		if route.Profile.Key(secret.Data) == "" {
+			return refuseMediation("model key Secret %q has none of the keys provider %q reads: %v", secret.Name, model.Provider, route.Profile.SecretKeys)
+		}
+		return nil
+	})
+	if err != nil || model.ProviderHeadersSecretRef == "" {
+		return err
+	}
+	return check(model.ProviderHeadersSecretRef, func(secret *corev1.Secret) error {
+		if route.HoldsProviderKey(secret.Data) {
+			return refuseMediation("provider headers Secret %q holds a model key, which would go upstream as a header", secret.Name)
+		}
+		return nil
+	})
+}
+
+// pinRunModelKey records the origin on the run's key and its provider headers
+// Secret. The gateway sends them only to their pinned origin, so a later run that
+// points either elsewhere is refused.
 func (r *AgentRunReconciler) pinRunModelKey(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, route *harnessgateway.Route) error {
+	if err := r.pinRunSecret(ctx, agentRun, agentRun.Spec.Model.AuthSecretRef, route); err != nil || agentRun.Spec.Model.ProviderHeadersSecretRef == "" {
+		return err
+	}
+	return r.pinRunSecret(ctx, agentRun, agentRun.Spec.Model.ProviderHeadersSecretRef, route)
+}
+
+func (r *AgentRunReconciler) pinRunSecret(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun, name string, route *harnessgateway.Route) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var secret corev1.Secret
-		if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.Model.AuthSecretRef}, &secret); err != nil {
-			return fmt.Errorf("reading model key Secret %q: %w", agentRun.Spec.Model.AuthSecretRef, err)
-		}
-		if route.Profile.Key(secret.Data) == "" {
-			return fmt.Errorf("model key Secret %q has none of the keys provider %q reads: %v", secret.Name, agentRun.Spec.Model.Provider, route.Profile.SecretKeys)
+		if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: name}, &secret); err != nil {
+			return refuseIfNotFound(fmt.Errorf("reading Secret %q: %w", name, err))
 		}
 		if modelkey.PinnedTo(&secret, route.Origin) {
 			return nil
@@ -281,10 +380,10 @@ func (r *AgentRunReconciler) applyModelMediation(ctx context.Context, agentRun *
 	secretName := harnessgateway.RunTokenSecretName(agentRun.Name)
 	var token corev1.Secret
 	if err := r.uncachedReader().Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: secretName}, &token); err != nil {
-		return fmt.Errorf("harnessPolicy.modelMediation needs a run model token, which this execution path did not prepare: %w", err)
+		return refuseIfNotFound(fmt.Errorf("harnessPolicy.modelMediation needs a run model token, which this execution path did not prepare: %w", err))
 	}
 	if !metav1.IsControlledBy(&token, agentRun) {
-		return fmt.Errorf("run model token Secret %s is not owned by this run", secretName)
+		return refuseMediation("run model token Secret %s is not owned by this run", secretName)
 	}
 
 	harness := &spec.Containers[0]
@@ -297,7 +396,7 @@ func (r *AgentRunReconciler) applyModelMediation(ctx context.Context, agentRun *
 	// A profile can't overwrite something the controller sets, such as TASK.
 	for _, name := range slices.Concat(profile.Env.BaseURL, profile.Env.APIKey) {
 		if slices.Contains(controllerOwned, name) || slices.ContainsFunc(harness.Env, func(e corev1.EnvVar) bool { return e.Name == name }) {
-			return fmt.Errorf("harness gateway profile %q sets %s, which the controller owns", profile.Name, name)
+			return refuseMediation("harness gateway profile %q sets %s, which the controller owns", profile.Name, name)
 		}
 	}
 
@@ -326,7 +425,10 @@ func (r *AgentRunReconciler) applyModelMediation(ctx context.Context, agentRun *
 			Items:       []corev1.KeyToPath{{Key: harnessgateway.CASecretKey, Path: harnessgateway.CASecretKey}},
 		},
 	}})
-	return assertNoModelSecretInPod(agentRun, spec)
+	if err := assertNoModelSecretInPod(agentRun, spec); err != nil {
+		return &modelMediationRefusal{err: err}
+	}
+	return nil
 }
 
 // assertNoModelSecretInPod is the last check on the promise the feature makes:

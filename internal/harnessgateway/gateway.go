@@ -155,7 +155,7 @@ func (g *Gateway) serve(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusForbidden, reasonNotMediated, namespace, name)
 		return
 	}
-	if routeErr != nil {
+	if routeErr != nil || !route.OperatorNamed {
 		refuse(w, http.StatusForbidden, reasonDestination, namespace, name)
 		return
 	}
@@ -271,6 +271,9 @@ func (g *Gateway) credentials(ctx context.Context, run *api.AgentRun, route *Rou
 		return "", nil, reasonKey, nil
 	}
 	model := run.Spec.Model
+	if !AgentNamesProvider(&agent, model.Provider, model.AuthSecretRef) {
+		return "", nil, reasonKey, nil
+	}
 	var secret corev1.Secret
 	if err := g.Reader.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: model.AuthSecretRef}, &secret); err != nil {
 		return "", nil, reasonKey, nil
@@ -293,12 +296,19 @@ func (g *Gateway) credentials(ctx context.Context, run *api.AgentRun, route *Rou
 		headers[http.CanonicalHeaderKey(name)] = value
 	}
 	if model.ProviderHeadersSecretRef != "" {
+		if !AgentNamesProvider(&agent, model.Provider, model.ProviderHeadersSecretRef) {
+			return "", nil, reasonKey, nil
+		}
 		var headerSecret corev1.Secret
 		if err := g.Reader.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: model.ProviderHeadersSecretRef}, &headerSecret); err != nil {
 			return "", nil, reasonKey, nil
 		}
-		if !secretUsable(&headerSecret, &agent, token.Annotations[HeadersSecretUIDAnnotation]) {
+		if !secretUsable(&headerSecret, &agent, token.Annotations[HeadersSecretUIDAnnotation]) || route.HoldsProviderKey(headerSecret.Data) {
 			return "", nil, reasonKey, nil
+		}
+		// Every entry goes upstream, so this Secret answers to the same pin as the key.
+		if !modelkey.PinnedTo(&headerSecret, route.Origin) {
+			return "", nil, reasonDestination, nil
 		}
 		for name, value := range headerSecret.Data {
 			headers[http.CanonicalHeaderKey(name)] = string(value)
@@ -312,6 +322,15 @@ func (g *Gateway) credentials(ctx context.Context, run *api.AgentRun, route *Rou
 		}
 	}
 	return apiKey, headers, "", nil
+}
+
+// AgentNamesProvider reports whether the Agent lists secret for this provider. The
+// Agent's owner decides which provider a Secret is for. A run sets its own
+// provider, so an entry that names no provider would let the run choose.
+func AgentNamesProvider(agent *api.Agent, provider, secret string) bool {
+	return slices.ContainsFunc(agent.Spec.AuthRefs, func(ref api.SecretRef) bool {
+		return ref.Secret == secret && ref.Provider != "" && strings.EqualFold(ref.Provider, strings.TrimSpace(provider))
+	})
 }
 
 // secretUsable holds a Secret to what was minted: the same object, not being

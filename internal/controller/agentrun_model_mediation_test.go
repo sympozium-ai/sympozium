@@ -34,8 +34,16 @@ profiles:
     paths: [/v1/messages]
     env: {baseURL: [ANTHROPIC_BASE_URL], apiKey: [ANTHROPIC_API_KEY]}
   - name: openai
-    providers: [openai, llama-server]
+    providers: [openai]
     upstream: https://api.openai.com
+    secretKeys: [OPENAI_API_KEY, API_KEY]
+    auth: {type: header, header: Authorization, prefix: "Bearer "}
+    paths: [/v1/chat/completions]
+    env: {baseURL: [OPENAI_BASE_URL], apiKey: [OPENAI_API_KEY]}
+    clientBasePath: /v1
+  - name: llama-server
+    providers: [llama-server]
+    upstream: http://llama.local:8080
     secretKeys: [OPENAI_API_KEY, API_KEY]
     auth: {type: header, header: Authorization, prefix: "Bearer "}
     paths: [/v1/chat/completions]
@@ -73,7 +81,10 @@ func mediatedRun(t *testing.T, name, provider, baseURL string, extra ...client.O
 	objects := append([]client.Object{run,
 		&sympoziumv1alpha1.Agent{
 			ObjectMeta: metav1.ObjectMeta{Name: "mediated-agent", Namespace: run.Namespace},
-			Spec:       sympoziumv1alpha1.AgentSpec{PolicyRef: "mediated"},
+			Spec: sympoziumv1alpha1.AgentSpec{PolicyRef: "mediated", AuthRefs: []sympoziumv1alpha1.SecretRef{
+				{Provider: provider, Secret: "model-key"}, {Provider: provider, Secret: "headers"},
+				{Provider: "llama-server", Secret: "model-key"}, {Provider: "llama-server", Secret: "headers"},
+			}},
 		},
 		&sympoziumv1alpha1.SympoziumPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: "mediated", Namespace: run.Namespace},
@@ -236,6 +247,9 @@ func TestMediationFailsClosed(t *testing.T) {
 		"the gateway not enabled":    func(r *AgentRunReconciler, _ *sympoziumv1alpha1.AgentRun) { r.HarnessGateway = nil },
 		"plain http to an unlisted origin": func(_ *AgentRunReconciler, run *sympoziumv1alpha1.AgentRun) {
 			run.Spec.Model.BaseURL = "http://attacker.example"
+		},
+		"https to an origin nobody listed": func(_ *AgentRunReconciler, run *sympoziumv1alpha1.AgentRun) {
+			run.Spec.Model.BaseURL = "https://attacker.example"
 		},
 		"the Agent Sandbox backend": func(_ *AgentRunReconciler, run *sympoziumv1alpha1.AgentRun) {
 			run.Spec.AgentSandbox = &sympoziumv1alpha1.AgentSandboxSpec{Enabled: true}

@@ -242,7 +242,7 @@ harnessGateway:
   profiles:
     - name: openrouter
       providers: [openrouter]            # values of spec.model.provider
-      upstream: https://openrouter.ai/api  # spec.model.baseURL replaces it
+      upstream: https://openrouter.ai/api  # the one origin this profile may reach
       secretKeys: [OPENROUTER_API_KEY, API_KEY]  # first one present in authSecretRef
       auth: {type: header, header: Authorization, prefix: "Bearer "}
       paths: [/v1/chat/completions]      # the allowlist; * matches one segment
@@ -287,6 +287,23 @@ The gateway answers 503 past `harnessGateway.maxConcurrent` calls in flight acro
 default), or past `harnessGateway.maxConcurrentPerRun` calls for one run (16 by default), with a
 `Retry-After` header. A streaming call counts until it ends, so raise these for more concurrent
 harnesses, or for a run that starts many subagents.
+
+During a rollout, the gateway lets calls in flight finish for `harnessGateway.drainSeconds` (30 by
+default). A stream that lasts longer is cut, and the harness has to retry it.
+
+The Agent must list each Secret in `spec.authRefs` with the run's provider. An entry with no provider
+doesn't count under `required`, because a run sets its own provider.
+
+Each profile has one origin, its `upstream`, and the gateway sends a key nowhere else.
+`spec.model.baseURL` may change the path, but a run with any other origin fails, even if its key is
+already pinned there, because a pin can come from a `ModelConnection`. `privateOrigins` and
+`insecureOrigins` only say an origin may be reached, not whose keys may go there. To reach another
+origin, such as a local `llama-server`, add a profile with its own provider name and that `upstream`.
+
+`providerHeadersSecretRef` follows the same rules, because the gateway sends each of its entries
+upstream. The first run pins this Secret too. A run refused for its Secrets, its origin or its provider pins
+nothing. A run fails if it is pinned to another origin, or if it
+holds a key any profile reads as a model key.
 
 A provider's 401, 403 and 407 keep their status, but the body is replaced, because auth errors are
 where a key gets echoed. Other error bodies pass through the echo check, so a harness can still act

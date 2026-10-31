@@ -227,11 +227,12 @@ harnessGateway:
   # -- Provider response headers relayed to harnesses, on top of allowed.yaml.
   extraAllowedResponseHeaders: []
   # -- Origins (scheme://host[:port]) the gateway may reach on private addresses,
-  # over HTTPS. The system CAs must trust them.
+  # over HTTPS. The system CAs must trust them. This allows the connection. A key
+  # goes there only if a profile's upstream names the origin.
   privateOrigins: []
   # -- Origins the gateway may send a key to over plain HTTP, on private addresses
   # only, such as a local llama-server that has a key. The key crosses the network
-  # in clear text.
+  # in clear text. A key goes there only if a profile's upstream names the origin.
   insecureOrigins: []
   # -- Calls in flight across all runs before the gateway answers 503, matching
   # the Celln gateway's default. A streaming call counts until it ends, so raise
@@ -242,6 +243,9 @@ harnessGateway:
   # a stolen token can't take every slot. A run that starts many subagents may
   # need more.
   maxConcurrentPerRun: 16
+  # -- Seconds a call in flight may finish during a rollout. The Pod's grace
+  # period is this plus 5. A stream that lasts longer is cut.
+  drainSeconds: 30
   # -- Tenant namespaces whose model Secrets and AgentRuns the gateway may read.
   # Empty keeps a cluster-wide get ClusterRole; a list replaces it with one
   # Role/RoleBinding per namespace (least privilege).

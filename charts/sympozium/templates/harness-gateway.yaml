@@ -188,6 +188,8 @@ spec:
         app.kubernetes.io/name: {{ $name }}
     spec:
       serviceAccountName: {{ $name }}
+      # Longer than the gateway's drain, or the kubelet ends it first.
+      terminationGracePeriodSeconds: {{ add (int (default 30 .Values.harnessGateway.drainSeconds)) 5 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -216,6 +218,8 @@ spec:
             - name: HARNESS_GATEWAY_MAX_CONCURRENT_PER_RUN
               value: {{ . | quote }}
             {{- end }}
+            - name: HARNESS_GATEWAY_DRAIN_SECONDS
+              value: {{ default 30 .Values.harnessGateway.drainSeconds | int | quote }}
           ports:
             - name: https
               containerPort: 8443

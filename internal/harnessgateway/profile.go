@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -91,13 +92,17 @@ type Set struct {
 	allowedResponseHeaders []string
 	byProvider             map[string]*Profile
 	// Rejected describes each entry that was skipped. A skipped entry leaves
-	// its provider without a profile, so its runs fail closed.
+	// its provider without a profile, even one an earlier entry set, so its runs
+	// fail closed.
 	Rejected []string
 }
 
 // ParseSet reads a profiles file. A malformed entry is skipped and reported in
 // Rejected. A later entry for a provider replaces an earlier one, so values can
-// override what the chart ships.
+// override what the chart ships. A malformed override also removes what it meant
+// to replace: an operator who pointed a provider at a proxy doesn't want a typo to
+// send keys back to the provider's own origin. An entry too malformed to say what
+// it meant to replace fails the whole file.
 func ParseSet(data []byte) (*Set, error) {
 	var file struct {
 		PrivateOrigins         []string          `json:"privateOrigins"`
@@ -139,6 +144,9 @@ func ParseSet(data []byte) (*Set, error) {
 		profile, err := decodeProfile(raw, set)
 		if err != nil {
 			set.Rejected = append(set.Rejected, fmt.Sprintf("profile %d: %v", i, err))
+			if err := set.removeTarget(raw); err != nil {
+				return nil, fmt.Errorf("profile %d: %w", i, err)
+			}
 			continue
 		}
 		for _, provider := range profile.Providers {
@@ -146,6 +154,23 @@ func ParseSet(data []byte) (*Set, error) {
 		}
 	}
 	return set, nil
+}
+
+// removeTarget removes the profiles a rejected entry meant to replace. The name
+// counts as well as the providers, because a typo can leave the providers empty.
+func (s *Set) removeTarget(raw json.RawMessage) error {
+	var target struct {
+		Name      string   `json:"name"`
+		Providers []string `json:"providers"`
+	}
+	if err := json.Unmarshal(raw, &target); err != nil || (target.Name == "" && len(target.Providers) == 0) {
+		return errors.New("the entry is malformed and doesn't say which provider it is for")
+	}
+	maps.DeleteFunc(s.byProvider, func(provider string, profile *Profile) bool {
+		return (target.Name != "" && profile.Name == target.Name) ||
+			slices.ContainsFunc(target.Providers, func(name string) bool { return strings.EqualFold(name, provider) })
+	})
+	return nil
 }
 
 func decodeProfile(raw json.RawMessage, set *Set) (*Profile, error) {
@@ -288,6 +313,13 @@ func validPath(path string) bool {
 // PathAllowed reports whether the profile allows this request path.
 func (p *Profile) PathAllowed(path string) bool {
 	got := strings.Split(path, "/")
+	// These would change what the path means once it is part of a URL, and a *
+	// must not match them.
+	if slices.ContainsFunc(got, func(segment string) bool {
+		return segment == "." || segment == ".." || strings.ContainsAny(segment, "?#%")
+	}) {
+		return false
+	}
 	return slices.ContainsFunc(p.Paths, func(allowed string) bool {
 		want := strings.Split(allowed, "/")
 		if len(want) != len(got) {
@@ -309,6 +341,13 @@ type Route struct {
 	Upstream string
 	// Origin is scheme://host[:port], lowercased: what the key is pinned to.
 	Origin string
+	// OperatorNamed says Origin is the origin of the provider's profile. The gateway
+	// sends a key nowhere else. A run can set baseURL, and an API caller can
+	// pin a key through a ModelConnection, but neither decides where a key they may
+	// not read goes.
+	OperatorNamed bool
+	// providerKeyNames are the Secret keys any profile reads a model key from.
+	providerKeyNames []string
 	// Private means the origin is on an operator's list, so private addresses are
 	// allowed for it.
 	Private bool
@@ -354,7 +393,15 @@ func (s *Set) Route(provider, baseURL string) (*Route, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Route{Profile: profile, Upstream: strings.TrimRight(upstream, "/"), Origin: origin, Private: private, allowedResponseHeaders: s.allowedResponseHeaders}, nil
+	profileOrigin, _, err := s.upstreamOrigin(profile.Upstream)
+	// Each profile has one origin. The private and insecure lists say an origin may
+	// be reached, not whose keys may go there.
+	operatorNamed := err == nil && origin == profileOrigin
+	var providerKeyNames []string
+	for _, known := range s.byProvider {
+		providerKeyNames = append(providerKeyNames, known.SecretKeys...)
+	}
+	return &Route{Profile: profile, Upstream: strings.TrimRight(upstream, "/"), Origin: origin, OperatorNamed: operatorNamed, providerKeyNames: providerKeyNames, Private: private, allowedResponseHeaders: s.allowedResponseHeaders}, nil
 }
 
 func (s *Set) upstreamOrigin(upstream string) (string, bool, error) {
@@ -370,6 +417,16 @@ func (s *Set) upstreamOrigin(upstream string) (string, bool, error) {
 	return origin, insecure || slices.Contains(s.privateOrigins, origin), nil
 }
 
+// HoldsProviderKey reports whether a provider headers Secret holds a model key.
+// Its entries go upstream as headers, so a key named there would skip the profile
+// that decides where that key goes.
+func (r *Route) HoldsProviderKey(data map[string][]byte) bool {
+	return slices.ContainsFunc(r.providerKeyNames, func(name string) bool {
+		_, held := data[name]
+		return held
+	})
+}
+
 // URL is where a request path goes. An upstream that ends in /v1 and a path
 // that starts with it share one /v1.
 func (r *Route) URL(path, rawQuery string) string {
@@ -377,7 +434,7 @@ func (r *Route) URL(path, rawQuery string) string {
 	if strings.HasSuffix(target, "/v1") && strings.HasPrefix(path, "/v1/") {
 		target = strings.TrimSuffix(target, "/v1")
 	}
-	target += path
+	target += (&url.URL{Path: path}).EscapedPath()
 	if rawQuery != "" {
 		target += "?" + rawQuery
 	}

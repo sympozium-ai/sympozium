@@ -2,8 +2,9 @@
 # Integration test: a harness reaches its model through the harness gateway,
 # and the real key never enters the run pod (docs/modes/harness-adapters.md).
 #
-# Requires: a cluster with Sympozium deployed with harnessGateway.enabled, and
-# the upstream's origin in harnessGateway.privateOrigins if it is private.
+# Requires: a cluster with Sympozium deployed with harnessGateway.enabled, a
+# profile for MEDIATION_PROVIDER whose upstream has MEDIATION_BASE_URL's origin, and
+# that origin in harnessGateway.privateOrigins if it is private.
 #
 #   MEDIATION_HARNESS_IMAGE  digest-pinned image with sh and curl (required)
 #   MEDIATION_BASE_URL       OpenAI-compatible upstream, ending in /v1 (required)

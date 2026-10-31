@@ -366,8 +366,17 @@ func TestAnUnlistedPrivateAddressIsNotDialled(t *testing.T) {
 	var reached atomic.Bool
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Store(true) }))
 	defer upstream.Close()
-	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
-	gateway := f.serve(t, shippedProfiles(t, "https://elsewhere.example", ""))
+	// An operator named this origin, but not as private, which the dialer still refuses.
+	profile := `- name: named
+  providers: [named]
+  upstream: ` + upstream.URL + `
+  secretKeys: [OPENAI_API_KEY]
+  auth: {type: header, header: Authorization, prefix: "Bearer "}
+  paths: [/v1/chat/completions]
+  env: {baseURL: [OPENAI_BASE_URL], apiKey: [OPENAI_API_KEY]}
+`
+	f := newFixture("named", "OPENAI_API_KEY", upstream.URL)
+	gateway := f.serve(t, shippedProfiles(t, "https://elsewhere.example", profile))
 	response, body := call(t, gateway, chatPath, bearer())
 	if response.StatusCode != http.StatusBadGateway || reached.Load() {
 		t.Errorf("status = %d, reached = %v", response.StatusCode, reached.Load())
@@ -853,7 +862,7 @@ allowedAuthHeaders: [X-Custom-Key]
 profiles:
   - name: custom
     providers: [custom]
-    upstream: https://custom.example
+    upstream: ` + upstream.URL + `
     secretKeys: [API_KEY]
     auth: {type: header, header: X-Custom-Key}
     paths: [/v1/x]
@@ -934,7 +943,7 @@ allowedAuthHeaders: [X-Base-Key, X-Variant-Key]
 profiles:
   - name: custom
     providers: [custom]
-    upstream: https://custom.example
+    upstream: ` + upstream.URL + `
     secretKeys: [API_KEY]
     auth: {type: header, header: X-Base-Key}
     credentials:

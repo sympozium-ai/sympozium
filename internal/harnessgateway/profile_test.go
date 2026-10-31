@@ -2,6 +2,7 @@ package harnessgateway
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -172,5 +173,75 @@ func TestLoaderFailsClosedWithoutTheConfigMap(t *testing.T) {
 	loader := &Loader{Reader: fake.NewClientBuilder().WithScheme(scheme).Build(), Name: "profiles", Namespace: "sys"}
 	if _, err := loader.Load(context.Background()); err == nil {
 		t.Error("a missing ConfigMap must be an error")
+	}
+}
+
+// A broken override must not leave the entry it meant to replace. That entry
+// would send the operator's key somewhere the operator chose to stop using.
+func TestARejectedOverrideLeavesItsProviderWithNoProfile(t *testing.T) {
+	shipped := strings.Replace(goodProfile, "name: good", "name: shipped", 1)
+	provider := "good"
+	for name, override := range map[string]string{
+		"an invalid auth type": strings.Replace(goodProfile, "type: header", "type: nope", 1),
+		"a typo in providers":  strings.Replace(goodProfile, "providers:", "provider:", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			named := strings.Replace(override, "name: good", "name: shipped", 1)
+			set, err := ParseSet([]byte(allowLists + "profiles:\n" + indent(shipped) + indent(named)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(set.Rejected) != 1 {
+				t.Fatalf("rejected = %v", set.Rejected)
+			}
+			var noProfile *NoProfileError
+			if _, err := set.Route(provider, ""); !errors.As(err, &noProfile) {
+				t.Errorf("Route err = %v, want NoProfileError", err)
+			}
+		})
+	}
+	t.Run("a later valid entry still applies", func(t *testing.T) {
+		broken := strings.Replace(goodProfile, "type: header", "type: nope", 1)
+		set, err := ParseSet([]byte(allowLists + "profiles:\n" + indent(shipped) + indent(broken) + indent(shipped)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := set.Route(provider, ""); err != nil {
+			t.Errorf("Route: %v", err)
+		}
+	})
+	t.Run("an entry that names no target fails the whole file", func(t *testing.T) {
+		if _, err := ParseSet([]byte(allowLists + "profiles:\n" + indent(shipped) + "  - upstream: https://proxy.example\n")); err == nil {
+			t.Error("no way to tell which provider this entry meant, so no profile can be trusted")
+		}
+		if _, err := ParseSet([]byte(allowLists + "profiles:\n" + indent(shipped) + "  - providers: 7\n")); err == nil {
+			t.Error("providers that can't be read must fail the file")
+		}
+	})
+}
+
+func TestPathAllowedRefusesWhatAWildcardMustNotMatch(t *testing.T) {
+	profile := &Profile{Paths: []string{"/openai/deployments/*/chat"}}
+	if !profile.PathAllowed("/openai/deployments/gpt-4.1/chat") {
+		t.Error("an ordinary segment must match")
+	}
+	for _, segment := range []string{"a?b", "a#b", "a%b", ".", "..", "a?", "?"} {
+		if profile.PathAllowed("/openai/deployments/" + segment + "/chat") {
+			t.Errorf("%q matched", segment)
+		}
+	}
+}
+
+func TestRouteURLEscapesThePath(t *testing.T) {
+	route := &Route{Upstream: "https://example.test/api/v1"}
+	for _, tc := range []struct{ path, query, want string }{
+		{"/v1/chat", "", "https://example.test/api/v1/chat"},
+		{"/v1/chat", "api-version=1", "https://example.test/api/v1/chat?api-version=1"},
+		{"/x/a?b/c", "", "https://example.test/api/v1/x/a%3Fb/c"},
+		{"/x/a#b", "", "https://example.test/api/v1/x/a%23b"},
+	} {
+		if got := route.URL(tc.path, tc.query); got != tc.want {
+			t.Errorf("URL(%q, %q) = %q, want %q", tc.path, tc.query, got, tc.want)
+		}
 	}
 }

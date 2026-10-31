@@ -59,6 +59,7 @@ func TestHarnessGatewayRender(t *testing.T) {
 		"HARNESS_GATEWAY_MAX_CONCURRENT",
 		"value: \"32\"",
 		"HARNESS_GATEWAY_MAX_CONCURRENT_PER_RUN",
+		"terminationGracePeriodSeconds: 35",
 		"value: \"16\"",
 		"https://harness-gateway.sympozium-system.svc",
 		"sympozium.ai/agent-run",
@@ -66,6 +67,19 @@ func TestHarnessGatewayRender(t *testing.T) {
 		"app.kubernetes.io/name: harness-gateway",
 	} {
 		if !strings.Contains(out, want) {
+			t.Errorf("render is missing %q", want)
+		}
+	}
+}
+
+// The kubelet must not end the gateway before its drain does.
+func TestHarnessGatewayGraceFollowsTheDrain(t *testing.T) {
+	raw, err := renderNativeParent(t, []string{"harnessGateway.enabled=true", "harnessGateway.tls.secretName=gateway-tls", "harnessGateway.drainSeconds=60"})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, raw)
+	}
+	for _, want := range []string{"HARNESS_GATEWAY_DRAIN_SECONDS", "value: \"60\"", "terminationGracePeriodSeconds: 65"} {
+		if !strings.Contains(string(raw), want) {
 			t.Errorf("render is missing %q", want)
 		}
 	}

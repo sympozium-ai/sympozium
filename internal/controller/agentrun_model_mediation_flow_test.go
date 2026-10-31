@@ -40,7 +40,7 @@ allowedAuthHeaders: [Authorization]
 profiles:
   - name: openai
     providers: [openai]
-    upstream: https://api.openai.com
+    upstream: ` + insecureOrigin + `
     secretKeys: [OPENAI_API_KEY]
     auth: {type: header, header: Authorization, prefix: "Bearer "}
     paths: [/v1/chat/completions]
@@ -189,7 +189,7 @@ func TestResolveGate_AMediatedSuccessorGetsItsOwnTokenAndThePredecessorsDies(t *
 	ctx := context.Background()
 	template, _ := mediatedRun(t, "unused", "anthropic", "")
 	for _, obj := range []client.Object{
-		&sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "mediated-agent", Namespace: run.Namespace}, Spec: sympoziumv1alpha1.AgentSpec{PolicyRef: "mediated"}},
+		&sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "mediated-agent", Namespace: run.Namespace}, Spec: sympoziumv1alpha1.AgentSpec{PolicyRef: "mediated", AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "anthropic", Secret: "model-key"}}}},
 		&sympoziumv1alpha1.SympoziumPolicy{ObjectMeta: metav1.ObjectMeta{Name: "mediated", Namespace: run.Namespace}, Spec: sympoziumv1alpha1.SympoziumPolicySpec{HarnessPolicy: &sympoziumv1alpha1.HarnessPolicySpec{Enabled: true, AllowUnmetered: true, ModelMediation: sympoziumv1alpha1.ModelMediationRequired}}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "model-key", Namespace: run.Namespace}, Data: map[string][]byte{"ANTHROPIC_API_KEY": []byte(realKeyValue)}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "gateway-cert", Namespace: "sympozium-system"}, Data: map[string][]byte{"ca.crt": []byte(mediationCA)}},
@@ -254,7 +254,7 @@ func grantKey(t *testing.T, r *AgentRunReconciler, run *sympoziumv1alpha1.AgentR
 	if err := r.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: run.Spec.AgentRef}, &agent); err != nil {
 		t.Fatal(err)
 	}
-	agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Provider: run.Spec.Model.Provider, Secret: "model-key"}, {Secret: "headers"}}
+	agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Provider: run.Spec.Model.Provider, Secret: "model-key"}, {Provider: run.Spec.Model.Provider, Secret: "headers"}}
 	if err := r.Update(ctx, &agent); err != nil {
 		t.Fatal(err)
 	}
@@ -469,6 +469,14 @@ func TestABindingRecordsWhatTheTokenWasMintedFor(t *testing.T) {
 	run.Spec.Model.Provider = "llama-server"
 	key.Annotations[modelkey.OriginAnnotation] = "http://llama.local:8080"
 	if err := r.Update(ctx, &key); err != nil {
+		t.Fatal(err)
+	}
+	var pinnedHeaders corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "headers"}, &pinnedHeaders); err != nil {
+		t.Fatal(err)
+	}
+	pinnedHeaders.Annotations[modelkey.OriginAnnotation] = "http://llama.local:8080"
+	if err := r.Update(ctx, &pinnedHeaders); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.ensureRunModelToken(ctx, run); err != nil {
@@ -781,5 +789,294 @@ func TestOnlyTheControllerCanSayARunIsMediated(t *testing.T) {
 	}
 	if mediatedEnv(spec.Containers[0], "KEPT") == nil {
 		t.Error("other env was removed")
+	}
+}
+
+func TestAnUnpinnedKeyIsNotPinnedToAnOriginTheRunChose(t *testing.T) {
+	ctx := context.Background()
+	key := func(t *testing.T, r *AgentRunReconciler) *corev1.Secret {
+		t.Helper()
+		var secret corev1.Secret
+		if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "model-key"}, &secret); err != nil {
+			t.Fatal(err)
+		}
+		return &secret
+	}
+	t.Run("an unlisted origin is refused and nothing is written", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "https://attacker.example")
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		if got := modelkey.PinnedOrigin(key(t, r)); got != "" {
+			t.Errorf("the key was pinned to %q", got)
+		}
+		if runToken(t, r, run) != nil {
+			t.Error("a token was minted")
+		}
+	})
+	// The pin isn't enough. An API caller can pin a key through a ModelConnection,
+	// so the gateway must not take a pin as an operator naming the origin.
+	t.Run("a key already pinned to an unlisted origin is refused", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "https://evil.example")
+		secret := key(t, r)
+		secret.Annotations = map[string]string{modelkey.OriginAnnotation: "https://evil.example"}
+		if err := r.Update(ctx, secret); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		if runToken(t, r, run) != nil {
+			t.Error("a token was minted")
+		}
+	})
+	t.Run("a baseURL at the profile's own origin may pin", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "https://API.anthropic.com/")
+		if err := r.ensureRunModelToken(ctx, run); err != nil {
+			t.Fatal(err)
+		}
+		if got := modelkey.PinnedOrigin(key(t, r)); got != "https://api.anthropic.com" {
+			t.Errorf("pinned to %q", got)
+		}
+	})
+}
+
+// failingReads makes r's reads of one object fail with a server error while when
+// says so, the way an API server blip would.
+func failingReads(t *testing.T, r *AgentRunReconciler, match func(client.Object, client.ObjectKey) bool, when func() bool) {
+	t.Helper()
+	inner, ok := r.Client.(client.WithWatch)
+	if !ok {
+		t.Fatalf("client is %T", r.Client)
+	}
+	r.Client = interceptor.NewClient(inner, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if match(obj, key) && when() {
+				return apierrors.NewInternalError(errors.New("api server blip"))
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	r.APIReader = r.Client
+	r.HarnessGateway.Reader = r.Client
+}
+
+func always() bool { return true }
+
+func TestATransientReadDoesNotFailTheRun(t *testing.T) {
+	ctx := context.Background()
+	assertWaiting := func(t *testing.T, r *AgentRunReconciler, run *sympoziumv1alpha1.AgentRun) {
+		t.Helper()
+		if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(run)}); err == nil {
+			t.Error("Reconcile should return the error, so the run is retried")
+		}
+		if got := getRun(t, r, run.Name); got.Status.Phase == sympoziumv1alpha1.AgentRunPhaseFailed {
+			t.Errorf("the run failed for good: %s", got.Status.Error)
+		}
+		if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: run.Name}, &batchv1.Job{}); !apierrors.IsNotFound(err) {
+			t.Errorf("a Job exists: err = %v", err)
+		}
+	}
+	t.Run("reading the gateway CA", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		grantKey(t, r, run)
+		failingReads(t, r, func(_ client.Object, key client.ObjectKey) bool { return key.Name == "gateway-cert" }, always)
+		assertWaiting(t, r, run)
+	})
+	t.Run("loading the profiles", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		grantKey(t, r, run)
+		r.HarnessGateway.Profiles = failingProfiles{}
+		assertWaiting(t, r, run)
+	})
+	t.Run("reading the token while rendering the pod", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		grantKey(t, r, run)
+		// Mint first, so only the read in applyModelMediation can fail.
+		if err := r.ensureRunModelToken(ctx, run); err != nil {
+			t.Fatal(err)
+		}
+		reads := 0
+		failingReads(t, r, func(_ client.Object, key client.ObjectKey) bool {
+			return key.Name == harnessgateway.RunTokenSecretName(run.Name)
+		}, func() bool { reads++; return reads > 1 })
+		assertWaiting(t, r, run)
+	})
+	// Earlier steps of a reconcile also read the policy and fail the run, so this
+	// one checks mediation's own read.
+	t.Run("reading the policy for the mediation check", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		failingReads(t, r, func(obj client.Object, _ client.ObjectKey) bool {
+			_, isPolicy := obj.(*sympoziumv1alpha1.SympoziumPolicy)
+			return isPolicy
+		}, always)
+		err := r.ensureRunModelToken(ctx, run)
+		if err == nil || isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want an error to retry", err)
+		}
+	})
+}
+
+func TestARefusalStillFailsTheRun(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"an origin the run chose": "https://attacker.example",
+		"plain http":              "http://attacker.example",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, run := mediatedRun(t, "run-a", "anthropic", baseURL)
+			grantKey(t, r, run)
+			got := reconcileMediated(t, r, run)
+			if got.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed {
+				t.Errorf("phase = %s", got.Status.Phase)
+			}
+		})
+	}
+	t.Run("a missing gateway CA", func(t *testing.T) {
+		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		grantKey(t, r, run)
+		r.HarnessGateway.CASecret.Name = "absent"
+		if got := reconcileMediated(t, r, run); got.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed {
+			t.Errorf("phase = %s", got.Status.Phase)
+		}
+	})
+}
+
+func TestAHeadersSecretFollowsThePinRules(t *testing.T) {
+	ctx := context.Background()
+	build := func(t *testing.T, annotations map[string]string, data map[string][]byte) (*AgentRunReconciler, *sympoziumv1alpha1.AgentRun) {
+		t.Helper()
+		headers := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "default", UID: "headers-uid", Annotations: annotations},
+			Data:       data,
+		}
+		r, run := mediatedRun(t, "run-a", "anthropic", "", headers)
+		run.Spec.Model.ProviderHeadersSecretRef = "headers"
+		return r, run
+	}
+	plain := map[string][]byte{"X-Tenant": []byte("tenant-value")}
+	t.Run("an unpinned one is pinned to the run's origin", func(t *testing.T) {
+		r, run := build(t, nil, plain)
+		if err := r.ensureRunModelToken(ctx, run); err != nil {
+			t.Fatal(err)
+		}
+		var headers corev1.Secret
+		if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "headers"}, &headers); err != nil {
+			t.Fatal(err)
+		}
+		if got := modelkey.PinnedOrigin(&headers); got != "https://api.anthropic.com" {
+			t.Errorf("pinned to %q", got)
+		}
+	})
+	t.Run("one pinned elsewhere is refused", func(t *testing.T) {
+		r, run := build(t, map[string]string{modelkey.OriginAnnotation: "https://api.openai.com"}, plain)
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		if runToken(t, r, run) != nil {
+			t.Error("a token was minted")
+		}
+	})
+	t.Run("a model key used as headers is refused", func(t *testing.T) {
+		r, run := build(t, nil, map[string][]byte{"OPENAI_API_KEY": []byte("another-real-key")})
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		if runToken(t, r, run) != nil {
+			t.Error("a token was minted")
+		}
+	})
+}
+
+// The Agent's owner decides which provider a Secret is for, not whoever creates
+// the run. A refused run writes nothing.
+func TestTheAgentMustNameTheRunsProvider(t *testing.T) {
+	ctx := context.Background()
+	headers := func() *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "default", UID: "headers-uid"},
+			Data:       map[string][]byte{"X-Tenant": []byte("tenant-value")},
+		}
+	}
+	for name, refs := range map[string][]sympoziumv1alpha1.SecretRef{
+		"the key with no provider":     {{Secret: "model-key"}, {Provider: "anthropic", Secret: "headers"}},
+		"the key for another provider": {{Provider: "openai", Secret: "model-key"}, {Provider: "anthropic", Secret: "headers"}},
+		"headers with no provider":     {{Provider: "anthropic", Secret: "model-key"}, {Secret: "headers"}},
+		"headers for another provider": {{Provider: "anthropic", Secret: "model-key"}, {Provider: "openai", Secret: "headers"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, run := mediatedRun(t, "run-a", "anthropic", "", headers())
+			run.Spec.Model.ProviderHeadersSecretRef = "headers"
+			var agent sympoziumv1alpha1.Agent
+			if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: "mediated-agent"}, &agent); err != nil {
+				t.Fatal(err)
+			}
+			agent.Spec.AuthRefs = refs
+			if err := r.Update(ctx, &agent); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+				t.Errorf("err = %v, want a refusal", err)
+			}
+			assertNoPins(t, r)
+			if runToken(t, r, run) != nil {
+				t.Error("a token was minted")
+			}
+		})
+	}
+}
+
+func assertNoPins(t *testing.T, r *AgentRunReconciler) {
+	t.Helper()
+	for _, name := range []string{"model-key", "headers"} {
+		var secret corev1.Secret
+		err := r.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: name}, &secret)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := modelkey.PinnedOrigin(&secret); got != "" {
+			t.Errorf("%s was pinned to %q", name, got)
+		}
+	}
+}
+
+// A run refused for any reason must not leave its key locked to an origin.
+func TestARefusedRunLeavesNoPin(t *testing.T) {
+	ctx := context.Background()
+	t.Run("a headers Secret holding a model key", func(t *testing.T) {
+		headers := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "default", UID: "headers-uid"},
+			Data:       map[string][]byte{"OPENAI_API_KEY": []byte("another-real-key")},
+		}
+		r, run := mediatedRun(t, "run-a", "anthropic", "", headers)
+		run.Spec.Model.ProviderHeadersSecretRef = "headers"
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		assertNoPins(t, r)
+	})
+	t.Run("a missing gateway CA", func(t *testing.T) {
+		headers := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "headers", Namespace: "default", UID: "headers-uid"}}
+		r, run := mediatedRun(t, "run-a", "anthropic", "", headers)
+		r.HarnessGateway.CASecret.Name = "absent"
+		if err := r.ensureRunModelToken(ctx, run); !isModelMediationRefusal(err) {
+			t.Errorf("err = %v, want a refusal", err)
+		}
+		assertNoPins(t, r)
+	})
+}
+
+// A listed origin says it may be reached, not whose keys may go there. A key for
+// one provider must not reach a server listed for another.
+func TestAnOriginBelongsToItsProfile(t *testing.T) {
+	r, run := mediatedRun(t, "run-a", "anthropic", "http://llama.local:8080/v1")
+	if err := r.ensureRunModelToken(context.Background(), run); !isModelMediationRefusal(err) {
+		t.Errorf("err = %v, want a refusal", err)
+	}
+	assertNoPins(t, r)
+	if runToken(t, r, run) != nil {
+		t.Error("a token was minted")
 	}
 }
