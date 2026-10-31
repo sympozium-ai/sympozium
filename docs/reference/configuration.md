@@ -9,6 +9,7 @@
 | `INSTANCE_NAME` | Channels | Owning Agent name |
 | `MEMORY_ENABLED` | Agent Runner | Whether persistent memory is active |
 | `MAX_TOOL_ITERATIONS` | Agent Runner | Maximum LLM round-trips before the agent stops (default: 50). Each round may contain multiple parallel tool calls. Can also be set per-run via `spec.env` in AgentRun CR. |
+| `MAX_TOOL_OUTPUT_BYTES` | Agent Runner | Per-tool content byte limit for MCP, `read_file`, `execute_command`, and SkillPack sidecar results (default: 8000; must be positive; truncation hints are additional). Can be set per-run via `spec.env` in an AgentRun. |
 | `DETAILED_LOG_PATH` | Agent Runner | Directory for untruncated JSONL log files. Empty = disabled. See [Detailed Logging](../guides/detailed-logging.md). |
 | `DETAILED_LOG_MAX_SIZE` | Agent Runner | Max size per log file before rotation (default: `50m`). Supports `m` (MB) and `g` (GB) suffixes. |
 | `CONTEXT_TOOL_RESULT_MAX_BYTES` | Agent Runner | Per-result cap on tool output entering the conversation (default: 0 = off). See [Context Cost](../guides/context-cost.md). |

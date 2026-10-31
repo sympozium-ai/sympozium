@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/sympozium-ai/sympozium/internal/tooloutput"
 )
 
 func TestNormalizeSidecarTarget(t *testing.T) {
@@ -177,6 +180,7 @@ func TestReadFileTool_RangedReads(t *testing.T) {
 }
 
 func TestReadFileTool_CapTruncatesAtLineBoundary(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "")
 	// 500 lines of 40 chars (41 bytes with newline) — well past the 8000-byte cap.
 	var b strings.Builder
 	for i := 1; i <= 500; i++ {
@@ -205,12 +209,44 @@ func TestReadFileTool_CapTruncatesAtLineBoundary(t *testing.T) {
 }
 
 func TestReadFileTool_SingleLineOverCap(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "")
 	path := writeReadFileFixture(t, strings.Repeat("y", 9_000))
 
 	got := readFileTool(map[string]any{"path": path})
-	want := strings.Repeat("y", 8_000) + "\n... (truncated mid-line 1 of 1; line exceeds the 8000-byte cap)"
+	want := strings.Repeat("y", 8_000) + "\n... (truncated mid-line 1 of 1; line exceeds the 8000-byte cap, so line-based pagination cannot continue)"
 	if got != want {
 		t.Fatalf("over-cap single line read tail = %q, want mid-line truncation message", got[len(got)-80:])
+	}
+}
+
+func TestReadFileTool_ConfiguredLimit(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "10")
+	path := writeReadFileFixture(t, "first\nsecond\nthird\n")
+	got := readFileTool(map[string]any{"path": path})
+	want := "first\n... (truncated at line 1 of 3; continue with offset=2)"
+	if got != want {
+		t.Fatalf("readFileTool() = %q, want %q", got, want)
+	}
+}
+
+func TestReadFileTool_ConfiguredLimitPreservesUTF8(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "4")
+	path := writeReadFileFixture(t, "ab日本語\n")
+	got := readFileTool(map[string]any{"path": path})
+	if !utf8.ValidString(got) {
+		t.Fatalf("readFileTool() returned invalid UTF-8: %q", got)
+	}
+	if !strings.HasPrefix(got, "ab\n... (truncated mid-line 1 of 1; line exceeds the 4-byte cap") {
+		t.Fatalf("readFileTool() = %q, want UTF-8-safe truncation hint", got)
+	}
+}
+
+func TestFormatExecResult_ConfiguredLimit(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "5")
+	got := formatExecResult(execResult{Stdout: "abcdefgh"})
+	want := "abcde\n... (output truncated at 5 bytes; use command pagination or narrower output to retrieve the rest)"
+	if got != want {
+		t.Fatalf("formatExecResult() = %q, want %q", got, want)
 	}
 }
 

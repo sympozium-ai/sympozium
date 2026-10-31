@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/sympozium-ai/sympozium/internal/tooloutput"
 )
 
 func TestLoadMCPTools(t *testing.T) {
@@ -114,6 +117,7 @@ func TestLoadMCPToolsInvalidJSON(t *testing.T) {
 }
 
 func TestFormatMCPResult(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "")
 	tests := []struct {
 		name   string
 		result mcpResult
@@ -175,6 +179,46 @@ func TestFormatMCPResult(t *testing.T) {
 			got := formatMCPResult(tt.result, "test-tool")
 			if got != tt.want {
 				t.Errorf("formatMCPResult() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatMCPResult_ConfiguredLimit(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "5")
+	got := formatMCPResult(mcpResult{
+		Success: true,
+		Content: mustMarshal([]mcpContent{{Type: "text", Text: "abcdefgh"}}),
+	}, "test-tool")
+	want := "abcde\n... (output truncated at 5 bytes; use the MCP tool's pagination parameters or a narrower query to retrieve the rest)"
+	if got != want {
+		t.Fatalf("formatMCPResult() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatMCPResult_ConfiguredLimitCoversErrorAndRawContent(t *testing.T) {
+	t.Setenv(tooloutput.MaxBytesEnv, "5")
+	tests := []struct {
+		name   string
+		result mcpResult
+		prefix string
+	}{
+		{
+			name:   "error",
+			result: mcpResult{Error: "failure"},
+			prefix: "MCP E",
+		},
+		{
+			name:   "raw content fallback",
+			result: mcpResult{Success: true, Content: []byte("raw content")},
+			prefix: "raw c",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatMCPResult(tt.result, "test-tool")
+			if !strings.HasPrefix(got, tt.prefix+"\n... (output truncated at 5 bytes;") {
+				t.Errorf("formatMCPResult() = %q, want truncated prefix %q", got, tt.prefix)
 			}
 		})
 	}

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 )
 
 // mcpToolManifest mirrors mcpbridge.MCPToolManifest for JSON deserialization.
@@ -213,6 +212,7 @@ func executeMCPTool(ctx context.Context, tool mcpToolEntry, argsJSON string) str
 
 // formatMCPResult converts an MCP result to a string for the LLM.
 func formatMCPResult(r mcpResult, toolName string) string {
+	var output string
 	if !r.Success || r.IsError {
 		var errMsg string
 		if r.Error != "" {
@@ -231,41 +231,26 @@ func formatMCPResult(r mcpResult, toolName string) string {
 				errMsg = "MCP Error: unknown error"
 			}
 		}
-		return errMsg
-	}
-
-	var content []mcpContent
-	if err := json.Unmarshal(r.Content, &content); err != nil {
-		return string(r.Content)
-	}
-
-	var sb strings.Builder
-	for _, c := range content {
-		if c.Text != "" {
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
+		output = errMsg
+	} else {
+		var content []mcpContent
+		if err := json.Unmarshal(r.Content, &content); err != nil {
+			output = string(r.Content)
+		} else {
+			var sb strings.Builder
+			for _, c := range content {
+				if c.Text != "" {
+					if sb.Len() > 0 {
+						sb.WriteString("\n")
+					}
+					sb.WriteString(c.Text)
+				}
 			}
-			sb.WriteString(c.Text)
+			output = sb.String()
+			if output == "" {
+				output = "(no output)"
+			}
 		}
 	}
-
-	output := sb.String()
-	if output == "" {
-		output = "(no output)"
-	}
-	if len(output) > 8_000 {
-		// Back off over a rune split by the cut — at most UTFMax-1 bytes. Only
-		// the trailing rune is examined: validating the whole prefix would be
-		// quadratic and would rewind to the first invalid byte anywhere in the
-		// output, discarding everything after it for binary-ish results.
-		truncated := output[:8_000]
-		for i := 0; i < utf8.UTFMax-1 && len(truncated) > 0; i++ {
-			if r, size := utf8.DecodeLastRuneInString(truncated); r != utf8.RuneError || size > 1 {
-				break
-			}
-			truncated = truncated[:len(truncated)-1]
-		}
-		output = truncated + "\n... (output truncated)"
-	}
-	return output
+	return truncateToolOutput(output, toolOutputMaxBytes(), "use the MCP tool's pagination parameters or a narrower query to retrieve the rest")
 }
