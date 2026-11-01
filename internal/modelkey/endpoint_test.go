@@ -160,12 +160,20 @@ func TestLocalProviderDefaultsNeedAPin(t *testing.T) {
 }
 
 func TestIsRoutingEnvVar(t *testing.T) {
-	for _, name := range []string{"MODEL_BASE_URL", "ANTHROPIC_BASE_URL", "openai_base_url", "MODEL_PROVIDER_HEADERS", "AZURE_OPENAI_ENDPOINT", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "MODEL_PROVIDER"} {
+	for _, name := range []string{
+		// The runner's own and the SDKs' defaults.
+		"MODEL_BASE_URL", "ANTHROPIC_BASE_URL", "openai_base_url", "MODEL_PROVIDER_HEADERS", "MODEL_PROVIDER",
+		// Any *_BASE_URL, as harness images read their provider's own.
+		"GOOGLE_GEMINI_BASE_URL", "OPENROUTER_BASE_URL", "OLLAMA_BASE_URL", "ANTHROPIC_BEDROCK_BASE_URL", " mistral_base_url ",
+		// Endpoint variables without the suffix.
+		"AZURE_OPENAI_ENDPOINT", "AZURE_API_BASE", "OPENAI_API_BASE", "openai_api_host", "ANTHROPIC_API_URL", "OLLAMA_HOST",
+		"AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME",
+	} {
 		if !IsRoutingEnvVar(name) {
 			t.Errorf("%s should be refused", name)
 		}
 	}
-	for _, name := range []string{"MY_SETTING", "LOG_LEVEL", "MODEL_NAME", "HTTPS_PROXY"} {
+	for _, name := range []string{"MY_SETTING", "LOG_LEVEL", "MODEL_NAME", "HTTPS_PROXY", "BASE_URL_STYLE", "OPENAI_API_KEY", "OTEL_EXPORTER_OTLP_ENDPOINT"} {
 		if IsRoutingEnvVar(name) {
 			t.Errorf("%s should be allowed", name)
 		}
@@ -238,6 +246,14 @@ func TestRunEnvAllowed(t *testing.T) {
 	a.Spec.Agents.Default.Env["MODEL_BASE_URL"] = "http://x"
 	if RunEnvAllowed(a, "MODEL_BASE_URL", "http://x") {
 		t.Fatal("routing variables are never taken from env")
+	}
+	// Not even when the Agent declares them: Agent env is copied onto its
+	// runs, so an Agent's endpoint belongs in baseURL with a pinned key.
+	for _, name := range []string{"OPENAI_BASE_URL", "GOOGLE_GEMINI_BASE_URL", "OPENAI_API_BASE", "OLLAMA_HOST"} {
+		a.Spec.Agents.Default.Env[name] = "http://x"
+		if RunEnvAllowed(a, name, "http://x") {
+			t.Fatalf("%s declared on the Agent must still be refused", name)
+		}
 	}
 	if !RunEnvAllowed(a, "LOG_LEVEL", "debug") {
 		t.Fatal("ordinary env refused")

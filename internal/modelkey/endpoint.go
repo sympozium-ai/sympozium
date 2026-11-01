@@ -249,19 +249,32 @@ func placeholderOnly(s *corev1.Secret) bool {
 	return true
 }
 
-// routingEnvVars steer where the agent-runner's model client connects or what
-// it sends. A run's spec.env is appended after the controller's own values,
-// and the SDKs read ANTHROPIC_BASE_URL and OPENAI_BASE_URL when no baseURL is
-// set, so any of these would move a key past the origin check. They are never
-// taken from spec.env.
+// routingEnvVars steer where a model client connects or what it sends. A
+// run's spec.env is appended after the controller's own values, and the
+// agent-runner's SDKs and harness images read endpoint variables when no
+// baseURL is set, so any of these would move a key past the origin check. They
+// are never taken from spec.env. Besides this list, every *_BASE_URL variable
+// (ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_GEMINI_BASE_URL, ...) and every
+// AWS_ENDPOINT_URL* variable is refused; see IsRoutingEnvVar.
 var routingEnvVars = map[string]bool{
-	"MODEL_BASE_URL":         true,
 	"MODEL_PROVIDER":         true,
 	"MODEL_PROVIDER_HEADERS": true,
-	"ANTHROPIC_BASE_URL":     true,
-	"OPENAI_BASE_URL":        true,
-	"AZURE_OPENAI_ENDPOINT":  true,
+	// Endpoint variables whose names do not end in _BASE_URL.
+	"AZURE_OPENAI_ENDPOINT": true, // Azure OpenAI SDKs
+	"AZURE_API_BASE":        true, // LiteLLM Azure
+	"OPENAI_API_BASE":       true, // openai-python < 1.0, LangChain, LiteLLM
+	"OPENAI_API_HOST":       true, // OpenAI-compatible web UIs and CLIs
+	"ANTHROPIC_API_URL":     true, // Anthropic-compatible CLIs
+	"OLLAMA_HOST":           true, // Ollama clients; may come from the auth Secret, never the run
 }
+
+// routingEnvSuffix and routingEnvPrefix match whole families of endpoint
+// variables, so a harness image reading a provider's own *_BASE_URL is covered
+// without listing every provider.
+const (
+	routingEnvSuffix = "_BASE_URL"
+	routingEnvPrefix = "AWS_ENDPOINT_URL" // the AWS SDK (Bedrock) and its per-service forms
+)
 
 // agentOnlyEnvVars change the network path or trust store of the model client.
 // A run may carry them only as its Agent declares them (Agent env is copied
@@ -280,8 +293,7 @@ var agentOnlyEnvVars = map[string]bool{
 // Names are matched without regard to case.
 func IsRoutingEnvVar(name string) bool {
 	name = strings.ToUpper(strings.TrimSpace(name))
-	// The AWS SDK (Bedrock) reads AWS_ENDPOINT_URL and its per-service forms.
-	return routingEnvVars[name] || strings.HasPrefix(name, "AWS_ENDPOINT_URL")
+	return routingEnvVars[name] || strings.HasSuffix(name, routingEnvSuffix) || strings.HasPrefix(name, routingEnvPrefix)
 }
 
 // RunEnvAllowed reports whether a run may set name=value: never a routing

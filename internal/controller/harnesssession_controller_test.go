@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -425,5 +426,65 @@ func TestHarnessSessionSendsAKeyOnlyToItsOrigin(t *testing.T) {
 	}
 	if got.Status.Phase != "Failed" || len(got.Status.Conditions) == 0 || !strings.Contains(got.Status.Conditions[0].Message, "kubectl annotate secret model-key") {
 		t.Fatalf("refusal not surfaced: phase=%s conditions=%+v", got.Status.Phase, got.Status.Conditions)
+	}
+}
+
+// A session that was running before its key's origin was enforced is refused,
+// not torn down: its workload and state are kept, it stops being Ready, and
+// pinning the key resumes it.
+func TestHarnessSessionOriginRefusalKeepsRunningWorkload(t *testing.T) {
+	scheme := harnessSessionTestScheme(t)
+	agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "analyst", Namespace: "default"}, Spec: sympoziumv1alpha1.AgentSpec{AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai-compatible", Secret: "model-key"}}}}
+	session := &sympoziumv1alpha1.HarnessSession{
+		ObjectMeta: metav1.ObjectMeta{Name: "analyst-session", Namespace: "default"},
+		Spec:       sympoziumv1alpha1.HarnessSessionSpec{AgentRef: "analyst", RuntimeRef: "pi-session", DesiredState: "running"},
+		Status:     sympoziumv1alpha1.HarnessSessionStatus{Phase: "Ready", ServiceName: "analyst-session", Endpoint: "http://analyst-session.default.svc:8080"},
+	}
+	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: session.Namespace}, Status: appsv1.DeploymentStatus{ReadyReplicas: 1}}
+	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: session.Namespace}}
+	unpinned := pinnedSessionModelKey()
+	unpinned.Annotations = nil
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), unpinned, session, deployment, claim).Build()
+	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
+	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
+	result, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequeueAfter != harnessSessionFailedRequeue {
+		t.Fatalf("refused session is not re-checked: %+v", result)
+	}
+	if err := cl.Get(context.Background(), key, &appsv1.Deployment{}); err != nil {
+		t.Fatalf("running session workload was deleted on origin refusal: %v", err)
+	}
+	if err := cl.Get(context.Background(), key, &corev1.PersistentVolumeClaim{}); err != nil {
+		t.Fatalf("session state was deleted on origin refusal: %v", err)
+	}
+	var got sympoziumv1alpha1.HarnessSession
+	if err := cl.Get(context.Background(), key, &got); err != nil {
+		t.Fatal(err)
+	}
+	condition := meta.FindStatusCondition(got.Status.Conditions, sympoziumv1alpha1.HarnessSessionReadyCondition)
+	if got.Status.Phase != "Failed" || got.Status.Endpoint != "" || condition == nil || condition.Reason != harnessSessionKeyOriginRefusedReason || !strings.Contains(condition.Message, "kubectl annotate secret model-key") {
+		t.Fatalf("origin refusal not surfaced: phase=%s endpoint=%q condition=%+v", got.Status.Phase, got.Status.Endpoint, condition)
+	}
+
+	// Pinning the key resumes the session on its existing workload.
+	var secret corev1.Secret
+	if err := cl.Get(context.Background(), types.NamespacedName{Name: "model-key", Namespace: "default"}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	secret.Annotations = map[string]string{modelkey.OriginAnnotation: "http://model"}
+	if err := cl.Update(context.Background(), &secret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Get(context.Background(), key, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status.Phase != "Ready" {
+		t.Fatalf("pinned session did not resume: phase=%s conditions=%+v", got.Status.Phase, got.Status.Conditions)
 	}
 }
