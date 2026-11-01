@@ -53,6 +53,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"github.com/sympozium-ai/sympozium/internal/pricing"
+	"github.com/sympozium-ai/sympozium/internal/runauthority"
 	"github.com/sympozium-ai/sympozium/internal/sessionkey"
 	"github.com/sympozium-ai/sympozium/internal/toolpolicy"
 	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
@@ -586,6 +587,28 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 			return nil, fmt.Errorf("checking model key ownership: %w", err)
 		}
 	}
+	// A run that carries its key into its own pod sends it wherever its
+	// baseURL points, and the run author is not the key's owner: the key's
+	// origin pin decides where it may go, not the run. A scoped Celln run
+	// reaches its model through the gateway and its ModelConnection, which
+	// is pinned below; its own baseURL never carries the key.
+	if model.ConnectionRef == "" {
+		for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
+			if err := modelkey.AuthorizeRunEndpoint(ctx, r.Client, agent, model.Provider, model.BaseURL, secret); err != nil {
+				if modelkey.IsRefusal(err) {
+					return modelKeyRefusal(err), nil
+				}
+				return nil, fmt.Errorf("checking model key origin: %w", err)
+			}
+		}
+	}
+	// spec.env must not reroute the model client around that check: proxy
+	// and trust-store variables only as the Agent declares them.
+	for name, value := range agentRun.Spec.Env {
+		if !modelkey.RunEnvAllowed(agent, name, value) {
+			return &Refusal{Code: RefusalModelKeyOriginMismatch, Message: fmt.Sprintf("environment variable %q is not allowed in spec.env: the model endpoint and its network path are set by spec.model.baseURL, the key's origin pin and the Agent, not by the run", name)}, nil
+		}
+	}
 	// The connection's key is claimed with the origin it goes to: the
 	// gateway sends it nowhere else. A connection that cannot be read is
 	// skipped; resolving it fails the run later.
@@ -966,6 +989,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 
 	if taskmodes.HarnessImage(agentRun.Spec.Task) != "" && !agentAllowsModelCredential(&runtimeInstance, agentRun.Spec.Model.Provider, agentRun.Spec.Model.AuthSecretRef) {
 		return ctrl.Result{}, r.refuseRun(ctx, agentRun, &Refusal{Code: RefusalModelKeyNotGranted, Message: fmt.Sprintf("harness model credential %q is not declared in Agent %q spec.authRefs for provider %q", agentRun.Spec.Model.AuthSecretRef, runtimeInstance.Name, agentRun.Spec.Model.Provider)})
+	}
+	// The pod is built with the controller's authority: a run may not name
+	// Secrets (or mounts over the runner) its Agent has not declared.
+	if err := runauthority.CheckRun(&runtimeInstance, agentRun); err != nil {
+		return ctrl.Result{}, r.failRun(ctx, agentRun, err.Error())
 	}
 	if refusal, err := r.authorizeRunKeys(ctx, agentRun, &runtimeInstance); err != nil || refusal != nil {
 		if refusal != nil {
@@ -3609,6 +3637,11 @@ func (r *AgentRunReconciler) buildContainers(
 	}
 	sort.Strings(envKeys)
 	for _, k := range envKeys {
+		// Admission refuses these; a run that reached the controller without
+		// admission still must not reroute the model client (and its key).
+		if modelkey.IsRoutingEnvVar(k) {
+			continue
+		}
 		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
 			Name:  k,
 			Value: agentRun.Spec.Env[k],

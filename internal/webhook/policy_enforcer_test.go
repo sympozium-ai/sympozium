@@ -152,8 +152,10 @@ func TestPolicyEnforcer_AllowsDuplicateVolume_WhenSourcesEqual(t *testing.T) {
 		},
 	}
 
+	// A Secret-bearing run volume must be declared on the Agent.
 	instance := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+		Spec:       sympoziumv1alpha1.AgentSpec{Volumes: []corev1.Volume{vol}},
 	}
 	skillpack := &sympoziumv1alpha1.SkillPack{
 		ObjectMeta: metav1.ObjectMeta{Name: "db-tools", Namespace: "default"},
@@ -196,8 +198,13 @@ func TestPolicyEnforcer_RejectsDuplicateVolume_WhenSourcesDiffer(t *testing.T) {
 		t.Fatalf("add scheme: %v", err)
 	}
 
+	// A Secret-bearing run volume must be declared on the Agent.
 	instance := &sympoziumv1alpha1.Agent{
 		ObjectMeta: metav1.ObjectMeta{Name: "inst", Namespace: "default"},
+		Spec: sympoziumv1alpha1.AgentSpec{Volumes: []corev1.Volume{{
+			Name:         "vault-creds",
+			VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "agent-secret"}},
+		}}},
 	}
 	skillpack := &sympoziumv1alpha1.SkillPack{
 		ObjectMeta: metav1.ObjectMeta{Name: "db-tools", Namespace: "default"},

@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/modelkey"
 )
 
 func harnessSessionTestScheme(t *testing.T) *runtime.Scheme {
@@ -48,7 +49,7 @@ func TestHarnessSessionCreatesPrivateHardenedWorkload(t *testing.T) {
 	scheme := harnessSessionTestScheme(t)
 	agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "analyst", Namespace: "default"}, Spec: sympoziumv1alpha1.AgentSpec{AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai-compatible", Secret: "model-key"}}}}
 	session := &sympoziumv1alpha1.HarnessSession{ObjectMeta: metav1.ObjectMeta{Name: "analyst-session", Namespace: "default"}, Spec: sympoziumv1alpha1.HarnessSessionSpec{AgentRef: "analyst", RuntimeRef: "pi-session"}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), session).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), pinnedSessionModelKey(), session).Build()
 	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
 	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
@@ -229,7 +230,7 @@ func TestHarnessSessionUsesRecreateStrategyForSharedClaim(t *testing.T) {
 	scheme := harnessSessionTestScheme(t)
 	agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "analyst", Namespace: "default"}, Spec: sympoziumv1alpha1.AgentSpec{AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai-compatible", Secret: "model-key"}}}}
 	session := &sympoziumv1alpha1.HarnessSession{ObjectMeta: metav1.ObjectMeta{Name: "analyst-session", Namespace: "default"}, Spec: sympoziumv1alpha1.HarnessSessionSpec{AgentRef: "analyst", RuntimeRef: "pi-session"}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), session).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), pinnedSessionModelKey(), session).Build()
 	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
 	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
@@ -253,7 +254,7 @@ func TestHarnessSessionDoesNotShrinkExpandedClaim(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: session.Namespace, CreationTimestamp: metav1.Now()},
 		Spec:       corev1.PersistentVolumeClaimSpec{AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("5Gi")}}},
 	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), session, claim).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), pinnedSessionModelKey(), session, claim).Build()
 	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
 	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
@@ -281,7 +282,7 @@ func TestHarnessSessionResumeAfterIdleTimeoutRestartsIdleClock(t *testing.T) {
 		Status:     sympoziumv1alpha1.HarnessSessionStatus{Phase: "Draining", LastActivityTime: &staleActivity, Conditions: []metav1.Condition{{Type: sympoziumv1alpha1.HarnessSessionReadyCondition, Status: metav1.ConditionFalse, Reason: "IdleTimeout"}}},
 	}
 	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: session.Namespace}, Status: appsv1.DeploymentStatus{ReadyReplicas: 1}}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), session, deployment).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), pinnedSessionModelKey(), session, deployment).Build()
 	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
 	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
 	for i := 0; i < 2; i++ {
@@ -380,7 +381,7 @@ func TestHarnessSessionReportsStartupDiagnostics(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "analyst-session-abc", Namespace: "default", Labels: sessionWorkloadLabels(session)},
 		Status:     corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "harness", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "Back-off pulling image"}}}}},
 	}
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), session, pod).Build()
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), pinnedSessionModelKey(), session, pod).Build()
 	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
 	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
 	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key}); err != nil {
@@ -393,5 +394,36 @@ func TestHarnessSessionReportsStartupDiagnostics(t *testing.T) {
 	condition := got.Status.Conditions[0]
 	if got.Status.Phase != "Pending" || condition.Reason != "ImagePullFailed" || !strings.Contains(condition.Message, "Back-off pulling image") {
 		t.Fatalf("startup failure was not surfaced: phase=%s reason=%s message=%q", got.Status.Phase, condition.Reason, condition.Message)
+	}
+}
+
+// pinnedSessionModelKey is the session runtime's key, pinned by its operator to
+// the runtime's custom endpoint: a session sends a key only to its pin.
+func pinnedSessionModelKey() *corev1.Secret {
+	return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "model-key", Namespace: "default", Annotations: map[string]string{modelkey.OriginAnnotation: "http://model"}}, Data: map[string][]byte{"OPENAI_API_KEY": []byte("sk-DUMMY")}}
+}
+
+// A session sends its key to its baseURL: an unpinned key is not sent to a
+// custom endpoint, and no workload holding it is created.
+func TestHarnessSessionSendsAKeyOnlyToItsOrigin(t *testing.T) {
+	scheme := harnessSessionTestScheme(t)
+	agent := &sympoziumv1alpha1.Agent{ObjectMeta: metav1.ObjectMeta{Name: "analyst", Namespace: "default"}, Spec: sympoziumv1alpha1.AgentSpec{AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai-compatible", Secret: "model-key"}}}}
+	session := &sympoziumv1alpha1.HarnessSession{ObjectMeta: metav1.ObjectMeta{Name: "analyst-session", Namespace: "default"}, Spec: sympoziumv1alpha1.HarnessSessionSpec{AgentRef: "analyst", RuntimeRef: "pi-session", DesiredState: "running"}}
+	unpinned := pinnedSessionModelKey()
+	unpinned.Annotations = nil
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(session).WithObjects(agent, readySessionRuntime(), unpinned, session).Build()
+	r := &HarnessSessionReconciler{Client: cl, Scheme: scheme}
+	key := types.NamespacedName{Name: session.Name, Namespace: session.Namespace}
+	_, _ = r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+	var deployment appsv1.Deployment
+	if err := cl.Get(context.Background(), key, &deployment); err == nil {
+		t.Fatal("a session workload holding an unpinned key was created for a custom endpoint")
+	}
+	var got sympoziumv1alpha1.HarnessSession
+	if err := cl.Get(context.Background(), key, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status.Phase != "Failed" || len(got.Status.Conditions) == 0 || !strings.Contains(got.Status.Conditions[0].Message, "kubectl annotate secret model-key") {
+		t.Fatalf("refusal not surfaced: phase=%s conditions=%+v", got.Status.Phase, got.Status.Conditions)
 	}
 }

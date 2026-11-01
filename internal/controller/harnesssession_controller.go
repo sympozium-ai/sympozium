@@ -282,6 +282,17 @@ func (r *HarnessSessionReconciler) resolveInputs(ctx context.Context, session *s
 		}
 		return nil, nil, "", err
 	}
+	// The session pod sends the key to its baseURL: only to the key's origin
+	// pin, as for runs. A connection-backed session's Secret is pinned to the
+	// connection's endpoint by the connection's own claim.
+	if agent.Spec.Execution == nil || agent.Spec.Execution.ModelConnectionRef == "" {
+		if err := modelkey.AuthorizeRunEndpoint(ctx, r.Client, agent, model.Provider, model.BaseURL, model.AuthSecretRef); err != nil {
+			if modelkey.IsRefusal(err) {
+				return nil, nil, err.Error(), nil
+			}
+			return nil, nil, "", err
+		}
+	}
 	return agent, runtime, "", nil
 }
 
