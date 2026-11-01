@@ -23,6 +23,7 @@ type Tool struct {
 	Subcommand     string         `json:"subcommand"`
 	InputMode      string         `json:"inputMode"` // "args" (default) or "stdin"
 	PositionalArgs []string       `json:"positionalArgs"`
+	EndOfOptions   *bool          `json:"endOfOptions,omitempty"`
 	Parameters     map[string]any `json:"parameters"`
 }
 

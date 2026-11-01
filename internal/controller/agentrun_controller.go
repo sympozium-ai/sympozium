@@ -6168,6 +6168,7 @@ type sidecarToolJSON struct {
 	Subcommand     string          `json:"subcommand,omitempty"`
 	InputMode      string          `json:"inputMode,omitempty"`
 	PositionalArgs []string        `json:"positionalArgs,omitempty"`
+	EndOfOptions   *bool           `json:"endOfOptions,omitempty"`
 	Parameters     json.RawMessage `json:"parameters,omitempty"`
 }
 
@@ -6216,6 +6217,7 @@ func buildSidecarToolsManifest(sidecars []resolvedSidecar) (string, error) {
 				Subcommand:     tool.Subcommand,
 				InputMode:      inputMode,
 				PositionalArgs: tool.PositionalArgs,
+				EndOfOptions:   tool.EndOfOptions,
 				Parameters:     params,
 			})
 		}

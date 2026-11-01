@@ -4129,6 +4129,11 @@ func (in *SidecarTool) DeepCopyInto(out *SidecarTool) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.EndOfOptions != nil {
+		in, out := &in.EndOfOptions, &out.EndOfOptions
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Parameters != nil {
 		in, out := &in.Parameters, &out.Parameters
 		*out = new(apiextensionsv1.JSON)

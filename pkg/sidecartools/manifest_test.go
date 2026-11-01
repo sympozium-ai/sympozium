@@ -155,3 +155,92 @@ func TestFormatPositionalArg_KeepsNumbersExact(t *testing.T) {
 		t.Errorf("FormatPositionalArg = %q, want 3000000", got)
 	}
 }
+
+func boolPtr(v bool) *bool { return &v }
+
+// Default / omitted EndOfOptions keeps the "--" marker (backward compatible).
+func TestBuildExecRequest_EndOfOptionsDefaultKeepsMarker(t *testing.T) {
+	tool := Tool{
+		Name:           "kubectl_get",
+		Exec:           []string{"kubectl", "get"},
+		PositionalArgs: []string{"resource"},
+	}
+	req, err := BuildExecRequest(tool, `{"resource":"-n"}`, nil)
+	if err != nil {
+		t.Fatalf("BuildExecRequest: %v", err)
+	}
+	want := []string{"kubectl", "get", "--", "-n"}
+	if len(req.Argv) != len(want) {
+		t.Fatalf("argv = %v, want %v", req.Argv, want)
+	}
+	for i := range want {
+		if req.Argv[i] != want[i] {
+			t.Errorf("argv[%d] = %q, want %q", i, req.Argv[i], want[i])
+		}
+	}
+
+	tool.EndOfOptions = boolPtr(true)
+	req, err = BuildExecRequest(tool, `{"resource":"-n"}`, nil)
+	if err != nil {
+		t.Fatalf("BuildExecRequest true: %v", err)
+	}
+	for i := range want {
+		if req.Argv[i] != want[i] {
+			t.Errorf("true: argv[%d] = %q, want %q", i, req.Argv[i], want[i])
+		}
+	}
+}
+
+// EndOfOptions=false omits "--" so flag-style prefixes (node -e, git commit -m) work.
+func TestBuildExecRequest_EndOfOptionsFalseOmitsMarker(t *testing.T) {
+	cases := []struct {
+		name string
+		tool Tool
+		args string
+		want []string
+	}{
+		{
+			name: "node -e",
+			tool: Tool{
+				Name:           "node_eval",
+				Exec:           []string{"node", "-e"},
+				PositionalArgs: []string{"code"},
+				EndOfOptions:   boolPtr(false),
+			},
+			args: `{"code":"console.log(1+1)"}`,
+			want: []string{"node", "-e", "console.log(1+1)"},
+		},
+		{
+			name: "git commit -m",
+			tool: Tool{
+				Name:           "git_commit",
+				Exec:           []string{"git", "commit", "-m"},
+				PositionalArgs: []string{"message"},
+				EndOfOptions:   boolPtr(false),
+			},
+			args: `{"message":"my message"}`,
+			want: []string{"git", "commit", "-m", "my message"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req, err := BuildExecRequest(c.tool, c.args, nil)
+			if err != nil {
+				t.Fatalf("BuildExecRequest: %v", err)
+			}
+			if len(req.Argv) != len(c.want) {
+				t.Fatalf("argv = %v, want %v", req.Argv, c.want)
+			}
+			for i := range c.want {
+				if req.Argv[i] != c.want[i] {
+					t.Errorf("argv[%d] = %q, want %q", i, req.Argv[i], c.want[i])
+				}
+			}
+			for _, a := range req.Argv {
+				if a == "--" {
+					t.Fatalf("argv unexpectedly contains end-of-options marker: %v", req.Argv)
+				}
+			}
+		})
+	}
+}
