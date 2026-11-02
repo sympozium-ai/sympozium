@@ -67,7 +67,7 @@ func (e *NotGrantedError) Error() string {
 // to a transient read or write failure worth retrying.
 func IsRefusal(err error) bool {
 	switch err.(type) {
-	case *ConflictError, *NotGrantedError, *OriginMismatchError:
+	case *ConflictError, *NotGrantedError, *OriginMismatchError, *OriginNotAllowedError:
 		return true
 	}
 	return false

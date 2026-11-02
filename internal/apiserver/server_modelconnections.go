@@ -85,6 +85,7 @@ func (s *Server) saveModelConnection(ctx context.Context, ns, name string, spec 
 	// policies can pay for, instead of failing its first run on a bound the
 	// scope's ceiling cannot afford.
 	s.clampConnectionOutputTokens(ctx, ns, &spec)
+	createdSecret := false
 	if apiKey != "" {
 		secretName := defaultProviderSecretName(name, spec.Provider)
 		secret := &corev1.Secret{
@@ -101,16 +102,21 @@ func (s *Server) saveModelConnection(ctx context.Context, ns, name string, spec 
 			// reads the key back whatever client stored it.
 			Data: map[string][]byte{spec.CredentialSecretKey(): []byte(apiKey)},
 		}
-		if err := createOrUpdateSecret(ctx, s.client, secret); err != nil {
+		created, err := createOrMergeSecret(ctx, s.client, secret)
+		if err != nil {
 			return nil, http.StatusInternalServerError, fmt.Errorf("failed to create credentials secret: %w", err)
 		}
+		createdSecret = created
 		spec.SecretRef = secretName
 	}
-	// The key is pinned to the origin this connection names, whoever made the
-	// Secret: the gateway sends it nowhere else, and a connection moved to
-	// another origin needs a new key entered by a person.
+	// A key a person entered here is pinned to the origin this connection
+	// names: the gateway sends it nowhere else, and a connection moved to
+	// another origin needs a new key entered by a person. An existing Secret
+	// is only checked: the API caller has shown no right to direct it, so an
+	// unpinned one is left for the controller's claim, which pins it only for
+	// an Agent that grants it.
 	if spec.SecretRef != "" {
-		if err := s.pinConnectionSecret(ctx, ns, spec); err != nil {
+		if err := s.pinConnectionSecret(ctx, ns, spec, createdSecret); err != nil {
 			if modelkey.IsRefusal(err) {
 				return nil, http.StatusConflict, err
 			}
@@ -143,10 +149,13 @@ func (s *Server) saveModelConnection(ctx context.Context, ns, name string, spec 
 // reads OPENAI_API_KEY, even when the upstream provider label differs.
 func connectionSecretKey(protocol string) string { return api.DefaultSecretKey(protocol) }
 
-// pinConnectionSecret pins the connection's Secret to the connection's
-// endpoint origin, or refuses a Secret already pinned elsewhere. A Secret
-// that does not exist yet is left for the controller's claim to pin.
-func (s *Server) pinConnectionSecret(ctx context.Context, namespace string, spec api.ModelConnectionSpec) error {
+// pinConnectionSecret pins a Secret the API created in this request from an
+// entered key to the connection's endpoint origin. For any other Secret it
+// only refuses one already pinned elsewhere: pinning an existing key would let
+// any API caller choose where somebody else's key may be sent. An unpinned or
+// missing Secret is left for the controller's claim, which pins it only for an
+// Agent that grants it.
+func (s *Server) pinConnectionSecret(ctx context.Context, namespace string, spec api.ModelConnectionSpec, created bool) error {
 	origin, err := spec.Origin()
 	if err != nil {
 		return err
@@ -159,6 +168,12 @@ func (s *Server) pinConnectionSecret(ctx context.Context, namespace string, spec
 		return err
 	}
 	if modelkey.PinnedTo(&secret, origin) {
+		return nil
+	}
+	if pinned := modelkey.PinnedOrigin(&secret); pinned != "" {
+		return &modelkey.OriginMismatchError{Secret: secret.Name, Pinned: pinned, Origin: origin}
+	}
+	if !created {
 		return nil
 	}
 	if err := modelkey.Pin(&secret, origin); err != nil {

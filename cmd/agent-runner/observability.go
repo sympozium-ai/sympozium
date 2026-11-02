@@ -273,11 +273,17 @@ func traceMetadata(ctx context.Context) map[string]string {
 // every request. Propagator is pinned, not left to the global, since
 // initObservability skips telemetry.Init (which sets the global) when OTel
 // is disabled or the collector is unreachable.
+//
+// It is the model client: it never follows a redirect, since Go re-sends
+// custom headers such as x-api-key and Api-Key to the redirect target.
 func tracingHTTPClient() *http.Client {
-	return &http.Client{Transport: otelhttp.NewTransport(
-		http.DefaultTransport,
-		otelhttp.WithPropagators(propagation.TraceContext{}),
-	)}
+	return &http.Client{
+		Transport: otelhttp.NewTransport(
+			http.DefaultTransport,
+			otelhttp.WithPropagators(propagation.TraceContext{}),
+		),
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 func formatTraceparent(sc trace.SpanContext) string {

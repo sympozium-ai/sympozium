@@ -85,10 +85,11 @@ func modelKeyRefusal(err error) *Refusal {
 	refusal := &Refusal{Code: RefusalModelKeyNotGranted, Message: err.Error()}
 	var conflict *modelkey.ConflictError
 	var origin *modelkey.OriginMismatchError
+	var notAllowed *modelkey.OriginNotAllowedError
 	switch {
 	case errors.As(err, &conflict):
 		refusal.Code = RefusalModelKeyConflict
-	case errors.As(err, &origin):
+	case errors.As(err, &origin), errors.As(err, &notAllowed):
 		refusal.Code = RefusalModelKeyOriginMismatch
 	}
 	return refusal

@@ -1274,6 +1274,12 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to create credentials secret: "+createErr.Error(), http.StatusInternalServerError)
 			return
 		}
+		if createErr == nil {
+			if err := pinNewModelKey(r.Context(), s.client, ns, req.SecretName, req.Provider, inst.Spec.Agents.Default.BaseURL); err != nil {
+				http.Error(w, "failed to pin the key to its endpoint: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		if k8serrors.IsAlreadyExists(createErr) {
 			existing := &corev1.Secret{}
 			if err := s.client.Get(r.Context(), types.NamespacedName{Name: req.SecretName, Namespace: ns}, existing); err != nil {
@@ -2646,9 +2652,20 @@ func (s *Server) patchEnsemble(w http.ResponseWriter, r *http.Request) {
 			},
 			StringData: map[string]string{envKey: req.APIKey},
 		}
-		if err := createOrUpdateSecret(r.Context(), s.client, secret); err != nil {
+		created, err := createOrMergeSecret(r.Context(), s.client, secret)
+		if err != nil {
 			http.Error(w, "failed to create credentials secret: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if created && req.ModelRef == "" {
+			baseURL := req.BaseURL
+			if baseURL == "" {
+				baseURL = defaultProviderBaseURL(req.Provider)
+			}
+			if err := pinNewModelKey(r.Context(), s.client, ns, req.SecretName, req.Provider, baseURL); err != nil {
+				http.Error(w, "failed to pin the key to its endpoint: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 
@@ -3237,13 +3254,26 @@ func providerEnvKey(provider string) string {
 
 // createOrUpdateSecret creates a secret, or updates it if it already exists.
 func createOrUpdateSecret(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+	_, err := createOrMergeSecret(ctx, c, secret)
+	return err
+}
+
+// createOrMergeSecret is createOrUpdateSecret that also reports whether this
+// call created the Secret. Only a Secret the API created from a key a person
+// just entered may be pinned by the API (pinNewModelKey); an existing one may
+// hold other keys that are not the caller's to direct.
+func createOrMergeSecret(ctx context.Context, c client.Client, secret *corev1.Secret) (bool, error) {
 	createErr := c.Create(ctx, secret)
 	if createErr == nil {
-		return nil
+		return true, nil
 	}
 	if !k8serrors.IsAlreadyExists(createErr) {
-		return createErr
+		return false, createErr
 	}
+	return false, mergeIntoExistingSecret(ctx, c, secret)
+}
+
+func mergeIntoExistingSecret(ctx context.Context, c client.Client, secret *corev1.Secret) error {
 	existing := &corev1.Secret{}
 	if err := c.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, existing); err != nil {
 		return err
@@ -3258,6 +3288,35 @@ func createOrUpdateSecret(ctx context.Context, c client.Client, secret *corev1.S
 		existing.Data[k] = v
 	}
 	return c.Update(ctx, existing)
+}
+
+// pinNewModelKey pins a model key Secret the API created in this request, from
+// a key a person entered, to the origin its runs send it to: the baseURL they
+// entered, or the provider's default. A run's baseURL never moves a key (see
+// modelkey.AuthorizeRunEndpoint); the person who supplies the key does. A
+// provider without a default origin and no baseURL is left unpinned.
+func pinNewModelKey(ctx context.Context, c client.Client, namespace, name, provider, baseURL string) error {
+	origin, err := modelkey.RunOrigin(provider, baseURL)
+	if err != nil {
+		return err
+	}
+	// Without a baseURL the key is pinned only to its provider's own public
+	// endpoint (an OpenAI-compatible provider with no default of its own would
+	// otherwise be pinned to OpenAI's).
+	if origin == "" || modelkey.CanonicalProvider(provider) == "bedrock" || (strings.TrimSpace(baseURL) == "" && origin != modelkey.WellKnownOrigin(provider)) {
+		return nil
+	}
+	var secret corev1.Secret
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &secret); err != nil {
+		return err
+	}
+	if modelkey.PinnedTo(&secret, origin) {
+		return nil
+	}
+	if err := modelkey.Pin(&secret, origin); err != nil {
+		return err
+	}
+	return c.Update(ctx, &secret)
 }
 
 func defaultProviderSecretName(resourceName, provider string) string {

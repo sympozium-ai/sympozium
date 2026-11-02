@@ -196,7 +196,7 @@ func parityScenarios() []parityScenario {
 			guards: "env[].valueFrom SecretKeyRef — the provider API key",
 			objects: func() []client.Object {
 				agent := parityAgent()
-				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Secret: "my-secret"}}
+				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "my-secret"}}
 				return []client.Object{agent, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "default"},
 				}}
@@ -248,21 +248,17 @@ func parityScenarios() []parityScenario {
 			wantAgentEnv: []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_RESOURCE_ATTRIBUTES"},
 		},
 		{
-			name:    "user_supplied_csi_volume",
-			guards:  "volumeToMap losslessness — an arbitrary user volume source",
-			objects: func() []client.Object { return []client.Object{parityAgent()} },
+			name:   "user_supplied_csi_volume",
+			guards: "volumeToMap losslessness — an arbitrary user volume source",
+			// A Secret-bearing volume is the Agent's to declare; the run carries
+			// it exactly as declared.
+			objects: func() []client.Object {
+				agent := parityAgent()
+				agent.Spec.Volumes = []corev1.Volume{parityCSIVolume()}
+				return []client.Object{agent}
+			},
 			mutate: func(run *sympoziumv1alpha1.AgentRun) {
-				readOnly := true
-				run.Spec.Volumes = []corev1.Volume{{
-					Name: "vault-secrets",
-					VolumeSource: corev1.VolumeSource{
-						CSI: &corev1.CSIVolumeSource{
-							Driver:           "secrets-store.csi.k8s.io",
-							ReadOnly:         &readOnly,
-							VolumeAttributes: map[string]string{"secretProviderClass": "vault-db"},
-						},
-					},
-				}}
+				run.Spec.Volumes = []corev1.Volume{parityCSIVolume()}
 			},
 			wantVolumes: []string{"vault-secrets"},
 		},
@@ -311,7 +307,7 @@ func parityScenarios() []parityScenario {
 			guards: "resolveProviderHeaders + MODEL_PROVIDER_HEADERS env",
 			objects: func() []client.Object {
 				agent := parityAgent()
-				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Secret: "headers-secret"}}
+				agent.Spec.AuthRefs = []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "headers-secret"}}
 				return []client.Object{agent, &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "headers-secret", Namespace: "default"},
 					Data:       map[string][]byte{"x-tenant": []byte("acme")},
@@ -930,5 +926,19 @@ func readyMemoryDeployment(agentRef string) *appsv1.Deployment {
 			Namespace: "default",
 		},
 		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+	}
+}
+
+func parityCSIVolume() corev1.Volume {
+	readOnly := true
+	return corev1.Volume{
+		Name: "vault-secrets",
+		VolumeSource: corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{
+				Driver:           "secrets-store.csi.k8s.io",
+				ReadOnly:         &readOnly,
+				VolumeAttributes: map[string]string{"secretProviderClass": "vault-db"},
+			},
+		},
 	}
 }

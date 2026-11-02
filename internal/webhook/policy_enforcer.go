@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,6 +23,7 @@ import (
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/controller/taskmodes"
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
+	"github.com/sympozium-ai/sympozium/internal/runauthority"
 )
 
 // systemNamespace is the namespace where built-in SkillPacks live by default.
@@ -146,6 +148,44 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	// the same rule; this read-only check only gives the author a fast answer.
 	for _, secret := range []string{run.Spec.Model.AuthSecretRef, run.Spec.Model.ProviderHeadersSecretRef} {
 		if err := modelkey.Check(ctx, pe.Client, &instance, "", secret); modelkey.IsRefusal(err) {
+			return admission.Denied(err.Error())
+		}
+	}
+	// Where a key carried in the run's pod may go is the key's origin pin,
+	// never the run's baseURL; and spec.env must not reroute the model client
+	// around that check. The controller enforces both again before any pod
+	// exists; these give the author a fast answer. Scoped Celln runs reach
+	// their model through the gateway and their pinned ModelConnection; a
+	// modelRef run is rewritten by the controller to a cluster-local Model
+	// without a key.
+	//
+	// An update that leaves these fields as they were (the controller's own
+	// status and metadata writes) is not re-judged, so runs admitted before
+	// these rules are not wedged.
+	unchanged := securityFieldsUnchanged(pe.Decoder, req, run)
+	if !unchanged && run.Spec.Model.ConnectionRef == "" && run.Spec.Model.ModelRef == "" {
+		for _, secret := range []string{run.Spec.Model.AuthSecretRef, run.Spec.Model.ProviderHeadersSecretRef} {
+			if err := modelkey.CheckRunEndpoint(ctx, pe.Client, &instance, run.Spec.Model.Provider, run.Spec.Model.BaseURL, secret); modelkey.IsRefusal(err) {
+				return admission.Denied(err.Error())
+			}
+		}
+	}
+	for key, value := range run.Spec.Env {
+		if unchanged {
+			break
+		}
+		if !modelkey.RunEnvAllowed(&instance, key, value) {
+			return admission.Denied(fmt.Sprintf("environment variable %q is not allowed in spec.env: the model endpoint and its network path are set by spec.model.baseURL, the key's origin pin and the Agent, not by the run", key))
+		}
+	}
+	// System variables (PATH, LD_PRELOAD, ...) are refused whether or not a
+	// policy is bound, and so is a pod spec that reaches beyond the Agent
+	// (Secret volumes, Secret-reading hooks, hook Roles over Secrets).
+	if !unchanged {
+		if err := pe.validateEnvVars(run); err != nil {
+			return admission.Denied(err.Error())
+		}
+		if err := runauthority.CheckRun(&instance, run); err != nil {
 			return admission.Denied(err.Error())
 		}
 	}
@@ -1056,4 +1096,22 @@ func (mv *ModelValidator) validateModelSource(model *sympoziumv1alpha1.Model) er
 	}
 
 	return nil
+}
+
+// securityFieldsUnchanged reports whether an UPDATE leaves the fields the
+// model-key and pod-authority rules judge exactly as they were.
+func securityFieldsUnchanged(decoder admission.Decoder, req admission.Request, run *sympoziumv1alpha1.AgentRun) bool {
+	if req.Operation != admissionv1.Update || len(req.OldObject.Raw) == 0 || decoder == nil {
+		return false
+	}
+	old := &sympoziumv1alpha1.AgentRun{}
+	if err := decoder.DecodeRaw(req.OldObject, old); err != nil {
+		return false
+	}
+	return apiequality.Semantic.DeepEqual(old.Spec.AgentRef, run.Spec.AgentRef) &&
+		apiequality.Semantic.DeepEqual(old.Spec.Model, run.Spec.Model) &&
+		apiequality.Semantic.DeepEqual(old.Spec.Env, run.Spec.Env) &&
+		apiequality.Semantic.DeepEqual(old.Spec.Volumes, run.Spec.Volumes) &&
+		apiequality.Semantic.DeepEqual(old.Spec.VolumeMounts, run.Spec.VolumeMounts) &&
+		apiequality.Semantic.DeepEqual(old.Spec.Lifecycle, run.Spec.Lifecycle)
 }
