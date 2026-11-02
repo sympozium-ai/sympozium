@@ -329,6 +329,9 @@ func TestNoMediationWhenTheRunHasNoKeyOrThePolicyIsOff(t *testing.T) {
 	})
 	t.Run("policy off", func(t *testing.T) {
 		r, run := mediatedRun(t, "run-a", "anthropic", "")
+		// An unmediated key goes into the pod, so it answers to the origin
+		// check: the Agent grants it for this provider only.
+		grantKey(t, r, run)
 		ctx := context.Background()
 		var policy sympoziumv1alpha1.SympoziumPolicy
 		if err := r.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: "mediated"}, &policy); err != nil {

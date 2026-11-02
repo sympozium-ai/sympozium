@@ -771,6 +771,7 @@ func TestShapedTokensAreStillRandom(t *testing.T) {
 
 func TestOnlyTheControllerCanSayARunIsMediated(t *testing.T) {
 	r, run := mediatedRun(t, "run-a", "anthropic", "")
+	grantKey(t, r, run)
 	ctx := context.Background()
 	var policy sympoziumv1alpha1.SympoziumPolicy
 	if err := r.Get(ctx, client.ObjectKey{Namespace: run.Namespace, Name: "mediated"}, &policy); err != nil {

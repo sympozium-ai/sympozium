@@ -77,6 +77,47 @@ func (r *AgentRunReconciler) runIsMediated(ctx context.Context, agentRun *sympoz
 	return modelMediationRequired(ctx, r.Client, agentRun.Namespace, agentRun.Spec.AgentRef)
 }
 
+// runKeyIsMediated reports whether the run's model key stays out of its pod
+// because the harness gateway mediates it, so the key's origin is judged by
+// mediation (the operator's profile upstream and the key's pin to it) and not
+// by the run's baseURL. It is runIsMediated, which only the Agent's policy can
+// make true, for runs whose pod buildAgentPodTemplate renders: every such pod
+// passes through applyModelMediation, which removes the key or fails. A scoped
+// Celln run renders no pod here, so it is never treated as mediated.
+func (r *AgentRunReconciler) runKeyIsMediated(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) (bool, error) {
+	if agentRun.Spec.Backend == "celln" && scopedCatalogueSelected(agentRun) {
+		return false, nil
+	}
+	return r.runIsMediated(ctx, agentRun)
+}
+
+// checkUnmediatedKeyOrigin repeats, read-only, the origin check that
+// authorizeRunKeys skips for a mediated run, for a harness run rendered
+// without mediation. The policy may have been switched off between that
+// check and this render; a key going into the pod must still answer to its
+// pin. For a run that passed authorizeRunKeys unmediated this finds the pin
+// that check left and changes nothing.
+func (r *AgentRunReconciler) checkUnmediatedKeyOrigin(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) error {
+	model := agentRun.Spec.Model
+	if r.Client == nil || !harnessRun(agentRun) || model.ConnectionRef != "" || model.ModelRef != "" ||
+		(model.AuthSecretRef == "" && model.ProviderHeadersSecretRef == "") {
+		return nil
+	}
+	var agent sympoziumv1alpha1.Agent
+	if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Spec.AgentRef}, &agent); err != nil {
+		return refuseIfNotFound(fmt.Errorf("reading Agent %q: %w", agentRun.Spec.AgentRef, err))
+	}
+	for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
+		if err := modelkey.CheckRunEndpoint(ctx, r.Client, &agent, model.Provider, model.BaseURL, secret); err != nil {
+			if modelkey.IsRefusal(err) {
+				return &modelMediationRefusal{err: err}
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 // uncachedReader reads Secrets this reconcile may have just written, which the
 // manager's cache can't be trusted to show yet. A stale miss here would fail the
 // run, or try to mint a second token.
@@ -371,7 +412,7 @@ func (r *AgentRunReconciler) applyModelMediation(ctx context.Context, agentRun *
 		for i := range spec.Containers {
 			spec.Containers[i].Env = slices.DeleteFunc(spec.Containers[i].Env, func(e corev1.EnvVar) bool { return e.Name == modelMediatedEnv })
 		}
-		return nil
+		return r.checkUnmediatedKeyOrigin(ctx, agentRun)
 	}
 	route, err := r.mediationRoute(ctx, agentRun)
 	if err != nil {

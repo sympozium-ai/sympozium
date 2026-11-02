@@ -594,7 +594,17 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 	// origin pin decides where it may go, not the run. A scoped Celln run
 	// reaches its model through the gateway and its ModelConnection, which
 	// is pinned below; its own baseURL never carries the key.
-	if model.ConnectionRef == "" {
+	//
+	// A run the harness gateway mediates never carries its key either: its
+	// pod holds a per-run token, and the key goes only to the operator's
+	// profile upstream, to which ensureRunModelToken holds and pins it.
+	// Judging such a run by RunOrigin would judge a destination the key
+	// never goes to.
+	mediated, err := r.runKeyIsMediated(ctx, agentRun)
+	if err != nil {
+		return nil, fmt.Errorf("checking model mediation: %w", err)
+	}
+	if model.ConnectionRef == "" && !mediated {
 		for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
 			if err := modelkey.AuthorizeRunEndpoint(ctx, r.Client, agent, model.Provider, model.BaseURL, secret); err != nil {
 				if modelkey.IsRefusal(err) {
