@@ -1,7 +1,7 @@
 /**
- * Create Agent with no Celln fleet: the console hands the operator the plain
- * install command (Celln is part of the default install and holds no model,
- * so nothing about a provider or key is asked) and, while it waits, unlocks
+ * Create Agent with no Celln fleet: the console hands the operator the opt-in
+ * install command (Celln is not part of the default install, #693, and holds
+ * no model, so nothing about a provider or key is asked) and, while it waits, unlocks
  * the Celln plane as soon as the fleet's profiles reach the namespace.
  * Intercepted browser contract tests; no cluster.
  */
@@ -17,7 +17,7 @@ const dialog = () => cy.get('[role="dialog"]').first();
 const next = () => dialog().contains("button", "Next").click();
 
 describe("Create Agent → Celln without a fleet", () => {
-  it("hands over the plain install command, says what it deploys, and continues on Celln once the fleet appears", () => {
+  it("hands over the opt-in install command, says what it deploys, and continues on Celln once the fleet appears", () => {
     let installed = false;
     cy.intercept("GET", "**/api/v1/**", { body: [] });
     cy.intercept("GET", "**/api/v1/celln-platform/profiles*", (request) => request.reply({ body: installed ? [profile] : [] })).as("profiles");
@@ -30,9 +30,9 @@ describe("Create Agent → Celln without a fleet", () => {
     cy.get('[data-testid="celln-fleet-missing"]').should("contain", "Celln parent");
     cy.get('[data-testid="celln-fleet-setup-open"]').click();
 
-    // No model, key or backend to choose: the fleet is the default install.
-    cy.get('[data-testid="celln-fleet-command"]').should("have.text", "sympozium install");
-    cy.get('[data-testid="celln-fleet-setup"]').should("not.contain", "--celln-fleet").and("not.contain", "credential-env").and("not.contain", "read -rs").and("not.contain", "Model provider");
+    // No model, key or backend to choose: the fleet is one opt-in flag.
+    cy.get('[data-testid="celln-fleet-command"]').should("have.text", "sympozium install --celln-fleet");
+    cy.get('[data-testid="celln-fleet-setup"]').should("not.contain", "--celln-fleet-package").and("not.contain", "credential-env").and("not.contain", "read -rs").and("not.contain", "Model provider");
     cy.get('[data-testid="celln-fleet-provider"]').should("not.exist");
     cy.get('[data-testid="celln-fleet-model"]').should("not.exist");
     // The privilege the fleet needs is disclosed as the CLI discloses it.
@@ -42,7 +42,7 @@ describe("Create Agent → Celln without a fleet", () => {
       .and("contain", "celln-node-configure")
       .and("contain", "/dev/kvm")
       .and("contain", "Nodes hold no model key")
-      .and("contain", "--no-celln");
+      .and("not.contain", "--no-celln");
     cy.get('[data-testid="celln-fleet-waiting"]').should("be.visible");
 
     // The operator's install lands: the polling step selects Celln by itself.

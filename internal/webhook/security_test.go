@@ -270,6 +270,9 @@ func TestPolicyEnforcer_AllowsHookEnvSecretKeyRef(t *testing.T) {
 		},
 	}
 
+	// A Secret-reading hook is the Agent's to declare; the run carries it as
+	// declared.
+	instance.Spec.Agents.Default.Lifecycle = run.Spec.Lifecycle.DeepCopy()
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance, policy).Build()
 	pe := &PolicyEnforcer{Client: cl, Log: logr.Discard(), Decoder: decoderFor(t, scheme)}
 
@@ -445,6 +448,8 @@ func TestPolicyEnforcer_AllowsLifecycleRBAC_NonDeniedResources(t *testing.T) {
 		},
 	}
 
+	// A hook Role is the Agent's to declare; the run carries it as declared.
+	instance.Spec.Agents.Default.Lifecycle = run.Spec.Lifecycle.DeepCopy()
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(instance, policy).Build()
 	pe := &PolicyEnforcer{Client: cl, Log: logr.Discard(), Decoder: decoderFor(t, scheme)}
 

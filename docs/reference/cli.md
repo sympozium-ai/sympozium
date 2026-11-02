@@ -6,18 +6,20 @@ Every command accepts the global flags `--kubeconfig PATH` and
 ## Install & Uninstall
 
 ```bash
-sympozium install                        # CRDs, control plane, built-in Ensembles, the Celln fleet, the model gateway and ergoz
+sympozium install                        # CRDs, control plane, built-in Ensembles and ergoz; Agents run as Kubernetes Jobs
+sympozium install --celln-fleet          # also the opt-in Celln fleet and the model gateway (needs KVM nodes)
 sympozium install --image-tag v0.12.0    # a specific image tag
 sympozium install --set key=value        # extra Helm values (repeatable)
-sympozium install --no-celln             # skip Celln entirely (no fleet, router or gateway)
 sympozium install --no-ergoz             # skip ergoz (accelerator power telemetry)
 sympozium install --adopt-existing       # adopt leftover objects of an older install instead of refusing
 sympozium doctor                         # read-only checklist of what is in the way, with remedies (--json)
 sympozium uninstall                      # clean removal
 ```
 
-`sympozium install` is idempotent and asks nothing about models. Rerun it to
-upgrade, after labeling more KVM nodes, or to migrate a 0.11 keyed fleet
+`sympozium install` is idempotent and asks nothing about models. Celln is
+opt-in (`--celln-fleet`); a cluster that already runs the fleet keeps it on a
+bare rerun. Rerun it to upgrade, after labeling more KVM nodes, or to migrate
+a 0.11 keyed fleet
 (see [Upgrading from 0.11](../guides/celln-fleet-installation.md#upgrading-from-011)).
 
 ## Update & Upgrade
@@ -46,8 +48,8 @@ gateway adds to its requests and no node ever holds. See
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--no-celln` | `false` | Install without Celln |
-| `--celln-fleet` | on when the build pins a package | Deploy the fleet explicitly; with the three package flags for your own package (a source build pins none) |
+| `--celln-fleet` | `false` | Deploy the opt-in Celln fleet; uses the release's starter package, or the three package flags for your own package (a source build pins none). An already deployed fleet is kept without it |
+| `--no-celln` | `false` | Deprecated (Celln is opt-in). On a cluster that runs the fleet it also skips keeping it, which removes the fleet's chart components |
 | `--celln-fleet-package-image`, `--celln-fleet-package-hash`, `--celln-fleet-publisher` | the release's starter package | A reviewed, digest-pinned starter package (`repository@sha256:…`, `blake3:…`, publisher key from `celln starter-inspect`) |
 | `--celln-fleet-scope` | `starter` | Stable installation identity; node state lives at `/var/lib/sympozium-celln/<scope>` |
 | `--celln-fleet-principal` | `sympozium:celln` | Parent principal every fleet owner authenticates |
@@ -62,8 +64,8 @@ gateway adds to its requests and no node ever holds. See
 | `--celln-installer-image` | `ghcr.io/sympozium-ai/sympozium/celln-installer:<release>` | The fleet node image (the `celln` binary and runtime assets); a source build uses the embedded chart's `appVersion` |
 | `--celln-router-replicas` | `1` | Router replicas for the generated ownership PVC |
 
-`--enable-hermetic-workloads` is deprecated and does nothing: Celln is on by
-default; use `--no-celln` to skip it.
+`--enable-hermetic-workloads` is deprecated and does nothing: use
+`--celln-fleet` to deploy Celln.
 
 ### `sympozium doctor`
 

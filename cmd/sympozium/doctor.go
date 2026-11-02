@@ -227,13 +227,15 @@ func helmReleaseInfo() (*releaseInfo, error) {
 }
 
 // doctorDefaultValues are the values a first `sympozium install` without
-// flags would use here: the router and the model-free fleet when this build
-// pins a starter package; without one the install skips Celln.
+// flags would use here. Celln is opt-in (#693), so a plain first install
+// deploys none of it, whatever starter package the build pins.
 func doctorDefaultValues(scope string) ([]string, string, error) {
-	return doctorValuesFor(scope, defaultCellnStarter())
+	return []string{"celln.enabled=false"}, "a plain 'sympozium install' (Celln is opt-in with --celln-fleet)", nil
 }
 
-func doctorValuesFor(scope string, starter cellnStarter) ([]string, string, error) {
+// doctorFleetValuesFor are the values of `sympozium install --celln-fleet`
+// on a build that pins starter: the router and the model-free fleet.
+func doctorFleetValuesFor(scope string, starter cellnStarter) ([]string, string, error) {
 	if !starter.complete() {
 		return []string{"celln.enabled=false"}, "a plain 'sympozium install' (this build pins no Celln starter package, so Celln is skipped)", nil
 	}
@@ -252,7 +254,7 @@ func doctorValuesFor(scope string, starter cellnStarter) ([]string, string, erro
 	if err != nil {
 		return nil, "", err
 	}
-	return append(values, fleet...), "a plain 'sympozium install' with the Celln fleet", nil
+	return append(values, fleet...), "'sympozium install --celln-fleet'", nil
 }
 
 func (d *doctor) run(ctx context.Context) doctorReport {

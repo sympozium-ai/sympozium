@@ -16,7 +16,7 @@ const GUIDE = "https://github.com/sympozium-ai/sympozium/blob/main/docs/guides/c
 export function CellnFleetSetup({ watching, onWatch }: { watching: boolean; onWatch: (watching: boolean) => void }) {
   const [copied, setCopied] = useState(false);
   const command = fleetInstallCommand();
-  const { nodeLabel, daemonSets, mounts, optOut } = FLEET_PRIVILEGE_NOTICE;
+  const { nodeLabel, daemonSets, mounts } = FLEET_PRIVILEGE_NOTICE;
 
   if (!watching) {
     return (
@@ -35,7 +35,7 @@ export function CellnFleetSetup({ watching, onWatch }: { watching: boolean; onWa
     <div className="space-y-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 text-xs text-muted-foreground" data-testid="celln-fleet-setup">
       <p className="text-sm font-medium text-foreground">Set up the Celln fleet</p>
       <p>
-        The fleet is part of the default install. Installing it upgrades the control plane, so it runs from a terminal with cluster-admin access, not from the console. Run the command; this step continues by itself when the fleet reaches this namespace.
+        The fleet is opt-in: a default install runs Agents on the Kubernetes plane only. Adding it upgrades the control plane, so it runs from a terminal with cluster-admin access, not from the console. Run the command; this step continues by itself when the fleet reaches this namespace.
       </p>
       <div className="flex items-start gap-2">
         <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px] text-foreground" data-testid="celln-fleet-command">{command}</pre>
@@ -44,7 +44,7 @@ export function CellnFleetSetup({ watching, onWatch }: { watching: boolean; onWa
         </Button>
       </div>
       <p data-testid="celln-fleet-privilege">
-        On every node labeled <code>{nodeLabel}</code> this deploys two privileged DaemonSets ({daemonSets.map((name, index) => <span key={name}>{index ? ", " : ""}<code>{name}</code></span>)}) that mount {mounts.map((mount, index) => <span key={mount}>{index ? ", " : ""}<code>{mount}</code></span>)}, because booting micro-VMs needs them. Nodes hold no model key: every Agent's model requests leave through the model gateway with that Agent's own key, which you give it when you create it. Nodes with <code>/dev/kvm</code> and a boot kernel are labeled by the node probe; label others by hand. <code>{optOut}</code> installs without the fleet. See the <a className="underline" href={GUIDE} target="_blank" rel="noreferrer">fleet installation guide</a>.
+        On every node labeled <code>{nodeLabel}</code> this deploys two privileged DaemonSets ({daemonSets.map((name, index) => <span key={name}>{index ? ", " : ""}<code>{name}</code></span>)}) that mount {mounts.map((mount, index) => <span key={mount}>{index ? ", " : ""}<code>{mount}</code></span>)}, because booting micro-VMs needs them. Nodes hold no model key: every Agent's model requests leave through the model gateway with that Agent's own key, which you give it when you create it. Nodes with <code>/dev/kvm</code> and a boot kernel are labeled by the node probe; label others by hand. See the <a className="underline" href={GUIDE} target="_blank" rel="noreferrer">fleet installation guide</a>.
       </p>
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-foreground" role="status" data-testid="celln-fleet-waiting">

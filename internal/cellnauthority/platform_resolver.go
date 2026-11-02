@@ -123,8 +123,13 @@ type PlatformResolution struct {
 
 // PlatformResolver must be constructed with the manager's APIReader, never a
 // cached client. All tenant reads are forced into the AgentRun namespace.
+//
+// Reads, when set, memoises the two cluster-wide catalogue LISTs across the
+// resolutions of one admission (see CatalogueReads). It changes how often the
+// full objects cross the wire, never which objects a resolution evaluates.
 type PlatformResolver struct {
 	Reader client.Reader
+	Reads  *CatalogueReads
 }
 
 func (r PlatformResolver) Resolve(ctx context.Context, runKey types.NamespacedName, request PlatformResolveRequest) (*PlatformResolution, error) {
@@ -279,15 +284,18 @@ func (r PlatformResolver) load(ctx context.Context, runKey types.NamespacedName,
 	// One List serves every selected tool: the resolver reads through the
 	// uncached API reader, and a toolbox selects two dozen tools, so a Get per
 	// tool (taken twice per resolution) was most of a two-second admission.
-	var tools api.ClusterCellnToolList
+	// Within one admission the full objects are read once and reused while
+	// their live identities (UID and resourceVersion) are unchanged.
+	var tools []api.ClusterCellnTool
 	if len(selection.ClusterToolRefs) > 0 {
-		if err := r.Reader.List(ctx, &tools); err != nil {
+		var err error
+		if tools, err = r.Reads.listClusterTools(ctx, r.Reader); err != nil {
 			return snapshot, deny(ReasonToolUnknown, "cluster tools unavailable: %v", err)
 		}
 	}
-	byName := make(map[string]*api.ClusterCellnTool, len(tools.Items))
-	for i := range tools.Items {
-		byName[tools.Items[i].Name] = &tools.Items[i]
+	byName := make(map[string]*api.ClusterCellnTool, len(tools))
+	for i := range tools {
+		byName[tools[i].Name] = &tools[i]
 	}
 	seen := map[string]bool{}
 	for _, ref := range selection.ClusterToolRefs {
@@ -305,12 +313,12 @@ func (r PlatformResolver) load(ctx context.Context, runKey types.NamespacedName,
 		snapshot.Tools = append(snapshot.Tools, *tool)
 	}
 
-	var policies api.CellnExecutionPolicyList
-	if err := r.Reader.List(ctx, &policies); err != nil {
+	policies, err := r.Reads.listExecutionPolicies(ctx, r.Reader)
+	if err != nil {
 		return snapshot, deny(ReasonPolicyWithdrawn, "execution policies unavailable: %v", err)
 	}
-	for i := range policies.Items {
-		policy := policies.Items[i]
+	for i := range policies {
+		policy := policies[i]
 		if !liveMeta(policy.ObjectMeta, true) || policy.Namespace != "" {
 			continue
 		}

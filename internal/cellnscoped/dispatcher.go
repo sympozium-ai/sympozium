@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
@@ -23,6 +24,11 @@ type Dispatcher struct {
 	Receiver  *NativeClient
 	Gateway   *GatewayClient
 	Issuer    *cap.Issuer
+
+	// reads memoises the resolver's catalogue LISTs per admission, from
+	// preparation to the revalidation before start (admission_reads.go).
+	readsMu sync.Mutex
+	reads   map[string]admissionReadEntry
 }
 
 func (d *Dispatcher) Prepare(ctx context.Context, key types.NamespacedName) (*cellnauthority.StoredPreparation, error) {
@@ -46,7 +52,9 @@ func (d *Dispatcher) Prepare(ctx context.Context, key types.NamespacedName) (*ce
 		return nil, err
 	}
 	request.ParentIncarnation = incarnation
-	return d.Store.Prepare(ctx, key, request)
+	store := d.Store
+	store.Resolver.Reads = d.admissionReads(admissionKey(string(run.UID), ""), time.Now())
+	return store.Prepare(ctx, key, request)
 }
 
 // PrepareTurn captures a fresh turn from its API UID while retaining the
@@ -63,7 +71,9 @@ func (d *Dispatcher) PrepareTurn(ctx context.Context, runKey, turnKey types.Name
 		return nil, errors.New("original preparation identity changed")
 	}
 	decision := original.Decision
-	next, err := d.Store.Prepare(ctx, runKey, cellnauthority.PlatformResolveRequest{ClusterID: d.ClusterID, Now: time.Now().UTC(), AdmissionWindow: 60 * time.Second, Operation: "execution.turn", ParentIncarnation: incarnation, TurnKey: &turnKey, Original: &decision})
+	store := d.Store
+	store.Resolver.Reads = d.admissionReads(admissionKey(original.Decision.Run.UID, turnKey.Name), time.Now())
+	next, err := store.Prepare(ctx, runKey, cellnauthority.PlatformResolveRequest{ClusterID: d.ClusterID, Now: time.Now().UTC(), AdmissionWindow: 60 * time.Second, Operation: "execution.turn", ParentIncarnation: incarnation, TurnKey: &turnKey, Original: &decision})
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +183,18 @@ func (d *Dispatcher) RevalidateAuthority(ctx context.Context, prepared *cellnaut
 	}
 	frozen := prepared.Operation.Resolution
 	frozen.Request = prepared.Operation.ResolveRequest
-	return (cellnauthority.PlatformResolver{Reader: d.Store.Reader}).Revalidate(ctx,
+	// Reuse this admission's catalogue reads from preparation. Revalidation
+	// still compares a fresh resolution against the frozen read set; the memo
+	// only serves full objects whose live UID and resourceVersion are
+	// unchanged, so any change since preparation is read in full and refused
+	// exactly as before.
+	turnName := ""
+	if frozen.Request.TurnKey != nil {
+		turnName = frozen.Request.TurnKey.Name
+	}
+	key := admissionKey(frozen.Decision.Run.UID, turnName)
+	defer d.forgetAdmissionReads(key)
+	return (cellnauthority.PlatformResolver{Reader: d.Store.Reader, Reads: d.admissionReads(key, time.Now())}).Revalidate(ctx,
 		types.NamespacedName{Namespace: frozen.Decision.Run.Namespace, Name: frozen.Decision.Run.Name}, frozen)
 }
 

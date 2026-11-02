@@ -1272,34 +1272,39 @@ func newInstallCmd() *cobra.Command {
 		Short: "Install Sympozium into the current Kubernetes cluster",
 		Long: `Installs Sympozium using the embedded Helm chart. This sets up CRDs,
 the controller manager, API server, admission webhook, RBAC rules,
-network policies, default SkillPacks/Policies/Ensembles, and the Celln backend.
+network policies and default SkillPacks/Policies/Ensembles. Agents run on the
+Kubernetes Job backend by default; nothing beyond Kubernetes is required.
 
-Celln is deployed by default: the per-node fleet (every node labeled
-celln.dev/kvm=true boots micro-VMs), an unprivileged router, the model gateway
-and generated router/backend/capability credentials plus the ownership PVC.
-Pass --no-celln to skip Celln entirely. See docs/concepts/celln-backend.md.
+Celln is opt-in: pass --celln-fleet to also deploy the per-node fleet (every
+node labeled celln.dev/kvm=true boots micro-VMs), an unprivileged router, the
+model gateway and generated router/backend/capability credentials plus the
+ownership PVC. A cluster that already runs the fleet keeps it when this
+command is rerun. See docs/concepts/celln-backend.md.
 
 Use --image-tag to override the container image tag, for example when you have
 sideloaded images into Kind with a custom tag.
 
 Use --set to override arbitrary Helm values (e.g. --set controller.replicas=2).
 
-The Celln fleet is installed by default (every node with KVM joins by
-itself) and asks nothing about models: each Agent brings its own connection
-and key, which the model gateway adds to its requests; Celln nodes hold none.
-The fleet's two DaemonSets are privileged (they boot micro-VMs); the install
-says so before it proceeds. A source build needs --model-gateway-image
+With --celln-fleet, every node with KVM joins by itself and nothing is asked
+about models: each Agent brings its own connection and key, which the model
+gateway adds to its requests; Celln nodes hold none. The fleet's two
+DaemonSets are privileged (they boot micro-VMs); the install says so before
+it proceeds. A source build needs --model-gateway-image
 (repository@sha256:...).
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if note := sourceBuildInstallerNote(cellnInstallerImage); note != "" && !noCelln {
-				fmt.Println(note)
-			}
 			if !fleet.enabled && !noCelln {
-				// A build that pins a starter package makes the fleet the
-				// default Celln plane: no package flags, no model questions,
-				// KVM nodes labelled by the probe.
-				fleet.enabled = fleet.enableByDefault()
+				// Celln is opt-in (#693), but a rerun must not tear down a
+				// fleet that is already deployed: keep it.
+				deployed, err := deployedFleetEnabled()
+				if err != nil {
+					return err
+				}
+				fleet.enabled = fleet.keepDeployedFleet(deployed)
+			}
+			if note := sourceBuildInstallerNote(cellnInstallerImage); note != "" && fleet.enabled {
+				fmt.Println(note)
 			}
 			if fleet.enabled {
 				if noCelln {
@@ -1314,15 +1319,10 @@ says so before it proceeds. A source build needs --model-gateway-image
 				}
 				return installErgozUnless(noErgoz)
 			}
-			if !noCelln {
-				// A build that pins no starter package has no fleet to deploy;
-				// the router alone serves nothing. Say so instead of
-				// installing half a plane.
-				return fmt.Errorf("this build pins no Celln starter package: pass --celln-fleet with --celln-fleet-package-image, --celln-fleet-package-hash and --celln-fleet-publisher, or --no-celln")
-			}
 			if err := runInstall(imageTag, setValues); err != nil {
 				return err
 			}
+			fmt.Println(cellnNotDeployedSummary)
 			if err := installErgozUnless(noErgoz); err != nil {
 				return err
 			}
@@ -1332,8 +1332,8 @@ says so before it proceeds. A source build needs --model-gateway-image
 	cmd.Flags().StringVar(&imageTag, "image-tag", "", "Override image tag (e.g. 'latest')")
 	cmd.Flags().BoolVar(&installAdoptExisting, "adopt-existing", false, "Adopt existing objects the chart would own (Namespace, ServiceAccount, ConfigMap, Secret, Service, NetworkPolicy, PersistentVolumeClaim and the chart's own sympozium.ai resources) into the Helm release instead of refusing; Deployments, DaemonSets and other kinds are never adopted and must be deleted")
 	cmd.Flags().StringArrayVar(&setValues, "set", nil, "Set Helm values (key=value, can be repeated)")
-	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false, "Deprecated: Celln is enabled by default; use --no-celln to skip it")
-	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Do not deploy the Celln backend (dispatcher, router, credentials, ownership PVC)")
+	cmd.Flags().BoolVar(&enableHermeticWorkloads, "enable-hermetic-workloads", false, "Deprecated: use --celln-fleet to deploy Celln")
+	cmd.Flags().BoolVar(&noCelln, "no-celln", false, "Deprecated: Celln is opt-in (--celln-fleet). Kept for compatibility; on a cluster that already runs the fleet it also skips keeping it, which removes the fleet's chart components")
 	cmd.Flags().BoolVar(&noErgoz, "no-ergoz", false, "Do not install ergoz (accelerator power telemetry) into ergoz-system")
 	cmd.Flags().StringVar(&cellnRouterImage, "celln-router-image", "", "Celln router image repo:tag or repo@sha256:... (default "+defaultCellnRouterRepo+":"+defaultCellnRouterTag+")")
 	cmd.Flags().StringVar(&cellnInstallerImage, "celln-installer-image", "", "Celln host-installer image repo:tag (default ghcr.io/sympozium-ai/sympozium/celln-installer, tagged with this release; a source build uses the embedded chart's appVersion, never 'latest')")

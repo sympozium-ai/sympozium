@@ -11,14 +11,13 @@ installing, verifying, upgrading and operating the fleet.
 
 ## The fleet is privileged, and the install says so
 
-`sympozium install` prints this before it deploys anything:
+`sympozium install --celln-fleet` prints this before it deploys anything:
 
 ```text
   Celln fleet: on every node labeled celln.dev/kvm=true this deploys two privileged DaemonSets
   (celln-node, celln-node-configure) that mount /dev/kvm, /boot, /lib/modules and a state directory
   under /var/lib/sympozium-celln, because booting micro-VMs needs them. Nodes hold no model key:
   every Agent's model requests leave through the model gateway with that Agent's own key.
-  Pass --no-celln to install without the fleet.
 ```
 
 That is the whole host footprint: `privileged: true` on the two DaemonSets,
@@ -48,12 +47,12 @@ The installer also deploys [ergoz](https://github.com/sympozium-ai/ergoz)
 1. **A released `sympozium` binary.** A release pins the starter package the
    project built and signed for it (`hack/build-celln-starter.sh`; the
    identity is the `celln-starter.json` release asset) and the model gateway
-   image digest. With both pinned, a bare `sympozium install` deploys the
-   fleet. A build from source pins neither: it needs `--celln-fleet` with
+   image digest. With both pinned, `sympozium install --celln-fleet` needs
+   no other flags. A build from source pins neither: it needs
    `--celln-fleet-package-image`, `--celln-fleet-package-hash` and
    `--celln-fleet-publisher`, plus `--model-gateway-image
-   ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:<digest>`, or
-   `--no-celln`.
+   ghcr.io/sympozium-ai/sympozium/model-gateway@sha256:<digest>`. Without
+   `--celln-fleet`, `sympozium install` deploys no Celln at all.
 2. **Nodes with KVM.** Each cell is a micro-VM booted from a kernel image on
    the node, so a node needs `/dev/kvm`, a kernel under `/boot` and its
    `/lib/modules`. The node probe (`nodeProbe.labelKVMNodes`, on by default)
@@ -81,9 +80,14 @@ The installer also deploys [ergoz](https://github.com/sympozium-ai/ergoz)
 
 ## Install
 
+The fleet is opt-in:
+
 ```sh
-sympozium install
+sympozium install --celln-fleet
 ```
+
+Once it is deployed, a plain `sympozium install` (an upgrade or a rerun after
+labeling nodes) keeps it.
 
 Nothing about models is asked. In order, the command:
 
@@ -126,8 +130,8 @@ live conversations are kept`). If the wait expires, label a node, read the
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--no-celln` | `false` | Install without Celln (no fleet, router or gateway) |
-| `--celln-fleet` | on when the build pins a package | Deploy the fleet explicitly; needed, with the three package flags, for your own package or a source build |
+| `--celln-fleet` | `false` | Deploy the opt-in fleet; with the three package flags for your own package or a source build. An already deployed fleet is kept without it |
+| `--no-celln` | `false` | Deprecated (Celln is opt-in). On a cluster that runs the fleet it also skips keeping it, which removes the fleet's chart components |
 | `--celln-fleet-package-image`, `--celln-fleet-package-hash`, `--celln-fleet-publisher` | the release's starter package | A reviewed, digest-pinned package (`repository@sha256:…`, the `blake3:` hash and publisher key from `celln starter-inspect`) |
 | `--celln-fleet-scope` | `starter` | Stable installation identity; node state lives at `/var/lib/sympozium-celln/<scope>` |
 | `--celln-fleet-principal` | `sympozium:celln` | Parent principal every owner authenticates |

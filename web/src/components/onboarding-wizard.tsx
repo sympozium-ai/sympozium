@@ -1225,7 +1225,7 @@ export function OnboardingWizard({
                 kind="harness"
                 value={form.executionBackend || "job"}
                 disabledPlanes={fleetAvailable ? [] : ["celln"]}
-                disabledHint={{ celln: "Needs the Celln fleet, which sympozium install deploys on nodes labeled celln.dev/kvm=true" }}
+                disabledHint={{ celln: "Needs the opt-in Celln fleet: sympozium install --celln-fleet deploys it on nodes labeled celln.dev/kvm=true" }}
                 onChange={choosePlane}
               />
               {form.executionBackend === "job" && persistentRuntimes.length === 0 && (

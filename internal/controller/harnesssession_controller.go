@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"github.com/sympozium-ai/sympozium/internal/modelconnection"
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
@@ -106,6 +107,20 @@ func (r *HarnessSessionReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	agent, runtime, reason, err := r.resolveInputs(ctx, &session)
+	var originRefusal *keyOriginRefusal
+	if stderrors.As(err, &originRefusal) {
+		// The key's origin pin does not cover the session's endpoint. Stop
+		// reconciling forward, so no workload holding the key is created or
+		// reconfigured, but keep an existing workload and its state: a session
+		// that ran before origin pins were enforced (or whose key is pinned
+		// later) resumes as soon as the key is pinned to its endpoint. The
+		// session stops being proxied because it is no longer Ready.
+		log.Info("HarnessSession refused: model key origin", "reason", originRefusal.Error())
+		if _, err := r.setStatus(ctx, &session, "Failed", harnessSessionKeyOriginRefusedReason, originRefusal.Error(), session.Status.ResolvedImageDigest, session.Status.ServiceName, ""); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: harnessSessionFailedRequeue}, nil
+	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -211,9 +226,23 @@ func activeRequestsBlockIdle(session *sympoziumv1alpha1.HarnessSession) bool {
 	return true
 }
 
+// harnessSessionKeyOriginRefusedReason is the Ready condition reason of a
+// session whose model key is not pinned to the session's endpoint.
+const harnessSessionKeyOriginRefusedReason = "ModelKeyOriginRefused"
+
+// keyOriginRefusal is resolveInputs' refusal of a session whose model key's
+// origin pin does not cover the session's endpoint. Unlike other refusals it
+// keeps an existing workload: the binding itself is unchanged, and pinning the
+// key resumes the session.
+type keyOriginRefusal struct{ err error }
+
+func (e *keyOriginRefusal) Error() string { return e.err.Error() }
+func (e *keyOriginRefusal) Unwrap() error { return e.err }
+
 // resolveInputs validates the Agent/runtime binding. A non-empty reason is a
-// definitive, user-actionable rejection; a non-nil error is transient and is
-// retried with backoff instead of being reported as Failed.
+// definitive, user-actionable rejection; a *keyOriginRefusal error is the
+// origin-pin refusal, which keeps an existing workload; any other non-nil error
+// is transient and is retried with backoff instead of being reported as Failed.
 func (r *HarnessSessionReconciler) resolveInputs(ctx context.Context, session *sympoziumv1alpha1.HarnessSession) (*sympoziumv1alpha1.Agent, *sympoziumv1alpha1.AgentRuntime, string, error) {
 	if strings.TrimSpace(session.Spec.AgentRef) == "" || strings.TrimSpace(session.Spec.RuntimeRef) == "" {
 		return nil, nil, "spec.agentRef and spec.runtimeRef are required", nil
@@ -291,6 +320,17 @@ func (r *HarnessSessionReconciler) resolveInputs(ctx context.Context, session *s
 		}
 		if required {
 			return nil, nil, "harnessPolicy.modelMediation is required, and HarnessSession does not support it yet", nil
+		}
+	}
+	// The session pod sends the key to its baseURL: only to the key's origin
+	// pin, as for runs. A connection-backed session's Secret is pinned to the
+	// connection's endpoint by the connection's own claim.
+	if agent.Spec.Execution == nil || agent.Spec.Execution.ModelConnectionRef == "" {
+		if err := modelkey.AuthorizeRunEndpoint(ctx, r.Client, agent, model.Provider, model.BaseURL, model.AuthSecretRef); err != nil {
+			if modelkey.IsRefusal(err) {
+				return nil, nil, "", &keyOriginRefusal{err: err}
+			}
+			return nil, nil, "", err
 		}
 	}
 	return agent, runtime, "", nil
