@@ -61,7 +61,8 @@ func NewBridge(cfg *ServersConfig, ipcPath, manifestPath, agentRunID string) *Br
 	}
 }
 
-// Run starts the MCP bridge: discovers tools, writes manifest, then watches for requests.
+// Run starts the MCP bridge: discovers tools, starts watching for requests,
+// then writes the manifest once the watcher is ready.
 func (b *Bridge) Run(ctx context.Context) error {
 	ctx, span := bridgeTracer.Start(ctx, "mcp-bridge.run",
 		trace.WithAttributes(attribute.String("agent_run_id", b.agentRunID)),
@@ -78,22 +79,25 @@ func (b *Bridge) Run(ctx context.Context) error {
 
 	span.SetAttributes(attribute.Int("mcp.tools_discovered", len(manifest.Tools)))
 
-	// Phase 2: Write tool manifest for agent-runner
-	if err := WriteManifest(b.manifestPath, manifest); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "manifest write failed")
-		return err
-	}
-
-	log.Printf("Wrote tool manifest with %d tools to %s", len(manifest.Tools), b.manifestPath)
-
-	// Phase 3: Watch for MCP requests and dispatch
-	return b.watchAndDispatch(ctx)
+	// Phase 2: Watch for MCP requests and dispatch. The manifest is written
+	// only once the watcher is registered and any requests already on disk
+	// have been picked up, so none can fall into the gap between the two.
+	return b.watchAndDispatch(ctx, func() error {
+		if err := WriteManifest(b.manifestPath, manifest); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "manifest write failed")
+			return err
+		}
+		log.Printf("Wrote tool manifest with %d tools to %s", len(manifest.Tools), b.manifestPath)
+		return nil
+	})
 }
 
 // watchAndDispatch watches the IPC tools directory for MCP request files
-// and dispatches them to the appropriate MCP server.
-func (b *Bridge) watchAndDispatch(ctx context.Context) error {
+// and dispatches them to the appropriate MCP server. Request files that
+// already exist when the watcher is registered are dispatched too, then
+// onReady (if non-nil) runs before the event loop starts.
+func (b *Bridge) watchAndDispatch(ctx context.Context, onReady func() error) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("creating fsnotify watcher: %w", err)
@@ -118,6 +122,51 @@ func (b *Bridge) watchAndDispatch(ctx context.Context) error {
 	_ = watcher.Add(outputDir) // best-effort; dir may not exist yet
 
 	var wg sync.WaitGroup
+
+	// dispatch handles one request file at most once while it is in flight,
+	// whether it was seen by the startup scan, a Create or a Write event.
+	dispatch := func(path string) bool {
+		if _, loaded := b.processed.LoadOrStore(path, true); loaded {
+			return true
+		}
+
+		// Acquire semaphore without blocking the event loop
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			b.processed.Delete(path)
+			return false
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }() // release
+			b.handleRequest(ctx, path)
+			b.processed.Delete(path)
+		}()
+		return true
+	}
+
+	// Requests written before the watcher was registered produce no event,
+	// so pick them up with one pass over the directory.
+	existing, err := pendingRequests(b.ipcPath)
+	if err != nil {
+		return fmt.Errorf("scanning IPC directory: %w", err)
+	}
+	for _, path := range existing {
+		if !dispatch(path) {
+			wg.Wait()
+			return nil
+		}
+	}
+
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			wg.Wait()
+			return err
+		}
+	}
 
 	for {
 		select {
@@ -144,30 +193,16 @@ func (b *Bridge) watchAndDispatch(ctx context.Context) error {
 			if !event.Has(fsnotify.Create) && !event.Has(fsnotify.Write) {
 				continue
 			}
-			if !strings.HasPrefix(filename, "mcp-request-") || !strings.HasSuffix(filename, ".json") {
+			if !isRequestFile(filename) {
 				continue
 			}
 
-			// Dedup: fsnotify fires both Create and Write
-			if _, loaded := b.processed.LoadOrStore(event.Name, true); loaded {
-				continue
-			}
-
-			// Acquire semaphore without blocking the event loop
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
+			// Dedup: fsnotify fires both Create and Write, and the startup
+			// scan may already have dispatched this file.
+			if !dispatch(event.Name) {
 				wg.Wait()
 				return nil
 			}
-
-			wg.Add(1)
-			go func(path string) {
-				defer wg.Done()
-				defer func() { <-sem }() // release
-				b.handleRequest(ctx, path)
-				b.processed.Delete(path)
-			}(event.Name)
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -177,6 +212,26 @@ func (b *Bridge) watchAndDispatch(ctx context.Context) error {
 			log.Printf("Watcher error: %v", err)
 		}
 	}
+}
+
+// isRequestFile reports whether filename names an MCP request file.
+func isRequestFile(filename string) bool {
+	return strings.HasPrefix(filename, "mcp-request-") && strings.HasSuffix(filename, ".json")
+}
+
+// pendingRequests returns the paths of the MCP request files already in dir.
+func pendingRequests(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, entry := range entries {
+		if !entry.IsDir() && isRequestFile(entry.Name()) {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return paths, nil
 }
 
 // extractIDFromFilename extracts the request ID from a filename like "mcp-request-<id>.json".

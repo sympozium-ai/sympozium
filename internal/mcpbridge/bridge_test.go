@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -408,7 +409,7 @@ func TestBridgeEndToEnd(t *testing.T) {
 	// Start watcher in background
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- bridge.watchAndDispatch(ctx)
+		errCh <- bridge.watchAndDispatch(ctx, nil)
 	}()
 
 	// Give watcher time to start
@@ -561,4 +562,118 @@ func TestExtractTraceparent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newPingBridge returns a bridge backed by a mock server whose single
+// "ping" tool counts its calls.
+func newPingBridge(t *testing.T) (bridge *Bridge, toolsDir string, calls *atomic.Int32) {
+	t.Helper()
+	calls = &atomic.Int32{}
+	tools := []MCPTool{
+		{Name: "ping", Description: "Ping test", InputSchema: map[string]any{"type": "object"}},
+	}
+	srv := mockMCPServer(t, tools, func(params MCPToolCallParams) (*MCPToolCallResult, *JSONRPCError) {
+		calls.Add(1)
+		return &MCPToolCallResult{Content: []MCPContent{{Type: "text", Text: "pong"}}}, nil
+	})
+	t.Cleanup(srv.Close)
+
+	ipcDir := t.TempDir()
+	toolsDir = filepath.Join(ipcDir, "tools")
+	os.MkdirAll(toolsDir, 0o755)
+	os.MkdirAll(filepath.Join(ipcDir, "output"), 0o755)
+
+	cfg := &ServersConfig{
+		Servers: []ServerConfig{
+			{Name: "test-srv", URL: srv.URL, ToolsPrefix: "tst", Timeout: 10, Transport: "streamable-http"},
+		},
+	}
+	return NewBridge(cfg, toolsDir, filepath.Join(toolsDir, "mcp-tools.json"), "test-run"), toolsDir, calls
+}
+
+// writePingRequest writes a tst_ping request file and returns its contents.
+func writePingRequest(t *testing.T, toolsDir, id string) []byte {
+	t.Helper()
+	data, _ := json.Marshal(MCPRequest{ID: id, Tool: "tst_ping", Arguments: json.RawMessage(`{}`)})
+	if err := os.WriteFile(filepath.Join(toolsDir, "mcp-request-"+id+".json"), data, 0o644); err != nil {
+		t.Fatalf("writing request: %v", err)
+	}
+	return data
+}
+
+// waitForResult polls for the result file of request id.
+func waitForResult(t *testing.T, toolsDir, id string) MCPResult {
+	t.Helper()
+	resPath := filepath.Join(toolsDir, "mcp-result-"+id+".json")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var result MCPResult
+		if data, err := os.ReadFile(resPath); err == nil && json.Unmarshal(data, &result) == nil {
+			return result
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for MCP result %s", id)
+	return MCPResult{}
+}
+
+func TestBridgeRunDispatchesRequestWrittenBeforeWatcher(t *testing.T) {
+	// The agent can write its first request as soon as the init container's
+	// manifest exists, before the sidecar has registered its watcher.
+	bridge, toolsDir, calls := newPingBridge(t)
+	writePingRequest(t, toolsDir, "early")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- bridge.Run(ctx) }()
+
+	result := waitForResult(t, toolsDir, "early")
+	if !result.Success {
+		t.Errorf("expected success, got error: %s", result.Error)
+	}
+	if _, err := os.Stat(filepath.Join(toolsDir, "mcp-tools.json")); err != nil {
+		t.Errorf("manifest not written: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("tool called %d times, want 1", got)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Errorf("Run: %v", err)
+	}
+}
+
+func TestBridgeDispatchesRequestSeenByScanAndEventOnce(t *testing.T) {
+	// A request written while the watcher is being set up can be seen by
+	// both the startup scan and a filesystem event; it must run once.
+	bridge, toolsDir, calls := newPingBridge(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := bridge.discoverTools(ctx); err != nil {
+		t.Fatalf("discoverTools: %v", err)
+	}
+	data := writePingRequest(t, toolsDir, "racy")
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- bridge.watchAndDispatch(ctx, func() error {
+			// The scan has dispatched the file; write it again so the
+			// watcher also reports it.
+			return os.WriteFile(filepath.Join(toolsDir, "mcp-request-racy.json"), data, 0o644)
+		})
+	}()
+
+	if result := waitForResult(t, toolsDir, "racy"); !result.Success {
+		t.Errorf("expected success, got error: %s", result.Error)
+	}
+	time.Sleep(300 * time.Millisecond) // let any duplicate dispatch land
+	if got := calls.Load(); got != 1 {
+		t.Errorf("tool called %d times, want 1", got)
+	}
+
+	cancel()
+	<-errCh
 }
