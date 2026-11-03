@@ -1516,6 +1516,12 @@ export function setNamespace(ns: string) {
   localStorage.setItem(NS_KEY, ns);
 }
 
+/** The URL of one MCPServer, in `namespace` when given. */
+function mcpServerPath(name: string, suffix: string, namespace?: string): string {
+  const path = `/api/v1/mcpservers/${encodeURIComponent(name)}${suffix}`;
+  return namespace ? `${path}?namespace=${encodeURIComponent(namespace)}` : path;
+}
+
 async function apiFetch<T>(
   path: string,
   init?: RequestInit & { skipNamespace?: boolean; retryNetwork?: boolean },
@@ -1891,9 +1897,16 @@ export const api = {
       ),
   },
 
+  // MCPServers are listed across all namespaces, so calls on one server pass
+  // the server's own namespace instead of the namespace selector's. Without a
+  // namespace they fall back to the selector, as other resources do.
   mcpServers: {
     list: () => apiFetch<MCPServer[]>("/api/v1/mcpservers"),
-    get: (name: string) => apiFetch<MCPServer>(`/api/v1/mcpservers/${name}`),
+    get: (name: string, namespace?: string) =>
+      apiFetch<MCPServer>(
+        mcpServerPath(name, "", namespace),
+        { skipNamespace: !!namespace },
+      ),
     create: (data: {
       name: string;
       transportType: string;
@@ -1911,8 +1924,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
-    delete: (name: string) =>
-      apiFetch<void>(`/api/v1/mcpservers/${name}`, { method: "DELETE" }),
+    delete: (name: string, namespace?: string) =>
+      apiFetch<void>(mcpServerPath(name, "", namespace), {
+        method: "DELETE",
+        skipNamespace: !!namespace,
+      }),
     patch: (
       name: string,
       data: {
@@ -1924,24 +1940,31 @@ export const api = {
         toolsDeny?: string[];
         suspended?: boolean;
       },
+      namespace?: string,
     ) =>
-      apiFetch<MCPServer>(`/api/v1/mcpservers/${name}`, {
+      apiFetch<MCPServer>(mcpServerPath(name, "", namespace), {
         method: "PATCH",
         body: JSON.stringify(data),
+        skipNamespace: !!namespace,
       }),
     installDefaults: () =>
       apiFetch<InstallDefaultMCPServersResponse>(
         "/api/v1/mcpservers/install-defaults",
         { method: "POST" },
       ),
-    authStatus: (name: string) =>
+    authStatus: (name: string, namespace?: string) =>
       apiFetch<MCPServerAuthStatusResponse>(
-        `/api/v1/mcpservers/${name}/auth/status`,
+        mcpServerPath(name, "/auth/status", namespace),
+        { skipNamespace: !!namespace },
       ),
-    authToken: (name: string, token: string) =>
+    authToken: (name: string, token: string, namespace?: string) =>
       apiFetch<MCPServerAuthStatusResponse>(
-        `/api/v1/mcpservers/${name}/auth/token`,
-        { method: "POST", body: JSON.stringify({ token }) },
+        mcpServerPath(name, "/auth/token", namespace),
+        {
+          method: "POST",
+          body: JSON.stringify({ token }),
+          skipNamespace: !!namespace,
+        },
       ),
   },
 

@@ -38,6 +38,14 @@ import {
 } from "@/components/ui/select";
 import { Eye, Trash2, Plus, Download, KeyRound, Play, Pause } from "lucide-react";
 import { formatAge } from "@/lib/utils";
+import type { MCPServer } from "@/lib/api";
+
+function mcpServerDetailPath(mcp: MCPServer): string {
+  const path = `/mcp-servers/${encodeURIComponent(mcp.metadata.name)}`;
+  return mcp.metadata.namespace
+    ? `${path}?namespace=${encodeURIComponent(mcp.metadata.namespace)}`
+    : path;
+}
 
 export function McpServersPage() {
   const { data, isLoading } = useMcpServers();
@@ -49,7 +57,10 @@ export function McpServersPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
-  const [tokenTarget, setTokenTarget] = useState<string | null>(null);
+  const [tokenTarget, setTokenTarget] = useState<{
+    name: string;
+    namespace?: string;
+  } | null>(null);
   const [tokenValue, setTokenValue] = useState("");
 
   const [form, setForm] = useState({
@@ -94,7 +105,7 @@ export function McpServersPage() {
   const handleSaveToken = () => {
     if (!tokenTarget || !tokenValue) return;
     authTokenMutation.mutate(
-      { name: tokenTarget, token: tokenValue },
+      { ...tokenTarget, token: tokenValue },
       {
         onSuccess: () => {
           setTokenDialogOpen(false);
@@ -105,8 +116,11 @@ export function McpServersPage() {
     );
   };
 
-  const openTokenDialog = (name: string) => {
-    setTokenTarget(name);
+  const openTokenDialog = (mcp: MCPServer) => {
+    setTokenTarget({
+      name: mcp.metadata.name,
+      namespace: mcp.metadata.namespace,
+    });
     setTokenValue("");
     setTokenDialogOpen(true);
   };
@@ -316,6 +330,7 @@ export function McpServersPage() {
                       onClick={() =>
                         patchMutation.mutate({
                           name: mcp.metadata.name,
+                          namespace: mcp.metadata.namespace,
                           suspended: !mcp.spec.suspended,
                         })
                       }
@@ -331,19 +346,24 @@ export function McpServersPage() {
                       variant="ghost"
                       size="icon"
                       title="Configure token"
-                      onClick={() => openTokenDialog(mcp.metadata.name)}
+                      onClick={() => openTokenDialog(mcp)}
                     >
                       <KeyRound className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" asChild>
-                      <Link to={`/mcp-servers/${mcp.metadata.name}`}>
+                      <Link to={mcpServerDetailPath(mcp)}>
                         <Eye className="h-4 w-4" />
                       </Link>
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => deleteMutation.mutate(mcp.metadata.name)}
+                      onClick={() =>
+                        deleteMutation.mutate({
+                          name: mcp.metadata.name,
+                          namespace: mcp.metadata.namespace,
+                        })
+                      }
                       disabled={deleteMutation.isPending}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -363,7 +383,7 @@ export function McpServersPage() {
             <DialogTitle>Configure Token</DialogTitle>
             <DialogDescription>
               Set the authentication token for the{" "}
-              <span className="font-mono font-semibold">{tokenTarget}</span> MCP
+              <span className="font-mono font-semibold">{tokenTarget?.name}</span> MCP
               server. This creates a Kubernetes Secret that is injected into the
               server pod.
             </DialogDescription>
