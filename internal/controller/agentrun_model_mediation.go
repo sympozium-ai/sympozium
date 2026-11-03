@@ -493,6 +493,13 @@ func assertNoModelSecretInPod(agentRun *sympoziumv1alpha1.AgentRun, spec *corev1
 		if volume.Secret != nil && named(volume.Secret.SecretName) {
 			return fmt.Errorf("volume %s would mount a model Secret on a mediated run", volume.Name)
 		}
+		if volume.Projected != nil {
+			for _, source := range volume.Projected.Sources {
+				if source.Secret != nil && named(source.Secret.Name) {
+					return fmt.Errorf("volume %s would project a model Secret on a mediated run", volume.Name)
+				}
+			}
+		}
 	}
 	return nil
 }
