@@ -1294,3 +1294,29 @@ func TestBuildRelationshipContext_SequentialEdgesNameTheTool(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveProviderAPIKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		env      map[string]string
+		want     string
+	}{
+		{"xai own key", "xai", map[string]string{"XAI_API_KEY": "x"}, "x"},
+		{"own key beats generic", "xai", map[string]string{"API_KEY": "g", "XAI_API_KEY": "x"}, "x"},
+		{"deepseek key no longer dropped", "openai", map[string]string{"DEEPSEEK_API_KEY": "d"}, "d"},
+		{"groq via openai-compatible", "groq", map[string]string{"GROQ_API_KEY": "q"}, "q"},
+		{"console PROVIDER_API_KEY", "custom", map[string]string{"PROVIDER_API_KEY": "p"}, "p"},
+		{"generic before other providers", "custom", map[string]string{"API_KEY": "g", "OPENAI_API_KEY": "o"}, "g"},
+		{"provider case-insensitive", "XAI", map[string]string{"OPENAI_API_KEY": "o", "XAI_API_KEY": "x"}, "x"},
+		{"none", "openai", map[string]string{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveProviderAPIKey(tt.provider, func(k string) string { return tt.env[k] })
+			if got != tt.want {
+				t.Errorf("resolveProviderAPIKey(%q) = %q, want %q", tt.provider, got, tt.want)
+			}
+		})
+	}
+}

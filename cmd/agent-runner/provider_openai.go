@@ -111,6 +111,19 @@ func isReasoningEffortUnsupportedErr(err error) bool {
 			strings.Contains(msg, "unrecognized") || strings.Contains(msg, "/v1/responses"))
 }
 
+// hostedDefaultBaseURLs are the OpenAI-compatible API roots of hosted
+// providers, used when MODEL_BASE_URL is empty. Their origins must match
+// internal/modelkey's RunnerDefaultOrigin, which decides where a key may go.
+var hostedDefaultBaseURLs = map[string]string{
+	"xai":        "https://api.x.ai/v1",
+	"groq":       "https://api.groq.com/openai/v1",
+	"mistral":    "https://api.mistral.ai/v1",
+	"deepseek":   "https://api.deepseek.com/v1",
+	"openrouter": "https://openrouter.ai/api/v1",
+	"google":     "https://generativelanguage.googleapis.com/v1beta/openai",
+	"gemini":     "https://generativelanguage.googleapis.com/v1beta/openai",
+}
+
 // newOpenAIProvider constructs an openaiProvider with the given config.
 // The provider string determines SDK defaults and telemetry tags
 // ("openai" | "lm-studio" | "ollama" | "azure-openai" | …).
@@ -158,6 +171,8 @@ func newOpenAIProvider(provider, apiKey, baseURL, model, systemPrompt, task stri
 			opts = append(opts, openaioption.WithBaseURL("http://localhost:8080/v1"))
 		} else if provider == "unsloth" {
 			opts = append(opts, openaioption.WithBaseURL("http://localhost:8080/v1"))
+		} else if hosted, ok := hostedDefaultBaseURLs[provider]; ok {
+			opts = append(opts, openaioption.WithBaseURL(hosted))
 		}
 	}
 

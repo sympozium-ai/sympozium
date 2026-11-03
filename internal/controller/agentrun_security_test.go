@@ -174,3 +174,20 @@ func TestDeniedEnvVarKeys_ContainsDangerousVars(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildContainers_AuthSecret_InjectsXAIKey: the console and CLI store an
+// xAI (Grok) key under XAI_API_KEY, so the allowlist must carry it.
+func TestBuildContainers_AuthSecret_InjectsXAIKey(t *testing.T) {
+	r := &AgentRunReconciler{}
+	run := newTestRun()
+	run.Spec.Model.AuthSecretRef = "my-auth-secret"
+
+	containers, _, _ := r.buildContainers(run, false, nil, nil, nil, nil)
+	for _, env := range containers[0].Env {
+		if env.Name == "XAI_API_KEY" && env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil &&
+			env.ValueFrom.SecretKeyRef.Name == "my-auth-secret" && env.ValueFrom.SecretKeyRef.Key == "XAI_API_KEY" {
+			return
+		}
+	}
+	t.Fatal("XAI_API_KEY was not injected from the auth secret")
+}

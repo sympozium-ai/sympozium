@@ -96,6 +96,8 @@ export function defaultProviderBaseURL(provider: string): string {
     case "llama-server":
     case "unsloth":
       return "http://localhost:8080";
+    case "xai":
+      return "https://api.x.ai";
     default:
       return "";
   }

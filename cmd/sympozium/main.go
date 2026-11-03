@@ -687,8 +687,9 @@ func runOnboard() error {
 	fmt.Println("    5) LM Studio       (local, optional API key)")
 	fmt.Println("    6) llama-server    (local, no API key needed)")
 	fmt.Println("    7) AWS Bedrock     (Claude, Nova, etc.)")
-	fmt.Println("    8) Other / OpenAI-compatible")
-	providerChoice := prompt(reader, "  Choice [1-8]", "1")
+	fmt.Println("    8) xAI             (Grok)")
+	fmt.Println("    9) Other / OpenAI-compatible")
+	providerChoice := prompt(reader, "  Choice [1-9]", "1")
 
 	var providerName, secretEnvKey, modelName, baseURL string
 	switch providerChoice {
@@ -752,6 +753,11 @@ func runOnboard() error {
 			return fmt.Errorf("create Bedrock provider secret: %w", err)
 		}
 	case "8":
+		providerName = "xai"
+		secretEnvKey = "XAI_API_KEY"
+		baseURL = "https://api.x.ai/v1"
+		modelName = prompt(reader, "  Model name", "grok-4")
+	case "9":
 		providerName = prompt(reader, "  Provider name", "custom")
 		secretEnvKey = prompt(reader, "  API key env var name (empty if none)", "API_KEY")
 		baseURL = prompt(reader, "  API base URL", "")
@@ -2275,6 +2281,7 @@ var providerSuggestions = []suggestion{
 	{"ollama", "Ollama (local)"},
 	{"llama-server", "llama-server (llama.cpp local)"},
 	{"bedrock", "AWS Bedrock (Claude, Nova, etc.)"},
+	{"xai", "xAI (Grok)"},
 	{"openai-compatible", "OpenAI-compatible endpoint"},
 }
 
@@ -2311,6 +2318,12 @@ var modelSuggestions = map[string][]suggestion{
 		{"amazon.nova-pro-v1:0", "Amazon Nova Pro"},
 		{"amazon.nova-lite-v1:0", "Amazon Nova Lite"},
 	},
+	"xai": {
+		{"grok-4", "Most capable Grok"},
+		{"grok-4-fast", "Fast Grok 4, 2M ctx"},
+		{"grok-code-fast-1", "Agentic coding"},
+		{"grok-3-mini", "Small & cheap"},
+	},
 	"ollama": {
 		{"llama3", "Meta Llama 3 8B"},
 		{"llama3.3", "Meta Llama 3.3 70B"},
@@ -2343,6 +2356,8 @@ func fetchProviderModels(provider, apiKey, baseURL string) ([]string, error) {
 		// Azure: GET {endpoint}/openai/models?api-version=2024-06-01
 		endpoint = strings.TrimRight(baseURL, "/") + "/openai/models?api-version=2024-06-01"
 		authHeader = "" // Azure uses api-key header
+	case "xai":
+		endpoint = "https://api.x.ai/v1/models"
 	case "anthropic":
 		endpoint = "https://api.anthropic.com/v1/models"
 		authHeader = "" // Anthropic uses x-api-key
@@ -9649,7 +9664,7 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		}
 		w.instanceName = val
 		w.step = wizStepProvider
-		m.input.Placeholder = "Choice [1-8] (default: 1 — OpenAI)"
+		m.input.Placeholder = "Choice [1-9] (default: 1 — OpenAI)"
 		return m, nil
 
 	case wizStepProvider:
@@ -9696,6 +9711,13 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "AWS Region (default: us-east-1)"
 			return m, nil
 		case "8":
+			w.providerName = "xai"
+			w.secretEnvKey = "XAI_API_KEY"
+			w.baseURL = "https://api.x.ai/v1"
+			w.step = wizStepAPIKey
+			m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+			return m, nil
+		case "9":
 			w.providerName = "custom"
 			w.secretEnvKey = "API_KEY"
 			w.step = wizStepBaseURL
@@ -10056,7 +10078,7 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 		}
 
 		w.step = wizStepPersonaProvider
-		m.input.Placeholder = "Choice [1-8] (default: 1 — OpenAI)"
+		m.input.Placeholder = "Choice [1-9] (default: 1 — OpenAI)"
 		return m, nil
 
 	case wizStepPersonaProvider:
@@ -10102,6 +10124,13 @@ func (m tuiModel) advanceWizard(val string) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "AWS Region (default: us-east-1)"
 			return m, nil
 		case "8":
+			w.providerName = "xai"
+			w.secretEnvKey = "XAI_API_KEY"
+			w.baseURL = "https://api.x.ai/v1"
+			w.step = wizStepPersonaAPIKey
+			m.input.Placeholder = fmt.Sprintf("%s (paste key, Enter to skip)", w.secretEnvKey)
+			return m, nil
+		case "9":
 			w.providerName = "custom"
 			w.secretEnvKey = "API_KEY"
 			w.step = wizStepPersonaBaseURL
@@ -10511,7 +10540,8 @@ func (m tuiModel) renderWizardPanel(h int) string {
 		lines = append(lines, menuNumStyle.Render("  5)")+menuStyle.Render(" LM Studio       (local, optional API key)"))
 		lines = append(lines, menuNumStyle.Render("  6)")+menuStyle.Render(" llama-server    (local, no API key needed)"))
 		lines = append(lines, menuNumStyle.Render("  7)")+menuStyle.Render(" AWS Bedrock     (Claude, Nova, etc.)"))
-		lines = append(lines, menuNumStyle.Render("  8)")+menuStyle.Render(" Other / OpenAI-compatible"))
+		lines = append(lines, menuNumStyle.Render("  8)")+menuStyle.Render(" xAI             (Grok)"))
+		lines = append(lines, menuNumStyle.Render("  9)")+menuStyle.Render(" Other / OpenAI-compatible"))
 
 	case wizStepBaseURL:
 		lines = append(lines, stepStyle.Render("  📋 Step 3/9 — AI Provider (continued)"))
@@ -10893,7 +10923,8 @@ func (m tuiModel) renderPersonaWizardPanel(h int,
 		lines = append(lines, menuNumStyle.Render("  [5]")+menuStyle.Render(" LM Studio")+hintStyle.Render(" — Local models"))
 		lines = append(lines, menuNumStyle.Render("  [6]")+menuStyle.Render(" llama-server")+hintStyle.Render(" — Local models (llama.cpp)"))
 		lines = append(lines, menuNumStyle.Render("  [7]")+menuStyle.Render(" AWS Bedrock")+hintStyle.Render(" — Claude, Nova, etc."))
-		lines = append(lines, menuNumStyle.Render("  [8]")+menuStyle.Render(" Custom")+hintStyle.Render(" — Any OpenAI-compatible API"))
+		lines = append(lines, menuNumStyle.Render("  [8]")+menuStyle.Render(" xAI")+hintStyle.Render(" — Grok"))
+		lines = append(lines, menuNumStyle.Render("  [9]")+menuStyle.Render(" Custom")+hintStyle.Render(" — Any OpenAI-compatible API"))
 		lines = append(lines, "")
 
 	case wizStepPersonaBaseURL:

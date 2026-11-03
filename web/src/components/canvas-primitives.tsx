@@ -390,6 +390,11 @@ export const providerColors: Record<
 		text: "text-yellow-400",
 		edge: "#eab308",
 	},
+	xai: {
+		border: "border-zinc-400/40",
+		text: "text-zinc-300",
+		edge: "#a1a1aa",
+	},
 	custom: {
 		border: "border-gray-500/40",
 		text: "text-gray-400",

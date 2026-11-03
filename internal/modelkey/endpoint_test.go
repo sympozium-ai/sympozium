@@ -41,7 +41,11 @@ func TestRunOrigin(t *testing.T) {
 	for _, tc := range []struct{ provider, baseURL, want string }{
 		{"anthropic", "", "https://api.anthropic.com"},
 		{"openai", "", "https://api.openai.com"},
-		{"groq", "", "https://api.openai.com"}, // what the runner really reaches
+		{"groq", "", "https://api.groq.com"}, // the runner's hosted default
+		{"xai", "", "https://api.x.ai"},
+		{"XAI", "", "https://api.x.ai"},
+		{"deepseek", "", "https://api.deepseek.com"},
+		{"custom", "", "https://api.openai.com"}, // what the runner really reaches
 		{"ollama", "", "http://ollama.default.svc:11434"},
 		{"", "", "https://api.openai.com"},
 		{"azure-openai", "", ""},

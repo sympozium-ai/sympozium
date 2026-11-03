@@ -53,13 +53,17 @@ func CanonicalProvider(provider string) string {
 
 // RunnerDefaultOrigin is the origin the agent-runner sends a provider's
 // requests to when the run sets no baseURL (cmd/agent-runner provider_*.go):
-// the Anthropic SDK default, the runner's local defaults, and the OpenAI SDK
+// the Anthropic SDK default, hosted providers' own APIs, the runner's local
+// defaults, and the OpenAI SDK
 // default for every other OpenAI-compatible provider. Azure needs a baseURL
 // and Bedrock does not use one; both return "".
 func RunnerDefaultOrigin(provider string) string {
 	switch CanonicalProvider(provider) {
 	case "anthropic":
 		return wellKnownOrigins["anthropic"]
+	case "xai", "groq", "mistral", "deepseek", "openrouter", "google", "gemini":
+		// The runner's hosted defaults (cmd/agent-runner hostedDefaultBaseURLs).
+		return wellKnownOrigins[CanonicalProvider(provider)]
 	case "ollama":
 		return "http://ollama.default.svc:11434"
 	case "lm-studio":

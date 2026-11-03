@@ -133,7 +133,11 @@ var allowedAuthSecretKeys = []string{
 	"GROQ_API_KEY",
 	"DEEPSEEK_API_KEY",
 	"OPENROUTER_API_KEY",
+	"XAI_API_KEY",
 	"API_KEY",
+	// The console stores keys for providers without a dedicated name here
+	// (apiserver providerEnvKey).
+	"PROVIDER_API_KEY",
 }
 
 // IsAllowedAuthSecretKey reports whether key is on the auth secret allowlist,

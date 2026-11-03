@@ -23,6 +23,11 @@ const ANTHROPIC_MODELS = [
 
 const AZURE_MODELS = ["gpt-4o", "gpt-4", "gpt-35-turbo"];
 
+const XAI_MODELS = ["grok-4", "grok-4-fast", "grok-code-fast-1", "grok-3-mini"];
+
+/** xAI's OpenAI-compatible API root, used to list Grok models. */
+export const XAI_BASE_URL = "https://api.x.ai/v1";
+
 const BEDROCK_MODELS = [
   "anthropic.claude-sonnet-4-20250514-v1:0",
   "anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -162,7 +167,8 @@ export function useModelList(
     provider === "custom";
   const canFetchLocal = isLocalProvider && !!baseURL;
   const canFetchCloud =
-    !!apiKey && (provider === "openai" || provider === "anthropic");
+    !!apiKey &&
+    (provider === "openai" || provider === "anthropic" || provider === "xai");
   const canFetchBedrock =
     provider === "bedrock" &&
     !!bedrockCredentials?.region &&
@@ -185,6 +191,9 @@ export function useModelList(
       if (provider === "openai" && apiKey) return fetchOpenAIModels(apiKey);
       if (provider === "anthropic" && apiKey)
         return fetchAnthropicModels(apiKey);
+      // xAI does not allow browser CORS; list through the in-cluster proxy.
+      if (provider === "xai" && apiKey)
+        return fetchProviderModelsViaProxy(XAI_BASE_URL, apiKey);
       throw new Error("no-fetch");
     },
     enabled: canFetchLocal || canFetchCloud || canFetchBedrock,
@@ -203,6 +212,8 @@ export function useModelList(
         return AZURE_MODELS;
       case "bedrock":
         return BEDROCK_MODELS;
+      case "xai":
+        return XAI_MODELS;
       default:
         return [];
     }

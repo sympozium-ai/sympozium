@@ -58,10 +58,9 @@ func TestAdmissionAllowsAMediatedOpenRouterRunWithNoBaseURL(t *testing.T) {
 	if resp := mediationEnforcer(t, sympoziumv1alpha1.ModelMediationRequired, "https://openrouter.ai").Handle(context.Background(), admissionRequestFor(t, run)); !resp.Allowed {
 		t.Fatalf("mediated run denied: %s", resp.Result.Message)
 	}
-	// Unmediated, the pod would send the key to the runner default.
-	resp := mediationEnforcer(t, sympoziumv1alpha1.ModelMediationOff, "https://openrouter.ai").Handle(context.Background(), admissionRequestFor(t, run))
-	if resp.Allowed || !strings.Contains(resp.Result.Message, "is pinned to https://openrouter.ai") {
-		t.Fatalf("unmediated: allowed=%v %q", resp.Allowed, resp.Result.Message)
+	// Unmediated, the runner's own default for openrouter is its pinned origin.
+	if resp := mediationEnforcer(t, sympoziumv1alpha1.ModelMediationOff, "https://openrouter.ai").Handle(context.Background(), admissionRequestFor(t, run)); !resp.Allowed {
+		t.Fatalf("unmediated openrouter run denied: %s", resp.Result.Message)
 	}
 }
 
