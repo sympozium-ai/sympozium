@@ -275,6 +275,7 @@ jobs:
           - mcp-bridge
           - web-proxy
           - model-gateway
+          - harness-gateway
           - node-probe
           - llmfit-daemon
           - harness-reference

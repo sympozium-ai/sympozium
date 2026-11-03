@@ -92,6 +92,19 @@ spec:
       ports:
         - protocol: TCP
           port: 6443
+    {{- if (.Values.harnessGateway | default dict).enabled }}
+    # Allow a mediated harness to reach the harness gateway
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "sympozium.namespace" . }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: harness-gateway
+      ports:
+        - protocol: TCP
+          port: 8443
+    {{- end }}
     {{- range .Values.networkPolicies.extraEgressPorts }}
     - to: []
       ports:

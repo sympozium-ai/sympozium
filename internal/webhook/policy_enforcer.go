@@ -163,7 +163,7 @@ func (pe *PolicyEnforcer) Handle(ctx context.Context, req admission.Request) adm
 	// status and metadata writes) is not re-judged, so runs admitted before
 	// these rules are not wedged.
 	unchanged := securityFieldsUnchanged(pe.Decoder, req, run)
-	if !unchanged && run.Spec.Model.ConnectionRef == "" && run.Spec.Model.ModelRef == "" {
+	if !unchanged && run.Spec.Model.ConnectionRef == "" && run.Spec.Model.ModelRef == "" && !pe.modelKeyMediated(ctx, run, &instance) {
 		for _, secret := range []string{run.Spec.Model.AuthSecretRef, run.Spec.Model.ProviderHeadersSecretRef} {
 			if err := modelkey.CheckRunEndpoint(ctx, pe.Client, &instance, run.Spec.Model.Provider, run.Spec.Model.BaseURL, secret); modelkey.IsRefusal(err) {
 				return admission.Denied(err.Error())
@@ -1114,4 +1114,28 @@ func securityFieldsUnchanged(decoder admission.Decoder, req admission.Request, r
 		apiequality.Semantic.DeepEqual(old.Spec.Volumes, run.Spec.Volumes) &&
 		apiequality.Semantic.DeepEqual(old.Spec.VolumeMounts, run.Spec.VolumeMounts) &&
 		apiequality.Semantic.DeepEqual(old.Spec.Lifecycle, run.Spec.Lifecycle)
+}
+
+// modelKeyMediated reports whether the controller will keep this run's model
+// key out of its pod through the harness gateway: a harness run naming a key,
+// whose Agent's policy requires mediation. Only the Agent's policy decides it;
+// nothing in the run can. The gateway path then holds the key to the
+// operator's profile upstream and its pin, so the run's baseURL is not where
+// the key goes and the origin check above does not apply. The controller
+// makes the same decision before any pod exists (runKeyIsMediated) and fails a
+// run it cannot mediate. Any read that fails answers "not mediated", so the
+// ordinary origin check runs.
+func (pe *PolicyEnforcer) modelKeyMediated(ctx context.Context, run *sympoziumv1alpha1.AgentRun, instance *sympoziumv1alpha1.Agent) bool {
+	model := run.Spec.Model
+	if taskmodes.HarnessImage(run.Spec.Task) == "" || (model.AuthSecretRef == "" && model.ProviderHeadersSecretRef == "") || instance.Spec.PolicyRef == "" {
+		return false
+	}
+	if run.Spec.Backend == "celln" && run.Spec.CellnSelection != nil {
+		return false
+	}
+	var policy sympoziumv1alpha1.SympoziumPolicy
+	if err := pe.Client.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: instance.Spec.PolicyRef}, &policy); err != nil {
+		return false
+	}
+	return policy.Spec.HarnessPolicy != nil && policy.Spec.HarnessPolicy.ModelMediation == sympoziumv1alpha1.ModelMediationRequired
 }

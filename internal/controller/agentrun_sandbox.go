@@ -108,6 +108,9 @@ func (r *AgentRunReconciler) reconcilePendingAgentSandbox(
 	}
 	template, err := r.buildAgentPodTemplate(ctx, podRun, prereqs.inputs.memoryEnabled,
 		prereqs.inputs.observability, taskSidecars, prereqs.mcpServers, prereqs.inputs.allowedOutboundChannels)
+	if modelMediationCanRetry(err) {
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		return ctrl.Result{}, r.failRun(ctx, agentRun,
 			fmt.Sprintf("task-mode dispatch rejected the AgentRun (sandbox path): %v", err))

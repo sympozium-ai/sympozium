@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -27,6 +28,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/controller"
 	"github.com/sympozium-ai/sympozium/internal/dra"
 	"github.com/sympozium-ai/sympozium/internal/eventbus"
+	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"github.com/sympozium-ai/sympozium/internal/pricing"
 	"github.com/sympozium-ai/sympozium/pkg/telemetry"
@@ -183,6 +185,27 @@ func main() {
 		setupLog.Info("Cost estimation enabled", "configMap", cmName, "namespace", cmNamespace)
 	}
 
+	// The harness gateway is deployed only when the chart enables it. Without it,
+	// a run that requires mediation fails.
+	var harnessGateway *controller.HarnessGatewayConfig
+	if gatewayURL := os.Getenv("SYMPOZIUM_HARNESS_GATEWAY_URL"); gatewayURL != "" {
+		gatewayNamespace := os.Getenv("SYMPOZIUM_HARNESS_GATEWAY_NAMESPACE")
+		harnessGateway = &controller.HarnessGatewayConfig{
+			URL: gatewayURL,
+			Profiles: &harnessgateway.Loader{
+				Reader:    mgr.GetAPIReader(),
+				Name:      os.Getenv("SYMPOZIUM_HARNESS_GATEWAY_PROFILES"),
+				Namespace: gatewayNamespace,
+				OnRejected: func(rejected string) {
+					setupLog.Info("Skipped a harness gateway profile", "reason", rejected)
+				},
+			},
+			CASecret: types.NamespacedName{Namespace: gatewayNamespace, Name: os.Getenv("SYMPOZIUM_HARNESS_GATEWAY_CA_SECRET")},
+			Reader:   mgr.GetAPIReader(),
+		}
+		setupLog.Info("Harness gateway enabled", "url", gatewayURL)
+	}
+
 	agentRunReconciler := &controller.AgentRunReconciler{
 		Client:                       mgr.GetClient(),
 		APIReader:                    mgr.GetAPIReader(),
@@ -195,6 +218,7 @@ func main() {
 		DelegationControllerExecutor: delegationControllerExecutor,
 		DynamicClient:                dynamicClient,
 		Pricing:                      pricingLoader,
+		HarnessGateway:               harnessGateway,
 	}
 	// Celln execution (one-shot and enduring) is disabled unless an operator
 	// supplies the complete receiver/gateway configuration; Celln runs are then

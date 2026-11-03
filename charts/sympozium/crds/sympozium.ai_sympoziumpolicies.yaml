@@ -77,6 +77,19 @@ spec:
                       execution. It defaults to false because the harness becomes the pod's
                       primary process and receives the run's model and MCP credentials.
                     type: boolean
+                  modelMediation:
+                    default: "off"
+                    description: |-
+                      ModelMediation controls how a harness reaches its model. "off" injects
+                      the provider key into the harness container. "required" keeps the key out
+                      of the run pod: the harness holds a per-run token, and the harness gateway
+                      swaps it for the key. A run that cannot be mediated fails rather than
+                      falling back to the key. Runs with no authSecretRef have no key to protect
+                      and connect directly.
+                    enum:
+                    - "off"
+                    - required
+                    type: string
                 type: object
               imagePolicy:
                 description: |-

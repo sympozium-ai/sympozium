@@ -1,0 +1,36 @@
+- name: anthropic
+  providers: [anthropic]
+  upstream: https://api.anthropic.com
+  secretKeys: [ANTHROPIC_API_KEY, API_KEY]
+  auth: {type: header, header: x-api-key}
+  # An adapter may choose its mode from the key's format, so the token keeps it.
+  credentials:
+    - keyPrefix: sk-ant-oat
+      fakeKeyPattern: "sk-ant-oat01-{token}"
+      auth: {type: header, header: Authorization, prefix: "Bearer "}
+    - keyPrefix: sk-ant-api
+      fakeKeyPattern: "sk-ant-api03-{token}"
+  paths: [/v1/messages, /v1/messages/count_tokens]
+  env:
+    baseURL: [ANTHROPIC_BASE_URL]
+    apiKey: [ANTHROPIC_API_KEY]
+- name: openai
+  providers: [openai]
+  upstream: https://api.openai.com
+  secretKeys: [OPENAI_API_KEY, API_KEY]
+  auth: {type: header, header: Authorization, prefix: "Bearer "}
+  paths: [/v1/responses, /v1/chat/completions]
+  env:
+    baseURL: [OPENAI_BASE_URL]
+    apiKey: [OPENAI_API_KEY]
+  clientBasePath: /v1
+- name: deepseek
+  providers: [deepseek]
+  upstream: https://api.deepseek.com
+  secretKeys: [DEEPSEEK_API_KEY, API_KEY]
+  auth: {type: header, header: Authorization, prefix: "Bearer "}
+  paths: [/v1/chat/completions]
+  env:
+    baseURL: [DEEPSEEK_BASE_URL, OPENAI_BASE_URL]
+    apiKey: [DEEPSEEK_API_KEY, OPENAI_API_KEY]
+  clientBasePath: /v1

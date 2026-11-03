@@ -131,3 +131,28 @@ func TestProviderRequestRefusals(t *testing.T) {
 		}
 	}
 }
+
+// The harness gateway passes zero so that a model call has no duration limit of
+// its own, while keeping every other restriction.
+func TestClientForEndpointWithNoDurationKeepsItsRestrictions(t *testing.T) {
+	c, err := ClientForEndpoint("https://provider.example", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Timeout != 0 {
+		t.Errorf("Timeout = %v", c.Timeout)
+	}
+	transport := c.Transport.(*http.Transport)
+	if transport.ResponseHeaderTimeout != 0 {
+		t.Errorf("ResponseHeaderTimeout = %v", transport.ResponseHeaderTimeout)
+	}
+	if transport.Proxy != nil {
+		t.Error("the client must not use a proxy")
+	}
+	if c.CheckRedirect == nil || c.CheckRedirect(nil, nil) == nil {
+		t.Error("the client must refuse redirects")
+	}
+	if _, err := ClientForEndpoint("http://provider.example", false, 0); err == nil {
+		t.Error("plain HTTP must need allowPrivate")
+	}
+}

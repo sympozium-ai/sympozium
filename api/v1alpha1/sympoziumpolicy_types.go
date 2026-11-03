@@ -67,7 +67,25 @@ type HarnessPolicySpec struct {
 	// silently receiving no accounting data. Defaults to false.
 	// +optional
 	AllowUnmetered bool `json:"allowUnmetered,omitempty"`
+
+	// ModelMediation controls how a harness reaches its model. "off" injects
+	// the provider key into the harness container. "required" keeps the key out
+	// of the run pod: the harness holds a per-run token, and the harness gateway
+	// swaps it for the key. A run that cannot be mediated fails rather than
+	// falling back to the key. Runs with no authSecretRef have no key to protect
+	// and connect directly.
+	// +kubebuilder:validation:Enum=off;required
+	// +kubebuilder:default=off
+	// +optional
+	ModelMediation string `json:"modelMediation,omitempty"`
 }
+
+const (
+	// ModelMediationOff injects the provider key into the harness container.
+	ModelMediationOff = "off"
+	// ModelMediationRequired keeps the provider key out of the run pod.
+	ModelMediationRequired = "required"
+)
 
 // ModelPolicySpec defines model access restrictions.
 type ModelPolicySpec struct {

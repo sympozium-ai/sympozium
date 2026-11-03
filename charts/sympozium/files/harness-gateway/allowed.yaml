@@ -1,0 +1,25 @@
+# The only names a profile may use. A profile decides which variables reach the
+# harness and which header carries a real key, so anything not listed here is
+# refused. Add more with harnessGateway.extraAllowedEnvNames and
+# harnessGateway.extraAllowedAuthHeaders.
+allowedEnvNames:
+  - ANTHROPIC_BASE_URL
+  - ANTHROPIC_API_KEY
+  - OPENAI_BASE_URL
+  - OPENAI_API_KEY
+  - DEEPSEEK_BASE_URL
+  - DEEPSEEK_API_KEY
+# Provider response headers relayed to the harness. Anything else is dropped,
+# because a header can echo a credential. A trailing * matches a prefix.
+allowedResponseHeaders:
+  - Retry-After
+  - Retry-After-Ms
+  - X-Should-Retry
+  - Request-Id
+  - X-Request-Id
+  - Anthropic-Ratelimit-*
+  - X-Ratelimit-*
+allowedAuthHeaders:
+  - Authorization
+  - X-Api-Key
+  - Api-Key

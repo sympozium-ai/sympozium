@@ -199,6 +199,8 @@ type AgentRunReconciler struct {
 	// Pricing loads the cluster price table for cost estimation.
 	// Optional — nil when no pricing ConfigMap is configured.
 	Pricing *pricing.Loader
+	// HarnessGateway is nil unless the chart deploys the harness gateway.
+	HarnessGateway *HarnessGatewayConfig
 }
 
 const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
@@ -592,7 +594,17 @@ func (r *AgentRunReconciler) authorizeRunKeys(ctx context.Context, agentRun *sym
 	// origin pin decides where it may go, not the run. A scoped Celln run
 	// reaches its model through the gateway and its ModelConnection, which
 	// is pinned below; its own baseURL never carries the key.
-	if model.ConnectionRef == "" {
+	//
+	// A run the harness gateway mediates never carries its key either: its
+	// pod holds a per-run token, and the key goes only to the operator's
+	// profile upstream, to which ensureRunModelToken holds and pins it.
+	// Judging such a run by RunOrigin would judge a destination the key
+	// never goes to.
+	mediated, err := r.runKeyIsMediated(ctx, agentRun)
+	if err != nil {
+		return nil, fmt.Errorf("checking model mediation: %w", err)
+	}
+	if model.ConnectionRef == "" && !mediated {
 		for _, secret := range []string{model.AuthSecretRef, model.ProviderHeadersSecretRef} {
 			if err := modelkey.AuthorizeRunEndpoint(ctx, r.Client, agent, model.Provider, model.BaseURL, secret); err != nil {
 				if modelkey.IsRefusal(err) {
@@ -847,6 +859,16 @@ func (r *AgentRunReconciler) prepareTaskPrerequisites(
 		return nil, &ctrl.Result{}, r.failRun(ctx, agentRun,
 			fmt.Sprintf("failed to create the gate verdict token — the response gate hook "+
 				"would have no way to report its verdict. Underlying error: %v", err))
+	}
+
+	// Mint the token a mediated harness holds in place of its model key, before
+	// the pod that references it.
+	if err := r.ensureRunModelToken(ctx, agentRun); err != nil {
+		if !isModelMediationRefusal(err) {
+			return nil, &ctrl.Result{}, fmt.Errorf("preparing model mediation: %w", err)
+		}
+		return nil, &ctrl.Result{}, r.failRun(ctx, agentRun,
+			fmt.Sprintf("model mediation failed: %v", err))
 	}
 
 	// An in-place run parks between attempts and reads each verdict from this
@@ -1236,6 +1258,9 @@ func (r *AgentRunReconciler) startJob(ctx context.Context, log logr.Logger, agen
 	}
 	job, err := r.buildJob(ctx, podRun, prereqs.inputs.memoryEnabled, prereqs.inputs.observability,
 		sidecars, prereqs.mcpServers, prereqs.inputs.allowedOutboundChannels)
+	if modelMediationCanRetry(err) {
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		// buildJob (which calls buildContainers) rejected the spec — most
 		// commonly an unknown task.mode or a handler validation failure.
@@ -1568,6 +1593,8 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 	}
 	// Clean up cluster-scoped RBAC created for skill sidecars.
 	r.cleanupSkillRBAC(ctx, log, agentRun)
+
+	r.cleanupRunModelToken(ctx, agentRun)
 
 	// Clean up the workspace PVC. Reached only from a terminal phase, which for
 	// a retry chain means the chain is over — reclaiming it while a parked pod
@@ -3242,6 +3269,10 @@ func (r *AgentRunReconciler) buildAgentPodTemplate(
 	// registered in agentrun_pod_mutators.go.
 	r.applyPodMutators(ctx, agentRun, &tmpl.Spec)
 	configureRunAPIAccess(agentRun, sidecars, &tmpl.Spec)
+	// Last, so nothing added above can put the key back.
+	if err := r.applyModelMediation(ctx, agentRun, &tmpl.Spec); err != nil {
+		return corev1.PodTemplateSpec{}, &modelMediationError{err: err}
+	}
 
 	return tmpl, nil
 }

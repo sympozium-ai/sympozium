@@ -89,6 +89,14 @@ func privateReachable(endpoint string, allowInsecure bool, allowed map[string]bo
 	return privateOriginAllowed(endpoint, allowed) && (allowInsecure || strings.HasPrefix(strings.ToLower(endpoint), "https://"))
 }
 
+// ClientForEndpoint is the restricted provider client for another credential
+// boundary: every DNS answer is validated before connecting, redirects are
+// refused and no proxy is used. allowPrivate comes from an operator's list,
+// never from a request. A zero maxDuration sets no limit on the call.
+func ClientForEndpoint(endpoint string, allowPrivate bool, maxDuration time.Duration) (*http.Client, error) {
+	return clientForEndpoint(endpoint, allowPrivate, maxDuration, nil)
+}
+
 func privateOriginAllowed(endpoint string, allowed map[string]bool) bool {
 	origin, err := exactOrigin(endpoint)
 	if err != nil {

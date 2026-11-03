@@ -199,6 +199,16 @@ spec:
             - name: CELLN_SCOPED_CONFIG
               value: /etc/sympozium/celln-scoped/config.json
             {{- end }}
+            {{- if (.Values.harnessGateway | default dict).enabled }}
+            - name: SYMPOZIUM_HARNESS_GATEWAY_URL
+              value: {{ printf "https://harness-gateway.%s.svc" (include "sympozium.namespace" .) | quote }}
+            - name: SYMPOZIUM_HARNESS_GATEWAY_NAMESPACE
+              value: {{ include "sympozium.namespace" . | quote }}
+            - name: SYMPOZIUM_HARNESS_GATEWAY_PROFILES
+              value: "sympozium-harness-gateway-profiles"
+            - name: SYMPOZIUM_HARNESS_GATEWAY_CA_SECRET
+              value: {{ include "sympozium.harnessGatewayTLSSecret" . | quote }}
+            {{- end }}
             {{- if .Values.pricing.enabled }}
             - name: SYMPOZIUM_PRICING_CONFIGMAP
               value: "sympozium-model-pricing"
