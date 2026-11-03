@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.13.0](https://github.com/sympozium-ai/sympozium/compare/v0.12.2...v0.13.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **security:** a model key used with a custom baseURL (self-hosted gateway, Azure, local model server) must be pinned by someone who manages the Secret: kubectl annotate secret <name> sympozium.ai/model-key-origin=<origin>. Run-level proxy/SSL_CERT env, Secret/PVC/CSI volumes, Secret-reading hooks and lifecycle.rbac must move onto the Agent.
+* **install:** Celln fleet opt-in (--celln-fleet), Job backend default ([#704](https://github.com/sympozium-ai/sympozium/issues/704))
+
+### Features
+
+* ExecutionBackend seam ([#702](https://github.com/sympozium-ai/sympozium/issues/702)) ([49c4ade](https://github.com/sympozium-ai/sympozium/commit/49c4ade26aa0e237320f700f9cf61a6c70ba8487)), closes [#692](https://github.com/sympozium-ai/sympozium/issues/692)
+* **install:** Celln fleet opt-in (--celln-fleet), Job backend default ([#704](https://github.com/sympozium-ai/sympozium/issues/704)) ([3226408](https://github.com/sympozium-ai/sympozium/commit/3226408ba6332d3d336a1e47e5a3e373cfc0bee9)), closes [#693](https://github.com/sympozium-ai/sympozium/issues/693)
+* **providers:** add xAI (Grok) and stop dropping provider-named model keys ([e4640e5](https://github.com/sympozium-ai/sympozium/commit/e4640e5cc06b50486012488bf99a97e6bff436c8))
+* **providers:** add xAI (Grok) and stop dropping provider-named model keys ([866e16b](https://github.com/sympozium-ai/sympozium/commit/866e16bac73011e99ee7da244ccc96dca61103e0))
+
+
+### Bug Fixes
+
+* **harness:** judge a gateway-mediated run's key by the gateway, not the pod (follow-up to [#700](https://github.com/sympozium-ai/sympozium/issues/700)/[#707](https://github.com/sympozium-ai/sympozium/issues/707)) ([#709](https://github.com/sympozium-ai/sympozium/issues/709)) ([e9ad355](https://github.com/sympozium-ai/sympozium/commit/e9ad3550f44a215c782d924ced670757b764f717))
+* **security:** bind model keys to their origin and restrict run-level secret access ([#707](https://github.com/sympozium-ai/sympozium/issues/707)) ([a602afc](https://github.com/sympozium-ai/sympozium/commit/a602afc8b1f36a6a48cd5f7e697a3572899b518a))
+* **web:** address MCP servers in their own namespace ([#696](https://github.com/sympozium-ai/sympozium/issues/696)) ([8e79a0c](https://github.com/sympozium-ai/sympozium/commit/8e79a0c2dd604bbc8c7e45674db18896fbde4005))
+
+
+### Performance Improvements
+
+* **celln:** cache resolver reads within one admission ([#703](https://github.com/sympozium-ai/sympozium/issues/703)) ([9f91ae6](https://github.com/sympozium-ai/sympozium/commit/9f91ae60e0b9b84919d43f99c3d35bbd5f9dfa54))
+
 ## [0.12.2](https://github.com/sympozium-ai/sympozium/compare/v0.12.1...v0.12.2) (2026-10-30)
 
 
