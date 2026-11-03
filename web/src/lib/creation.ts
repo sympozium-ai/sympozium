@@ -85,6 +85,7 @@ export function providerReachableOnPlane(
       provider === "openai" ||
       provider === "anthropic" ||
       provider === "azure-openai" ||
+      provider === "xai" ||
       provider === "custom"
     );
   }

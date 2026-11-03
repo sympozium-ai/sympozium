@@ -246,3 +246,12 @@ func TestParseProviderModels_InvalidJSON(t *testing.T) {
 		t.Errorf("expected empty for invalid JSON, got %v", models)
 	}
 }
+
+// TestProviderEnvKey_XAI pins the Secret key the console writes for an xAI
+// (Grok) key: OPENAI_API_KEY is the one name both the agent-runner and the
+// Hermes adapter read, so the key works on every runtime.
+func TestProviderEnvKey_XAI(t *testing.T) {
+	if got := providerEnvKey("xai"); got != "OPENAI_API_KEY" {
+		t.Fatalf("providerEnvKey(xai) = %q, want OPENAI_API_KEY", got)
+	}
+}

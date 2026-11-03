@@ -608,13 +608,7 @@ func main() {
 		tools = applyToolPolicy(tools, allowList, denyList)
 	}
 
-	apiKey := firstNonEmpty(
-		os.Getenv("API_KEY"),
-		os.Getenv("OPENAI_API_KEY"),
-		os.Getenv("ANTHROPIC_API_KEY"),
-		os.Getenv("AZURE_OPENAI_API_KEY"),
-		os.Getenv("PROVIDER_API_KEY"),
-	)
+	apiKey := resolveProviderAPIKey(provider, os.Getenv)
 
 	log.Printf("provider=%s model=%s baseURL=%s tools=%v task=%q",
 		provider, modelName, baseURL, toolsEnabled, truncate(task, 80))
@@ -914,6 +908,57 @@ func applyToolPolicy(tools []ToolDef, allowList, denyList string) []ToolDef {
 	return filtered
 }
 
+// providerKeyEnv maps a provider to the Secret key that conventionally holds
+// its API key. The controller injects each of these from the auth Secret
+// (allowedAuthSecretKeys), so a key stored under its provider's own name must
+// win over a stray generic key in the same Secret.
+var providerKeyEnv = map[string]string{
+	"openai":       "OPENAI_API_KEY",
+	"anthropic":    "ANTHROPIC_API_KEY",
+	"azure-openai": "AZURE_OPENAI_API_KEY",
+	"xai":          "XAI_API_KEY",
+	"deepseek":     "DEEPSEEK_API_KEY",
+	"groq":         "GROQ_API_KEY",
+	"mistral":      "MISTRAL_API_KEY",
+	"openrouter":   "OPENROUTER_API_KEY",
+	"google":       "GOOGLE_API_KEY",
+	"gemini":       "GOOGLE_API_KEY",
+}
+
+// fallbackKeyEnvs is searched, in order, when the provider's own key is unset:
+// generic names first, then every provider-specific name the controller can
+// inject, so a key stored under any allowlisted name is never silently dropped.
+var fallbackKeyEnvs = []string{
+	"API_KEY",
+	"PROVIDER_API_KEY",
+	"LLM_API_KEY",
+	"OPENAI_API_KEY",
+	"ANTHROPIC_API_KEY",
+	"AZURE_OPENAI_API_KEY",
+	"XAI_API_KEY",
+	"DEEPSEEK_API_KEY",
+	"GROQ_API_KEY",
+	"MISTRAL_API_KEY",
+	"OPENROUTER_API_KEY",
+	"GOOGLE_API_KEY",
+}
+
+// resolveProviderAPIKey returns the API key for provider: its own key name
+// first, then the generic and other provider names.
+func resolveProviderAPIKey(provider string, getenv func(string) string) string {
+	if name, ok := providerKeyEnv[strings.ToLower(provider)]; ok {
+		if v := getenv(name); v != "" {
+			return v
+		}
+	}
+	for _, name := range fallbackKeyEnvs {
+		if v := getenv(name); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {
@@ -1098,14 +1143,7 @@ func runPromptServer(ctx context.Context) {
 	_ = os.MkdirAll("/ipc/output", 0o755)
 
 	provider := strings.ToLower(getEnv("MODEL_PROVIDER", "openai"))
-	apiKey := firstNonEmpty(
-		os.Getenv("API_KEY"),
-		os.Getenv("OPENAI_API_KEY"),
-		os.Getenv("ANTHROPIC_API_KEY"),
-		os.Getenv("AZURE_OPENAI_API_KEY"),
-		os.Getenv("PROVIDER_API_KEY"),
-		os.Getenv("LLM_API_KEY"),
-	)
+	apiKey := resolveProviderAPIKey(provider, os.Getenv)
 	if fileKey, err := os.ReadFile("/secrets/api-key"); err == nil {
 		apiKey = firstNonEmpty(apiKey, strings.TrimSpace(string(fileKey)))
 	}

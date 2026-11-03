@@ -140,12 +140,19 @@ func TestAMediatedOpenRouterRunWithNoBaseURLIsAdmitted(t *testing.T) {
 		t.Errorf("pin = %q", got)
 	}
 
-	// Unmediated, the same run carries the key to the runner default, which
-	// the pin refuses, exactly as on main.
+	// Unmediated, the runner's own default for openrouter is the pinned origin.
 	r, run = mediatedOriginRun(t, "openrouter", "", "https://openrouter.ai", sympoziumv1alpha1.ModelMediationOff)
 	refusal, err = r.authorizeRunKeys(context.Background(), run, originAgent(t, r, run))
+	if err != nil || refusal != nil {
+		t.Fatalf("unmediated openrouter: refusal = %+v err = %v", refusal, err)
+	}
+
+	// A provider without a hosted default carries the key to OpenAI's
+	// endpoint, which the pin refuses.
+	r, run = mediatedOriginRun(t, "custom", "", "https://openrouter.ai", sympoziumv1alpha1.ModelMediationOff)
+	refusal, err = r.authorizeRunKeys(context.Background(), run, originAgent(t, r, run))
 	if err != nil || refusal == nil || refusal.Code != RefusalModelKeyOriginMismatch {
-		t.Fatalf("unmediated: refusal = %+v err = %v, want %s", refusal, err, RefusalModelKeyOriginMismatch)
+		t.Fatalf("unmediated custom: refusal = %+v err = %v, want %s", refusal, err, RefusalModelKeyOriginMismatch)
 	}
 }
 

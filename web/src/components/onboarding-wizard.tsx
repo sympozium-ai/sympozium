@@ -97,6 +97,12 @@ const OllamaIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const XAIIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M3 3h4.2l5.1 7.3L17.4 3H21l-6.9 9.6L21.4 21h-4.2l-5.4-7.6L6.4 21H2.8l7.2-9.9z" />
+  </svg>
+);
+
 export const PROVIDERS = [
   {
     value: "openai",
@@ -153,6 +159,13 @@ export const PROVIDERS = [
     defaultModel: "anthropic.claude-sonnet-4-20250514-v1:0",
     defaultBaseURL: "",
     icon: AWSIcon,
+  },
+  {
+    value: "xai",
+    label: "xAI (Grok)",
+    defaultModel: "grok-4",
+    defaultBaseURL: "https://api.x.ai/v1",
+    icon: XAIIcon,
   },
   {
     value: "custom",
