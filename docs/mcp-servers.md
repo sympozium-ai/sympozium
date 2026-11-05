@@ -233,6 +233,16 @@ spec:
 
 The controller automatically resolves each name to the MCPServer's Service URL from `status.url`. No manual URL configuration needed.
 
+### Tool response size
+
+The agent-runner caps MCP result content at **8,000 bytes** by default, then appends a truncation hint; the hint is additional to the configured content limit. This is separate from the MCP bridge's HTTP response-body limit. Set `MAX_TOOL_OUTPUT_BYTES` to a positive byte count in `AgentRun.spec.env` to change the limit. It also applies to the built-in `read_file` and `execute_command` tools and SkillPack sidecar tool results. When output is truncated, use the MCP tool's pagination parameters or narrow the query to retrieve the remaining data.
+
+```yaml
+spec:
+  env:
+    MAX_TOOL_OUTPUT_BYTES: "32000"
+```
+
 ### Inline URL (Legacy / Simple)
 
 You can also specify URLs directly without an MCPServer CR:

@@ -55,6 +55,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/pricing"
 	"github.com/sympozium-ai/sympozium/internal/runauthority"
 	"github.com/sympozium-ai/sympozium/internal/sessionkey"
+	"github.com/sympozium-ai/sympozium/internal/tooloutput"
 	"github.com/sympozium-ai/sympozium/internal/toolpolicy"
 	"github.com/sympozium-ai/sympozium/pkg/sidecartools"
 	"gopkg.in/yaml.v3"
@@ -3680,6 +3681,12 @@ func (r *AgentRunReconciler) buildContainers(
 		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
 			Name:  k,
 			Value: agentRun.Spec.Env[k],
+		})
+	}
+	if !hasEnvVar(&containers[0], tooloutput.MaxBytesEnv) {
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{
+			Name:  tooloutput.MaxBytesEnv,
+			Value: strconv.Itoa(tooloutput.DefaultMaxBytes),
 		})
 	}
 

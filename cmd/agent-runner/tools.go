@@ -115,7 +115,7 @@ func defaultTools() []ToolDef {
 		{
 			Name: ToolReadFile,
 			Description: "Read the contents of a file from the pod filesystem. Paths under /workspace, /skills, /tmp, and /ipc are accessible. " +
-				"Responses are capped at 8000 bytes; for larger files use 'offset' and 'limit' to read a specific line range, " +
+				"Content is capped at 8000 bytes by default (configurable via MAX_TOOL_OUTPUT_BYTES); truncation hints are additional. For larger files use 'offset' and 'limit' to read a specific line range, " +
 				"following the continuation hint appended to truncated output.",
 			Parameters: map[string]any{
 				"type": "object",
@@ -130,7 +130,7 @@ func defaultTools() []ToolDef {
 					},
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Maximum number of lines to return. Defaults to the whole file (subject to the 8000-byte response cap).",
+						"description": "Maximum number of lines to return. Defaults to the whole file (subject to the configurable response cap, 8000 bytes by default).",
 					},
 				},
 				"required": []string{"path"},
@@ -504,7 +504,8 @@ func readFileTool(args map[string]any) string {
 	}
 
 	content := string(data)
-	if offset == 1 && limit == 0 && len(content) <= 8_000 {
+	maxBytes := toolOutputMaxBytes()
+	if offset == 1 && limit == 0 && len(content) <= maxBytes {
 		return content
 	}
 
@@ -526,11 +527,10 @@ func readFileTool(args map[string]any) string {
 
 	// Cap the response, cutting at the last complete line so the
 	// continuation hint stays exact.
-	if len(selected) > 8_000 {
-		cut := strings.LastIndexByte(selected[:8_000], '\n')
+	if len(selected) > maxBytes {
+		cut := strings.LastIndexByte(selected[:maxBytes], '\n')
 		if cut < 0 {
-			// A single line longer than the cap: hard-cut, no line-based continuation possible.
-			return selected[:8_000] + fmt.Sprintf("\n... (truncated mid-line %d of %d; line exceeds the 8000-byte cap)", offset, total)
+			return truncateAtUTF8Boundary(selected, maxBytes) + fmt.Sprintf("\n... (truncated mid-line %d of %d; line exceeds the %d-byte cap, so line-based pagination cannot continue)", offset, total, maxBytes)
 		}
 		lastLine := offset - 1 + strings.Count(selected[:cut], "\n") + 1
 		return selected[:cut] + fmt.Sprintf("\n... (truncated at line %d of %d; continue with offset=%d)", lastLine, total, lastLine+1)
@@ -1245,10 +1245,7 @@ func formatExecResult(r execResult) string {
 	if output == "" {
 		output = "(no output)"
 	}
-	if len(output) > 8_000 {
-		output = output[:8_000] + "\n... (output truncated)"
-	}
-	return output
+	return truncateToolOutput(output, toolOutputMaxBytes(), "use command pagination or narrower output to retrieve the rest")
 }
 
 func truncateStr(s string, n int) string {

@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
+	"github.com/sympozium-ai/sympozium/internal/tooloutput"
 )
 
 // helper builds a minimal AgentRun for testing.
@@ -231,6 +232,30 @@ func TestBuildContainers_AgentEnvVars(t *testing.T) {
 	}
 	if envMap["MODEL_NAME"] != "gpt-4o" {
 		t.Errorf("MODEL_NAME = %q", envMap["MODEL_NAME"])
+	}
+	if envMap[tooloutput.MaxBytesEnv] != fmt.Sprint(tooloutput.DefaultMaxBytes) {
+		t.Errorf("%s = %q, want %d", tooloutput.MaxBytesEnv, envMap[tooloutput.MaxBytesEnv], tooloutput.DefaultMaxBytes)
+	}
+}
+
+func TestBuildContainers_ToolOutputLimitCanBeOverridden(t *testing.T) {
+	run := newTestRun()
+	run.Spec.Env = map[string]string{tooloutput.MaxBytesEnv: "32000"}
+	cs, _, _ := (&AgentRunReconciler{}).buildContainers(run, false, nil, nil, nil, nil)
+
+	var got string
+	count := 0
+	for _, env := range cs[0].Env {
+		if env.Name == tooloutput.MaxBytesEnv {
+			got = env.Value
+			count++
+		}
+	}
+	if got != "32000" {
+		t.Fatalf("%s = %q, want 32000", tooloutput.MaxBytesEnv, got)
+	}
+	if count != 1 {
+		t.Fatalf("%s appears %d times, want exactly once", tooloutput.MaxBytesEnv, count)
 	}
 }
 

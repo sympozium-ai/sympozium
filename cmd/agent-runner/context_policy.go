@@ -13,10 +13,11 @@ import (
 
 const (
 	// defaultToolResultMaxBytes is 0 — clamping is off unless asked for.
-	// Individual tools already cap their own output (execute_command and
-	// read_file at 8 KB, fetch_url at 50 KB); a default here would silently
-	// override those, so the whole policy is opt-in and a run behaves exactly
-	// as it did before unless one of the CONTEXT_* vars is set.
+	// Individual tools already cap their own output (execute_command, read_file,
+	// and MCP at 8 KB by default via MAX_TOOL_OUTPUT_BYTES; fetch_url at 50 KB);
+	// a default here would silently override those, so the whole policy is opt-in
+	// and a run behaves exactly as it did before unless one of the CONTEXT_* vars
+	// is set.
 	defaultToolResultMaxBytes = 0
 	defaultKeepRecentResults  = 3
 
