@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.1](https://github.com/sympozium-ai/sympozium/compare/v0.13.0...v0.13.1) (2026-11-05)
+
+
+### Features
+
+* **agent-runner:** make tool output limit configurable ([#697](https://github.com/sympozium-ai/sympozium/issues/697)) ([7fa062e](https://github.com/sympozium-ai/sympozium/commit/7fa062e47344a54b958baf457ac9f930aea08c42))
+
+
+### Bug Fixes
+
+* **mcpbridge:** dispatch requests written before the watcher starts ([#691](https://github.com/sympozium-ai/sympozium/issues/691)) ([c609dcc](https://github.com/sympozium-ai/sympozium/commit/c609dcca410e76fa3d6670a647fe0989d2952398))
+
 ## [0.13.0](https://github.com/sympozium-ai/sympozium/compare/v0.12.2...v0.13.0) (2026-11-03)
 
 
