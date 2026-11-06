@@ -178,6 +178,7 @@ nav:
     - Configuration: reference/configuration.md
     - Helm Chart: reference/helm.md
     - Testing: reference/testing.md
+    - Celln KVM Lane: reference/celln-kvm-lane.md
   - Sympozium vs kagent: sympozium-vs-kagent.md
   - Sympozium vs Google AX: sympozium-vs-google-ax.md
   - Design & History:

@@ -202,6 +202,8 @@ TEST_MODEL=gpt-5.2 TEST_TIMEOUT=180 ./test/integration/test-write-file.sh
 | `test-persistent-harness-session.sh` | Persistent AgentHarness session lifecycle |
 | `test-celln-fleet.sh` | Model-free Celln fleet on multi-node Kind: install with no model input, two teams' own connections and keys through the API, key canary (each Agent's key and no other), refused key reuse and origin move, package gate, node loss |
 | `test-celln-oneliner.sh` | Bare `sympozium install` brings up the fleet and gateway; `doctor` passes |
+| `test-celln-netpol-enforced.sh` | Fleet NetworkPolicies enforced on the CNI (positive controls connect, unadmitted peers cannot); run by the Celln KVM lane |
+| `test-celln-three-way.sh` | Two Agents plus a one-shot answer the same question concurrently; run by the Celln KVM lane |
 
 `test/integration/` holds many more (API smoke, ensembles, memory, MCP, sandbox, Celln contracts); `make integration-tests` runs the API suite.
 

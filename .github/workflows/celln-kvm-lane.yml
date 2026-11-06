@@ -1,0 +1,203 @@
+name: Celln KVM lane
+
+# Boots real Celln cells: the fleet journeys on a throwaway multi-node Kind
+# cluster with an enforcing CNI, on a dedicated self-hosted KVM host, with
+# per-release evidence. See docs/reference/celln-kvm-lane.md.
+#
+# Security: this workflow runs on a self-hosted runner, so it must never run
+# code from a pull request. It has no pull_request or pull_request_target
+# trigger, only the schedule, release tags and a manual dispatch by someone
+# with write access. Keep it that way.
+on:
+  schedule:
+    - cron: "30 2 * * *" # 02:30 UTC, off-hours for the host
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One lane at a time on the host; a queued run waits rather than cancelling a
+# run that is mid-journey (its cleanup must finish).
+concurrency:
+  group: celln-kvm-lane
+  cancel-in-progress: false
+
+jobs:
+  lane:
+    name: Celln fleet on KVM (Kind + Calico)
+    if: github.repository == 'sympozium-ai/sympozium'
+    runs-on: [self-hosted, linux, x64, kvm, celln-lane]
+    environment: celln-kvm-lane
+    timeout-minutes: 180
+    env:
+      TAG: celln-lane-${{ github.run_id }}
+      REGISTRY: ghcr.io/sympozium-ai/sympozium
+      KIND_VERSION: v0.30.0
+      KIND_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
+      # Distinct cluster, network and registry names (all celln-lane*), and a
+      # registry port of its own, so the lane never meets another Kind
+      # cluster or registry on the host.
+      ONELINER_CLUSTER: celln-lane-oneliner
+      FLEET_CLUSTER_NAME: celln-lane-fleet
+      KIND_EXPERIMENTAL_DOCKER_NETWORK: celln-lane
+      FLEET_REGISTRY_NAME: celln-lane-registry
+      FLEET_REGISTRY_PORT: "5101"
+      # Model inputs: environment variables, not secrets (no key involved).
+      LLAMA_ORIGIN: ${{ vars.CELLN_LANE_LLAMA_ORIGIN }}
+      LLAMA_MODEL: ${{ vars.CELLN_LANE_LLAMA_MODEL }}
+    steps:
+      # Everything the lane writes lives under the runner's per-job temp
+      # directory, and KUBECONFIG points at a per-run file there before any
+      # kubectl or kind call: never the host's ~/.kube/config, which on the
+      # lane host points at a live cluster.
+      - name: Lane environment
+        run: |
+          set -euo pipefail
+          {
+            echo "CELLN_LANE_WORK=$RUNNER_TEMP/celln-lane"
+            echo "KUBECONFIG=$RUNNER_TEMP/celln-lane/kubeconfig"
+            echo "EVIDENCE=$RUNNER_TEMP/celln-lane-evidence"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Pinned kind
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" "$CELLN_LANE_WORK" "$EVIDENCE/logs"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64" -o "$RUNNER_TEMP/bin/kind"
+          printf '%s  %s\n' "$KIND_SHA256" "$RUNNER_TEMP/bin/kind" | sha256sum --check --quiet
+          chmod 0755 "$RUNNER_TEMP/bin/kind"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Isolation preflight
+        run: |
+          set -euo pipefail
+          kind version
+          # The lane kubeconfig starts empty; nothing else is in reach.
+          : > "$KUBECONFIG"
+          chmod 0600 "$KUBECONFIG"
+          [ -z "$(kubectl config get-contexts -o name)" ] || { echo "lane kubeconfig is not empty" >&2; exit 1; }
+          [ -c /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "/dev/kvm is not usable by $(id -un)" >&2; exit 1; }
+          [ -r "/boot/vmlinuz-$(uname -r)" ] || { echo "host kernel /boot/vmlinuz-$(uname -r) is not readable" >&2; exit 1; }
+          [ -n "$LLAMA_ORIGIN" ] && [ -n "$LLAMA_MODEL" ] || { echo "set the celln-kvm-lane environment variables CELLN_LANE_LLAMA_ORIGIN and CELLN_LANE_LLAMA_MODEL" >&2; exit 1; }
+          # Leftovers from a run whose cleanup did not finish.
+          for name in "$ONELINER_CLUSTER" "$FLEET_CLUSTER_NAME"; do
+            hack/celln-lane/kind-cluster.sh down "$name"
+          done
+
+      - name: Build images and fetch the pinned Celln
+        run: hack/celln-lane/run-step.sh "$EVIDENCE" prepare -- hack/celln-lane/prepare.sh
+
+      - name: One-liner journey (test-celln-oneliner.sh)
+        run: |
+          set -euo pipefail
+          hack/celln-lane/run-step.sh "$EVIDENCE" oneliner-cluster -- hack/celln-lane/kind-cluster.sh up "$ONELINER_CLUSTER"
+          FLEET_CLUSTER="$ONELINER_CLUSTER" FLEET_WORK="$CELLN_LANE_WORK/oneliner" KEEP_CLUSTER=1 \
+            SYMPOZIUM_IMAGE_TAG="$TAG" CELLN_IMAGE="celln:$TAG" CELLN_BUNDLE="$CELLN_LANE_WORK/bundle" \
+            hack/celln-lane/run-step.sh "$EVIDENCE" oneliner -- test/integration/test-celln-oneliner.sh
+
+      - name: Delete the one-liner cluster
+        if: always()
+        run: hack/celln-lane/kind-cluster.sh down "$ONELINER_CLUSTER"
+
+      - name: Fleet journey (test-celln-fleet.sh)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          hack/celln-lane/run-step.sh "$EVIDENCE" fleet-cluster -- hack/celln-lane/kind-cluster.sh up "$FLEET_CLUSTER_NAME"
+          FLEET_CLUSTER="$FLEET_CLUSTER_NAME" FLEET_WORK="$CELLN_LANE_WORK/fleet" KEEP_CLUSTER=1 \
+            SYMPOZIUM_IMAGE_TAG="$TAG" CELLN_IMAGE="celln:$TAG" CELLN_BUNDLE="$CELLN_LANE_WORK/bundle" \
+            hack/celln-lane/run-step.sh "$EVIDENCE" fleet -- test/integration/test-celln-fleet.sh
+
+      - name: Fleet NetworkPolicies are enforced (negative probes must fail)
+        if: ${{ !cancelled() }}
+        env:
+          FLEET_CLUSTER: ${{ env.FLEET_CLUSTER_NAME }}
+        run: |
+          NETPOL_EVIDENCE="$EVIDENCE/netpol.jsonl" \
+            hack/celln-lane/run-step.sh "$EVIDENCE" netpol -- test/integration/test-celln-netpol-enforced.sh
+
+      - name: Three-way acceptance (two Agents + a one-shot, same question)
+        if: ${{ !cancelled() }}
+        env:
+          FLEET_CLUSTER: ${{ env.FLEET_CLUSTER_NAME }}
+          # Optional keyed provider; unset, the keyless LLAMA_ORIGIN is used.
+          # Only this step sees the secret, and the script never prints it.
+          ACCEPT_API_KEY: ${{ secrets.CELLN_LANE_ACCEPT_API_KEY }}
+          ACCEPT_ENDPOINT: ${{ vars.CELLN_LANE_ACCEPT_ENDPOINT }}
+          ACCEPT_MODEL: ${{ vars.CELLN_LANE_ACCEPT_MODEL }}
+          ACCEPT_PROVIDER: ${{ vars.CELLN_LANE_ACCEPT_PROVIDER }}
+        run: |
+          ACCEPT_EVIDENCE="$EVIDENCE/three-way.json" \
+            hack/celln-lane/run-step.sh "$EVIDENCE" three-way -- test/integration/test-celln-three-way.sh
+
+      - name: Collect evidence
+        if: always()
+        run: |
+          CELLN_LANE_IMAGES="$(tr '\n' ' ' < "$CELLN_LANE_WORK/images" 2>/dev/null || true)" \
+            hack/celln-lane/collect-evidence.sh "$EVIDENCE" "$CELLN_LANE_WORK/oneliner" "$CELLN_LANE_WORK/fleet"
+          cat "$EVIDENCE/SUMMARY.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: celln-kvm-lane-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/celln-lane-evidence.tar.gz
+            ${{ runner.temp }}/celln-lane-evidence/SUMMARY.md
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Delete the fleet cluster, registry, network and images
+        if: always()
+        run: |
+          hack/celln-lane/kind-cluster.sh down "$FLEET_CLUSTER_NAME" || true
+          hack/celln-lane/kind-cluster.sh down "$ONELINER_CLUSTER" || true
+          if [ -f "$CELLN_LANE_WORK/images" ]; then xargs -r docker rmi -f < "$CELLN_LANE_WORK/images" >/dev/null 2>&1 || true; fi
+          rm -rf "$CELLN_LANE_WORK"
+
+  # The release write token never reaches the self-hosted host: attaching the
+  # evidence runs on a GitHub-hosted runner with contents: write only here.
+  attach-to-release:
+    name: Attach evidence to the release
+    needs: lane
+    if: always() && github.repository == 'sympozium-ai/sympozium' && startsWith(github.ref, 'refs/tags/v') && needs.lane.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: celln-kvm-lane-evidence-${{ github.run_id }}
+          path: evidence
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          LANE_RESULT: ${{ needs.lane.result }}
+        run: |
+          set -euo pipefail
+          tarball="celln-kvm-lane-evidence-${TAG_NAME}.tar.gz"
+          cp evidence/celln-lane-evidence.tar.gz "$tarball"
+          cp evidence/SUMMARY.md "celln-kvm-lane-evidence-${TAG_NAME}.md"
+          # The release may still be being published by release-please.
+          for _ in $(seq 1 30); do
+            gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          gh release upload "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --clobber "$tarball" "celln-kvm-lane-evidence-${TAG_NAME}.md"
+          echo "attached $tarball (lane result: $LANE_RESULT)"

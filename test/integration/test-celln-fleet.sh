@@ -27,6 +27,7 @@
 # provider key is read; any DEEPSEEK/OPENAI/ANTHROPIC key in the environment is
 # dropped before the install so the journey proves it is not needed. Optional
 # FLEET_CERT_MANAGER_MANIFEST, FLEET_CLUSTER, FLEET_WORK, FLEET_REGISTRY_NAME,
+# FLEET_REGISTRY_PORT (default 5001), KIND_EXPERIMENTAL_DOCKER_NETWORK (default kind),
 # KEEP_CLUSTER=1. Images: controller, apiserver, webhook, node-probe,
 # model-gateway and celln-installer built with TAG (make docker-build-<name>
 # TAG=...), and the Celln image tagged CELLN_IMAGE.
@@ -36,6 +37,9 @@ CLUSTER="${FLEET_CLUSTER:-fleet}"
 TAG="${SYMPOZIUM_IMAGE_TAG:-fleet-trial}"
 CELLN_IMAGE="${CELLN_IMAGE:-celln:$TAG}"
 REGISTRY_NAME="${FLEET_REGISTRY_NAME:-kind-registry}"
+# The registry's host port and the Docker network the Kind nodes share (KIND_EXPERIMENTAL_DOCKER_NETWORK).
+REGISTRY_PORT="${FLEET_REGISTRY_PORT:-5001}"
+KIND_NETWORK="${KIND_EXPERIMENTAL_DOCKER_NETWORK:-kind}"
 WORK="${FLEET_WORK:-$(mktemp -d /tmp/celln-fleet.XXXXXX)}"
 SCOPE=starter
 PROFILE="celln-native-$SCOPE"
@@ -66,7 +70,7 @@ trap cleanup EXIT
 
 log "Cluster (one control plane, two KVM workers) and a local registry the nodes pull from"
 if ! docker inspect "$REGISTRY_NAME" >/dev/null 2>&1; then
-	docker run -d --restart=always -p 127.0.0.1:5001:5000 --name "$REGISTRY_NAME" registry:2 >/dev/null
+	docker run -d --restart=always -p "127.0.0.1:$REGISTRY_PORT:5000" --name "$REGISTRY_NAME" registry:2 >/dev/null
 fi
 if ! kind get clusters | grep -qx "$CLUSTER"; then
 	cat >"$WORK/kind.yaml" <<'EOF'
@@ -83,11 +87,11 @@ nodes:
 EOF
 	kind create cluster --name "$CLUSTER" --config "$WORK/kind.yaml" --wait 120s
 fi
-docker network connect kind "$REGISTRY_NAME" 2>/dev/null || true
-registry="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$REGISTRY_NAME"):5000"
+docker network connect "$KIND_NETWORK" "$REGISTRY_NAME" 2>/dev/null || true
+registry="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$KIND_NETWORK\").IPAddress}}" "$REGISTRY_NAME"):5000"
 for node in $(kind get nodes --name "$CLUSTER"); do
-	docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
-	printf '[host."http://%s:5000"]\n' "$REGISTRY_NAME" | docker exec -i "$node" tee /etc/containerd/certs.d/localhost:5001/hosts.toml >/dev/null
+	docker exec "$node" mkdir -p "/etc/containerd/certs.d/localhost:$REGISTRY_PORT"
+	printf '[host."http://%s:5000"]\n' "$REGISTRY_NAME" | docker exec -i "$node" tee "/etc/containerd/certs.d/localhost:$REGISTRY_PORT/hosts.toml" >/dev/null
 done
 # Kind nodes carry no kernel; the probe and the dispatcher both need one.
 kernel="/boot/vmlinuz-$(uname -r)"
@@ -100,14 +104,14 @@ pass "cluster $CLUSTER with registry $registry; no node labelled by hand"
 
 log "Starter package and a CLI that pins it and the model gateway, as a release build would"
 "$REPO/hack/build-celln-starter.sh" --bundle "$CELLN_BUNDLE" --kernel "$kernel" \
-	--image "localhost:5001/celln/starter:$CLUSTER" --out "$WORK/starter" --push >"$WORK/starter-build.log" 2>&1 || { tail -5 "$WORK/starter-build.log"; fail "starter package"; }
+	--image "localhost:$REGISTRY_PORT/celln/starter:$CLUSTER" --out "$WORK/starter" --push >"$WORK/starter-build.log" 2>&1 || { tail -5 "$WORK/starter-build.log"; fail "starter package"; }
 digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["image"].split("@")[1])' "$WORK/starter/starter.json")"
 package_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["packageHash"])' "$WORK/starter/starter.json")"
 publisher="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publisher"])' "$WORK/starter/starter.json")"
 image="$registry/celln/starter@$digest"
-docker tag "ghcr.io/sympozium-ai/sympozium/model-gateway:$TAG" "localhost:5001/sympozium/model-gateway:$TAG"
-docker push -q "localhost:5001/sympozium/model-gateway:$TAG" >/dev/null
-gateway="localhost:5001/sympozium/model-gateway@$(docker buildx imagetools inspect "localhost:5001/sympozium/model-gateway:$TAG" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')"
+docker tag "ghcr.io/sympozium-ai/sympozium/model-gateway:$TAG" "localhost:$REGISTRY_PORT/sympozium/model-gateway:$TAG"
+docker push -q "localhost:$REGISTRY_PORT/sympozium/model-gateway:$TAG" >/dev/null
+gateway="localhost:$REGISTRY_PORT/sympozium/model-gateway@$(docker buildx imagetools inspect "localhost:$REGISTRY_PORT/sympozium/model-gateway:$TAG" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')"
 (cd "$REPO" && go build -ldflags "-X main.cellnStarterImage=$image -X main.cellnStarterHash=$package_hash -X main.cellnStarterPublisher=$publisher -X main.cellnStarterCellnVersion=journey -X main.modelGatewayImage=$gateway" -o "$WORK/sympozium" ./cmd/sympozium)
 pass "sympozium built with package $package_hash by $publisher and gateway $gateway"
 
