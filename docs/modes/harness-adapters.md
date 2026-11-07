@@ -30,12 +30,12 @@ Everything arrives as environment variables and mounted files on an ordinary con
 | provider credential | Injected per-key by `SecretKeyRef` from the `allowedAuthSecretKeys` allowlist (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, …). Already on the container; never widen the allowlist to make an adapter work. |
 | `TOOL_POLICY_ALLOW`, `TOOL_POLICY_DENY` | Comma-separated. Honour them only if you declare `toolFilter`. |
 | `MCP_CONFIG_PATH` | Path to the trusted loopback SkillPack MCP registry, as JSON. Remote operator-configured MCP servers and their credentials are never exposed to an external adapter. A `sympozium-skills` entry is present when the run has mediated SkillPack tools. |
-| `HOME` | `/home/agent`, an `emptyDir`. The only writable path besides `/workspace`, `/ipc/output` and `/tmp`. |
+| `HOME` | `/home/agent`, an `emptyDir`. The only writable path besides `/workspace`, `/ipc/output` and `/tmp` (and the `/skills` parent directory — see below). |
 | `SYMPOZIUM_RESULT_PATH` | Where to write the result. Defaults to `/ipc/output/result.json`; read it from env rather than hardcoding. |
 | `SYMPOZIUM_HARNESS_CONTRACT_VERSION` | Adapter contract version (`v1alpha1` today). Check it at startup and fail closed on unknown versions. |
 | `/ipc/control/skip` | Present when a preRun lifecycle hook [skipped the run](../concepts/lifecycle-hooks.md#skipping-a-run). Its contents are the skip reason. See [Skipped runs](#skipped-runs). |
 | `/workspace` | The run's PVC, and the container's working directory. |
-| `/skills/` | Skill files, if the Agent has any. |
+| `/skills/<pack>/` | Skill files, if the Agent has any: one read-only directory per SkillPack (or `configMapRef`), one Markdown file per skill. Files written by the SkillPack controller open with YAML frontmatter carrying `name` and `description`, the `SKILL.md` convention most harnesses read. `/skills` itself is writable only so the per-pack mountpoints can be created; nothing reads files written there. |
 | `task.parameters.args` | Passed through as the container's `args`. Your `ENTRYPOINT` receives them as `"$@"`. |
 
 You get `/ipc/input` (read-only), `/ipc/control` (read-only) and `/ipc/output`, and no other part of `/ipc`. The rest of

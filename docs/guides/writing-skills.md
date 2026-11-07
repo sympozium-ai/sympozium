@@ -22,7 +22,7 @@ There are three layers to a skill, each optional beyond the first:
 ┌─────────────────────────────────────────────────────────┐
 │  SkillPack CRD                                          │
 │                                                         │
-│  spec.skills[]         → ConfigMap → mounted at /skills │
+│  spec.skills[]  → ConfigMap → mounted at /skills/<pack> │
 │  spec.sidecar.image    → Container injected into pod    │
 │  spec.sidecar.rbac[]   → Role + RoleBinding (per run)   │
 │  spec.sidecar.clusterRBAC[] → ClusterRole (per run)     │
@@ -91,7 +91,9 @@ If your skill only needs Markdown (no tools), you're done:
 kubectl apply -f config/skills/my-skill.yaml
 ```
 
-The SkillPack controller creates a ConfigMap (`skillpack-my-skill`) containing your skill content. When an agent pod runs, the ConfigMap is projected into `/skills/`.
+The SkillPack controller creates a ConfigMap named after the SkillPack containing your skill content, one `<skill>.md` file per skill with YAML frontmatter carrying its `name` and `description` (content that already opens with its own `---` frontmatter is kept as written). When an agent pod runs, the ConfigMap is mounted read-only at `/skills/<skillpack>/`.
+
+Write the `description` as a one-line answer to "when should the agent use this?" — the agent-runner shows the model only the skill names and descriptions, and the model loads a skill's full content through the `skills` tool when a task matches. See [How the Agent Reads Skills](../concepts/skills.md#how-the-agent-reads-skills).
 
 ---
 
@@ -465,11 +467,11 @@ spec:
    → ClusterRoleBinding "sympozium-skill-k8s-ops-alice-run-xyz"
 
 4. Job pod created with containers:
-   → agent (agent-runner image, reads /skills/)
+   → agent (agent-runner image, reads /skills/k8s-ops/)
    → ipc-bridge (NATS forwarder)
    → skill-k8s-ops (kubectl + bash + curl + jq)
 
-5. Agent reads skill Markdown, runs kubectl commands via sidecar.
+5. Agent loads the matching skill through the `skills` tool, runs kubectl commands via sidecar.
 
 6. Run completes → Job cleaned up → RBAC garbage-collected.
 ```
