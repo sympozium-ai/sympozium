@@ -379,6 +379,7 @@ With this, the model calls `sd_evaluate_changes({serviceIdentifier: "web", catal
 | `subcommand` | string | — | Fixed sub-command appended after `exec` |
 | `inputMode` | string | `args` | `args` passes parameters as positional CLI args; `stdin` pipes the non-positional parameters as a JSON object on stdin |
 | `positionalArgs` | string[] | — | Parameter names (in order) passed as positional CLI arguments. Each must be declared in `parameters` |
+| `endOfOptions` | bool | `true` | When true, inserts `--` between the exec prefix and positional values so a value beginning with `-` is an operand. Set `false` for flag-style prefixes such as `node -e` or `git commit -m`, where the flag would otherwise consume `--` as its value |
 | `parameters` | object | `{}` | JSON Schema (type `object`) describing the arguments, handed to the model verbatim |
 
 ### How it stays secure
@@ -391,7 +392,7 @@ This is deliberately not "the sidecar drops a tool manifest the agent reads." Th
 - **No more authority than `execute_command`.** Dispatch flows through the same gated exec IPC, targeting this sidecar. Arguments are delivered in [argv mode](#the-ipc-protocol) (no shell), so a value like `"; rm -rf /"` or one containing newlines is passed as exactly one literal argument and never interpreted.
 
 !!! warning "Two things to know when authoring a tool"
-    - **Flag injection.** A model-supplied positional value beginning with `-` is still passed to your binary, which may interpret it as a flag (e.g. `--kubeconfig=...`). This is no broader than `execute_command`'s existing authority, but design your CLI to treat positionals as operands — honor a `--` end-of-options marker, or validate/whitelist values — rather than trusting them as plain operands.
+    - **Flag injection.** A model-supplied positional value beginning with `-` is still passed to your binary, which may interpret it as a flag (e.g. `--kubeconfig=...`). This is no broader than `execute_command`'s existing authority. With the default `endOfOptions: true`, the runtime inserts a `--` marker so such values become operands for CLIs that honour it. Set `endOfOptions: false` when the exec prefix itself ends in a value-taking flag (`node -e`, `git commit -m`); otherwise that flag consumes `--` and the real value becomes a stray operand. For operand-style tools, keep the default or validate/whitelist values.
     - **Minimum executor version.** Native tools dispatch in argv mode, which requires the argv-aware `tool-executor.sh` shown in this guide. An older sidecar image without the argv branch will receive the request but do nothing useful — rebuild your sidecar against the current executor before declaring tools.
 
 Your sidecar needs no extra code beyond the `tool-executor.sh` shown above — it already handles argv-mode requests.

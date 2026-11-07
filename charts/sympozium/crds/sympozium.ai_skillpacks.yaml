@@ -340,6 +340,14 @@ spec:
                             and when to use it.
                           maxLength: 2048
                           type: string
+                        endOfOptions:
+                          default: true
+                          description: |-
+                            EndOfOptions inserts a "--" marker between the exec prefix and the
+                            positional values. Defaults to true (current behaviour). Set false for
+                            wrapped CLIs whose value arrives via a flag (e.g. node -e, git commit -m),
+                            where the flag would otherwise consume the marker as its value.
+                          type: boolean
                         exec:
                           description: |-
                             Exec is the argv prefix the sidecar runs for this tool, e.g.

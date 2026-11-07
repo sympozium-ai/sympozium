@@ -29,10 +29,11 @@ const DefaultExecTimeout = 120
 //
 // Shared rather than duplicated because the details are load-bearing:
 //
-//   - argv = Exec prefix + optional fixed Subcommand + "--" + positional values.
-//     The "--" end-of-options marker means a model-supplied positional value
-//     beginning with "-" is an operand, not a flag. Wrapped CLIs must honour it
-//     (docs/sidecars/writing-tool-sidecars.md).
+//   - argv = Exec prefix + optional fixed Subcommand + optional "--" + positional
+//     values. The "--" end-of-options marker (on by default; opt out with
+//     EndOfOptions=false) means a model-supplied positional value beginning with
+//     "-" is an operand, not a flag. Disable it for flag-style prefixes such as
+//     node -e or git commit -m (docs/sidecars/writing-tool-sidecars.md).
 //   - Argv mode is executed with no shell, so argument values cannot inject
 //     shell syntax.
 //   - Numbers keep their exact literal form; without json.Number a large id
@@ -53,7 +54,7 @@ func BuildExecRequest(tool Tool, argsJSON string, meta map[string]string) (ExecR
 	if tool.Subcommand != "" {
 		argv = append(argv, tool.Subcommand)
 	}
-	if len(tool.PositionalArgs) > 0 {
+	if len(tool.PositionalArgs) > 0 && endOfOptionsEnabled(tool.EndOfOptions) {
 		argv = append(argv, "--")
 	}
 	for _, key := range tool.PositionalArgs {
@@ -82,6 +83,13 @@ func BuildExecRequest(tool Tool, argsJSON string, meta map[string]string) (ExecR
 		Target:  NormalizeTarget(tool.Target),
 		Meta:    meta,
 	}, nil
+}
+
+
+// endOfOptionsEnabled reports whether BuildExecRequest should insert the "--"
+// marker. A nil pointer keeps the historical default (true).
+func endOfOptionsEnabled(v *bool) bool {
+	return v == nil || *v
 }
 
 // FormatPositionalArg renders a decoded argument value as one argv element.
