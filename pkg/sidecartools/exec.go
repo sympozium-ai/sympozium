@@ -85,7 +85,6 @@ func BuildExecRequest(tool Tool, argsJSON string, meta map[string]string) (ExecR
 	}, nil
 }
 
-
 // endOfOptionsEnabled reports whether BuildExecRequest should insert the "--"
 // marker. A nil pointer keeps the historical default (true).
 func endOfOptionsEnabled(v *bool) bool {
