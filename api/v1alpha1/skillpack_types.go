@@ -224,6 +224,14 @@ type SidecarTool struct {
 	// +optional
 	PositionalArgs []string `json:"positionalArgs,omitempty"`
 
+	// EndOfOptions inserts a "--" marker between the exec prefix and the
+	// positional values. Defaults to true (current behaviour). Set false for
+	// wrapped CLIs whose value arrives via a flag (e.g. node -e, git commit -m),
+	// where the flag would otherwise consume the marker as its value.
+	// +kubebuilder:default=true
+	// +optional
+	EndOfOptions *bool `json:"endOfOptions,omitempty"`
+
 	// Parameters is the JSON Schema object describing the tool's arguments,
 	// handed to the LLM verbatim. Must be a JSON Schema of type "object".
 	// +kubebuilder:pruning:PreserveUnknownFields

@@ -183,3 +183,37 @@ func TestSidecarTools_PodSpecWiring(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSidecarToolsManifest_EndOfOptions(t *testing.T) {
+	falseVal := false
+	sidecars := []resolvedSidecar{{
+		skillPackName: "node-tools",
+		sidecar: sympoziumv1alpha1.SkillSidecar{
+			Tools: []sympoziumv1alpha1.SidecarTool{{
+				Name:           "node_eval",
+				Exec:           []string{"node", "-e"},
+				PositionalArgs: []string{"code"},
+				EndOfOptions:   &falseVal,
+			}},
+		},
+	}}
+	out, err := buildSidecarToolsManifest(sidecars)
+	if err != nil {
+		t.Fatalf("buildSidecarToolsManifest: %v", err)
+	}
+	var manifest struct {
+		Tools []struct {
+			Name         string `json:"name"`
+			EndOfOptions *bool  `json:"endOfOptions"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal([]byte(out), &manifest); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(manifest.Tools) != 1 {
+		t.Fatalf("got %d tools, want 1", len(manifest.Tools))
+	}
+	if manifest.Tools[0].EndOfOptions == nil || *manifest.Tools[0].EndOfOptions {
+		t.Fatalf("endOfOptions = %v, want false", manifest.Tools[0].EndOfOptions)
+	}
+}

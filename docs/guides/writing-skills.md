@@ -253,9 +253,10 @@ and the runtime runs `node /app/dist/cli.js evaluate-changes web` with
   `execute_command`, and arguments are passed in *argv mode* (no shell) — a value like
   `"; rm -rf /"` is delivered as one literal argument, never interpreted.
 - **Two caveats when authoring.** A positional value beginning with `-` is still handed
-  to your binary, so design your CLI to treat positionals as operands (honor `--`, or
-  validate values). And native tools need the **argv-aware `tool-executor.sh`** — rebuild
-  older sidecar images against the current executor before declaring tools.
+  to your binary. Default `endOfOptions: true` inserts `--` so operand-style CLIs treat
+  it as an operand; set `endOfOptions: false` for flag-style prefixes like `node -e`.
+  And native tools need the **argv-aware `tool-executor.sh`** — rebuild older sidecar
+  images against the current executor before declaring tools.
 - **Admission-validated.** The webhook rejects malformed/colliding names, duplicate
   names across SkillPacks, and `positionalArgs` that don't map to a required declared
   parameter — so mistakes surface at `kubectl apply`, not at runtime.
