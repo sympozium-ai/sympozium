@@ -381,8 +381,9 @@ spec:
 ### 3.4 `SkillPack` — portable skill bundles
 
 Skills are Markdown instruction bundles that become a CRD. The SkillPack
-controller reconciles each SkillPack into a ConfigMap that is projected into
-agent pods at `/skills`.
+controller reconciles each SkillPack into a ConfigMap that is mounted into
+agent pods at `/skills/<pack>/`. The agent-runner lists the skills in a `skills`
+tool and loads a skill's body only when the model asks for it.
 
 **Sidecar architecture:** When a SkillPack requires runtime tools (e.g. `kubectl`,
 `helm`), it declares a `sidecar` spec. The AgentRun controller dynamically injects
@@ -677,8 +678,13 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
-            - name: skills
+            - name: skills                    # emptyDir parent for the pack mounts
               mountPath: /skills
+            - name: sympozium-skill-coding-skills   # one read-only mount per skill ConfigMap
+              mountPath: /skills/coding-skills
+              readOnly: true
+            - name: sympozium-skill-alice-custom-skills
+              mountPath: /skills/alice-custom-skills
               readOnly: true
             - name: ipc
               mountPath: /ipc
@@ -724,10 +730,11 @@ spec:
         - name: workspace
           emptyDir: { sizeLimit: 1Gi }
         - name: skills
-          projected:
-            sources:
-              - configMap: { name: coding-skills }
-              - configMap: { name: alice-custom-skills }
+          emptyDir: {}
+        - name: sympozium-skill-coding-skills
+          configMap: { name: coding-skills, optional: true }
+        - name: sympozium-skill-alice-custom-skills
+          configMap: { name: alice-custom-skills, optional: true }
         - name: ipc
           emptyDir: { medium: Memory, sizeLimit: 64Mi }
         - name: tmp

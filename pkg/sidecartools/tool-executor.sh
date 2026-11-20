@@ -2,11 +2,33 @@
 # tool-executor.sh — Watches /ipc/tools/ for exec-request-*.json files,
 # executes the requested commands, and writes exec-result-*.json responses.
 # This script runs as the main process in skill sidecar containers.
+#
+# This is the canonical copy. Every built-in skill image runs it (github-gitops
+# through a wrapper that loads credentials first), and the controller mounts it
+# read-only at /sympozium/bin/tool-executor.sh in every skill sidecar, so a stock
+# image can run it by setting it as the SkillPack's command.
+#
+# Requires bash, jq, base64, timeout (coreutils or busybox) and the basic file
+# utilities (mktemp, basename, cat, tr, mv, rm, sleep).
+#
+# Environment:
+#   SYMPOZIUM_SKILL_PACK           this sidecar's SkillPack name, for target routing
+#   TOOL_EXECUTOR_DEFAULT_TIMEOUT  timeout for a request that sets none, in seconds (default 30)
+#   TOOL_EXECUTOR_MAX_TIMEOUT      upper bound on a request's timeout, in seconds (default 120)
+#   SYMPOZIUM_IPC_DIR              IPC volume root (default /ipc)
 
 set -euo pipefail
 
-TOOLS_DIR="/ipc/tools"
+IPC_DIR="${SYMPOZIUM_IPC_DIR:-/ipc}"
+TOOLS_DIR="$IPC_DIR/tools"
 POLL_INTERVAL=0.2  # seconds
+
+# positive_int <value> <fallback> prints value if it is a positive integer.
+positive_int() {
+    if [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]; then echo "$1"; else echo "$2"; fi
+}
+DEFAULT_TIMEOUT=$(positive_int "${TOOL_EXECUTOR_DEFAULT_TIMEOUT:-30}" 30)
+MAX_TIMEOUT=$(positive_int "${TOOL_EXECUTOR_MAX_TIMEOUT:-120}" 120)
 
 mkdir -p "$TOOLS_DIR"
 
@@ -29,11 +51,11 @@ process_request() {
     command=$(jq -r '.command // ""' "$req_file" 2>/dev/null) || return
     args=$(jq -r '(.args // []) | join(" ")' "$req_file" 2>/dev/null) || return
     workdir=$(jq -r '.workDir // "/workspace"' "$req_file" 2>/dev/null) || return
-    timeout_sec=$(jq -r '.timeout // 30' "$req_file" 2>/dev/null) || return
+    timeout_sec=$(jq -r ".timeout // $DEFAULT_TIMEOUT" "$req_file" 2>/dev/null) || return
 
     # Sanitize timeout.
-    if [[ "$timeout_sec" -lt 1 ]]; then timeout_sec=30; fi
-    if [[ "$timeout_sec" -gt 120 ]]; then timeout_sec=120; fi
+    if [[ "$timeout_sec" -lt 1 ]]; then timeout_sec=$DEFAULT_TIMEOUT; fi
+    if [[ "$timeout_sec" -gt "$MAX_TIMEOUT" ]]; then timeout_sec=$MAX_TIMEOUT; fi
 
     # Execute the command, capturing stdout/stderr and exit code.
     local stdout="" stderr="" exit_code=0 timed_out="false"
@@ -42,6 +64,8 @@ process_request() {
     tmp_stderr=$(mktemp)
 
     cd "$workdir" 2>/dev/null || cd /
+
+    local started=$SECONDS
 
     # Native sidecar tools (argv mode): when .argv is a non-empty array, execute
     # it directly as an argument vector with NO shell, so argument values cannot
@@ -72,7 +96,6 @@ process_request() {
                 exit_code=$?
             fi
         fi
-        if [[ $exit_code -eq 124 ]]; then timed_out="true"; fi
     else
         # Legacy shell mode: build the full command and run it under bash -c so
         # execute_command keeps pipes, redirects and globs.
@@ -87,11 +110,14 @@ process_request() {
             exit_code=0
         else
             exit_code=$?
-            # timeout(1) returns 124 when the command times out.
-            if [[ $exit_code -eq 124 ]]; then
-                timed_out="true"
-            fi
         fi
+    fi
+
+    # coreutils timeout exits 124 when it kills the command. busybox timeout (the
+    # one in Alpine images) exits 143, the SIGTERM status, so count a 143 as a
+    # timeout once the time limit has passed.
+    if [[ $exit_code -eq 124 ]] || { [[ $exit_code -eq 143 ]] && (( SECONDS - started >= timeout_sec )); }; then
+        timed_out="true"
     fi
 
     stdout=$(cat "$tmp_stdout")
@@ -126,7 +152,7 @@ process_request() {
 # Main loop: poll for new request files.
 while true; do
     # Exit when the agent signals it is done.
-    if [[ -f /ipc/done ]]; then
+    if [[ -f "$IPC_DIR/done" ]]; then
         echo "[tool-executor] agent done, exiting"
         exit 0
     fi

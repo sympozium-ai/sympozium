@@ -66,6 +66,7 @@ const (
 	ToolScheduleTask       = "schedule_task"
 	ToolDelegateToPersona  = "delegate_to_persona"
 	ToolSpawnSubagents     = "spawn_subagents"
+	ToolSkills             = "skills"
 )
 
 // ToolDef describes a tool for LLM function calling.
@@ -77,16 +78,33 @@ type ToolDef struct {
 
 // defaultTools returns the set of tools available to the agent.
 func defaultTools() []ToolDef {
+	execDesc := "Execute a shell command in a Kubernetes skill sidecar container. " +
+		"Use this to run kubectl, bash scripts, curl, jq, and other CLI tools. " +
+		"Commands execute in /workspace by default. " +
+		"If specialized MCP tools are available for the task, prefer those instead. " +
+		"When multiple skill sidecars are attached, set 'target' to the name of the skill " +
+		"that owns the tool you need (e.g. 'github-gitops' for `gh`, 'k8s-ops' for `kubectl`). " +
+		"If 'target' is omitted, any sidecar may serve the request (legacy behavior)."
+	targetProp := map[string]any{
+		"type": "string",
+		"description": "Optional. Name of the skill sidecar that should execute this command " +
+			"(must match a SkillPack name attached to this agent, e.g. 'github-gitops'). " +
+			"Leave empty to allow any attached sidecar to claim the request.",
+	}
+	// With the attached sidecars known, constrain target to them so the model
+	// cannot route a command to a sidecar that does not exist.
+	if len(skillTargets) > 0 {
+		attached := strings.Join(skillTargets, ", ")
+		execDesc += " Attached sidecar targets: " + attached + "."
+		targetProp["enum"] = append([]string(nil), skillTargets...)
+		targetProp["description"] = "Optional. SkillPack name of the sidecar that should execute this command, " +
+			"one of: " + attached + ". Leave empty to allow any attached sidecar to claim the request."
+	}
+
 	tools := []ToolDef{
 		{
-			Name: ToolExecuteCommand,
-			Description: "Execute a shell command in a Kubernetes skill sidecar container. " +
-				"Use this to run kubectl, bash scripts, curl, jq, and other CLI tools. " +
-				"Commands execute in /workspace by default. " +
-				"If specialized MCP tools are available for the task, prefer those instead. " +
-				"When multiple skill sidecars are attached, set 'target' to the name of the skill " +
-				"that owns the tool you need (e.g. 'github-gitops' for `gh`, 'k8s-ops' for `kubectl`). " +
-				"If 'target' is omitted, any sidecar may serve the request (legacy behavior).",
+			Name:        ToolExecuteCommand,
+			Description: execDesc,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -102,12 +120,7 @@ func defaultTools() []ToolDef {
 						"type":        "integer",
 						"description": "Timeout in seconds (default 30, max 120).",
 					},
-					"target": map[string]any{
-						"type": "string",
-						"description": "Optional. Name of the skill sidecar that should execute this command " +
-							"(must match a SkillPack name attached to this agent, e.g. 'github-gitops'). " +
-							"Leave empty to allow any attached sidecar to claim the request.",
-					},
+					"target": targetProp,
 				},
 				"required": []string{"command"},
 			},
@@ -453,6 +466,8 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 		return delegateToPersonaTool(ctx, args)
 	case ToolSpawnSubagents:
 		return spawnSubagentsTool(ctx, args)
+	case ToolSkills:
+		return skillsTool(args)
 	default:
 		// Check if this is a memory tool from the memory-server sidecar.
 		if isMemoryTool(name) {
@@ -1142,10 +1157,14 @@ func executeCommand(ctx context.Context, args map[string]any) string {
 		timeoutSec = 120
 	}
 
-	target, _ := args["target"].(string)
-	// Normalize: trim whitespace and lowercase so SkillPack name comparisons
-	// are tolerant of LLM casing variations ("Github-Gitops" vs "github-gitops").
-	target = normalizeSidecarTarget(target)
+	// Resolve against the attached sidecars (SYMPOZIUM_SKILL_TARGETS): normalizes
+	// case, accepts a unique short name, and fails fast on a target no sidecar
+	// would claim instead of waiting out the timeout.
+	rawTarget, _ := args["target"].(string)
+	target, err := resolveSkillTarget(rawTarget, skillTargets)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
 
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 

@@ -117,7 +117,7 @@ func sidecarToolNameReserved(name string) bool {
 	switch name {
 	case ToolExecuteCommand, ToolReadFile, ToolWriteFile, ToolListDirectory,
 		ToolSendChannelMessage, ToolFetchURL, ToolScheduleTask,
-		ToolDelegateToPersona, ToolSpawnSubagents:
+		ToolDelegateToPersona, ToolSpawnSubagents, ToolSkills:
 		return true
 	}
 	if isMemoryTool(name) || isWorkflowMemoryTool(name) {

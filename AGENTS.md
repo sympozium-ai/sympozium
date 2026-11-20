@@ -220,7 +220,7 @@ Add new tests to the `test-integration` target in the `Makefile`.
 
 ## Agent Tools
 
-The agent-runner has 8 always-on tools defined in `cmd/agent-runner/tools.go` (plus `delegate_to_persona`, `spawn_subagents`, the memory tools and MCP tools when enabled). Celln runs do not use these; cells borrow `ClusterCellnTool`s instead.
+The agent-runner has 8 always-on tools defined in `cmd/agent-runner/tools.go` (plus `delegate_to_persona`, `spawn_subagents`, `skills`, the memory tools and MCP tools when enabled). Celln runs do not use these; cells borrow `ClusterCellnTool`s instead.
 
 | Tool | Category | Description |
 |------|----------|-------------|
@@ -262,7 +262,7 @@ With the `memory` SkillPack, the controller runs a per-Agent memory server (`<ag
 
 ### Skills
 
-SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on an Agent, skills are mounted at `/skills/` and sidecars are injected into agent pods. See `docs/guides/writing-skills.md`.
+SkillPacks are CRDs containing Markdown instructions + optional sidecar definitions. When enabled on an Agent, each pack's ConfigMap is mounted read-only at `/skills/<pack>/` (files carry YAML frontmatter with `name` / `description`) and sidecars are injected into agent pods. The agent-runner lists the skills in the `skills` tool and the model loads a body on demand; when tools are off or the tool policy drops `skills`, the bodies are inlined into the system prompt instead. See `docs/guides/writing-skills.md`.
 
 ---
 
