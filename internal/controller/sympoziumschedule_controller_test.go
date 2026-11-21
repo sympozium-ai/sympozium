@@ -554,6 +554,59 @@ func TestSympoziumScheduleReconcile_PersistsRunTimeout(t *testing.T) {
 	}
 }
 
+// TestSympoziumScheduleReconcile_PropagatesCleanup checks that the Agent's
+// cleanup policy reaches scheduled runs, and that unset still means "delete".
+func TestSympoziumScheduleReconcile_PropagatesCleanup(t *testing.T) {
+	for _, tc := range []struct{ configured, want string }{
+		{configured: "", want: "delete"},
+		{configured: "delete", want: "delete"},
+		{configured: "keep", want: "keep"},
+	} {
+		t.Run("cleanup="+tc.configured, func(t *testing.T) {
+			instance := &sympoziumv1alpha1.Agent{
+				ObjectMeta: metav1.ObjectMeta{Name: "inst-debug", Namespace: "default"},
+				Spec: sympoziumv1alpha1.AgentSpec{
+					Agents: sympoziumv1alpha1.AgentsSpec{
+						Default: sympoziumv1alpha1.AgentConfig{Model: "gpt-4o", Cleanup: tc.configured},
+					},
+					AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "inst-debug-openai-key"}},
+				},
+			}
+			schedule := &sympoziumv1alpha1.SympoziumSchedule{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "inst-debug-sweep",
+					Namespace:         "default",
+					CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+				},
+				Spec: sympoziumv1alpha1.SympoziumScheduleSpec{
+					AgentRef: "inst-debug",
+					Schedule: "* * * * *",
+					Task:     "sweep",
+					Type:     "sweep",
+				},
+			}
+
+			r, cl := newScheduleTestReconciler(t, instance, schedule)
+			if _, err := r.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: schedule.Name, Namespace: schedule.Namespace},
+			}); err != nil {
+				t.Fatalf("reconcile: %v", err)
+			}
+
+			run := &sympoziumv1alpha1.AgentRun{}
+			if err := cl.Get(context.Background(), types.NamespacedName{
+				Name:      schedule.Name + "-1",
+				Namespace: schedule.Namespace,
+			}, run); err != nil {
+				t.Fatalf("get created run: %v", err)
+			}
+			if run.Spec.Cleanup != tc.want {
+				t.Fatalf("Spec.Cleanup = %q, want %q", run.Spec.Cleanup, tc.want)
+			}
+		})
+	}
+}
+
 // The Forbid concurrency gate must treat every non-terminal phase as active.
 // AwaitingDelegate and PostRunning were both missing from the phase set, so an
 // orchestrator parked on delegate_to_persona read as finished and the next cron

@@ -143,6 +143,7 @@ func TestAgentUpdateStaleEnsembleConverges(t *testing.T) {
 	newPersona.SystemPrompt = "you are different now"
 	newPersona.Model = "gpt-4o-mini"
 	newPersona.RunTimeout = "45m"
+	newPersona.Cleanup = "delete"
 	newPersona.Env = map[string]string{"MODE": "b"}
 	newPersona.Skills = []string{"k8s-ops"}
 	newPersona.Subagents = &sympoziumv1alpha1.SubagentsSpec{MaxDepth: 5}
@@ -390,6 +391,7 @@ func convergenceFixture() (*sympoziumv1alpha1.Ensemble, *sympoziumv1alpha1.Agent
 		Subagents:                &sympoziumv1alpha1.SubagentsSpec{MaxDepth: 3},
 		Env:                      map[string]string{"MODE": "a"},
 		RunTimeout:               "30m",
+		Cleanup:                  "keep",
 		BaseURL:                  "https://api.example.test/v1",
 		ProviderHeadersSecretRef: "headers-secret",
 		Lifecycle: &sympoziumv1alpha1.LifecycleHooks{

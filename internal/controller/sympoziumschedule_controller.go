@@ -285,6 +285,7 @@ func (r *SympoziumScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			VolumeMounts:     instance.Spec.VolumeMounts,
 			Env:              instance.Spec.Agents.Default.Env,
 			Timeout:          instance.Spec.Agents.Default.ParseRunTimeout(),
+			Cleanup:          scheduledRunCleanup(instance),
 			ToolPolicy:       toolpolicy.ForAgent(ctx, r.Client, instance),
 		},
 	}
@@ -524,4 +525,13 @@ func (r *SympoziumScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&sympoziumv1alpha1.SympoziumSchedule{}).
 		Owns(&sympoziumv1alpha1.AgentRun{}).
 		Complete(r)
+}
+
+// scheduledRunCleanup returns the Agent's configured cleanup policy for
+// scheduled runs, defaulting to "delete" so pods don't pile up unless asked.
+func scheduledRunCleanup(instance *sympoziumv1alpha1.Agent) string {
+	if c := instance.Spec.Agents.Default.Cleanup; c != "" {
+		return c
+	}
+	return "delete"
 }

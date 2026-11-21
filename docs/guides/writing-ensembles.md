@@ -57,6 +57,7 @@ spec:
 | `skills` | No | List of SkillPack names to mount |
 | `toolPolicy` | No | Restrict which tools the agent can use |
 | `schedule` | No | Recurring task configuration |
+| `cleanup` | No | Pod cleanup for scheduled runs: `delete` (default) or `keep` to retain pods for debugging |
 | `memory` | No | Initial memory seeds |
 | `channels` | No | Channel types to bind (e.g. `["telegram", "slack"]`) |
 | `webEndpoint` | No | Expose this persona as an HTTP API |

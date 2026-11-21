@@ -458,6 +458,13 @@ type AgentConfig struct {
 	// +optional
 	RunTimeout string `json:"runTimeout,omitempty"`
 
+	// Cleanup is the pod cleanup policy ("delete" or "keep") applied to
+	// AgentRuns created by this agent's SympoziumSchedules. When empty, runs
+	// use "delete". An AgentRun's own spec.cleanup is never overridden.
+	// +kubebuilder:validation:Enum=delete;keep
+	// +optional
+	Cleanup string `json:"cleanup,omitempty"`
+
 	// NodeSelector constrains agent pods to nodes with matching labels.
 	// Used for node-pinned inference (e.g., Ollama installed on specific GPU nodes).
 	// +optional

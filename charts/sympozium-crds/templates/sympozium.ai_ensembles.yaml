@@ -159,6 +159,15 @@ spec:
                       items:
                         type: string
                       type: array
+                    cleanup:
+                      description: |-
+                        Cleanup is the pod cleanup policy ("delete" or "keep") for AgentRuns
+                        created by this agent configuration's schedule. Propagated to the
+                        generated Agent's AgentConfig.Cleanup. When empty, runs use "delete".
+                      enum:
+                      - delete
+                      - keep
+                      type: string
                     displayName:
                       description: DisplayName is the human-readable name shown in
                         the TUI.
