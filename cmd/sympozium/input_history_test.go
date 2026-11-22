@@ -64,6 +64,36 @@ func TestInputHistory_UpRecallsAndDownReturnsToEmpty(t *testing.T) {
 	}
 }
 
+func TestInputHistory_DownOutsideBrowsingKeepsDraft(t *testing.T) {
+	m := historyModel()
+	m = submit(m, "/agents")
+	m.input.SetValue("/run agent do something")
+	for _, k := range []tea.KeyType{tea.KeyDown, tea.KeyCtrlN} {
+		m = press(m, k)
+		if got := m.input.Value(); got != "/run agent do something" {
+			t.Fatalf("key %v outside history browsing changed draft to %q", k, got)
+		}
+	}
+}
+
+func TestInputHistory_DownPastNewestRestoresDraft(t *testing.T) {
+	m := historyModel()
+	m = submit(m, "/agents")
+	m = submit(m, "/policies")
+	m.input.SetValue("/run agent do something")
+
+	m = press(m, tea.KeyUp)
+	m = press(m, tea.KeyUp)
+	if got := m.input.Value(); got != "/agents" {
+		t.Fatalf("input = %q, want /agents", got)
+	}
+	m = press(m, tea.KeyDown)
+	m = press(m, tea.KeyDown)
+	if got := m.input.Value(); got != "/run agent do something" {
+		t.Fatalf("input = %q, want draft restored", got)
+	}
+}
+
 func TestInputHistory_SuggestionsKeepNavigatingSuggestions(t *testing.T) {
 	m := historyModel()
 	m = submit(m, "/agents")

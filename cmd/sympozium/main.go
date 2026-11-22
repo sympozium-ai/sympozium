@@ -2831,6 +2831,7 @@ type tuiModel struct {
 	// the user is not browsing history.
 	commandHistory []string
 	historyIndex   int
+	historyDraft   string // input saved when history browsing starts
 
 	// Delete confirmation
 	confirmDelete      bool
@@ -4248,6 +4249,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if len(m.commandHistory) > 0 {
+					if m.historyIndex == len(m.commandHistory) {
+						m.historyDraft = m.input.Value()
+					}
 					if m.historyIndex > 0 {
 						m.historyIndex--
 					}
@@ -4264,15 +4268,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if len(m.commandHistory) > 0 {
-					if m.historyIndex < len(m.commandHistory) {
-						m.historyIndex++
+					if m.historyIndex >= len(m.commandHistory) {
+						return m, nil // not browsing history; keep the draft
 					}
+					m.historyIndex++
 					if m.historyIndex == len(m.commandHistory) {
-						m.input.SetValue("")
+						m.input.SetValue(m.historyDraft)
 					} else {
 						m.input.SetValue(m.commandHistory[m.historyIndex])
-						m.input.CursorEnd()
 					}
+					m.input.CursorEnd()
 					return m, nil
 				}
 			case tea.KeyEnter:
