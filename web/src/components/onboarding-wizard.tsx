@@ -114,7 +114,7 @@ export const PROVIDERS = [
   {
     value: "anthropic",
     label: "Anthropic",
-    defaultModel: "claude-sonnet-4-20250514",
+    defaultModel: "claude-sonnet-5-5",
     defaultBaseURL: "",
     icon: AnthropicIcon,
   },
@@ -156,7 +156,7 @@ export const PROVIDERS = [
   {
     value: "bedrock",
     label: "AWS Bedrock",
-    defaultModel: "anthropic.claude-sonnet-4-20250514-v1:0",
+    defaultModel: "global.anthropic.claude-sonnet-5-5",
     defaultBaseURL: "",
     icon: AWSIcon,
   },

@@ -216,7 +216,7 @@ describe("Create Agent → Celln: the Agent's own model backend", () => {
 
     // Model: any model name, prefilled with a well-known one; the origin is fixed.
     cy.get('[data-testid="celln-models"]').should("not.exist");
-    cy.get('[data-testid="celln-model-name"]').should("have.value", "claude-sonnet-4-20250514");
+    cy.get('[data-testid="celln-model-name"]').should("have.value", "claude-sonnet-5-5");
     typeModel("claude-sonnet-5");
     cy.get('[data-testid="celln-origin"]').should("have.text", "https://api.anthropic.com");
     cy.get('[data-testid="celln-origin-select"]').should("not.exist");
