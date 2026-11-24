@@ -679,11 +679,16 @@ longer needed (`SubstrateEndpoint.TLS`).
 ### Not done
 
 - **Most tools** (skills, MCP, delegation, memory): see below.
-- **A live run of the default.** Default selection and the tool endpoint are
-  tested against a fake Control API and a real API server. The 20 defaulted
-  runs in `docs/evidence/substrate-default-backend-2026-11-24.json` were made
-  with an earlier build of this change against a live Substrate; this build
-  has not been deployed, and no actor on a live install has made a tool call.
+- **Measurement at scale on a deployed install.** On 2026-11-24 the chart
+  was installed on a rebuilt single-node cluster (Kubernetes 1.35, Canal, so
+  NetworkPolicy is enforced) against Substrate v1.0.1. Runs that named no
+  backend ran as actors through the in-cluster controller and model gateway
+  with a real provider: eight consecutive runs took 1.1 to 1.8 s wall time,
+  of which 0.7 to 1.4 s was the provider. Runs with `spec.env`, and runs
+  whose key the gateway could not read, ran as Jobs with the reason recorded.
+  One actor called `schedule_task` and the schedule was created. Not done on
+  that install: a batch large enough for percentiles, parallel runs, and
+  `send_channel_message` (no channel was configured).
 - **Enduring runs and turns.** Actors suspend and resume per turn, which
   fits, but nothing is built.
 - **Console.** The web UI does not show `status.substrate`, the refusal code
