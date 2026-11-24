@@ -383,11 +383,11 @@ gateway.
 - name: SUBSTRATE_TURN_LISTEN
   value: {{ printf ":%s" (include "sympozium.substrateTurnPort" .) | quote }}
 - name: SUBSTRATE_TURN_HOST
-  value: {{ printf "sympozium-substrate-turns.%s.svc" $ns | quote }}
+  value: {{ printf "sympozium-substrate-turns.%s.svc.%s" $ns ($s.clusterDomain | default "cluster.local") | quote }}
 - name: SUBSTRATE_TURN_PORT
   value: {{ include "sympozium.substrateTurnPort" . | quote }}
 - name: SUBSTRATE_GATEWAY_HOST
-  value: {{ printf "harness-gateway.%s.svc" $ns | quote }}
+  value: {{ printf "harness-gateway.%s.svc.%s" $ns ($s.clusterDomain | default "cluster.local") | quote }}
 - name: SUBSTRATE_GATEWAY_PORT
   value: {{ include "sympozium.substrateGatewayPort" . | quote }}
 {{- end -}}

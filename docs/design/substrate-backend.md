@@ -328,6 +328,7 @@ Everything is under `substrate:` in `charts/sympozium/values.yaml`. With
 | `substrate.controlAPI.serverName` | `""` | Name in the Control API's certificate, if it differs from the host. |
 | `substrate.controlAPI.tokenAudience` | `""` | Audience of the projected ServiceAccount token the controller presents. Required. |
 | `substrate.controlAPI.tokenExpirationSeconds` | `3600` | Lifetime of that token. |
+| `substrate.clusterDomain` | `cluster.local` | The cluster's DNS domain, used to give actors fully qualified names for the turn endpoint and the model gateway. |
 | `substrate.jwt.issuer` | `""` | Issuer of actor JWTs. Required. |
 | `substrate.jwt.jwksURL` | `""` | Key set URL. Empty means `<issuer>/openid/v1/jwks`. |
 | `substrate.jwt.jwksServerName` | `""` | Name in the key set server's certificate, if it differs. |
@@ -350,9 +351,28 @@ When enabled, the chart:
   and a NetworkPolicy rule that admits only Substrate's egress gateway
   namespace on it.
 
-Substrate itself is not installed by this chart, and it must be told to
-accept the controller's ServiceAccount (`sympozium-controller-manager`) for
-the token audience you choose.
+Substrate itself is not installed by this chart. Three things on its side
+have to be true, all found installing against Substrate v1.0.1 on 2026-11-24:
+
+- **The controller's ServiceAccount needs a role in Substrate.** v1.0.1
+  authorises every call. The controller creates atespaces, so
+  `system:serviceaccount:<sympozium namespace>:sympozium-controller-manager`
+  needs `owner` on the global scope: through a global access policy, or as a
+  bootstrap owner (`ATE_API_AUTHZ_BOOTSTRAP_OWNERS`). Without it every run
+  fails at "ensure atespace" with `PermissionDenied`.
+- **The Sympozium namespace needs the label `ate.dev/api-access: "true"`.**
+  Substrate's own NetworkPolicy admits only labelled namespaces to its API.
+  On a CNI that enforces NetworkPolicy, an unlabelled namespace times out.
+- **Actors are addressed by fully qualified name** (`substrate.clusterDomain`).
+  Substrate resolves a name for an actor only when it is exactly a host in
+  the actor's egress policy, with no search path. With a short name the
+  actor starts, never gets its turn, and the run stays `Running` until it
+  times out.
+
+A golden snapshot that fails (for example, because the runner image cannot be
+pulled) leaves a failed actor template behind. The backend does not replace
+it: delete it with `kubectl ate delete actor-template` once the cause is
+fixed.
 
 ### Variables
 

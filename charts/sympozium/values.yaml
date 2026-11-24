@@ -309,6 +309,11 @@ substrate:
   # -- agent-runner image actors run, pinned by digest (repo@sha256:...). It
   # is frozen into Substrate's golden snapshot, so a tag is refused.
   runnerImage: ""
+  # -- The cluster's DNS domain. Actors are given the turn endpoint and the
+  # model gateway by fully qualified name, because Substrate resolves a name
+  # for an actor only if it is exactly a host in the actor's egress policy:
+  # no search path is applied, so `<service>.<namespace>.svc` does not resolve.
+  clusterDomain: cluster.local
   controlAPI:
     # -- Substrate Control API, host:port (gRPC over TLS).
     endpoint: ""
