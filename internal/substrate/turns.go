@@ -29,8 +29,28 @@ const (
 	TurnPath   = "/v1/actor/turn"
 	ResultPath = "/v1/actor/turn/result"
 
+	// ToolPathPrefix is followed by a tool name. An actor posts a tool call
+	// here when the tool acts outside its sandbox.
+	ToolPathPrefix = "/v1/actor/tools/"
+
 	maxResultBody = 5 << 20
+	maxToolBody   = 64 << 10
 )
+
+// ToolRefusal is a tool call the control plane will not make for this actor:
+// the run's policy denies it, or the tool is not served. Reason goes back to
+// the model, so it says what was refused and nothing about why internally.
+type ToolRefusal struct{ Reason string }
+
+func (r *ToolRefusal) Error() string { return r.Reason }
+
+// ToolCaller makes a tool call on behalf of an actor's run. It is where tool
+// policy is enforced: the sandbox asks, and code outside it decides. It
+// returns ErrNoSuchTurn when the actor has no live run and a *ToolRefusal
+// when the call is not allowed.
+type ToolCaller interface {
+	CallTool(ctx context.Context, actor ActorRef, tool string, args json.RawMessage) (string, error)
+}
 
 // ActorRef names an actor.
 type ActorRef struct {
@@ -195,6 +215,48 @@ func (v *JWTVerifier) VerifyActor(ctx context.Context, token string) (actor, uid
 type TurnHandler struct {
 	Verifier Verifier
 	Store    TurnStore
+	// Tools serves tool calls. Nil serves none.
+	Tools ToolCaller
+}
+
+// toolName is the last path segment, if it could be a tool's name.
+func toolName(path string) (string, bool) {
+	name, ok := strings.CutPrefix(path, ToolPathPrefix)
+	if !ok || name == "" || len(name) > 64 {
+		return "", false
+	}
+	for _, c := range name {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return "", false
+		}
+	}
+	return name, true
+}
+
+func (h TurnHandler) serveTool(w http.ResponseWriter, r *http.Request, tool string) {
+	actor, ok := h.actor(w, r)
+	if !ok {
+		return
+	}
+	args, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxToolBody))
+	if err != nil || !json.Valid(args) {
+		http.Error(w, "malformed tool arguments", http.StatusBadRequest)
+		return
+	}
+	result, err := h.Tools.CallTool(r.Context(), actor, tool, args)
+	var refusal *ToolRefusal
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case errors.As(err, &refusal):
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": refusal.Reason})
+	case errors.Is(err, ErrNoSuchTurn):
+		http.Error(w, "no such turn", http.StatusNotFound)
+	case err != nil:
+		http.Error(w, "tool unavailable", http.StatusServiceUnavailable)
+	default:
+		_ = json.NewEncoder(w).Encode(map[string]string{"result": result})
+	}
 }
 
 func (h TurnHandler) actor(w http.ResponseWriter, r *http.Request) (ActorRef, bool) {
@@ -253,6 +315,10 @@ func (h TurnHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	default:
+		if tool, ok := toolName(r.URL.Path); ok && r.Method == http.MethodPost && h.Tools != nil {
+			h.serveTool(w, r, tool)
+			return
+		}
 		http.NotFound(w, r)
 	}
 }

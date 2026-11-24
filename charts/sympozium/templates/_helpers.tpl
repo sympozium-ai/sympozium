@@ -367,6 +367,9 @@ gateway.
 {{- fail "substrate.runnerImage must be pinned by digest (repo@sha256:...)" -}}
 {{- end -}}
 {{ include "sympozium.substrateSharedEnv" . }}
+# "false" leaves a run that names no backend a Job.
+- name: SUBSTRATE_DEFAULT
+  value: {{ ne (toString $s.default) "false" | quote }}
 - name: SUBSTRATE_API_ENDPOINT
   value: {{ required "substrate.controlAPI.endpoint is required when substrate.enabled" $api.endpoint | quote }}
 {{- with $api.serverName }}
@@ -380,11 +383,11 @@ gateway.
 - name: SUBSTRATE_TURN_LISTEN
   value: {{ printf ":%s" (include "sympozium.substrateTurnPort" .) | quote }}
 - name: SUBSTRATE_TURN_HOST
-  value: {{ printf "sympozium-substrate-turns.%s.svc" $ns | quote }}
+  value: {{ printf "sympozium-substrate-turns.%s.svc.%s" $ns ($s.clusterDomain | default "cluster.local") | quote }}
 - name: SUBSTRATE_TURN_PORT
   value: {{ include "sympozium.substrateTurnPort" . | quote }}
 - name: SUBSTRATE_GATEWAY_HOST
-  value: {{ printf "harness-gateway.%s.svc" $ns | quote }}
+  value: {{ printf "harness-gateway.%s.svc.%s" $ns ($s.clusterDomain | default "cluster.local") | quote }}
 - name: SUBSTRATE_GATEWAY_PORT
   value: {{ include "sympozium.substrateGatewayPort" . | quote }}
 {{- end -}}

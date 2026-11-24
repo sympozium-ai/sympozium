@@ -417,6 +417,11 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// A backend that can refuse a run from its spec alone does so here, with
 	// its typed code, before shared admission resolves or reads anything.
 	if agentRun.Status.Phase == "" || agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhasePending {
+		// A run that names no backend is given one first, so that the
+		// preflight below and shared admission judge it on that plane.
+		if decided, err := r.chooseDefaultPlane(ctx, agentRun); err != nil || decided {
+			return ctrl.Result{Requeue: decided}, err
+		}
 		refusal, err := backends.preflight(ctx, agentRun)
 		if err != nil {
 			return ctrl.Result{}, err

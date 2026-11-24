@@ -113,7 +113,11 @@ spec:
               backend:
                 description: |-
                   Backend selects the execution backend for this run.
-                  "job" (default, implicit): standard Kubernetes Job backend.
+                  Unset: the controller chooses. That is an Agent Substrate actor where an
+                    operator has made Substrate the default plane and it can execute the
+                    run, and a Kubernetes Job otherwise; the run's DefaultExecutionPlane
+                    condition records which, and why.
+                  "job": standard Kubernetes Job backend.
                   "celln": hardware-isolated Celln dispatcher (hermetic; no ensembles, no
                     delegation, no shared memory, no IPC, no streaming; the agent receives
                     the task string and produces a bounded output). Explicit native Harness
@@ -122,9 +126,9 @@ spec:
 
                   Celln is selected for individual high-risk or bounded computations;
                   ensembles and workflows always use the Job backend.
-                  "substrate": an Agent Substrate actor (experimental, #699). Only this
-                    value selects it, and only on a controller an operator has configured
-                    for Substrate; anything else is refused, never run as a Job. One-shot
+                  "substrate": an Agent Substrate actor (experimental, #699), on a
+                    controller an operator has configured for Substrate. A run that sets
+                    this is refused if it cannot have an actor, never run as a Job. One-shot
                     string tasks with a model key only; the key never enters the sandbox
                     and the actor reaches nothing but the controller's turn endpoint and
                     the model gateway.

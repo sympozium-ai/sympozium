@@ -68,3 +68,21 @@ func TestTurnHandlerRefusesASecondResult(t *testing.T) {
 		t.Fatalf("status %d, want 409", rec.Code)
 	}
 }
+
+// Substrate is the default plane wherever it is configured, unless the
+// operator says no. A value that is not a boolean is an error, not a "yes".
+func TestSubstrateIsTheDefaultPlaneUnlessSwitchedOff(t *testing.T) {
+	for value, want := range map[string]bool{"": true, "true": true, "false": false} {
+		s, err := SettingsFromEnv(func(k string) string {
+			return map[string]string{"SUBSTRATE_JWT_ISSUER": "https://issuer.example", "SUBSTRATE_DEFAULT": value}[k]
+		})
+		if err != nil || s.Default != want {
+			t.Errorf("SUBSTRATE_DEFAULT=%q: Default=%v err=%v, want %v", value, s != nil && s.Default, err, want)
+		}
+	}
+	if _, err := SettingsFromEnv(func(k string) string {
+		return map[string]string{"SUBSTRATE_JWT_ISSUER": "https://issuer.example", "SUBSTRATE_DEFAULT": "yes please"}[k]
+	}); err == nil {
+		t.Error("a SUBSTRATE_DEFAULT that is not a boolean was accepted")
+	}
+}

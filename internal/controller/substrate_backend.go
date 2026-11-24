@@ -15,9 +15,11 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -29,8 +31,10 @@ import (
 )
 
 // The Substrate backend runs an AgentRun as an Agent Substrate actor (#699).
-// It is experimental and opt-in: only spec.backend=substrate selects it, and
-// only on a controller an operator configured for Substrate. It is the first
+// It is experimental and exists only on a controller an operator configured
+// for Substrate. There, spec.backend=substrate selects it, and so does naming
+// no backend when the operator made it the default plane and the run loses
+// nothing by it (chooseDefaultPlane). It is the first
 // backend written against the ExecutionBackend seam rather than wrapped by
 // it. What it does not do, on purpose:
 //
@@ -40,11 +44,14 @@ import (
 //   - It keeps no state of its own. The run's status says which actor it is,
 //     the turn is derived from the run on every request, and the result is
 //     written to status by whichever controller replica the actor reached.
-//   - It never falls back. A run it cannot execute is refused with a typed
-//     code (Preflight, Start) before anything is created, and is never run
-//     as a Job.
+//   - It never falls back. A run that asks for it and cannot have it is
+//     refused with a typed code (Preflight, Start) before anything is
+//     created, and is never run as a Job. A run that names no backend is a
+//     different case: it never asked, so it is sent here only when nothing
+//     would be refused, and is a Job otherwise.
 //
-// Scope: one-shot string tasks with a model key. Skills, MCP servers, memory,
+// Scope: one-shot string tasks with a model key, with the tools the
+// controller serves (substrate_tools.go). Skills, MCP servers, memory,
 // lifecycle hooks, gates and harness runtimes are refused.
 
 const (
@@ -85,8 +92,8 @@ type SubstrateAPI interface {
 }
 
 // SubstrateConfig is set when an operator points the controller at a
-// Substrate install. Nil means the backend is not configured and a
-// backend=substrate run is refused; nothing falls back to another backend.
+// Substrate install. Nil means the backend is not configured: a
+// backend=substrate run is refused, and a run that names no backend is a Job.
 type SubstrateConfig struct {
 	API SubstrateAPI
 	// Image is the digest-pinned agent-runner image actors run.
@@ -100,6 +107,10 @@ type SubstrateConfig struct {
 	// from Substrate's egress gateway to an endpoint above without TLS is
 	// clear text. Without it the backend refuses every run.
 	AllowPlaintextHop bool
+	// Default makes Substrate the execution plane of a run that names no
+	// backend, when the backend can execute it. A run it cannot execute runs
+	// as a Job and records why; a run that names a backend is never moved.
+	Default bool
 	// Audience is what actor JWTs are minted for. Both receivers check it.
 	Audience string
 	// CPUMillicores and MemoryBytes size every actor.
@@ -171,23 +182,136 @@ func (b substrateBackend) Capabilities(context.Context) (BackendCapabilities, er
 	return BackendCapabilities{State: state, Lifecycles: []string{"one-shot"}, Logs: LogsTerminal}, nil
 }
 
-// substrateOwns: a run that asks for Substrate and has not started as
-// anything else, or one that already has an actor. Nothing but
-// spec.backend=substrate ever puts a run here: a controller configured for
-// Substrate takes no other run, and whether Substrate is installed on the
-// cluster is never looked at. The second half keeps a run on its actor if
+// substrateOwns: a run that asks for Substrate, or that names no backend and
+// was given Substrate as the default plane (chooseDefaultPlane), and has not
+// started as anything else; or one that already has an actor. The choice of
+// a default is read from the run's status, where it was recorded once, so
+// every caller sees the same answer without resolving the Agent again.
+// Whether Substrate is installed on the cluster is never looked at. The
+// second half keeps a run on its actor if
 // spec.backend is edited later; the JobName test keeps a run that started as
 // a Job on its Job if spec.backend is edited to substrate.
 func substrateOwns(run *sympoziumv1alpha1.AgentRun) bool {
 	if run.Status.Substrate != nil {
 		return true
 	}
-	return run.Spec.Backend == string(ExecutionBackendSubstrate) && run.Status.JobName == "" &&
+	wanted := run.Spec.Backend == string(ExecutionBackendSubstrate) || (run.Spec.Backend == "" && defaultedToSubstrate(run))
+	return wanted && run.Status.JobName == "" &&
 		run.Status.SandboxName == "" && run.Status.SandboxClaimName == "" && run.Status.CellnScoped == nil
 }
 
 func (substrateBackend) Owns(_ context.Context, run *sympoziumv1alpha1.AgentRun) (bool, error) {
 	return substrateOwns(run), nil
+}
+
+// ConditionExecutionPlane records, once, which plane the controller chose
+// for a run that named none: True when it runs as a Substrate actor, False
+// (reason RunsAsJob, with what was missing) when it runs as a Job instead.
+// A run that names a backend never carries it.
+const ConditionExecutionPlane = "DefaultExecutionPlane"
+
+func defaultedToSubstrate(run *sympoziumv1alpha1.AgentRun) bool {
+	return meta.IsStatusConditionTrue(run.Status.Conditions, ConditionExecutionPlane)
+}
+
+// substrateDefaultIneligible names the first thing about a run or its Agent
+// that keeps a run with no spec.backend off Substrate, or "". It is stricter
+// than substrateUnsupported: a run that asks for Substrate is refused for what
+// Substrate cannot do, but a run that asks for nothing must not lose anything
+// a Job would have given it. Every case here is something a Job pod provides
+// through a sidecar, a volume or the node network, none of which an actor has.
+func substrateDefaultIneligible(run *sympoziumv1alpha1.AgentRun, agent *sympoziumv1alpha1.Agent) string {
+	if need := substrateUnsupported(run); need != "" {
+		return need
+	}
+	switch {
+	case len(run.Spec.Skills) > 0 || len(agent.Spec.Skills) > 0:
+		return "no skills"
+	case len(agent.Spec.MCPServers) > 0:
+		return "no MCP servers"
+	case agent.Spec.RuntimeRef != "":
+		return "no harness runtime"
+	case agent.Spec.Memory != nil && agent.Spec.Memory.Enabled:
+		return "no agent memory"
+	case run.Spec.Parent != nil || run.Labels["sympozium.ai/ensemble"] != "":
+		return "a run outside an ensemble or delegation"
+	case run.Spec.Mode != "" && run.Spec.Mode != "task":
+		return "mode: task"
+	case run.Spec.ExecutionLifecycle != "" || run.Spec.Enduring != nil || run.Spec.Conversation != nil:
+		return "a one-shot run"
+	case run.Spec.Sandbox != nil && run.Spec.Sandbox.Enabled:
+		return "no sandbox sidecar"
+	case run.Spec.DryRun || run.Spec.CanaryMode:
+		return "no dry-run or canary mode"
+	case len(run.Spec.Volumes) > 0 || len(run.Spec.VolumeMounts) > 0 || len(agent.Spec.Volumes) > 0 || len(agent.Spec.VolumeMounts) > 0 || agent.Spec.Workspace != nil:
+		return "no volumes or workspace"
+	case len(run.Spec.Tolerations) > 0 || len(run.Spec.ImagePullSecrets) > 0 || len(agent.Spec.ImagePullSecrets) > 0:
+		return "no pod scheduling or pull settings"
+	case agent.Spec.Observability != nil && agent.Spec.Observability.Enabled:
+		return "no per-agent observability"
+	case agent.Spec.WebEndpoint != nil && agent.Spec.WebEndpoint.Enabled:
+		return "no web endpoint"
+	}
+	return ""
+}
+
+// chooseDefaultPlane decides, once, where a run that names no backend
+// executes, and records it on the run. Substrate takes it when it is the
+// default and nothing about the run, its Agent or its model route would be
+// refused or lost there; otherwise it stays a Job and says why. Nothing a run
+// would have had as a Job is taken away by the default: every check the
+// backend would refuse on is made here first, and a refusal is a fallback,
+// not a failure. It runs before shared admission, because that judges the
+// run's key by the plane it will run on. After a decision the caller
+// requeues, so everything after it reads the run with the decision on it.
+func (r *AgentRunReconciler) chooseDefaultPlane(ctx context.Context, run *sympoziumv1alpha1.AgentRun) (decided bool, err error) {
+	cfg := r.Substrate
+	if cfg == nil || !cfg.Default || !cfg.transportValid() || run.Spec.Backend != "" {
+		return false, nil
+	}
+	if meta.FindStatusCondition(run.Status.Conditions, ConditionExecutionPlane) != nil || run.Status.Substrate != nil ||
+		run.Status.JobName != "" || run.Status.SandboxName != "" || run.Status.SandboxClaimName != "" || run.Status.CellnScoped != nil {
+		return false, nil
+	}
+	var agent sympoziumv1alpha1.Agent
+	if err := r.Get(ctx, types.NamespacedName{Namespace: run.Namespace, Name: run.Spec.AgentRef}, &agent); err != nil {
+		// A missing Agent is reported by the path every run takes.
+		return false, client.IgnoreNotFound(err)
+	}
+	need := substrateDefaultIneligible(run, &agent)
+	if need == "" {
+		_, refusal, err := (substrateBackend{r: r}).admit(ctx, run, executionStartInput{agent: &agent})
+		if err != nil {
+			return false, err
+		}
+		if refusal != nil {
+			need = "a model the gateway can carry (" + refusal.Message + ")"
+		}
+	}
+	mark := metav1.Condition{
+		Type: ConditionExecutionPlane, Status: metav1.ConditionTrue, Reason: "Substrate",
+		Message: "runs as a Substrate actor: the default execution plane",
+	}
+	if need != "" {
+		mark.Status, mark.Reason = metav1.ConditionFalse, "RunsAsJob"
+		mark.Message = "runs as a Job: the default execution plane (substrate) requires " + need
+	}
+	// The stored decision wins: a reconcile working from a stale read must
+	// not act on a different answer than the one already recorded.
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var latest sympoziumv1alpha1.AgentRun
+		if err := r.uncachedReader().Get(ctx, client.ObjectKeyFromObject(run), &latest); err != nil {
+			return err
+		}
+		if stored := meta.FindStatusCondition(latest.Status.Conditions, ConditionExecutionPlane); stored != nil {
+			mark = *stored
+			return nil
+		}
+		mark.ObservedGeneration = latest.Generation
+		meta.SetStatusCondition(&latest.Status.Conditions, mark)
+		return r.Status().Update(ctx, &latest)
+	})
+	return err == nil, err
 }
 
 // substrateUnsupported names the first thing about a run this backend cannot
@@ -765,6 +889,23 @@ func (r *AgentRunReconciler) substrateTurnEnv(ctx context.Context, run *sympoziu
 	for _, name := range route.Profile.Env.APIKey {
 		env[name] = substrateActorCredential
 	}
+	// Tools the control plane serves this run. The runner offers the model
+	// these and no others; each call comes back here to be decided.
+	offered, err := r.substrateOfferedTools(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	if len(offered) > 0 {
+		env["TOOLS_ENABLED"] = "true"
+		env["ACTOR_TOOLS"] = strings.Join(offered, ",")
+		for name, annotation := range map[string]string{
+			"SOURCE_CHANNEL": "sympozium.ai/reply-channel", "SOURCE_CHAT_ID": "sympozium.ai/reply-chat-id", "SOURCE_THREAD_ID": "sympozium.ai/reply-thread-id",
+		} {
+			if v := run.Annotations[annotation]; v != "" {
+				env[name] = v
+			}
+		}
+	}
 	return env, nil
 }
 
@@ -908,12 +1049,13 @@ func SetupSubstrate(r *AgentRunReconciler, s *substrate.Settings) (*SubstrateTur
 		TurnEndpoint:      SubstrateEndpoint{Hostname: s.TurnHost, Port: s.TurnPort},
 		ModelGateway:      SubstrateEndpoint{Hostname: s.GatewayHost, Port: s.GatewayPort},
 		AllowPlaintextHop: s.AllowPlaintextGatewayHop,
+		Default:           s.Default,
 		CPUMillicores:     500, MemoryBytes: 512 << 20,
 	}
 	if !r.Substrate.transportValid() {
 		return nil, nil
 	}
-	return &SubstrateTurnServer{Addr: s.TurnListen, Handler: substrate.TurnHandler{Verifier: verifier, Store: r.SubstrateTurns()}}, nil
+	return &SubstrateTurnServer{Addr: s.TurnListen, Handler: substrate.TurnHandler{Verifier: verifier, Store: r.SubstrateTurns(), Tools: r.SubstrateTurns()}}, nil
 }
 
 // SubstrateTurnServer serves the turn endpoint. It runs on every replica,

@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -162,5 +163,80 @@ func TestTurnHandlerHandsATurnOnlyToItsActor(t *testing.T) {
 	}
 	if code, _ := call("POST", ResultPath, "t1", `{"id":"x","logs":"`+strings.Repeat("a", maxResultBody)+`"}`); code != http.StatusBadRequest {
 		t.Fatalf("oversized result: %d", code)
+	}
+}
+
+type fakeTools struct {
+	calls []string
+	err   error
+}
+
+func (f *fakeTools) CallTool(_ context.Context, actor ActorRef, tool string, args json.RawMessage) (string, error) {
+	f.calls = append(f.calls, actor.String()+" "+tool+" "+string(args))
+	return "sent", f.err
+}
+
+// The tool endpoint decides nothing itself: it identifies the actor and hands
+// the call to the ToolCaller. What it must get right is who is asking, and
+// that a refusal reaches the model as a refusal.
+func TestToolEndpointIdentifiesTheActorAndRelaysTheDecision(t *testing.T) {
+	tools := &fakeTools{}
+	h := TurnHandler{Verifier: fixedVerifier{"good": {Atespace: "ns", Name: "run-1", UID: "u1"}}, Store: NewMemoryTurnStore(), Tools: tools}
+	call := func(path, token, body string) (int, string) {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+
+	if code, body := call(ToolPathPrefix+"send_channel_message", "good", `{"channel":"slack","text":"hi"}`); code != http.StatusOK || !strings.Contains(body, `"result":"sent"`) {
+		t.Fatalf("allowed call = %d %s", code, body)
+	}
+	if len(tools.calls) != 1 || !strings.HasPrefix(tools.calls[0], "ns/run-1 send_channel_message ") {
+		t.Fatalf("calls = %v", tools.calls)
+	}
+
+	// Nothing reaches the ToolCaller without a verified actor, a tool name
+	// that could be one, and well-formed arguments.
+	for name, c := range map[string]struct {
+		path, token, body string
+		want              int
+	}{
+		"no credential":       {ToolPathPrefix + "send_channel_message", "", `{}`, http.StatusUnauthorized},
+		"unknown credential":  {ToolPathPrefix + "send_channel_message", "forged", `{}`, http.StatusUnauthorized},
+		"placeholder":         {ToolPathPrefix + "send_channel_message", "substrate-actor", `{}`, http.StatusUnauthorized},
+		"path traversal":      {ToolPathPrefix + "../turn", "good", `{}`, http.StatusNotFound},
+		"nested path":         {ToolPathPrefix + "a/b", "good", `{}`, http.StatusNotFound},
+		"malformed arguments": {ToolPathPrefix + "send_channel_message", "good", `{"channel":`, http.StatusBadRequest},
+		"oversized arguments": {ToolPathPrefix + "send_channel_message", "good", `{"text":"` + strings.Repeat("a", maxToolBody) + `"}`, http.StatusBadRequest},
+	} {
+		if code, _ := call(c.path, c.token, c.body); code != c.want {
+			t.Errorf("%s: status = %d, want %d", name, code, c.want)
+		}
+	}
+	if len(tools.calls) != 1 {
+		t.Fatalf("a rejected request reached the tool caller: %v", tools.calls)
+	}
+
+	tools.err = &ToolRefusal{Reason: `tool "schedule_task" is denied by policy`}
+	if code, body := call(ToolPathPrefix+"schedule_task", "good", `{}`); code != http.StatusForbidden || !strings.Contains(body, "denied by policy") {
+		t.Errorf("refusal = %d %s, want 403 with the reason", code, body)
+	}
+	tools.err = ErrNoSuchTurn
+	if code, _ := call(ToolPathPrefix+"schedule_task", "good", `{}`); code != http.StatusNotFound {
+		t.Errorf("no live run = %d, want 404", code)
+	}
+	tools.err = errors.New("the API server said something internal")
+	if code, body := call(ToolPathPrefix+"schedule_task", "good", `{}`); code != http.StatusServiceUnavailable || strings.Contains(body, "internal") {
+		t.Errorf("failure = %d %s, want 503 with no detail", code, body)
+	}
+
+	// With no ToolCaller the path does not exist.
+	h.Tools = nil
+	if code, _ := call(ToolPathPrefix+"send_channel_message", "good", `{}`); code != http.StatusNotFound {
+		t.Errorf("no tools configured = %d, want 404", code)
 	}
 }
