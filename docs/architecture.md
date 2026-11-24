@@ -1,5 +1,36 @@
 # Architecture
 
+Sympozium is the coordination layer of a four-layer stack. It decides what
+agents do and hands the running of them to an execution plane.
+
+| Layer | Who | Decides |
+|---|---|---|
+| Coordination | Sympozium (this page) | What agents do |
+| Execution | [Agent Substrate](concepts/substrate-backend.md) by default; [Celln](concepts/celln-backend.md) or a Kubernetes Job as alternatives | How agents run |
+| Capability | [llmfit-dra](https://github.com/sympozium-ai/llmfit-dra) | Where compute happens |
+| Serving | vLLM, SGLang, llama.cpp | How tokens move |
+
+The control plane below is the same whichever execution backend a run uses.
+Identity, keys, policy, ensembles, memory, channels and schedules all sit
+above the [execution backend seam](design/execution-backend-seam.md); a
+backend only starts a run, reports on it and releases it. See
+[Positioning](positioning.md) for why the line is there.
+
+<!-- STATUS:substrate -->
+!!! warning "State of the Substrate backend, 2026-11-24"
+    Agent Substrate is the default execution plane by decision of
+    2026-11-24. The implementation is on a branch and not released. Where
+    Substrate is installed and enabled (chart value `substrate.enabled`), a
+    run that names no backend runs as an actor when it can: a one-shot
+    string task with a model key, with channel messages and schedules served
+    outside the sandbox under the run's tool policy. A run that needs
+    skills, MCP servers, memory, delegation or an enduring conversation runs
+    as a Kubernetes Job instead, and its `DefaultExecutionPlane` condition
+    says why. A plain `sympozium install` does not install Substrate, so
+    there every run is a Job. One in-cluster hop, from Substrate's egress
+    gateway to the model gateway, is unencrypted. See [Substrate
+    backend](concepts/substrate-backend.md).
+
 ## System Overview
 
 ### Control Plane
@@ -42,6 +73,10 @@ graph TB
 ```
 
 ### Agent Pod Lifecycle
+
+This is a run on the Kubernetes Job backend, where the agent, its IPC bridge
+and its skills share a Pod. On Substrate and Celln there is no Pod; see
+[Execution Planes](#execution-planes).
 
 ```mermaid
 graph LR
@@ -111,14 +146,22 @@ graph LR
 
 ### Execution Planes
 
-An `AgentRun` executes on one of two planes, chosen by `spec.backend`
-(or the Agent's `spec.execution.backend`):
+An `AgentRun` executes on one of three backends, chosen by `spec.backend`
+(or the Agent's `spec.execution.backend`). The controller admits the run
+(policy, key ownership) before any of them is asked to start it.
 
 ```mermaid
 graph TB
     CM["Controller Manager"]
 
-    subgraph K8S["backend: job (default)"]
+    subgraph SUB["backend: substrate"]
+        SAPI["Substrate Control API<br/><small>create · resume · delete actor</small>"]
+        ACTOR["Actor<br/><small>gVisor sandbox restored<br/>from a snapshot; holds no key</small>"]
+        EGW["Substrate egress gateway<br/><small>names the calling actor</small>"]
+        SAPI --> ACTOR --> EGW
+    end
+
+    subgraph K8S["backend: job"]
         JOB["Job / Sandbox CR<br/><small>agent-runner or an approved<br/>AgentRuntime harness</small>"]
         HS["HarnessSession<br/><small>Deployment + PVC<br/>persistent chat</small>"]
     end
@@ -134,6 +177,10 @@ graph TB
         ROUTER --> OWN
     end
 
+    CM -- "actor per run" --> SAPI
+    EGW -- "turn, result" --> CM
+    HGW["Model gateway<br/><small>harness-gateway: actor → run →<br/>Agent → key, added per call</small>"]
+    EGW -- "model calls, no key" --> HGW
     CM -- "creates" --> JOB
     CM -- "creates" --> HS
     CM -- "signed permit per run<br/>POST /v1/scoped/*" --> ROUTER
@@ -143,15 +190,24 @@ graph TB
     AKEYS[("Agent key Secrets<br/><small>one owner, one origin each</small>")] -. "read per call" .-> GW
     OWN -- "model calls" --> GW
 
+    style SUB stroke:#238636,stroke-width:2px
     style K8S stroke:#53354a,stroke-width:2px
     style CELLN stroke:#0ea5e9,stroke-width:2px
 ```
 
-- **Kubernetes (`job`)** — the pod path below. `task.mode: harness` or an
+- **Agent Substrate (`substrate`)** — the default execution plane. The run
+  is an *actor*: a gVisor sandbox restored from a memory snapshot. The
+  controller creates and resumes the actor through Substrate's Control API;
+  the actor asks the controller for its turn, calls its model through the
+  model gateway (which adds the Agent's key outside the sandbox), posts its
+  result and is deleted. The actor can reach the turn endpoint and the model
+  gateway and nothing else. See [Substrate Backend](concepts/substrate-backend.md).
+- **Kubernetes (`job`)** — the pod path above; needs nothing installed. `task.mode: harness` or an
   Agent's `AgentRuntime` replaces `agent-runner` with an approved,
   digest-pinned harness; a session-capable runtime gives the Agent a
   persistent `HarnessSession`. See [Harness Mode](modes/harness.md).
-- **Celln (`celln`)** — KVM microVMs on every node the node probe labels
+- **Celln (`celln`)** — the self-hosted alternative, with no dependency
+  outside the cluster: KVM microVMs on every node the node probe labels
   `celln.dev/kvm=true`. One-shot runs are single-turn parents; enduring runs
   keep a leased parent and take follow-up `AgentRunTurn`s. The controller
   resolves policy, runtime profile, tools and the Agent's `ModelConnection`
@@ -284,14 +340,14 @@ Agents in an Ensemble can delegate tasks to other personas using the `delegate_t
 </p>
 
 1. **A message arrives** via a channel pod (Telegram, Slack, etc.) and is published to the NATS event bus.
-2. **The controller creates an AgentRun CR**, which reconciles into an ephemeral K8s Job — optional preRun lifecycle init containers, then an agent container + IPC bridge sidecar + optional sandbox + skill sidecars (with auto-provisioned RBAC). PostRun lifecycle hooks execute in a follow-up Job after the agent completes.
+2. **The controller creates an AgentRun CR** and, after admission, hands it to the run's execution backend. On the Job backend, shown above and described in the steps that follow, it reconciles into an ephemeral K8s Job — optional preRun lifecycle init containers, then an agent container + IPC bridge sidecar + optional sandbox + skill sidecars (with auto-provisioned RBAC). PostRun lifecycle hooks execute in a follow-up Job after the agent completes.
 3. **The agent container** calls the configured LLM provider (OpenAI, Anthropic, Azure, Ollama, LM Studio, Unsloth, or any OpenAI-compatible endpoint), with skills mounted as files, persistent memory provided by the per-Agent memory server (SQLite + FTS5 on a PersistentVolume), and tool sidecars providing runtime capabilities like `kubectl`. A legacy ConfigMap-based memory path is preserved as a fallback.
 4. **Results flow back** through the IPC bridge → NATS → channel pod → user. The controller extracts structured results and memory updates from pod logs.
 5. **Web endpoints** expose agents as HTTP APIs. When an Agent has the `web-endpoint` skill, the controller creates a long-lived Deployment (serving mode) with a web-proxy sidecar. The proxy accepts OpenAI-compatible (`/v1/chat/completions`) and MCP (`/sse`, `/message`) requests, creating per-request AgentRun Jobs. An Envoy Gateway with per-Agent HTTPRoutes provides external access with TLS.
 6. **MCP server integration** — `MCPServer` CRDs define external tool providers using the Model Context Protocol. The controller deploys managed servers (from container images) or connects to external ones, probes them for available tools, and records discovered tools in the resource status. Agent pods access MCP tools through the `mcp-bridge` skill sidecar, which translates between the agent's tool interface and MCP's SSE/stdio transport. Tool names are prefixed to avoid collisions when multiple MCP servers are active. The web UI and CLI provide full CRUD management.
 7. **Node-based inference discovery** — for local inference providers (Ollama, vLLM, llama-cpp, LM Studio) installed directly on host nodes, the node-probe DaemonSet probes localhost ports and annotates each node with discovered providers and models (`sympozium.ai/inference-*`). The API server reads these annotations, and the web wizard lets users select a node to pin their agent pods to via `nodeSelector`. The same probe labels nodes with `/dev/kvm` and a kernel under `/boot` as `celln.dev/kvm=true` for Celln.
 8. **Cluster-local model inference** — `Model` CRDs declare GGUF models as Kubernetes resources. The controller downloads weights to a PVC, deploys a llama-server (OpenAI-compatible), and exposes a ClusterIP Service. AgentRuns reference models by name via `spec.model.modelRef` — no API key needed. The web UI auto-wires Ready models as provider options during Agent creation.
-9. **Hardware-isolated execution** — runs with `backend: celln` skip the pod entirely and execute in Celln microVMs on KVM nodes, either once (one-shot) or as an enduring conversation of turns; see [Execution Planes](#execution-planes).
+9. **Execution without a pod** — runs with `backend: substrate` execute as Agent Substrate actors, and runs with `backend: celln` execute in Celln microVMs on KVM nodes, either once (one-shot) or as an enduring conversation of turns. Both skip the pod entirely; see [Execution Planes](#execution-planes).
 10. **Accelerator power** — an energy collector (ergoz, installed by default into `ergoz-system`) is discovered by label and its readings served at `GET /api/v1/power` for the density and topology views.
 11. **Everything is a Kubernetes resource** — agents, runs, harnesses, policies, skills, models, and schedules are all CRDs. Lifecycle is managed by controllers. Access is gated by admission webhooks. Network isolation is enforced by NetworkPolicy. The TUI and web dashboard give you full visibility into the entire system.
 
@@ -307,9 +363,9 @@ Agents in an Ensemble can delegate tasks to other personas using the `delegate_t
 
 | Concern | In-process frameworks | Sympozium (Kubernetes-native) |
 |---------|----------------------|----------------------------|
-| **Agent execution** | Shared memory, single process | Ephemeral **Pod** per invocation (K8s Job), or a **KVM microVM** (Celln) for one-shot and enduring runs |
+| **Agent execution** | Shared memory, single process | A **sandbox per run** on a pluggable execution plane: an Agent Substrate actor by default, a **KVM microVM** (Celln), or an ephemeral **Pod** (K8s Job) |
 | **Orchestration** | In-process registry + lane queue | **CRD-based** registry with controller reconciliation |
-| **Sandbox isolation** | Long-lived Docker sidecar | Pod **SecurityContext** + PodSecurity admission |
+| **Sandbox isolation** | Long-lived Docker sidecar | The execution plane's boundary: gVisor (Substrate), KVM (Celln), or Pod **SecurityContext** + PodSecurity admission (Job) |
 | **IPC** | In-process EventEmitter | Filesystem sidecar + **NATS JetStream** |
 | **Tool/feature gating** | In-process pipeline | **Admission webhooks** + `SympoziumPolicy` CRD |
 | **Persistent memory** | Files on disk | **SQLite + FTS5** on PersistentVolume via a per-Agent memory server (ConfigMap legacy fallback) |
@@ -327,8 +383,9 @@ Agents in an Ensemble can delegate tasks to other personas using the `delegate_t
 
 | Decision | Kubernetes Primitive | Rationale |
 |----------|---------------------|-----------|
-| **One Pod per agent run** | Job | Blast-radius isolation, resource limits, automatic cleanup — each agent is as ephemeral as a CronJob pod |
-| **Filesystem IPC** | emptyDir volume | Agent writes to `/ipc/`, bridge sidecar watches via fsnotify and publishes to NATS — language-agnostic, zero dependencies in agent container |
+| **Execution is a pluggable plane** | `ExecutionBackend` seam | Isolation and density are not Sympozium's job. A backend starts a run, reports on it and releases it; identity, keys and policy stay above the seam. Agent Substrate is the default, Celln the self-hosted alternative, a Job the one that needs nothing installed |
+| **One sandbox per agent run** | Substrate actor, Celln cell or Job | Blast-radius isolation, resource limits, automatic cleanup. On the Job backend each run is as ephemeral as a CronJob pod |
+| **Filesystem IPC** (Job backend) | emptyDir volume | Agent writes to `/ipc/`, bridge sidecar watches via fsnotify and publishes to NATS — language-agnostic, zero dependencies in agent container |
 | **NATS JetStream** | StatefulSet | Durable pub/sub with replay — channels and control plane communicate without direct coupling |
 | **NetworkPolicy isolation** | NetworkPolicy | Agent pods start from deny-all egress; the chart's policy then allows the event bus and HTTPS egress for model providers (ports 443, 8080, 9473, 6443). Agents cannot reach other pods except through those openings; Celln runs route model traffic through the gateway only |
 | **Policy-as-CRD** | Admission Webhook | `SympoziumPolicy` resources gate tools, sandboxes, and features — enforced at admission time, not at runtime |

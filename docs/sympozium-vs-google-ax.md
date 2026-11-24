@@ -8,14 +8,39 @@ treat agents as a new kind of workload, which is also Sympozium's starting point
 This page is an honest comparison: where they are ahead, where Sympozium is,
 and where the projects are not really competing at all.
 
+The relationship has changed since this page was first written. Sympozium
+no longer treats Agent Substrate as a rival runtime: since 2026-11-24
+**Substrate is Sympozium's default execution plane**, and Sympozium is the
+layer above it. So read "Sympozium vs Substrate" below as "what Substrate
+gives you on its own, and what Sympozium adds on top". AX remains a
+different product at Sympozium's layer, with a much narrower scope.
+
 !!! info "Scope and date"
     AX and Substrate rows last reviewed **2026-09-23** against `google/ax` v0.3.0 and
     `agent-substrate/substrate` v0.1.0, from their own READMEs, design docs,
     roadmap and threat model, plus Google's
     [GKE announcement](https://cloud.google.com/blog/products/containers-kubernetes/agent-substrate-available-on-gke).
-    Sympozium rows updated **2026-10-30** for v0.12.1 (agent-bound model access).
-    All three projects are pre-1.0 and changing fast. If something here is out
-    of date, please open an issue or PR.
+    Sympozium rows updated **2026-10-30** for v0.12.1 (agent-bound model access)
+    and **2026-11-24** for the decision to make Substrate the default execution
+    plane. The AX and Substrate rows have not been re-reviewed against
+    Substrate 1.0; treat their maturity statements as a snapshot of
+    September 2026. If something here is out of date, please open an issue
+    or PR.
+
+<!-- STATUS:substrate -->
+!!! warning "State of the Substrate backend, 2026-11-24"
+    Agent Substrate is the default execution plane by decision of
+    2026-11-24. The implementation is on a branch and not released. Where
+    Substrate is installed and enabled (chart value `substrate.enabled`), a
+    run that names no backend runs as an actor when it can: a one-shot
+    string task with a model key, with channel messages and schedules served
+    outside the sandbox under the run's tool policy. A run that needs
+    skills, MCP servers, memory, delegation or an enduring conversation runs
+    as a Kubernetes Job instead, and its `DefaultExecutionPlane` condition
+    says why. A plain `sympozium install` does not install Substrate, so
+    there every run is a Job. One in-cluster hop, from Substrate's egress
+    gateway to the model gateway, is unencrypted. See [Substrate
+    backend](concepts/substrate-backend.md).
 
 ---
 
@@ -24,17 +49,21 @@ and where the projects are not really competing at all.
 - **Agent Substrate is an execution runtime, and it goes deeper than anything
   in Sympozium.** It multiplexes many idle, stateful agents onto a small pool
   of sandboxed worker pods, snapshotting memory and filesystem so an agent can
-  be suspended and resumed on any worker. Sympozium has nothing equivalent.
+  be suspended and resumed on any worker. Sympozium has nothing equivalent
+  of its own, which is why it now runs on Substrate instead of competing
+  with it.
 - **AX is a thin, fast task API on top of Substrate**: four resource kinds
   (`Task`, `Workspace`, `Gateway`, `Model`) and a `kubectl`-shaped CLI. It
   deliberately does not model what an agent *does* over its lifetime.
 - **Sympozium is a coordination layer**: agent identity, policy, tool
   isolation, ensembles, memory, schedules, channels and a UI, expressed as
   Kubernetes CRDs. It decides what agents do. It does not try to be a
-  high-density runtime.
+  high-density runtime; it uses one.
 
-So the projects sit at different layers of the stack. They overlap in "run an
-agent in a sandbox on Kubernetes", and diverge sharply everywhere else.
+So the projects sit at different layers of the stack. Substrate is the
+execution layer under Sympozium. AX and Sympozium both sit above Substrate,
+and differ in how much they take on: AX stops at one isolated task,
+Sympozium covers an agent's identity, policy and teamwork.
 
 ---
 
@@ -42,14 +71,14 @@ agent in a sandbox on Kubernetes", and diverge sharply everywhere else.
 
 | Dimension | Sympozium | AX + Agent Substrate |
 |---|---|---|
-| **What it is** | Coordination layer for multi-agent systems | Task orchestrator (AX) on an agent execution runtime (Substrate) |
+| **What it is** | Coordination layer for multi-agent systems, above an execution plane (Substrate by default) | Task orchestrator (AX) on an agent execution runtime (Substrate) |
 | **API surface** | Kubernetes CRDs (`Agent`, `AgentRun`, `Ensemble`, `SympoziumPolicy`, …) | AX: its own gRPC API, resources stored in Redis. Substrate: two CRDs (`WorkerPool`, `SandboxConfig`); actors, templates and atespaces go through its gRPC API into PostgreSQL |
 | **Works with kubectl / RBAC / GitOps** | Yes: every resource is a Kubernetes object | Only the Substrate CRDs. Tasks, workspaces, gateways, models and actors are not Kubernetes objects |
-| **Unit of execution** | One Pod per `AgentRun` (Job), or a Celln microVM cell | A Substrate *actor*, assigned on demand to a pre-warmed worker pod |
-| **Idle agents** | Consume their Pod or cell until they finish, time out or hit their lease | Suspended to object storage (memory + filesystem) and resumed on any worker; Google quotes sub-500 ms resume |
-| **Isolation** | Hardened Pods; gVisor/Kata via `agent-sandbox`; KVM microVMs via Celln | gVisor or Cloud Hypervisor microVMs, per actor |
-| **Egress control** | Kubernetes NetworkPolicy; brokered tools in Celln | All actor TCP forced through an mTLS egress proxy with per-actor certificates; non-HTTP(S) blocked |
-| **Model credentials** | Pod runs: per-key env injection from an allowlist. Celln runs (0.12): the fleet holds no key; each Agent's own `ModelConnection` key is pinned to its origin and added by the model gateway outside the cell | Google describes egress proxies that inject credentials; the Substrate roadmap still lists proxy-based credential injection as upcoming work |
+| **Unit of execution** | An `AgentRun`, executed as a Substrate actor (default), a Celln microVM cell, or a Pod (Job) | A Substrate *actor*, assigned on demand to a pre-warmed worker pod |
+| **Idle agents** | Whatever the execution plane does. On Job and Celln they consume their Pod or cell until they finish, time out or hit their lease; suspension comes from Substrate (right) | Suspended to object storage (memory + filesystem) and resumed on any worker; Google quotes sub-500 ms resume |
+| **Isolation** | The execution plane's: gVisor actors via Substrate; KVM microVMs via Celln; hardened Pods, with gVisor/Kata via `agent-sandbox` | gVisor or Cloud Hypervisor microVMs, per actor |
+| **Egress control** | Substrate's egress gateway, narrowed per run to Sympozium's own endpoints; brokered tools in Celln; Kubernetes NetworkPolicy for Pods | All actor TCP forced through an mTLS egress proxy with per-actor certificates; non-HTTP(S) blocked |
+| **Model credentials** | Each Agent owns its key. Substrate and Celln runs: the key is added by Sympozium's model gateway outside the sandbox, after it has mapped the caller to a run and the run to an Agent. Pod runs: per-key env injection from an allowlist | Google describes egress proxies that inject credentials; the Substrate roadmap still lists proxy-based credential injection as upcoming work |
 | **Tool isolation** | Each skill is its own sidecar with per-run least-privilege RBAC | Not modelled: tools run inside the task sandbox |
 | **Tool policy** | `SympoziumPolicy` allow/deny rules merged into every pod-based run's tool list | Egress allowlists only |
 | **Human approval** | Response gates hold a run's output for approve/reject in the UI; no per-tool-call approval | Not provided |
@@ -65,6 +94,9 @@ agent in a sandbox on Kubernetes", and diverge sharply everywhere else.
 
 ## Where AX and Substrate are ahead
 
+These are the reasons Sympozium adopted Substrate as its execution plane
+instead of trying to close the gaps itself.
+
 **Density and idle cost.** This is Substrate's reason to exist, and it is a
 real problem. Agents burst for a moment, then wait seconds or minutes on a
 model, a tool or a person. A Sympozium run keeps its Pod (or its Celln cell)
@@ -73,13 +105,18 @@ someone else, and restores the agent on any worker when a request arrives for
 it. Google's figures (10× density over standard container runtimes, over 1,000
 dormant agents per host, 500+ suspend/resume operations per second) are
 vendor numbers without a published method. The repository does ship a load-test
-harness, but we have not reproduced them. The mechanism is sound, though, and
-Sympozium has no answer to it today.
+harness, but we have not reproduced them. The mechanism is sound, though. Our
+own measurements are smaller in scope: on one node, a suspended actor held
+no worker process memory and about 0.6 MB of storage, and a suspended actor
+resumed in 0.23 s
+([spike results](evidence/substrate-spike-go-no-go-2026-11-22.md),
+2026-11-22). Sympozium's Job and Celln backends have no answer to this,
+which is the main reason they are now the alternatives.
 
 **Scale of the control plane.** AX's design doc is explicit that storing
 millions of short-lived tasks as CRDs would overload etcd, so it keeps tasks in
 Redis and Substrate keeps actors in PostgreSQL. Sympozium stores every
-`AgentRun` as a CRD in etcd and gives each one a Pod. That is the right
+`AgentRun` as a CRD in etcd, whichever backend executes it. That is the right
 trade-off for the thousands of runs a team generates, and the wrong one for
 millions of concurrent agents. If your workload looks like the latter,
 Sympozium is not designed for it.
@@ -131,11 +168,13 @@ planning, delegating and retrying. Sympozium's whole product is that layer:
 
 None of these exist in AX or Substrate. You would build them yourself on top.
 
-**It is easier to install today.** `sympozium install` deploys the whole stack
-from a released binary, including the Celln microVM plane. AX expects you to
+**It is easier to install today.** `sympozium install` deploys the control
+plane from a released binary and runs agents as Kubernetes Jobs with nothing
+else installed; `--celln-fleet` adds the Celln microVM plane. AX expects you to
 build and push its images with `ko` and to install Substrate separately, with
 PostgreSQL and object storage. On GKE there is a supported path; elsewhere,
-Substrate's quickstart is still labelled "(Development)".
+Substrate's quickstart is still labelled "(Development)". Running Sympozium
+on Substrate inherits that install: Substrate has to be there first.
 
 **It is model- and cloud-neutral.** Sympozium runs against any
 OpenAI-compatible endpoint, Anthropic, or local servers, and places local
@@ -168,37 +207,50 @@ authorisation, audit logging and component mTLS are on its roadmap.
 
 ---
 
-## Can they work together?
+## How they fit together
 
-Probably, and that may be the most useful way to think about it. Substrate
-calls itself "a low-opinion system … not an SDK for building agents, but a
-system for running them at scale". kagent's 1.0 alphas are rebuilding its
-runtime on it. Sympozium already chooses between several execution backends per run
-(Kubernetes Jobs, `agent-sandbox`, Celln), and Substrate could in principle be
-another one. It would bring suspend/resume density underneath Sympozium's
-policy and coordination.
+Substrate calls itself "a low-opinion system … not an SDK for building
+agents, but a system for running them at scale". Sympozium is the opinions.
+kagent's 1.0 alphas made the same choice and are rebuilding its runtime on
+Substrate.
 
-**No such integration exists today, but it is now the plan.** On 2026-10-30
-the project decided to treat the execution plane as pluggable: a four-week
-spike brings Substrate in as an optional `AgentRun` backend, with exit
-criteria and a written go/no-go
-([epic #692](https://github.com/sympozium-ai/sympozium/issues/692)), while
-Celln stays as the self-hosted option rather than the default. See the
-[roadmap](roadmap.md). Substrate's APIs and security model are still pre-1.0,
-so the spike also decides how much of their surface the backend may depend on.
+On Sympozium, an `AgentRun` is still a Kubernetes object, admitted under
+your `SympoziumPolicy`. The controller then creates a Substrate actor for
+it. What each side contributes:
+
+| | Substrate provides | Sympozium adds |
+|---|---|---|
+| **Execution** | The sandbox, the snapshot it starts from, suspend and resume, the worker it lands on | Nothing. This is not Sympozium's layer |
+| **Identity and keys** | A short-lived token, stamped at the egress gateway, that says which actor is calling | The mapping from actor to run to Agent to key, and a model gateway that adds the Agent's key outside the sandbox on every call |
+| **Policy** | An egress policy per actor | `SympoziumPolicy`, tool allow and deny, and admission before an actor exists. The actor's egress is narrowed to Sympozium's own endpoints |
+| **Coordination** | Nothing, by design | Ensembles, delegation, shared memory |
+| **Reach** | A control API | Channels, schedules, an OpenAI-compatible API per Agent |
+| **Operations** | Two CRDs; actors in PostgreSQL behind a gRPC API | Every run as a CRD under your RBAC and GitOps, a console, TUI and CLI, token and cost tracking |
+
+In the spike that led to the decision, a one-shot run reached `Succeeded` in
+0.43 s as an actor against 11.3 s as a Job (median of 20 runs each, one
+node, stub model, 2026-11-22). How the backend works is on the
+[Substrate backend](concepts/substrate-backend.md) page; the decision and
+its history are in [Positioning](positioning.md#how-we-got-here).
+
+**Substrate is the default, not a requirement.** Sympozium keeps two other
+execution backends. [Celln](concepts/celln-backend.md) is the self-hosted
+option: KVM microVMs, with no dependency outside your cluster. A Kubernetes
+Job needs nothing installed at all. Both stay because Substrate is young and
+needs a database and an object store of its own, which not every cluster can
+take on.
 
 ---
 
 ## When to choose what
 
-**Choose AX + Agent Substrate when:**
+**Choose Agent Substrate on its own (with or without AX) when:**
 
-- you are running very large numbers of mostly idle, stateful agents and
-  compute cost is the dominant concern;
-- you want a low-level runtime and plan to build coordination, policy and UX
-  yourself;
-- you are on GKE and can use Google's supported path;
-- you need suspend/resume with memory state intact.
+- you want a low-level runtime and plan to build identity, policy,
+  coordination and UX yourself;
+- your workload is millions of short-lived tasks, where a Kubernetes object
+  per run is the wrong trade-off;
+- isolated tasks are all you need, and AX's four resource kinds cover them.
 
 **Choose Sympozium when:**
 
@@ -208,7 +260,10 @@ so the spike also decides how much of their surface the backend may depend on.
   its tools;
 - you are coordinating teams of agents with memory, schedules and chat
   channels, not only running isolated tasks;
-- you want one install on any cluster, including on-prem and local models.
+- you want to choose the execution plane per cluster or per run: Substrate
+  for density, Celln where nothing outside the cluster is allowed, a Job
+  where nothing extra can be installed;
+- you want on-prem and local models to work the same way as hosted ones.
 
 ---
 

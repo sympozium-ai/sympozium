@@ -2,14 +2,32 @@
 
 **A coordination layer for multi-agent AI systems on Kubernetes**
 
-Every agent runs in an isolated workload — an ephemeral Pod, or a hardware-isolated
-Celln microVM. Every policy is a CRD. Coordinate multi-agent workflows on
-Kubernetes — from single tasks and long-running conversations to coordinated teams.
-Multi-tenant. Horizontally scalable. Safe by design.
+Sympozium does not run agents itself. It sits above an execution plane —
+[Agent Substrate](concepts/substrate-backend.md) by default — and adds what an
+execution plane does not have: each Agent's identity and keys, policy,
+coordination between agents, reach through channels, schedules and an API,
+and operations as Kubernetes resources. Every policy is a CRD.
 
-Sympozium decides what agents *do*. Where compute happens belongs to
+Sympozium decides what agents *do*. How agents run belongs to the execution
+plane: Agent Substrate by default, with [Celln](concepts/celln-backend.md)
+microVMs or a Kubernetes Job as alternatives. Where compute happens belongs to
 [llmfit-dra](https://github.com/sympozium-ai/llmfit-dra); how tokens move belongs
 to the serving engine. See [Positioning](positioning.md) for the boundary.
+
+<!-- STATUS:substrate -->
+!!! warning "State of the Substrate backend, 2026-11-24"
+    Agent Substrate is the default execution plane by decision of
+    2026-11-24. The implementation is on a branch and not released. Where
+    Substrate is installed and enabled (chart value `substrate.enabled`), a
+    run that names no backend runs as an actor when it can: a one-shot
+    string task with a model key, with channel messages and schedules served
+    outside the sandbox under the run's tool policy. A run that needs
+    skills, MCP servers, memory, delegation or an enduring conversation runs
+    as a Kubernetes Job instead, and its `DefaultExecutionPlane` condition
+    says why. A plain `sympozium install` does not install Substrate, so
+    there every run is a Job. One in-cluster hop, from Substrate's egress
+    gateway to the model gateway, is unencrypted. See [Substrate
+    backend](concepts/substrate-backend.md).
 
 <p align="center">
   <img src="assets/demo.gif" alt="Sympozium TUI demo" width="800px">
@@ -35,8 +53,9 @@ to the serving engine. See [Positioning](positioning.md) for the boundary.
 Then deploy to your cluster and activate your first agents:
 
 ```bash
-sympozium install          # deploys CRDs, controllers, built-in Ensembles, the Celln fleet on every KVM node,
-                           # the model gateway and ergoz; nothing about models is asked
+sympozium install          # deploys CRDs, the control plane, built-in Ensembles and ergoz;
+                           # nothing about models is asked. Agents run as Kubernetes Jobs
+sympozium install --celln-fleet   # also the Celln fleet on every KVM node and the model gateway
 sympozium                  # launch the TUI — go to the Ensembles tab, press Enter to onboard
 sympozium serve            # open the web dashboard (port-forwards to the in-cluster UI)
 ```
@@ -48,7 +67,17 @@ sympozium serve            # open the web dashboard (port-forwards to the in-clu
 
 ## Why Sympozium?
 
-Sympozium is a **Kubernetes-native platform for orchestrating AI agent teams**. Deploy agents for customer support, code review, data pipelines, incident response, or any domain-specific workflow — each agent gets its own pod, RBAC, and network policy with proper tenant isolation.
+Sympozium is a **Kubernetes-native coordination layer for AI agent teams**. Deploy agents for customer support, code review, data pipelines, incident response, or any domain-specific workflow. Each run executes in its own sandbox, and what it may do is decided outside that sandbox.
+
+What Sympozium adds above an execution plane:
+
+| | |
+|---|---|
+| **Identity and keys** | Each Agent owns its provider, model and key. On Substrate and Celln the key is added per call by a gateway and never enters the sandbox |
+| **Policy** | `SympoziumPolicy`, tool allow and deny, and admission checks, never enforced by the agent itself |
+| **Coordination** | Ensembles, delegation and shared memory |
+| **Reach** | Channels, schedules and an OpenAI-compatible Agent API |
+| **Operations** | CRDs under your RBAC and GitOps; console, TUI and CLI; token and cost tracking |
 
 Bundle agents into **Ensembles** with delegation, sequential pipelines, and supervision relationships. Give them persistent memory, external tools via MCP servers, and cron schedules — all declared as CRDs and reconciled by controllers.
 
@@ -58,10 +87,10 @@ Every concept that traditional agent frameworks manage in application code, Symp
 
 ## Key Features
 
-- **Ephemeral agent pods** — each agent run is an isolated Kubernetes Job with its own security context
-- **Hardware-isolated agents (Celln)** — one-shot and long-running agents in KVM microVMs on every labelled node; each Agent brings its own model connection and key, which a gateway adds per call and no node ever holds
+- **A sandbox per run, on the execution plane you choose** — an [Agent Substrate](concepts/substrate-backend.md) actor by default, a Celln microVM, or a Kubernetes Job with its own security context
+- **Hardware-isolated agents (Celln)** — the self-hosted alternative: one-shot and long-running agents in KVM microVMs on every labelled node; each Agent brings its own model connection and key, which a gateway adds per call and no node ever holds
 - **AgentHarness** — run approved external harnesses (Pi, Hermes) as one-shot runs or persistent chat sessions
-- **Skill sidecars** — every skill runs in its own container with auto-provisioned, least-privilege RBAC
+- **Skill sidecars** — on the Job backend, every skill runs in its own container with auto-provisioned, least-privilege RBAC
 - **Ensembles** — pre-configured bundles of agents that activate with a few keypresses
 - **Multiple interfaces** — k9s-style TUI, full web dashboard, or CLI
 - **Channel integrations** — Telegram, Slack, Discord, WhatsApp
@@ -84,7 +113,9 @@ Every concept that traditional agent frameworks manage in application code, Symp
 | [Ensembles](concepts/ensembles.md) | Pre-configured agent bundles |
 | [Skills & Sidecars](concepts/skills.md) | Isolated tool containers with ephemeral RBAC |
 | [Lifecycle Hooks](concepts/lifecycle-hooks.md) | PreRun and postRun containers for setup and teardown |
-| [Celln Backend](concepts/celln-backend.md) | Hardware-isolated one-shot and enduring agents |
+| [Positioning](positioning.md) | What Sympozium adds above an execution plane, and what it is not |
+| [Substrate Backend](concepts/substrate-backend.md) | The default execution plane: a run as an Agent Substrate actor |
+| [Celln Backend](concepts/celln-backend.md) | The self-hosted alternative: hardware-isolated one-shot and enduring agents |
 | [Celln Fleet Installation](guides/celln-fleet-installation.md) | Install, verify, upgrade and operate the fleet; toolbox and capacity |
 | [Agent-bound model access](guides/celln-mediated-model-access.md) | Connections, keys, origin pins and the model gateway |
 | [AgentHarness](guides/agentharness.md) | Approved external harnesses and persistent chat sessions |
