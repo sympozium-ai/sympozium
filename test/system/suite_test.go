@@ -88,7 +88,7 @@ func TestMain(m *testing.M) {
 		ImageTag: "test",
 	}).SetupWithManager(mgr))
 
-	must((&controller.AgentRunReconciler{
+	agentRuns = &controller.AgentRunReconciler{
 		Client:          mgr.GetClient(),
 		APIReader:       mgr.GetAPIReader(),
 		Scheme:          scheme,
@@ -98,7 +98,9 @@ func TestMain(m *testing.M) {
 		ImageTag:        "test",
 		RunHistoryLimit: controller.DefaultRunHistoryLimit,
 		HarnessGateway:  harnessGatewayConfig(mgr.GetAPIReader()),
-	}).SetupWithManager(mgr))
+		Substrate:       substrateConfig(),
+	}
+	must(agentRuns.SetupWithManager(mgr))
 
 	must((&controller.EnsembleReconciler{
 		Client: mgr.GetClient(),
@@ -204,9 +206,20 @@ type systemProfiles struct{ set *harnessgateway.Set }
 func (p systemProfiles) Load(context.Context) (*harnessgateway.Set, error) { return p.set, nil }
 
 func harnessGatewayConfig(reader client.Reader) *controller.HarnessGatewayConfig {
-	set, err := harnessgateway.ParseSet([]byte(`allowedEnvNames: [ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY]
-allowedAuthHeaders: [x-api-key]
+	// The openai profile points at a stub in this process, so a test can see
+	// what the gateway sends a provider.
+	set, err := harnessgateway.ParseSet([]byte(`allowedEnvNames: [ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, OPENAI_BASE_URL, OPENAI_API_KEY]
+allowedAuthHeaders: [x-api-key, Authorization]
+insecureOrigins: ["` + providerStub.URL + `"]
 profiles:
+  - name: openai
+    providers: [openai]
+    upstream: ` + providerStub.URL + `
+    secretKeys: [OPENAI_API_KEY]
+    auth: {type: header, header: Authorization, prefix: "Bearer "}
+    paths: [/v1/chat/completions]
+    env: {baseURL: [OPENAI_BASE_URL], apiKey: [OPENAI_API_KEY]}
+    clientBasePath: /v1
   - name: anthropic
     providers: [anthropic]
     upstream: https://api.anthropic.com

@@ -1231,3 +1231,106 @@ func TestAnOriginBelongsToItsProfile(t *testing.T) {
 		t.Errorf("status = %d, upstream saw %q", response.StatusCode, got.path)
 	}
 }
+
+// actorTokens stands in for Substrate's issuer: each token names an actor.
+type actorTokens map[string]string
+
+func (a actorTokens) VerifyActor(_ context.Context, token string) (string, error) {
+	actor, ok := a[token]
+	if !ok {
+		return "", errors.New("not an actor JWT")
+	}
+	return actor, nil
+}
+
+func (f *fixture) serveActors(t *testing.T, set *Set, actors ActorVerifier) *httptest.Server {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	objects := append([]client.Object{f.run, f.token, f.key, f.agent}, f.extras...)
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).WithStatusSubresource(f.run).Build()
+	if err := reader.Status().Update(context.Background(), f.run); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer((&Gateway{Reader: reader, Profiles: staticProfiles{set}, Actors: actors}).Handler())
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestActorBoundRunIsIdentifiedOnlyByItsActor(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+	f.token.Annotations[ActorAnnotation] = "space/run-a"
+	actors := actorTokens{"jwt-a": "space/run-a", "jwt-b": "space/run-b"}
+	gateway := f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actors)
+	const path = "/runs/ns/run/v1/chat/completions"
+
+	response, body := call(t, gateway, path, map[string]string{"Authorization": "Bearer jwt-a"})
+	if response.StatusCode != http.StatusOK || body != "ok" {
+		t.Fatalf("own actor: status %d body %q", response.StatusCode, body)
+	}
+	if auth := got.header.Get("Authorization"); auth != "Bearer "+testKey {
+		t.Fatalf("upstream got %q, want the Agent's key", auth)
+	}
+
+	for name, header := range map[string]string{
+		"another actor":             "Bearer jwt-b",
+		"the run token":             "Bearer " + testToken,
+		"the unreplaced credential": "Bearer substrate-actor",
+		"nothing":                   "",
+	} {
+		got.header = nil
+		response, _ := call(t, gateway, path, map[string]string{"Authorization": header})
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s: status %d, want 401", name, response.StatusCode)
+		}
+		if got.header != nil {
+			t.Errorf("%s: the request reached the provider", name)
+		}
+	}
+}
+
+func TestActorBoundRunIsRefusedWithoutAVerifier(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+	f.token.Annotations[ActorAnnotation] = "space/run-a"
+	gateway := f.serve(t, shippedProfiles(t, upstream.URL, ""))
+	response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", map[string]string{"Authorization": "Bearer " + testToken})
+	if response.StatusCode != http.StatusUnauthorized || got.header != nil {
+		t.Fatalf("status %d, reached provider: %v", response.StatusCode, got.header != nil)
+	}
+}
+
+func TestActorJWTDoesNotOpenATokenRun(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+	gateway := f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actorTokens{"jwt-a": "space/run-a"})
+	response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", map[string]string{"Authorization": "Bearer jwt-a"})
+	if response.StatusCode != http.StatusUnauthorized || got.header != nil {
+		t.Fatalf("status %d, reached provider: %v", response.StatusCode, got.header != nil)
+	}
+}
+
+func TestActorListenerRefusesARunToken(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = api.AddToScheme(scheme)
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(f.run, f.token, f.key, f.agent).WithStatusSubresource(f.run).Build()
+	if err := reader.Status().Update(context.Background(), f.run); err != nil {
+		t.Fatal(err)
+	}
+	gateway := &Gateway{Reader: reader, Profiles: staticProfiles{shippedProfiles(t, upstream.URL, "")}}
+	clear := httptest.NewServer(gateway.ActorHandler())
+	t.Cleanup(clear.Close)
+	response, _ := call(t, clear, "/runs/ns/run/v1/chat/completions", map[string]string{"Authorization": "Bearer " + testToken})
+	if response.StatusCode != http.StatusUnauthorized || got.header != nil {
+		t.Fatalf("a run token was accepted without TLS: status %d", response.StatusCode)
+	}
+}

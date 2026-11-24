@@ -1,0 +1,33 @@
+== baseline
+  spike-7c68d6cb88-n4wh6 34.0 MiB
+  spike-7c68d6cb88-dxsvl 22.3 MiB
+  workers total 56.3 MiB
+  rustfs MB: 2	/data
+resume idle-004 186ms
+resume idle-005 176ms
+== 6 running idle
+  spike-7c68d6cb88-n4wh6 114.2 MiB
+  spike-7c68d6cb88-dxsvl 89.6 MiB
+  workers total 203.8 MiB
+  rustfs MB: 2	/data
+suspend idle-004 202ms
+suspend idle-005 297ms
+== 6 suspended
+  spike-7c68d6cb88-dxsvl 22.1 MiB
+  spike-7c68d6cb88-n4wh6 60.7 MiB
+  workers total 82.8 MiB
+  rustfs MB: 7	/data
+suspend idle-011 282ms
+suspend idle-017 210ms
+suspend idle-023 312ms
+suspend idle-029 246ms
+suspend idle-035 371ms
+suspend idle-041 294ms
+suspend idle-047 256ms
+suspend idle-049 222ms
+map[Suspended:50]
+== 50 suspended
+  spike-7c68d6cb88-dxsvl 22.1 MiB
+  spike-7c68d6cb88-n4wh6 145.2 MiB
+  workers total 167.3 MiB
+  rustfs MB: 33	/data

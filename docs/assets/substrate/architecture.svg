@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="t">An AgentRun executing as an Agent Substrate actor</title>
+  <desc id="d">The controller creates an actor through Substrate's Control API. The actor's only way out is Substrate's egress gateway, which attaches a JWT naming the actor. The controller's turn endpoint and the model gateway verify that JWT. The model gateway adds the Agent's key and calls the provider.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker>
+    <marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b45309"/></marker>
+  </defs>
+  <rect width="960" height="520" rx="14" fill="#f8fafc"/>
+
+  <!-- Sympozium -->
+  <rect x="24" y="24" width="912" height="190" rx="12" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="44" y="52" font-size="13" font-weight="700" fill="#3730a3" letter-spacing=".06em">SYMPOZIUM · COORDINATION LAYER</text>
+
+  <rect x="44" y="72" width="190" height="118" rx="10" fill="#fff" stroke="#a5b4fc"/>
+  <text x="139" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">AgentRun</text>
+  <text x="139" y="122" text-anchor="middle" font-size="12" fill="#475569">spec.backend: substrate</text>
+  <text x="139" y="146" text-anchor="middle" font-size="12" fill="#475569">status.substrate:</text>
+  <text x="139" y="164" text-anchor="middle" font-size="12" fill="#475569">actor, worker, outcome</text>
+
+  <rect x="290" y="72" width="270" height="118" rx="10" fill="#fff" stroke="#a5b4fc"/>
+  <text x="425" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">Controller</text>
+  <text x="425" y="122" text-anchor="middle" font-size="12" fill="#475569">policy, key authorisation, phases</text>
+  <rect x="306" y="138" width="238" height="38" rx="8" fill="#e0e7ff"/>
+  <text x="425" y="162" text-anchor="middle" font-size="13" font-weight="600" fill="#3730a3">Turn endpoint</text>
+
+  <rect x="616" y="72" width="300" height="118" rx="10" fill="#fff" stroke="#fbbf24"/>
+  <text x="766" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#0f172a">Model gateway</text>
+  <text x="766" y="122" text-anchor="middle" font-size="12" fill="#475569">actor → run → Agent → key</text>
+  <rect x="632" y="138" width="268" height="38" rx="8" fill="#fef3c7"/>
+  <text x="766" y="162" text-anchor="middle" font-size="13" font-weight="600" fill="#92400e">holds the Agent's model key</text>
+
+  <path d="M234 131H288" stroke="#334155" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+
+  <!-- Substrate -->
+  <rect x="24" y="250" width="700" height="246" rx="12" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="44" y="278" font-size="13" font-weight="700" fill="#065f46" letter-spacing=".06em">AGENT SUBSTRATE · EXECUTION PLANE</text>
+
+  <rect x="44" y="298" width="170" height="64" rx="10" fill="#fff" stroke="#6ee7b7"/>
+  <text x="129" y="326" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Control API</text>
+  <text x="129" y="346" text-anchor="middle" font-size="12" fill="#475569">create · resume · delete</text>
+
+  <rect x="44" y="396" width="300" height="84" rx="10" fill="#fff" stroke="#6ee7b7" stroke-dasharray="6 4"/>
+  <text x="194" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Actor (gVisor sandbox)</text>
+  <text x="194" y="446" text-anchor="middle" font-size="12" fill="#475569">agent-runner · no sidecars</text>
+  <text x="194" y="464" text-anchor="middle" font-size="12" font-weight="600" fill="#b91c1c">no key, no token, no credential</text>
+
+  <rect x="420" y="396" width="284" height="84" rx="10" fill="#fff" stroke="#6ee7b7"/>
+  <text x="562" y="424" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Egress gateway</text>
+  <text x="562" y="446" text-anchor="middle" font-size="12" fill="#475569">default deny · 2 destinations</text>
+  <text x="562" y="464" text-anchor="middle" font-size="12" font-weight="600" fill="#065f46">attaches the actor's JWT</text>
+
+  <!-- Provider -->
+  <rect x="770" y="330" width="166" height="96" rx="10" fill="#fff" stroke="#cbd5e1"/>
+  <text x="853" y="368" text-anchor="middle" font-size="14" font-weight="600" fill="#0f172a">Model provider</text>
+  <text x="853" y="390" text-anchor="middle" font-size="12" fill="#475569">sees the Agent's key</text>
+
+  <!-- flows -->
+  <path d="M360 190V230H129V296" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="246" y="224" text-anchor="middle" font-size="12" fill="#334155">1 · create, set egress, resume</text>
+
+  <path d="M129 362V394" stroke="#334155" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <path d="M344 438H418" stroke="#334155" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="381" y="430" text-anchor="middle" font-size="11" fill="#334155">2</text>
+
+  <path d="M500 396V192" stroke="#334155" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="508" y="300" font-size="12" fill="#334155">3 · get turn,</text>
+  <text x="508" y="316" font-size="12" fill="#334155">post result</text>
+
+  <path d="M640 396V192" stroke="#b45309" stroke-width="1.6" marker-end="url(#k)"/>
+  <text x="648" y="300" font-size="12" fill="#92400e">4 · model call</text>
+  <text x="648" y="316" font-size="12" fill="#92400e">+ actor JWT</text>
+
+  <path d="M853 190V328" stroke="#b45309" stroke-width="1.6" marker-end="url(#k)"/>
+  <text x="861" y="262" font-size="12" fill="#92400e">5 · + key</text>
+</svg>

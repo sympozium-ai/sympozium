@@ -1,6 +1,7 @@
 {{- $fleet := .Values.celln.fleet | default dict }}
 {{- $mediated := include "sympozium.cellnMediation" . }}
 {{- $mediation := .Values.celln.mediation | default dict }}
+{{- $substrate := include "sympozium.substrateEnabled" . }}
 {{- if and .Values.controller.watchNamespace .Values.controller.excludeWatchNamespaces }}
 {{- fail "choose either controller.watchNamespace or controller.excludeWatchNamespaces" }}
 {{- end }}
@@ -209,6 +210,11 @@ spec:
             - name: SYMPOZIUM_HARNESS_GATEWAY_CA_SECRET
               value: {{ include "sympozium.harnessGatewayTLSSecret" . | quote }}
             {{- end }}
+            {{- if $substrate }}
+            # Agent Substrate (experimental): used only by runs that ask for
+            # it with spec.backend: substrate.
+            {{- include "sympozium.substrateControllerEnv" . | nindent 12 }}
+            {{- end }}
             {{- if .Values.pricing.enabled }}
             - name: SYMPOZIUM_PRICING_CONFIGMAP
               value: "sympozium-model-pricing"
@@ -222,6 +228,11 @@ spec:
             - containerPort: 8080
               name: metrics
               protocol: TCP
+            {{- if $substrate }}
+            - containerPort: {{ include "sympozium.substrateTurnPort" . }}
+              name: actor-turns
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -238,8 +249,10 @@ spec:
             {{- toYaml .Values.controller.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          {{- if and .Values.celln.enabled $mediated }}
+          {{- if or (and .Values.celln.enabled $mediated) $substrate }}
           volumeMounts:
+          {{- end }}
+          {{- if and .Values.celln.enabled $mediated }}
             - name: celln-scoped-config
               mountPath: /etc/sympozium/celln-scoped
               readOnly: true
@@ -250,8 +263,30 @@ spec:
               mountPath: /run/sympozium/celln-scoped
               readOnly: true
           {{- end }}
-      {{- if and .Values.celln.enabled $mediated }}
+          {{- if $substrate }}
+            - name: substrate-ca
+              mountPath: /etc/sympozium/substrate-ca
+              readOnly: true
+            - name: substrate-token
+              mountPath: /var/run/secrets/sympozium/substrate
+              readOnly: true
+          {{- end }}
+      {{- if or (and .Values.celln.enabled $mediated) $substrate }}
       volumes:
+      {{- end }}
+      {{- if $substrate }}
+        {{- include "sympozium.substrateCAVolume" . | nindent 8 }}
+        # A token for the Control API only: its own audience, rotated by the
+        # kubelet, re-read by the controller on every call.
+        - name: substrate-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: {{ required "substrate.controlAPI.tokenAudience is required when substrate.enabled" ((.Values.substrate.controlAPI | default dict).tokenAudience) | quote }}
+                  expirationSeconds: {{ (.Values.substrate.controlAPI | default dict).tokenExpirationSeconds | default 3600 | int }}
+      {{- end }}
+      {{- if and .Values.celln.enabled $mediated }}
         - name: celln-scoped-config
           configMap:
             name: sympozium-celln-scoped-config

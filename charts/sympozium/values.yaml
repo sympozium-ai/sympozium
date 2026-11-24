@@ -264,6 +264,72 @@ harnessGateway:
   tolerations: []
   affinity: {}
 
+# -- Agent Substrate execution backend. EXPERIMENTAL and off by default.
+# Enabling it changes no run: only an AgentRun with `spec.backend: substrate`
+# executes as a Substrate actor, and such a run on a release without this
+# block is refused (SUBSTRATE_NOT_CONFIGURED), never run as a Job. Needs an
+# Agent Substrate install (not deployed by this chart) and
+# harnessGateway.enabled, because an actor reaches its model only through the
+# gateway, which adds the Agent's key outside the sandbox.
+# See docs/design/substrate-backend.md.
+substrate:
+  enabled: false
+  # -- REQUIRED acknowledgement, false by default. Substrate's egress gateway
+  # reaches the model gateway and the controller's turn endpoint over
+  # clear-text HTTP inside the cluster: it verifies upstream certificates
+  # against public roots only and has no option for a private CA. What crosses
+  # that hop is a five-minute JWT naming one actor for one audience, and the
+  # run's prompts and responses; never the Agent's key. While this is false
+  # the controller refuses every backend=substrate run
+  # (SUBSTRATE_TRANSPORT_NOT_ACKNOWLEDGED), neither clear-text listener is
+  # opened, and no Service or NetworkPolicy rule for them is rendered. Set it
+  # to true only where that hop is protected some other way (a mesh, an
+  # encrypted CNI) or accepted.
+  allowPlaintextGatewayHop: false
+  # -- agent-runner image actors run, pinned by digest (repo@sha256:...). It
+  # is frozen into Substrate's golden snapshot, so a tag is refused.
+  runnerImage: ""
+  controlAPI:
+    # -- Substrate Control API, host:port (gRPC over TLS).
+    endpoint: ""
+    # -- Name in the Control API's certificate, if it differs from the host.
+    serverName: ""
+    # -- Audience of the projected ServiceAccount token the controller
+    # presents to the Control API. Substrate must be configured to accept the
+    # controller's ServiceAccount (sympozium-controller-manager) for it.
+    tokenAudience: ""
+    # -- Lifetime of that token; the kubelet rotates it.
+    tokenExpirationSeconds: 3600
+  jwt:
+    # -- Issuer of actor JWTs, for example https://idp.ate-system.svc.
+    issuer: ""
+    # -- Key set URL. Empty means <issuer>/openid/v1/jwks.
+    jwksURL: ""
+    # -- Name in the key set server's certificate, if it differs from the URL.
+    jwksServerName: ""
+    # -- Audience actor JWTs are minted for; the controller and the gateway
+    # refuse any other.
+    audience: sympozium
+  ca:
+    # -- ConfigMap in the Sympozium namespace holding the CA bundle that
+    # verifies Substrate's own serving certificates (Control API, key set).
+    configMap: ""
+    key: ca.crt
+  turnEndpoint:
+    # -- Port of the controller's turn endpoint, where actors fetch their turn
+    # and post its result. Must differ from the controller's 8080 and 8081.
+    port: 8090
+  gateway:
+    # -- Port of the model gateway's listener for actors.
+    port: 8080
+  egressGateway:
+    # -- Namespace of Substrate's egress gateway: the only source the model
+    # gateway's NetworkPolicy admits on the actor port.
+    namespace: ate-system
+    # -- Narrows that rule to the egress gateway's pods. Empty admits any pod
+    # in the namespace.
+    podSelector: {}
+
 # -- Model pricing for AgentRun cost estimation
 # Accelerator power draw, read from an out-of-tree energy collector.
 #

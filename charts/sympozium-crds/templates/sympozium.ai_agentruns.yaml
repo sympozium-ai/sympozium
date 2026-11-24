@@ -122,9 +122,16 @@ spec:
 
                   Celln is selected for individual high-risk or bounded computations;
                   ensembles and workflows always use the Job backend.
+                  "substrate": an Agent Substrate actor (experimental, #699). Only this
+                    value selects it, and only on a controller an operator has configured
+                    for Substrate; anything else is refused, never run as a Job. One-shot
+                    string tasks with a model key only; the key never enters the sandbox
+                    and the actor reaches nothing but the controller's turn endpoint and
+                    the model gateway.
                 enum:
                 - job
                 - celln
+                - substrate
                 type: string
               canaryMode:
                 description: |-
@@ -3752,6 +3759,88 @@ spec:
                 description: StartedAt is when the agent run started.
                 format: date-time
                 type: string
+              substrate:
+                description: |-
+                  Substrate binds the run to its Agent Substrate actor. It is written
+                  before the actor is created and never changes to another actor.
+                properties:
+                  actor:
+                    maxLength: 63
+                    type: string
+                  actorUID:
+                    description: ActorUID tells this actor apart from an earlier one
+                      of the same name.
+                    type: string
+                  atespace:
+                    description: |-
+                      Atespace and Actor name the actor. The pair is what an actor's JWT says
+                      about it, so it is also how a call from the sandbox is tied to this run.
+                    maxLength: 63
+                    type: string
+                  attemptedAt:
+                    description: |-
+                      AttemptedAt is when the run was bound to its actor, before anything
+                      was created. Starting the actor is bounded from here by the run's
+                      timeout.
+                    format: date-time
+                    type: string
+                  outcome:
+                    description: |-
+                      Outcome is what the actor reported for the run's turn. It comes from
+                      the sandbox and is validated before anything acts on it.
+                    properties:
+                      exitCode:
+                        format: int32
+                        type: integer
+                      reportedAt:
+                        description: |-
+                          ReportedAt is when the result arrived. With ResumedAt it bounds the
+                          time the actor was active for this run.
+                        format: date-time
+                        type: string
+                      result:
+                        description: Result is the runner's result document, bounded
+                          in size.
+                        type: string
+                    required:
+                    - exitCode
+                    - reportedAt
+                    type: object
+                  receiptDigest:
+                    description: |-
+                      ReceiptDigest is the execution receipt: a digest over the run, the
+                      actor that executed it and the outcome that actor reported. It is
+                      written once, in the same update as Outcome, and the API refuses any
+                      later change to it.
+                    maxLength: 128
+                    type: string
+                  released:
+                    description: Released is set once the actor is confirmed deleted.
+                    type: boolean
+                  resumedAt:
+                    description: ResumedAt is when the actor was last resumed for
+                      this run.
+                    format: date-time
+                    type: string
+                  template:
+                    description: Template is the actor template (one per runner image
+                      digest).
+                    type: string
+                  worker:
+                    description: |-
+                      Worker is the pod that last held the actor. It can change between
+                      resumes; attribution keys on the actor, not on this.
+                    type: string
+                required:
+                - actor
+                - atespace
+                type: object
+                x-kubernetes-validations:
+                - message: a run never moves to another actor
+                  rule: self.atespace == oldSelf.atespace && self.actor == oldSelf.actor
+                - message: the execution receipt is write-once
+                  rule: '!has(oldSelf.receiptDigest) || (has(self.receiptDigest) &&
+                    self.receiptDigest == oldSelf.receiptDigest)'
               tokenUsage:
                 description: TokenUsage contains LLM token counts and timing for this
                   run.
@@ -3797,6 +3886,8 @@ spec:
               rule: '!has(oldSelf.cellnParent) || has(self.cellnParent)'
             - message: saved scoped Celln identity cannot be removed
               rule: '!has(oldSelf.cellnScoped) || has(self.cellnScoped)'
+            - message: a run's actor binding and execution receipt cannot be removed
+              rule: '!has(oldSelf.substrate) || has(self.substrate)'
         type: object
         x-kubernetes-validations:
         - message: saved Celln issuance status cannot be removed
@@ -3805,6 +3896,9 @@ spec:
         - message: saved Celln parent status cannot be removed
           rule: '!has(oldSelf.status) || !has(oldSelf.status.cellnParent) || (has(self.status)
             && has(self.status.cellnParent))'
+        - message: a run's actor binding and execution receipt cannot be removed
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.substrate) || (has(self.status)
+            && has(self.status.substrate))'
         - message: a recorded Celln-only execution boundary cannot be removed
           rule: '!has(oldSelf.status) || !has(oldSelf.status.cellnOnly) || !oldSelf.status.cellnOnly
             || (has(self.status) && has(self.status.cellnOnly) && self.status.cellnOnly)'

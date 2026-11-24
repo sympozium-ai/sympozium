@@ -286,6 +286,11 @@ func (p *Profile) TokenFor(key, random string) string {
 	return random
 }
 
+// AuthHeaders are the headers a client of this profile may send its
+// credential in. An execution backend that has the credential attached
+// outside the sandbox needs to know which ones to ask for.
+func (p *Profile) AuthHeaders() []Auth { return p.auths() }
+
 // auths is every way this profile can send a key, so a harness may present its
 // token, and only its token, in any of those headers.
 func (p *Profile) auths() []Auth {

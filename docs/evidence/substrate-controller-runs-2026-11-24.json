@@ -1,0 +1,280 @@
+{
+  "backend": "substrate",
+  "batchMs": 10990.116,
+  "model": "stub",
+  "parallel": 1,
+  "provider": "openai",
+  "providerCallsWithAgentKey": 20,
+  "providerCallsWithoutAgentKey": 0,
+  "realProvider": false,
+  "runs": [
+    {
+      "run": "run-112552-000",
+      "phase": "Succeeded",
+      "createdToRunningMs": 319.922,
+      "createdToResultReportedMs": 655.635,
+      "createdToTerminalMs": 662.827,
+      "createdToActorReleasedMs": 970.56,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-001",
+      "phase": "Succeeded",
+      "createdToRunningMs": 69.943,
+      "createdToResultReportedMs": 357.439,
+      "createdToTerminalMs": 364.188,
+      "createdToActorReleasedMs": 559.199,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-002",
+      "phase": "Succeeded",
+      "createdToRunningMs": 46.065,
+      "createdToResultReportedMs": 432.834,
+      "createdToTerminalMs": 440.167,
+      "createdToActorReleasedMs": 536.187,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-003",
+      "phase": "Succeeded",
+      "createdToRunningMs": 53.18,
+      "createdToResultReportedMs": 416.718,
+      "createdToTerminalMs": 425.344,
+      "createdToActorReleasedMs": 652.235,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-004",
+      "phase": "Succeeded",
+      "createdToRunningMs": 59.453,
+      "createdToResultReportedMs": 386.352,
+      "createdToTerminalMs": 394.104,
+      "createdToActorReleasedMs": 509.397,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-005",
+      "phase": "Succeeded",
+      "createdToRunningMs": 52.96,
+      "createdToResultReportedMs": 281.905,
+      "createdToTerminalMs": 289,
+      "createdToActorReleasedMs": 390.068,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-006",
+      "phase": "Succeeded",
+      "createdToRunningMs": 44.939,
+      "createdToResultReportedMs": 367.941,
+      "createdToTerminalMs": 367.941,
+      "createdToActorReleasedMs": 501.952,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-007",
+      "phase": "Succeeded",
+      "createdToRunningMs": 67.376,
+      "createdToResultReportedMs": 380.512,
+      "createdToTerminalMs": 388.139,
+      "createdToActorReleasedMs": 574.867,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-008",
+      "phase": "Succeeded",
+      "createdToRunningMs": 68.661,
+      "createdToResultReportedMs": 343.392,
+      "createdToTerminalMs": 351.541,
+      "createdToActorReleasedMs": 466.953,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1230
+    },
+    {
+      "run": "run-112552-009",
+      "phase": "Succeeded",
+      "createdToRunningMs": 49.126,
+      "createdToResultReportedMs": 334.471,
+      "createdToTerminalMs": 340.964,
+      "createdToActorReleasedMs": 433.383,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-010",
+      "phase": "Succeeded",
+      "createdToRunningMs": 53.993,
+      "createdToResultReportedMs": 371.446,
+      "createdToTerminalMs": 380.615,
+      "createdToActorReleasedMs": 532.887,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-011",
+      "phase": "Succeeded",
+      "createdToRunningMs": 58.87,
+      "createdToResultReportedMs": 382.168,
+      "createdToTerminalMs": 389.807,
+      "createdToActorReleasedMs": 554.862,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-012",
+      "phase": "Succeeded",
+      "createdToRunningMs": 51.97,
+      "createdToResultReportedMs": 335.79,
+      "createdToTerminalMs": 343.438,
+      "createdToActorReleasedMs": 479.054,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-013",
+      "phase": "Succeeded",
+      "createdToRunningMs": 57.677,
+      "createdToResultReportedMs": 378.154,
+      "createdToTerminalMs": 378.154,
+      "createdToActorReleasedMs": 523.631,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-014",
+      "phase": "Succeeded",
+      "createdToRunningMs": 53.174,
+      "createdToResultReportedMs": 381.363,
+      "createdToTerminalMs": 388.422,
+      "createdToActorReleasedMs": 528.139,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1230
+    },
+    {
+      "run": "run-112552-015",
+      "phase": "Succeeded",
+      "createdToRunningMs": 50.475,
+      "createdToResultReportedMs": 457.516,
+      "createdToTerminalMs": 464.767,
+      "createdToActorReleasedMs": 631.29,
+      "worker": "spike-7c68d6cb88-dxsvl",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1230
+    },
+    {
+      "run": "run-112552-016",
+      "phase": "Succeeded",
+      "createdToRunningMs": 56.406,
+      "createdToResultReportedMs": 421.968,
+      "createdToTerminalMs": 429.125,
+      "createdToActorReleasedMs": 549.273,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-017",
+      "phase": "Succeeded",
+      "createdToRunningMs": 46.14,
+      "createdToResultReportedMs": 386.253,
+      "createdToTerminalMs": 392.912,
+      "createdToActorReleasedMs": 518.876,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-112552-018",
+      "phase": "Succeeded",
+      "createdToRunningMs": 60.349,
+      "createdToResultReportedMs": 424.997,
+      "createdToTerminalMs": 424.997,
+      "createdToActorReleasedMs": 546.421,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1230
+    },
+    {
+      "run": "run-112552-019",
+      "phase": "Succeeded",
+      "createdToRunningMs": 57.805,
+      "createdToResultReportedMs": 392.273,
+      "createdToTerminalMs": 399.773,
+      "createdToActorReleasedMs": 493.381,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "the provider saw the Agent's key",
+      "totalTokens": 12,
+      "logBytes": 1231
+    }
+  ],
+  "summary": {
+    "createdToActorReleasedMs": {
+      "max": 970.56,
+      "min": 390.068,
+      "p50": 532.887,
+      "p95": 652.235
+    },
+    "createdToResultReportedMs": {
+      "max": 655.635,
+      "min": 281.905,
+      "p50": 382.168,
+      "p95": 457.516
+    },
+    "createdToRunningMs": {
+      "max": 319.922,
+      "min": 44.939,
+      "p50": 56.406,
+      "p95": 69.943
+    },
+    "createdToTerminalMs": {
+      "max": 662.827,
+      "min": 289,
+      "p50": 389.807,
+      "p95": 464.767
+    },
+    "of": 20,
+    "succeeded": 20
+  }
+}

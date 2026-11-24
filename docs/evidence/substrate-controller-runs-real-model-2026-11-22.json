@@ -1,0 +1,74 @@
+{
+  "backend": "substrate",
+  "batchMs": 4161.37,
+  "model": "deepseek-chat",
+  "parallel": 1,
+  "provider": "deepseek",
+  "realProvider": true,
+  "runs": [
+    {
+      "run": "run-150306-000",
+      "phase": "Succeeded",
+      "createdToRunningMs": 262.708,
+      "createdToResultReportedMs": 1268.042,
+      "createdToTerminalMs": 1268.042,
+      "createdToActorReleasedMs": 1615.768,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "done",
+      "totalTokens": 21,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-150306-001",
+      "phase": "Succeeded",
+      "createdToRunningMs": 67.938,
+      "createdToResultReportedMs": 1340.804,
+      "createdToTerminalMs": 1348.59,
+      "createdToActorReleasedMs": 1471.205,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "done",
+      "totalTokens": 21,
+      "logBytes": 1231
+    },
+    {
+      "run": "run-150306-002",
+      "phase": "Succeeded",
+      "createdToRunningMs": 47.806,
+      "createdToResultReportedMs": 952.654,
+      "createdToTerminalMs": 952.654,
+      "createdToActorReleasedMs": 1069.524,
+      "worker": "spike-7c68d6cb88-n4wh6",
+      "result": "done.",
+      "totalTokens": 22,
+      "logBytes": 1231
+    }
+  ],
+  "summary": {
+    "createdToActorReleasedMs": {
+      "max": 1615.768,
+      "min": 1069.524,
+      "p50": 1471.205,
+      "p95": 1615.768
+    },
+    "createdToResultReportedMs": {
+      "max": 1340.804,
+      "min": 952.654,
+      "p50": 1268.042,
+      "p95": 1340.804
+    },
+    "createdToRunningMs": {
+      "max": 262.708,
+      "min": 47.806,
+      "p50": 67.938,
+      "p95": 262.708
+    },
+    "createdToTerminalMs": {
+      "max": 1348.59,
+      "min": 952.654,
+      "p50": 1268.042,
+      "p95": 1348.59
+    },
+    "of": 3,
+    "succeeded": 3
+  }
+}

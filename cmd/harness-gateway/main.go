@@ -21,6 +21,7 @@ import (
 
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
+	"github.com/sympozium-ai/sympozium/internal/substrate"
 )
 
 func main() {
@@ -85,6 +86,34 @@ func run() error {
 			},
 		},
 	}
+	// Substrate actors are identified by a JWT from the install's issuer, and
+	// reach the gateway on their own listener (see Gateway.ActorHandler).
+	substrateSettings, err := substrate.SettingsFromEnv(os.Getenv)
+	if err != nil {
+		return err
+	}
+	var actorServer *http.Server
+	if substrateSettings != nil {
+		verifier, err := substrateSettings.Verifier()
+		if err != nil {
+			return err
+		}
+		gateway.Actors = verifier
+		// The actor listener is clear text. It opens only when the operator
+		// has accepted that hop; the controller refuses runs on the same
+		// setting, so the two agree.
+		if substrateSettings.AllowPlaintextGatewayHop {
+			actorServer = &http.Server{
+				Addr:              env("HARNESS_GATEWAY_ACTOR_LISTEN", ":8080"),
+				Handler:           gateway.ActorHandler(),
+				ReadHeaderTimeout: 5 * time.Second,
+				IdleTimeout:       2 * time.Minute,
+				MaxHeaderBytes:    64 << 10,
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "harness-gateway: Agent Substrate is configured, but the clear-text actor listener stays closed until SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP=true")
+		}
+	}
 	tlsDir := env("TLS_DIR", "/etc/harness-gateway/tls")
 	certificates := &harnessgateway.CertificateReloader{CertFile: tlsDir + "/tls.crt", KeyFile: tlsDir + "/tls.key"}
 	if _, err := certificates.GetCertificate(nil); err != nil {
@@ -103,6 +132,14 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if actorServer != nil {
+		go func() {
+			if err := serve(ctx, actorServer, time.Duration(drainSeconds)*time.Second, actorServer.ListenAndServe); err != nil {
+				fmt.Fprintf(os.Stderr, "harness-gateway: actor listener: %v\n", err)
+				stop()
+			}
+		}()
+	}
 	return serve(ctx, server, time.Duration(drainSeconds)*time.Second, func() error { return server.ListenAndServeTLS("", "") })
 }
 

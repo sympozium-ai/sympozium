@@ -43,6 +43,11 @@ const (
 	KeySecretUIDAnnotation     = "sympozium.ai/run-model-key-secret-uid"
 	HeadersSecretUIDAnnotation = "sympozium.ai/run-model-headers-secret-uid"
 	OriginAnnotation           = "sympozium.ai/run-model-origin"
+	// ActorAnnotation binds the run to one Agent Substrate actor, as
+	// <atespace>/<name>. A run bound to an actor holds no token at all: its
+	// calls are identified by the JWT Substrate's egress gateway attaches after
+	// the request has left the sandbox (spike 0b, #699).
+	ActorAnnotation = "sympozium.ai/run-model-actor"
 
 	// No duration applies to a model call. A harness's own timeouts (RUN_TIMEOUT,
 	// LLM_REQUEST_TIMEOUT, spec.timeout) already bound it, and the call ends when
@@ -85,10 +90,19 @@ type ProfileSource interface {
 	Load(ctx context.Context) (*Set, error)
 }
 
+// ActorVerifier turns a bearer credential into the Substrate actor it names,
+// as <atespace>/<name>.
+type ActorVerifier interface {
+	VerifyActor(ctx context.Context, token string) (string, error)
+}
+
 // Gateway swaps a run token for the run's model key.
 type Gateway struct {
 	Reader   client.Reader
 	Profiles ProfileSource
+	// Actors verifies Substrate actor JWTs. Nil means no run can be bound to
+	// an actor: such a run is refused like a wrong token.
+	Actors ActorVerifier
 	// MaxConcurrent caps calls in flight. Zero means no cap.
 	MaxConcurrent int64
 	// MaxConcurrentPerRun caps one run's calls in flight. Zero means no cap.
@@ -109,6 +123,21 @@ func (g *Gateway) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
+	})
+}
+
+type actorOnlyKey struct{}
+
+// ActorHandler serves only runs bound to a Substrate actor. It is for a
+// listener without TLS: Substrate's egress gateway verifies an upstream's
+// certificate against public roots only, so an in-cluster gateway is reached
+// in clear text. What crosses that hop is a short-lived JWT for one actor
+// and one audience, never a run token, so a token run is refused here even
+// with the right token.
+func (g *Gateway) ActorHandler() http.Handler {
+	next := g.Handler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorOnlyKey{}, true)))
 	})
 }
 
@@ -226,6 +255,34 @@ func (g *Gateway) tokenSecret(ctx context.Context, r *http.Request, run *api.Age
 	// The Secret's name is predictable. Only one this run controls holds its
 	// token, the rule authorizeGateVerdict applies to the gate token.
 	if !metav1.IsControlledBy(&secret, run) {
+		return nil, false
+	}
+	// A run bound to an actor is identified only by that actor's JWT. The
+	// binding is the controller's; the path is the caller's, so an actor that
+	// names another run's path is refused here. A token in the same Secret is
+	// ignored: the two kinds of run never share a credential.
+	if bound := secret.Annotations[ActorAnnotation]; bound != "" {
+		if g.Actors == nil {
+			return nil, false
+		}
+		// The JWT arrives wherever the provider's client puts its key.
+		places := []Auth{{Header: "Authorization", Prefix: "Bearer "}}
+		if profile != nil {
+			places = append(places, profile.auths()...)
+		}
+		for _, place := range places {
+			presented, ok := strings.CutPrefix(r.Header.Get(place.Header), place.Prefix)
+			if !ok || presented == "" {
+				continue
+			}
+			actor, err := g.Actors.VerifyActor(ctx, presented)
+			if err == nil && subtle.ConstantTimeCompare([]byte(actor), []byte(bound)) == 1 {
+				return &secret, true
+			}
+		}
+		return nil, false
+	}
+	if ctx.Value(actorOnlyKey{}) != nil {
 		return nil, false
 	}
 	expected := secret.Data[TokenSecretKey]

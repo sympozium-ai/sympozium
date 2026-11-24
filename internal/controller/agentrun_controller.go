@@ -206,6 +206,10 @@ type AgentRunReconciler struct {
 	Pricing *pricing.Loader
 	// HarnessGateway is nil unless the chart deploys the harness gateway.
 	HarnessGateway *HarnessGatewayConfig
+	// Substrate is nil unless an operator points the controller at an Agent
+	// Substrate install. Without it a backend=substrate run is refused
+	// (SUBSTRATE_NOT_CONFIGURED); with it, only backend=substrate runs use it.
+	Substrate *SubstrateConfig
 }
 
 const imageRegistry = "ghcr.io/sympozium-ai/sympozium"
@@ -407,6 +411,18 @@ func (r *AgentRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.reconcileCompleted(ctx, log, agentRun)
 		default:
 			return ctrl.Result{}, r.failRun(ctx, agentRun, "Scoped Celln run entered an unsupported controller phase")
+		}
+	}
+
+	// A backend that can refuse a run from its spec alone does so here, with
+	// its typed code, before shared admission resolves or reads anything.
+	if agentRun.Status.Phase == "" || agentRun.Status.Phase == sympoziumv1alpha1.AgentRunPhasePending {
+		refusal, err := backends.preflight(ctx, agentRun)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if refusal != nil {
+			return ctrl.Result{}, r.refuseExecution(ctx, agentRun, refusal)
 		}
 	}
 
@@ -1034,7 +1050,11 @@ func (r *AgentRunReconciler) reconcilePending(ctx context.Context, log logr.Logg
 		return r.reconcilePendingAgentSandbox(ctx, log, agentRun, harnessRuntimeRef, inheritedHarnessRuntime)
 	}
 
-	return r.executionBackends().job.Start(ctx, log, agentRun, executionStartInput{
+	backend, err := r.executionBackends().admitted(ctx, agentRun)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return backend.Start(ctx, log, agentRun, executionStartInput{
 		agent:                   &runtimeInstance,
 		harnessRuntimeRef:       harnessRuntimeRef,
 		inheritedHarnessRuntime: inheritedHarnessRuntime,
@@ -1089,7 +1109,11 @@ func (r *AgentRunReconciler) reconcileRunning(ctx context.Context, log logr.Logg
 		return r.reconcileRunningAgentSandbox(ctx, log, agentRun)
 	}
 
-	return r.executionBackends().job.Observe(ctx, log, agentRun)
+	backend, err := r.executionBackends().admitted(ctx, agentRun)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return backend.Observe(ctx, log, agentRun)
 }
 
 // startJob is the Job backend's Start: everything reconcilePending does for a
@@ -1594,6 +1618,18 @@ func (r *AgentRunReconciler) reconcileCompleted(ctx context.Context, log logr.Lo
 		}
 		if !done {
 			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+	}
+	if controllerutil.ContainsFinalizer(agentRun, agentRunFinalizer) {
+		for _, backend := range r.executionBackends().releasedOnCompletion() {
+			done, err := backend.Release(ctx, log, agentRun)
+			if err != nil {
+				log.Error(err, "Execution release unconfirmed", "backend", backend.Name())
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			if !done {
+				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+			}
 		}
 	}
 	// Clean up cluster-scoped RBAC created for skill sidecars.
@@ -2407,6 +2443,26 @@ func (r *AgentRunReconciler) reconcileDelete(ctx context.Context, log logr.Logge
 	}
 	// Clean up cluster-scoped RBAC resources created for skill sidecars.
 	r.cleanupSkillRBAC(ctx, log, agentRun)
+
+	// A run deleted before it finished is stopped first, then released. Only
+	// a backend that separates the two has a Cancel; Release below does not
+	// depend on it.
+	if !agentRun.Status.Phase.IsTerminal() {
+		if err := r.executionBackends().cancel(ctx, log, agentRun); err != nil {
+			log.Error(err, "Execution cancel failed")
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+	}
+	for _, backend := range r.executionBackends().releasedOnCompletion() {
+		done, err := backend.Release(ctx, log, agentRun)
+		if err != nil {
+			log.Error(err, "Execution release unconfirmed", "backend", backend.Name())
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+	}
 
 	// Delete the Job if it exists
 	if _, err := r.executionBackends().job.Release(ctx, log, agentRun); err != nil {

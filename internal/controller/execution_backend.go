@@ -73,11 +73,33 @@ const (
 	RefusalModelKeyOriginMismatch RefusalCode = "MODEL_KEY_ORIGIN_MISMATCH"
 )
 
+// Backend refusals: a backend declined the run before doing any work. The
+// Substrate backend is the only one that reports these today.
+const (
+	// RefusalSubstrateNotConfigured: the run asks for backend substrate on a
+	// controller no operator has pointed at a Substrate install.
+	RefusalSubstrateNotConfigured RefusalCode = "SUBSTRATE_NOT_CONFIGURED"
+	// RefusalSubstrateTransportNotAcknowledged: Substrate is configured, but
+	// the hop from its egress gateway to the model gateway and the turn
+	// endpoint is clear text and the operator has not accepted that.
+	RefusalSubstrateTransportNotAcknowledged RefusalCode = "SUBSTRATE_TRANSPORT_NOT_ACKNOWLEDGED"
+	// RefusalSubstrateUnsupportedRun: the run has a shape the backend does
+	// not execute yet (tools, a harness runtime, hooks, an enduring run, ...).
+	RefusalSubstrateUnsupportedRun RefusalCode = "SUBSTRATE_UNSUPPORTED_RUN"
+	// RefusalSubstrateNoModelRoute: the model gateway cannot carry this run's
+	// model calls (gateway not enabled, no profile for the provider, or the
+	// run's key is not one the gateway may use for it).
+	RefusalSubstrateNoModelRoute RefusalCode = "SUBSTRATE_NO_MODEL_ROUTE"
+)
+
 // Conditions that carry typed outcomes the seam reads instead of parsing
 // status.error.
 const (
 	conditionModelKeyAuthorized = "ModelKeyAuthorized"
 	conditionCellnContextLost   = "CellnContextLost"
+	// conditionExecutionAdmitted is False, with the RefusalCode as its
+	// reason, on a run its backend refused before doing any work.
+	conditionExecutionAdmitted = "ExecutionAdmitted"
 )
 
 // modelKeyRefusal types a modelkey refusal error.
@@ -117,6 +139,26 @@ func admissionRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
 		return nil
 	}
 	return &Refusal{Code: RefusalCode(c.Reason), Message: c.Message}
+}
+
+// backendRefusal reads a backend's own refusal off a failed run.
+func backendRefusal(run *sympoziumv1alpha1.AgentRun) *Refusal {
+	c := terminalMark(run, conditionExecutionAdmitted, metav1.ConditionFalse)
+	if c == nil {
+		return nil
+	}
+	return &Refusal{Code: RefusalCode(c.Reason), Message: c.Message}
+}
+
+// refuseExecution ends a run its backend refused before doing any work. Like
+// refuseRun, the typed code is written in the same status update as the
+// Failed phase. A MODEL_KEY_* code is recorded as the shared admission
+// refusal it is, so every reader sees one marker for it.
+func (r *AgentRunReconciler) refuseExecution(ctx context.Context, run *sympoziumv1alpha1.AgentRun, refusal *Refusal) error {
+	if strings.HasPrefix(string(refusal.Code), "MODEL_KEY_") {
+		return r.refuseRun(ctx, run, refusal)
+	}
+	return r.failRun(ctx, run, refusal.Message, metav1.Condition{Type: conditionExecutionAdmitted, Status: metav1.ConditionFalse, Reason: string(refusal.Code), Message: refusal.Message})
 }
 
 // Refusal is an admission refusal: the run never started.
@@ -226,13 +268,99 @@ type ExecutionBackend interface {
 	Identity(run *sympoziumv1alpha1.AgentRun) RunIdentity
 }
 
+// executionPreflighter is an optional part of the seam: a backend that can
+// refuse a run from its spec and its own configuration alone. The reconciler
+// asks before shared admission, so such a run is refused with the backend's
+// typed code before anything reads a Secret or resolves a model. It is the
+// first piece of the target contract's Admit; Job and Celln do not have it.
+type executionPreflighter interface {
+	Preflight(ctx context.Context, run *sympoziumv1alpha1.AgentRun) *Refusal
+}
+
+// executionCanceler is an optional part of the seam: Cancel stops the work of
+// a run that has not finished (timeout, deletion while Running). It is
+// separate from Release, which is cleanup and must work whether or not
+// Cancel ran. Job and Celln do not implement it and behave as before: for
+// them stopping and cleaning up are still one step.
+type executionCanceler interface {
+	Cancel(ctx context.Context, log logr.Logger, run *sympoziumv1alpha1.AgentRun) error
+}
+
 type executionBackendSet struct {
-	job   ExecutionBackend
-	celln ExecutionBackend
+	job       ExecutionBackend
+	celln     ExecutionBackend
+	substrate ExecutionBackend
+}
+
+// preflight asks the backend that would take the run, if it can say so from
+// the spec, whether it refuses it.
+func (s executionBackendSet) preflight(ctx context.Context, run *sympoziumv1alpha1.AgentRun) (*Refusal, error) {
+	backend, err := s.admitted(ctx, run)
+	if err != nil {
+		return nil, err
+	}
+	if p, ok := backend.(executionPreflighter); ok {
+		return p.Preflight(ctx, run), nil
+	}
+	return nil, nil
+}
+
+// cancel stops the work of an unfinished run on the backend that owns it, if
+// that backend separates Cancel from Release.
+func (s executionBackendSet) cancel(ctx context.Context, log logr.Logger, run *sympoziumv1alpha1.AgentRun) error {
+	backend, err := s.admitted(ctx, run)
+	if err != nil {
+		return err
+	}
+	if c, ok := backend.(executionCanceler); ok {
+		return c.Cancel(ctx, log, run)
+	}
+	return nil
+}
+
+// ExecutionResult is the seam's typed view of a run: the backend that owns it
+// and that backend's Result (nil until the run is terminal). It reads status
+// only.
+func (r *AgentRunReconciler) ExecutionResult(ctx context.Context, run *sympoziumv1alpha1.AgentRun) (ExecutionBackendName, *ExecutionResult, error) {
+	backends := r.executionBackends()
+	backend := backends.celln
+	if owns, err := backend.Owns(ctx, run); err != nil {
+		return "", nil, err
+	} else if !owns {
+		if backend, err = backends.admitted(ctx, run); err != nil {
+			return "", nil, err
+		}
+	}
+	return backend.Name(), backend.Result(run), nil
 }
 
 func (r *AgentRunReconciler) executionBackends() executionBackendSet {
-	return executionBackendSet{job: jobBackend{r: r}, celln: cellnBackend{r: r}}
+	return executionBackendSet{job: jobBackend{r: r}, celln: cellnBackend{r: r}, substrate: substrateBackend{r: r}}
+}
+
+// admitted picks the backend for a run that has passed shared admission, or
+// is already executing. Celln is not in this list because it is selected
+// before admission (see Reconcile); Job is last because it is the default.
+// A new backend is one more entry here, not a branch in the reconciler.
+func (s executionBackendSet) admitted(ctx context.Context, run *sympoziumv1alpha1.AgentRun) (ExecutionBackend, error) {
+	for _, backend := range []ExecutionBackend{s.substrate} {
+		owns, err := backend.Owns(ctx, run)
+		if err != nil {
+			return nil, err
+		}
+		if owns {
+			return backend, nil
+		}
+	}
+	return s.job, nil
+}
+
+// releasedOnCompletion are the backends whose execution must be confirmed
+// gone when a run ends, not only when it is deleted. Job is absent: a
+// finished Job's pod is kept for its logs. Celln still has its own call in
+// reconcileCompleted (the second release path the design note records).
+func (s executionBackendSet) releasedOnCompletion() []ExecutionBackend {
+	return []ExecutionBackend{s.substrate}
 }
 
 // coordinationPhase maps the coordination-layer phase onto the execution
@@ -272,6 +400,10 @@ func (jobBackend) Capabilities(context.Context) (BackendCapabilities, error) {
 // Sandbox paths do not take; Reconcile and reconcilePending decide those first.
 func (jobBackend) Owns(_ context.Context, run *sympoziumv1alpha1.AgentRun) (bool, error) {
 	if run.Spec.Backend == "celln" || run.Status.CellnScoped != nil {
+		return false, nil
+	}
+	// A run that asks for Substrate is never a Job, configured or not.
+	if substrateOwns(run) {
 		return false, nil
 	}
 	if run.Spec.AgentSandbox != nil && run.Spec.AgentSandbox.Enabled {
