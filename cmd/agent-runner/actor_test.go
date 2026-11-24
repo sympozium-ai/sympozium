@@ -140,3 +140,16 @@ func TestTurnCannotRedirectToolCalls(t *testing.T) {
 		t.Fatalf("%s = %v, want only the actor's own turn endpoint", actorToolsURLEnv, urls)
 	}
 }
+
+// An actor has no mcp-bridge, so the runner must not wait for its manifest:
+// that wait is five seconds, more than ten times the rest of an actor run.
+func TestActorDoesNotWaitForASidecarManifest(t *testing.T) {
+	t.Setenv(actorToolsURLEnv, "http://controller.svc:8090")
+	start := time.Now()
+	if tools := loadActorlessMCPTools(); tools != nil {
+		t.Fatalf("tools = %v, want none", tools)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("loading sidecar tools in an actor took %s", took)
+	}
+}

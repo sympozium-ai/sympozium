@@ -397,8 +397,11 @@ func main() {
 		if inActor() {
 			tools = actorOfferedTools(tools)
 		}
-		// Load MCP tools from manifest if the mcp-bridge sidecar is running
-		if mcpTools := loadMCPTools("/ipc/tools/mcp-tools.json"); len(mcpTools) > 0 {
+		// Load MCP tools from manifest if the mcp-bridge sidecar is running.
+		// An actor has no sidecars, so there is no manifest to wait for:
+		// waiting cost every actor run with a tool five seconds (measured on
+		// 2026-11-24, 6 s runs against 0.4 s without tools).
+		if mcpTools := loadActorlessMCPTools(); len(mcpTools) > 0 {
 			tools = append(tools, mcpTools...)
 
 			// Group tools by server prefix

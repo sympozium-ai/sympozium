@@ -323,3 +323,12 @@ func callActorTool(ctx context.Context, tool string, args any) string {
 		return fmt.Sprintf("Error: tool %s is unavailable (status %d)", tool, status)
 	}
 }
+
+// loadActorlessMCPTools loads the mcp-bridge sidecar's tools, which only a
+// pod has. In an actor it returns at once.
+func loadActorlessMCPTools() []ToolDef {
+	if inActor() {
+		return nil
+	}
+	return loadMCPTools("/ipc/tools/mcp-tools.json")
+}
