@@ -1,6 +1,6 @@
 # Sympozium Roadmap
 
-Last updated: 2026-11-22, after v0.13.0.
+Last updated: 2026-11-24, after v0.13.0.
 
 This page says where the project is, what is being worked on, and what comes
 next. It is maintained: when something here ships or is dropped, the page
@@ -10,24 +10,60 @@ notes and GitHub issues; this is the map, not the territory.
 ## Direction
 
 Sympozium is the **coordination layer** for agents on Kubernetes: it decides
-what agents do. Agents and their own model keys, policy and tool gating,
-ensembles and delegation, channels, schedules, memory and the console, all as
-Kubernetes resources under your RBAC and GitOps. See
-[Positioning](positioning.md).
+what agents do. It does not run them. It sits above an execution plane and
+adds five things that plane does not have:
 
-Decision of 2026-10-30: **isolation and density are an execution plane, and
-the execution plane is pluggable.** Sandboxed, suspendable agent runtimes now
-exist with far more people behind them than this project has: Google's
-[Agent Substrate](https://github.com/agent-substrate/substrate) (which
-[kagent](https://kagent.dev/) is rebuilding on) and Kubernetes
-[Agent Sandbox](https://agent-sandbox.sigs.k8s.io/). Sympozium already runs
-an `AgentRun` as a Job, as an Agent Sandbox, or as a
-[Celln](https://github.com/sympozium-ai/celln) micro-VM cell. The plan is to
-add Agent Substrate as an optional backend, keep Celln as the self-hosted,
-zero-dependency option rather than the default, and spend the effort that
-frees up on the coordination layer. The reasoning is in
-[Sympozium vs Google AX and Agent Substrate](sympozium-vs-google-ax.md); the
-work is tracked in [epic #692](https://github.com/sympozium-ai/sympozium/issues/692).
+- **Identity and keys.** Each Agent owns its provider, its model and its
+  key, and the key never enters the sandbox (true on Substrate and Celln;
+  the Job backend still injects it into the pod).
+- **Policy.** `SympoziumPolicy`, tool allow and deny, and admission,
+  enforced outside the sandbox.
+- **Coordination.** Ensembles, delegation and shared memory.
+- **Reach.** Channels, schedules and the Agent API.
+- **Operations.** Kubernetes resources under your RBAC and GitOps, the
+  console, TUI and CLI, and token and cost tracking.
+
+Decision of 2026-11-24: **[Agent Substrate](https://github.com/agent-substrate/substrate)
+is Sympozium's default execution plane.** An `AgentRun` runs as a Substrate
+actor. Two alternatives stay, each for a reason:
+[Celln](https://github.com/sympozium-ai/celln) is the self-hosted option,
+KVM micro-VMs with no dependency outside the cluster, and a Kubernetes Job
+needs nothing installed at all. The stack is four layers with one question
+each: coordination (Sympozium, what agents do), execution (Substrate, Celln
+or a Job, how agents run), capability
+([llmfit-dra](https://github.com/sympozium-ai/llmfit-dra), where compute
+happens) and serving (vLLM, SGLang, llama.cpp, how tokens move). See
+[Positioning](positioning.md) and the
+[Substrate backend](concepts/substrate-backend.md) page.
+
+This replaces part of the decision of 2026-10-30, which said that isolation
+and density are a pluggable execution plane, with Substrate to be added as
+an optional backend and the Job as the default
+([epic #692](https://github.com/sympozium-ai/sympozium/issues/692)). The
+first half stands. The second changed after the spike: a run executed as an
+actor through the real controller, with the Agent's key outside the
+sandbox, in 0.43 s against 11.3 s for a Job (median of 20 runs each, one
+node, stub model, 2026-11-22;
+[results](evidence/substrate-spike-go-no-go-2026-11-22.md)). Sandboxed,
+suspendable runtimes also have far more people behind them than this
+project has ([kagent](https://kagent.dev/) is rebuilding on Substrate too),
+so the effort goes into the coordination layer instead. The comparison is in
+[Sympozium vs Google AX and Agent Substrate](sympozium-vs-google-ax.md).
+
+<!-- STATUS:substrate -->
+!!! warning "State of the Substrate backend, 2026-11-24"
+    Agent Substrate is the default execution plane by decision of
+    2026-11-24. The implementation is on a branch and not released. Where
+    Substrate is installed and enabled (chart value `substrate.enabled`), a
+    run that names no backend runs as an actor when it can: a one-shot
+    string task with a model key, with channel messages and schedules served
+    outside the sandbox under the run's tool policy. A run that needs
+    skills, MCP servers, memory, delegation or an enduring conversation runs
+    as a Kubernetes Job instead, and its `DefaultExecutionPlane` condition
+    says why. A plain `sympozium install` does not install Substrate, so
+    there every run is a Job. One in-cluster hop, from Substrate's egress
+    gateway to the model gateway, is unencrypted. See [Substrate
+    backend](concepts/substrate-backend.md).
 
 Two threads carry on from 0.12 unchanged:
 
@@ -54,25 +90,34 @@ Two threads carry on from 0.12 unchanged:
 
 ## In progress
 
-- **Pluggable execution plane, Substrate spike** ([#692](https://github.com/sympozium-ai/sympozium/issues/692)).
-  Four weeks with exit criteria: an `AgentRun` runs as a Substrate actor on
-  the maintainer's cluster, under a `SympoziumPolicy`, with the Agent's key
-  never inside the sandbox, phases and logs on the `AgentRun`, and a written
-  go/no-go with latency and idle-cost numbers against the Job and Celln
-  backends. No-go is a valid outcome.
-  Status, 2026-11-22: a run executes as an actor through the real controller
-  in about 0.4 s against about 11 s for a Job, with the key added outside
-  the sandbox. The recommendation is go, with conditions: an unencrypted hop
-  to the model gateway to close, and tools not yet designed. The backend is
-  in the tree as experimental and opt-in: off by default in the chart, used
-  only by runs with `backend: substrate`, and refusing every run until the
-  operator acknowledges the unencrypted hop. See the
-  [design note](design/substrate-backend.md) and the
-  [results](evidence/substrate-spike-go-no-go-2026-11-22.md).
+- **Substrate as the default execution plane** ([#692](https://github.com/sympozium-ai/sympozium/issues/692)).
+  The spike ([#699](https://github.com/sympozium-ai/sympozium/issues/699))
+  ended on 2026-11-22 with a go: a run executes as an actor through the real
+  controller in about 0.4 s against about 11 s for a Job, with the key added
+  outside the sandbox
+  ([results](evidence/substrate-spike-go-no-go-2026-11-22.md)). The
+  backend is in review as experimental and off in the chart by default
+  ([#717](https://github.com/sympozium-ai/sympozium/pull/717)). On
+  2026-11-24 it became the default plane rather than an option. Stacked on
+  that, not released:
+    - a run that names no backend runs as an actor where Substrate is
+      enabled and can execute it, and as a Job otherwise, with the reason on
+      the run (20 of 20 live runs, p50 0.41 s, on an earlier build);
+    - chart values (`substrate.*`) wire the controller and the model
+      gateway, rendered and tested but not yet deployed, and refusing every
+      run until the operator acknowledges the unencrypted hop;
+    - the first tools are served outside the sandbox under the run's tool
+      policy: channel messages and schedules.
+
+    Left before a release, in order: MCP servers and skills through the tool
+    endpoint, delegation and sub-agents, the unencrypted hop to the model
+    gateway, enduring runs as suspended actors, a deployed install on a
+    cluster, and a rerun on Substrate 1.0.1. See the
+    [design note](design/substrate-backend.md).
 - **Celln becomes an option, not the default** ([#693](https://github.com/sympozium-ai/sympozium/issues/693)).
   `sympozium install` deploys the fleet only with `--celln-fleet`; the Job
-  backend is the default for new Agents; onboarding offers Celln alongside
-  Agent Sandbox and, later, Substrate. Existing fleet installs keep their fleet.
+  backend is what runs where Substrate is not installed; onboarding offers Celln
+  alongside Agent Sandbox and Substrate. Existing fleet installs keep their fleet.
 - **Celln turn latency.** With the provider out of the picture, a one-shot
   turn costs about 2.5 s of Sympozium and Celln time (admission 1.5 s, the
   rest observation and cleanup). Next: cache the resolver's reads during
@@ -94,10 +139,10 @@ Two threads carry on from 0.12 unchanged:
 
 Ordered by what unblocks the most users. Each has, or will get, an issue.
 
-1. **Substrate as a released backend** (phase 1 of #692, only on a go):
-   `spec.backend: substrate`, validation and parity tests, install wiring or a
-   documented external install, backend choice in the console, and enduring
-   runs as suspended actors instead of leased parents.
+1. **Substrate as the released default** (phase 1 of #692): every tool a
+   Job-backed run has, served outside the sandbox (MCP servers and skills
+   first); enduring runs as suspended actors instead of leased parents;
+   `sympozium install` wiring; the backend and its actor in the console.
 2. **Fleet operations.** A per-namespace spend ceiling and refusal events on the
    run ([#688](https://github.com/sympozium-ai/sympozium/issues/688)); a KVM CI
    lane that boots cells on an enforcing CNI and publishes release evidence

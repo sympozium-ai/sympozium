@@ -6,7 +6,7 @@ This file helps AI coding agents (Copilot, Cursor, Cline, etc.) understand the S
 
 ## Project Overview
 
-Sympozium is a **Kubernetes-native agent orchestration platform** written in Go. An AI agent runs either as an ephemeral Kubernetes pod (Job — the default `job` backend) or in a hardware-isolated Celln KVM microVM (`backend: celln`, one-shot or enduring), with policy enforcement via CRDs, admission webhooks, and RBAC. Pod-path communication flows through NATS JetStream and a filesystem-based IPC bridge.
+Sympozium is a **Kubernetes-native agent orchestration platform** written in Go. An AI agent runs on an execution plane: an Agent Substrate actor (`backend: substrate`, the default where Substrate is installed and can execute the run; see `docs/concepts/substrate-backend.md`), an ephemeral Kubernetes pod (`backend: job`, what runs everywhere else), or a hardware-isolated Celln KVM microVM (`backend: celln`, one-shot or enduring), with policy enforcement via CRDs, admission webhooks, and RBAC. Pod-path communication flows through NATS JetStream and a filesystem-based IPC bridge.
 
 `CLAUDE.md` lists the conventions that most often go wrong (naming, secrets, pod security, generated files).
 

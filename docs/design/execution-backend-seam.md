@@ -15,7 +15,7 @@ own branch in `Reconcile`, `reconcilePending`, `reconcileRunning` and
 
 | Path | Selected by | Start | Observe | Cancel / cleanup |
 |---|---|---|---|---|
-| Kubernetes Job (default) | neither of the other two | `buildJob` + create, in `reconcilePending` | Job and pod status in `reconcileRunning` | delete the Job in `reconcileDelete` |
+| Kubernetes Job | neither of the other two (and, since 2026-11-24, not defaulted to Substrate) | `buildJob` + create, in `reconcilePending` | Job and pod status in `reconcileRunning` | delete the Job in `reconcileDelete` |
 | Agent Sandbox | `spec.agentSandbox.enabled`, then `status.sandboxName`/`sandboxClaimName` | `reconcilePendingAgentSandbox` | `reconcileRunningAgentSandbox` | owner references |
 | Celln (scoped platform) | `sharedCatalogueSelected`, before model normalisation | `reconcilePendingScoped` | `reconcileRunningScoped` / `observeScoped` | `cleanupScoped` |
 

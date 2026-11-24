@@ -3,7 +3,7 @@
 [Celln](https://github.com/sympozium-ai/celln) runs agent work in KVM
 microVMs ("cells") instead of Kubernetes pods. An `AgentRun` selects it with
 `spec.backend: celln` (or inherits it from the Agent's
-`spec.execution.backend`). The default `job` backend is unchanged.
+`spec.execution.backend`). The `job` backend is unchanged.
 
 Celln is an opt-in execution backend: `sympozium install --celln-fleet`
 deploys the per-node **fleet** on every node labeled `celln.dev/kvm=true`,

@@ -275,7 +275,7 @@ Type a message into the input bar:
 List all pods that are not Running across every namespace.
 ```
 
-Sympozium creates an **AgentRun** CR, spins up an ephemeral pod, calls your LLM,
+Sympozium creates an **AgentRun** CR, runs it on the execution plane (an ephemeral pod on a plain install), calls your LLM,
 and uses the built-in tools to fulfil the task. You will see the result stream
 back in the TUI.
 

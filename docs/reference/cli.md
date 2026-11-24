@@ -8,6 +8,9 @@ Every command accepts the global flags `--kubeconfig PATH` and
 ```bash
 sympozium install                        # CRDs, control plane, built-in Ensembles and ergoz; Agents run as Kubernetes Jobs
 sympozium install --celln-fleet          # also the opt-in Celln fleet and the model gateway (needs KVM nodes)
+sympozium install --set substrate.enabled=true --set harnessGateway.enabled=true \
+  --set substrate.caConfigMap=<name> --set substrate.runnerImage=<image@sha256:…>
+                                         # run agents as Agent Substrate actors (Substrate must already be installed)
 sympozium install --image-tag v0.12.0    # a specific image tag
 sympozium install --set key=value        # extra Helm values (repeatable)
 sympozium install --no-ergoz             # skip ergoz (accelerator power telemetry)
@@ -37,8 +40,7 @@ model gateway digest to the ones the new CLI pins.
 
 ### Celln
 
-A bare `sympozium install` deploys the **Celln fleet** whenever the build
-pins a starter package (every release does): two privileged DaemonSets on
+`sympozium install --celln-fleet` deploys the **Celln fleet**: two privileged DaemonSets on
 every node labeled `celln.dev/kvm=true`, the router and the model gateway.
 It prints the privilege it needs before it proceeds. No provider or key is
 asked for: each Agent brings its own `ModelConnection` and key, which the

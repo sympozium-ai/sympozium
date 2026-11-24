@@ -128,6 +128,7 @@ nav:
       - Harness Mode: modes/harness.md
       - Writing a Harness Adapter: modes/harness-adapters.md
       - Adding a Task Mode: modes/extension-guide.md
+    - Substrate Backend: concepts/substrate-backend.md
     - Celln Backend: concepts/celln-backend.md
     - Agent Sandboxing: concepts/agent-sandbox.md
     - MCP Servers: mcp-servers.md
