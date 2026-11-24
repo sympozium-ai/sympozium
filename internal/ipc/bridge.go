@@ -466,13 +466,21 @@ func outboundChannelName(data []byte) string {
 }
 
 func (b *Bridge) sanitizeOutboundMessage(data []byte) (json.RawMessage, []string, error) {
+	return SanitizeOutboundMessage(data, b.allowedOutboundUsername())
+}
+
+// SanitizeOutboundMessage removes attribution an agent may not choose from a
+// channel message it wrote: any username other than allowedUsername, and
+// every icon. It returns the message to send and the fields it dropped. The
+// in-pod bridge and the actor tool endpoint both send only what this returns.
+func SanitizeOutboundMessage(data []byte, allowedUsername string) (json.RawMessage, []string, error) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, nil, err
 	}
 
 	dropped := make([]string, 0, 3)
-	if raw, ok := payload["username"]; ok && !b.allowedOutboundUsernameValue(raw) {
+	if raw, ok := payload["username"]; ok && !usernameIs(raw, allowedUsername) {
 		delete(payload, "username")
 		dropped = append(dropped, "username")
 	}
@@ -490,8 +498,7 @@ func (b *Bridge) sanitizeOutboundMessage(data []byte) (json.RawMessage, []string
 	return json.RawMessage(sanitized), dropped, nil
 }
 
-func (b *Bridge) allowedOutboundUsernameValue(raw json.RawMessage) bool {
-	allowed := b.allowedOutboundUsername()
+func usernameIs(raw json.RawMessage, allowed string) bool {
 	if allowed == "" {
 		return false
 	}

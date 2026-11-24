@@ -27,6 +27,7 @@ import (
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/controller"
+	"github.com/sympozium-ai/sympozium/internal/eventbus"
 	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
 	"github.com/sympozium-ai/sympozium/internal/substrate"
@@ -938,4 +939,137 @@ func TestSubstrateRunDeletedWhileRunningIsCancelledThenReleased(t *testing.T) {
 		t.Errorf("after the run was deleted its actor got status %d, want 401", status)
 	}
 	noProviderCall(t, "a deleted run's actor")
+}
+
+// recordingBus keeps what the controller published, so a test can see what a
+// tool call did outside the sandbox.
+type recordingBus struct {
+	mu     sync.Mutex
+	events []*eventbus.Event
+}
+
+var toolEvents = &recordingBus{}
+
+func (b *recordingBus) Publish(_ context.Context, _ string, e *eventbus.Event) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.events = append(b.events, e)
+	return nil
+}
+func (b *recordingBus) Subscribe(context.Context, string) (<-chan *eventbus.Event, error) {
+	return make(chan *eventbus.Event), nil
+}
+func (b *recordingBus) Close() error { return nil }
+
+// forRun returns the events of one topic published for one run.
+func (b *recordingBus) forRun(topic, ns, run string) []*eventbus.Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []*eventbus.Event
+	for _, e := range b.events {
+		if e.Topic == topic && e.Metadata["namespace"] == ns && e.Metadata["agentRunID"] == run {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// A tool that acts outside the sandbox is decided outside the sandbox. The
+// actor asks; the controller reads the run's policy and the Agent's channels
+// and publishes under the run's identity, or refuses.
+func TestSubstrateToolCallsAreDecidedOutsideTheSandbox(t *testing.T) {
+	ns := createTestNamespace(t)
+	substrateFixtures(t, ns, &sympoziumv1alpha1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "tool-agent", Namespace: ns},
+		Spec: sympoziumv1alpha1.AgentSpec{
+			AuthRefs: []sympoziumv1alpha1.SecretRef{{Provider: "openai", Secret: "sub-model-key"}},
+			Agents:   sympoziumv1alpha1.AgentsSpec{Default: sympoziumv1alpha1.AgentConfig{Model: "m"}},
+			Channels: []sympoziumv1alpha1.ChannelSpec{{Type: "slack"}},
+		},
+	})
+	run := substrateRun(ns, "tool-run", "tool-agent")
+	run.Spec.ToolPolicy = &sympoziumv1alpha1.ToolPolicySpec{Deny: []string{"schedule_task"}}
+	if err := k8sClient.Create(testCtx, run); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
+	running := waitPhase(t, run, sympoziumv1alpha1.AgentRunPhaseRunning)
+
+	turns := agentRuns.SubstrateTurns()
+	self := substrate.ActorRef{Atespace: ns, Name: "tool-run", UID: running.Status.Substrate.ActorUID}
+	var turn substrate.Turn
+	pollUntil(t, 10*time.Second, 50*time.Millisecond, func() bool {
+		var ok bool
+		turn, ok, _ = turns.Claim(testCtx, self)
+		return ok
+	})
+	// The runner is offered what policy permits, and no more.
+	if turn.Env["ACTOR_TOOLS"] != "send_channel_message" {
+		t.Errorf("ACTOR_TOOLS = %q, want only send_channel_message (schedule_task is denied)", turn.Env["ACTOR_TOOLS"])
+	}
+
+	// Allowed: published as the run, with attribution the agent chose removed.
+	out, err := turns.CallTool(testCtx, self, "send_channel_message",
+		json.RawMessage(`{"channel":"slack","text":"done","username":"The CEO","iconUrl":"http://evil.example/i.png"}`))
+	if err != nil || !strings.Contains(out, "slack") {
+		t.Fatalf("send_channel_message: %q, %v", out, err)
+	}
+	sent := toolEvents.forRun(eventbus.TopicChannelMessageSend, ns, "tool-run")
+	if len(sent) != 1 {
+		t.Fatalf("published %d channel messages, want 1", len(sent))
+	}
+	if sent[0].Metadata["instanceName"] != "tool-agent" {
+		t.Errorf("published as %q, want the run's own Agent", sent[0].Metadata["instanceName"])
+	}
+	if body := string(sent[0].Data); strings.Contains(body, "CEO") || strings.Contains(body, "evil.example") || !strings.Contains(body, "done") {
+		t.Errorf("published message = %s; want the text without the forged attribution", body)
+	}
+
+	// Refused, and nothing published: what the sandbox was not offered, what
+	// policy denies, where the Agent has no channel, and what is not served.
+	var refusal *substrate.ToolRefusal
+	for name, call := range map[string][2]string{
+		"denied by policy":       {"schedule_task", `{"name":"n","action":"create","schedule":"* * * * *","task":"x"}`},
+		"unconfigured channel":   {"send_channel_message", `{"channel":"telegram","text":"hi"}`},
+		"a tool not served":      {"execute_command", `{"command":"id"}`},
+		"a tool that is made up": {"read_secrets", `{}`},
+	} {
+		if _, err := turns.CallTool(testCtx, self, call[0], json.RawMessage(call[1])); !errors.As(err, &refusal) {
+			t.Errorf("%s: err = %v, want a refusal", name, err)
+		}
+	}
+	if n := len(toolEvents.forRun(eventbus.TopicScheduleUpsert, ns, "tool-run")); n != 0 {
+		t.Errorf("a denied schedule_task published %d events", n)
+	}
+	if n := len(toolEvents.forRun(eventbus.TopicChannelMessageSend, ns, "tool-run")); n != 1 {
+		t.Errorf("refused calls published channel messages: %d in total, want 1", n)
+	}
+
+	// Another actor cannot act as this run.
+	for name, other := range map[string]substrate.ActorRef{
+		"another actor":       {Atespace: ns, Name: "someone-else", UID: "x"},
+		"a replacement actor": {Atespace: ns, Name: "tool-run", UID: "not-" + self.UID},
+	} {
+		if _, err := turns.CallTool(testCtx, other, "send_channel_message", json.RawMessage(`{"channel":"slack","text":"forged"}`)); !errors.Is(err, substrate.ErrNoSuchTurn) {
+			t.Errorf("%s made a tool call as the run: %v", name, err)
+		}
+	}
+
+	// Policy is read on each call: a deny added mid-run takes effect.
+	live := getRun(t, run)
+	live.Spec.ToolPolicy.Deny = append(live.Spec.ToolPolicy.Deny, "send_channel_message")
+	if err := k8sClient.Update(testCtx, &live); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := turns.CallTool(testCtx, self, "send_channel_message", json.RawMessage(`{"channel":"slack","text":"again"}`)); !errors.As(err, &refusal) {
+		t.Errorf("a tool denied mid-run was still called: %v", err)
+	}
+
+	// Once the run has ended its actor can call nothing.
+	if err := turns.Complete(testCtx, self, substrate.TurnResult{ID: turn.ID, Result: json.RawMessage(`{"status":"success","response":"ok"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := turns.CallTool(testCtx, self, "send_channel_message", json.RawMessage(`{"channel":"slack","text":"late"}`)); !errors.Is(err, substrate.ErrNoSuchTurn) {
+		t.Errorf("a finished run made a tool call: %v", err)
+	}
 }

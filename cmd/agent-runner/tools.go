@@ -432,6 +432,9 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 		return fmt.Sprintf("Error parsing tool arguments: %v", err)
 	}
 
+	if inActor() && len(actorOfferedTools([]ToolDef{{Name: name}})) == 0 {
+		return fmt.Sprintf("Error: tool %s is not available to this run", name)
+	}
 	switch name {
 	case ToolExecuteCommand:
 		return executeCommand(ctx, args)
@@ -444,10 +447,16 @@ func executeToolCall(ctx context.Context, name string, argsJSON string) string {
 	case ToolListDirectory:
 		return listDirectoryTool(args)
 	case ToolSendChannelMessage:
+		if inActor() {
+			return callActorTool(ctx, name, args)
+		}
 		return sendChannelMessageTool(args)
 	case ToolFetchURL:
 		return fetchURLTool(args)
 	case ToolScheduleTask:
+		if inActor() {
+			return callActorTool(ctx, name, args)
+		}
 		return scheduleTaskTool(args)
 	case ToolDelegateToPersona:
 		return delegateToPersonaTool(ctx, args)

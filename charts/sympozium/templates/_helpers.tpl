@@ -367,6 +367,9 @@ gateway.
 {{- fail "substrate.runnerImage must be pinned by digest (repo@sha256:...)" -}}
 {{- end -}}
 {{ include "sympozium.substrateSharedEnv" . }}
+# "false" leaves a run that names no backend a Job.
+- name: SUBSTRATE_DEFAULT
+  value: {{ ne (toString $s.default) "false" | quote }}
 - name: SUBSTRATE_API_ENDPOINT
   value: {{ required "substrate.controlAPI.endpoint is required when substrate.enabled" $api.endpoint | quote }}
 {{- with $api.serverName }}

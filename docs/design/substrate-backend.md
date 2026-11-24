@@ -1,6 +1,7 @@
 # Substrate backend: an AgentRun as an Agent Substrate actor
 
-Status: **experimental, opt-in, not enabled by default.** Part of
+Status: **experimental; off in the chart by default. Where an operator enables
+it, it is the default execution plane** (decision of 2026-11-24). Part of
 [epic #692](https://github.com/sympozium-ai/sympozium/issues/692), tracked in
 [#699](https://github.com/sympozium-ai/sympozium/issues/699). It started as a
 spike on 2026-11-22; the measurements and the go/no-go from that spike are in
@@ -15,22 +16,59 @@ executes it, in a gVisor sandbox that starts from a memory snapshot in about
 
 ![An AgentRun executing as an Agent Substrate actor](../assets/substrate/architecture.svg)
 
-## It is opt-in twice
+## Which runs it executes
 
-Nothing uses this backend unless both of these are true.
+Nothing uses this backend until an operator configures it. The chart's
+`substrate.enabled` is `false` by default, and with default values the chart
+renders exactly what it rendered before this backend existed. Enabling it also
+requires an explicit acknowledgement of the
+[clear-text hop](#the-clear-text-hop). Whether Substrate is installed on the
+cluster is never looked at.
 
-1. **The operator configured it.** The chart's `substrate.enabled` is `false`
-   by default, and with default values the chart renders exactly what it
-   rendered before this backend existed. Enabling it also requires an explicit
-   acknowledgement of the [clear-text hop](#the-clear-text-hop).
-2. **The run asks for it.** Only `spec.backend: substrate` selects the
-   backend. A controller configured for Substrate takes no other run: a run
-   with no `backend`, `backend: job` or `backend: celln` executes exactly
-   where it did before. Whether Substrate is installed on the cluster is never
-   looked at, so installing it changes nothing.
+Once configured, with `substrate.default: true` (the chart's value):
 
-A run that asks for Substrate where it cannot be had is **refused with a typed
-code**. It is never run as a Job instead.
+| The run | Executes as |
+|---|---|
+| names no backend, and Substrate can execute it | a Substrate actor |
+| names no backend, and Substrate cannot execute it yet | a Kubernetes Job, as before, with the reason on the run |
+| `backend: substrate` | a Substrate actor, or it is **refused with a typed code**; never a Job |
+| `backend: job`, `backend: celln` | where it asked |
+
+With `substrate.default: false` only `backend: substrate` runs are actors.
+
+### The default never takes anything away
+
+A run that names no backend did not ask for an actor, so it must not lose
+anything by getting one, and must not be refused for something a Job would
+have done. The controller therefore decides once, before admission
+(`chooseDefaultPlane`), and sends the run to Substrate only if all of this
+holds:
+
+- the run has the one shape the backend supports (below);
+- neither the run nor its Agent uses anything only a pod has: skills, MCP
+  servers, memory, a harness runtime, volumes or a workspace, pod scheduling
+  or pull settings, per-agent observability, a web endpoint, a sandbox
+  sidecar, dry-run or canary mode;
+- the run is not part of an ensemble or a delegation;
+- every check the backend would refuse on passes now: the model gateway has
+  a profile for the provider and the key may go to its upstream.
+
+Otherwise the run is a Job. Either way the decision is written to the run:
+
+```console
+$ kubectl get agentrun triage -o jsonpath='{.status.conditions[?(@.type=="DefaultExecutionPlane")].message}'
+runs as a Job: the default execution plane (substrate) requires no skills
+```
+
+The decision is made once and read from status afterwards, so key
+authorisation, preflight, cancel and release all see the same plane without
+resolving the Agent again, and a run does not move if the default is switched
+off or its Agent is edited while it runs.
+
+One thing does change for a run that defaults to an actor: the tools it is
+offered. It gets the tools the controller serves ([Tools](#tools)) and not
+`fetch_url`, the file tools or `execute_command`, because an actor has no
+network but its two gateways and no shell.
 
 Nothing here touches Celln: its defaults, its code paths and its chart values
 are unchanged.
@@ -57,8 +95,9 @@ creates anything, with `SUBSTRATE_UNSUPPORTED_RUN` (see
   hooks, gates, `spec.env`, `spec.volumes`, enduring runs or server mode.
 - **A model key is required.** `spec.model.authSecretRef` must be set; a run
   with `modelRef` or `connectionRef` is refused.
-- **No tools.** A run or an Agent with skills or MCP servers is refused. See
-  [Tools](#tools-are-the-open-design-question).
+- **Two tools.** `send_channel_message` and `schedule_task` are served, by
+  the controller. A run or an Agent with skills or MCP servers is refused
+  (or, by default, runs as a Job). See [Tools](#tools).
 - **No memory.**
 - **Run names must be DNS labels** of at most 63 characters, because the run
   name is the actor name.
@@ -283,6 +322,7 @@ Everything is under `substrate:` in `charts/sympozium/values.yaml`. With
 |---|---|---|
 | `substrate.enabled` | `false` | Wire the controller and the model gateway to a Substrate install. Needs `harnessGateway.enabled`; the chart fails to render without it. |
 | `substrate.allowPlaintextGatewayHop` | `false` | The acknowledgement of [the clear-text hop](#the-clear-text-hop). While `false`, every run is refused and no listener, Service or NetworkPolicy rule for actors exists. **Only safe on a CNI that enforces NetworkPolicy** (for example Calico or Cilium): on one that does not (for example flannel) anything in the cluster can reach the clear-text listeners. |
+| `substrate.default` | `true` | Make Substrate the plane of runs that name no backend ([which runs](#which-runs-it-executes)). `false` leaves them Jobs. |
 | `substrate.runnerImage` | `""` | agent-runner image actors run. Required, and must be pinned by digest. |
 | `substrate.controlAPI.endpoint` | `""` | Control API `host:port`. Required. |
 | `substrate.controlAPI.serverName` | `""` | Name in the Control API's certificate, if it differs from the host. |
@@ -327,6 +367,7 @@ configured when `SUBSTRATE_JWT_ISSUER` is set.
 | `SUBSTRATE_JWT_AUDIENCE` | both | Audience actor JWTs are minted for and checked against. Default: `sympozium` |
 | `SUBSTRATE_CA_FILE` | both | CA bundle for Substrate's serving certificates |
 | `SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP` | both | `true` acknowledges the clear-text hop, and is only safe on a CNI that enforces NetworkPolicy; both processes log a warning saying so at start. Anything else keeps the actor listeners closed and refuses every run; a value that is not a boolean stops the process |
+| `SUBSTRATE_DEFAULT` | controller | `false` leaves a run that names no backend a Job. Anything else, or unset, makes Substrate the default plane. A value that is not a boolean stops the process |
 | `SUBSTRATE_API_ENDPOINT` | controller | Control API `host:port` |
 | `SUBSTRATE_API_SERVER_NAME` | controller | Name in the Control API's certificate |
 | `SUBSTRATE_TOKEN_FILE` | controller | Bearer token for the Control API; re-read on every call |
@@ -617,7 +658,12 @@ longer needed (`SubstrateEndpoint.TLS`).
 
 ### Not done
 
-- **Tools** (skills, MCP): see below.
+- **Most tools** (skills, MCP, delegation, memory): see below.
+- **A live run of the default.** Default selection and the tool endpoint are
+  tested against a fake Control API and a real API server. The 20 defaulted
+  runs in `docs/evidence/substrate-default-backend-2026-11-24.json` were made
+  with an earlier build of this change against a live Substrate; this build
+  has not been deployed, and no actor on a live install has made a tool call.
 - **Enduring runs and turns.** Actors suspend and resume per turn, which
   fits, but nothing is built.
 - **Console.** The web UI does not show `status.substrate`, the refusal code
@@ -628,15 +674,66 @@ longer needed (`SubstrateEndpoint.TLS`).
 - **Probing.** `Capabilities` does not probe the Control API: a configured,
   acknowledged backend reports `unknown`, not `ready`.
 
-## Tools are the open design question
+## Tools
 
-On the Job backend, tools reach the agent through a trusted sidecar
-(`mcp-bridge`). It holds the MCP credentials and enforces `toolPolicy`. An
-actor has no sidecars, and nothing inside the sandbox can be trusted to
-enforce policy on itself.
+On the Job backend, a tool that acts outside the agent container goes through
+a trusted sidecar: the runner writes a request into `/ipc`, and `ipc-bridge`
+or `mcp-bridge` acts on it. An actor has no sidecars, and nothing inside the
+sandbox can be trusted to enforce policy on itself.
 
-The same pattern as the model key would work: a tool gateway outside the
-sandbox that the actor reaches through egress, which maps actor → run →
-Agent, applies the Agent's `toolPolicy`, holds the MCP credentials and calls
-the server. That is a new component and a change to how the runner calls
-tools. It has not been built.
+So tools follow the model key: the sandbox asks, and code outside it decides.
+
+```mermaid
+sequenceDiagram
+    participant R as Runner (in the actor)
+    participant E as Substrate egress
+    participant C as Controller: POST /v1/actor/tools/{tool}
+    participant B as Event bus
+    R->>E: tool call, placeholder credential
+    E->>C: same call, actor identity token
+    C->>C: token → actor → run (live read)
+    C->>C: run's tool policy + Agent's SympoziumPolicy gating (live read)
+    alt permitted
+        C->>B: publish as the run (identity from the controller, not the request)
+        C-->>R: 200 result
+    else denied, not served, or not this run's actor
+        C-->>R: 403 reason / 404
+    end
+```
+
+What decides a call, all of it outside the sandbox (`internal/controller/substrate_tools.go`):
+
+- **Who is asking** is the actor in the verified token, mapped to the run
+  bound to that actor and its UID. Nothing in the request names a run.
+- **Whether it may** is the run's `spec.toolPolicy` with the Agent's
+  `SympoziumPolicy` tool gating applied, read from the API server on every
+  call. A rule added mid-run takes effect on the next call.
+- **What is published** carries the run's name, Agent and namespace as the
+  controller knows them. A channel message goes only to a channel type
+  configured on the Agent, and loses any username or icon the agent chose
+  (the same `ipc.SanitizeOutboundMessage` the in-pod bridge uses).
+- **When it stops**: a run that has reported its result, or been deleted,
+  gets a 404.
+
+The runner is told which tools exist (`ACTOR_TOOLS` in the turn) so the model
+is offered only those. That list is advice. Where the calls go is fixed by
+the actor's own frozen environment, so a turn cannot redirect them.
+
+Served so far are the tools whose in-pod path is one event on the bus:
+`send_channel_message` and `schedule_task`. Next, in order of how many runs
+they unblock:
+
+1. **MCP servers.** The same endpoint proxies a call to an `MCPServer`,
+   holding its credentials outside the sandbox. This is also the route for
+   skills: a skill's tools become an MCP server rather than a sidecar.
+2. **Delegation and sub-agents.** These wait for an answer, so the endpoint
+   needs a way to return a result later (long-poll, or resume on result).
+3. **Memory.**
+4. **Command execution.** The runner image has no shell, by design. A run
+   that needs one needs a toolbox image or a tool server; undecided.
+
+Not verified: the tool endpoint is tested against a real API server
+(`TestSubstrateToolCallsAreDecidedOutsideTheSandbox`) and at the HTTP and
+runner level, but no actor on a live Substrate install has made a tool call,
+because the runner image on the cluster predates it. The path it takes
+through Substrate's egress gateway is the one result reports already use.

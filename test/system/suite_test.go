@@ -99,6 +99,7 @@ func TestMain(m *testing.M) {
 		RunHistoryLimit: controller.DefaultRunHistoryLimit,
 		HarnessGateway:  harnessGatewayConfig(mgr.GetAPIReader()),
 		Substrate:       substrateConfig(),
+		EventBus:        toolEvents,
 	}
 	must(agentRuns.SetupWithManager(mgr))
 

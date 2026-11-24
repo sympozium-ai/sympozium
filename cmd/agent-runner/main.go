@@ -394,6 +394,9 @@ func main() {
 	var tools []ToolDef
 	if toolsEnabled {
 		tools = defaultTools()
+		if inActor() {
+			tools = actorOfferedTools(tools)
+		}
 		// Load MCP tools from manifest if the mcp-bridge sidecar is running
 		if mcpTools := loadMCPTools("/ipc/tools/mcp-tools.json"); len(mcpTools) > 0 {
 			tools = append(tools, mcpTools...)

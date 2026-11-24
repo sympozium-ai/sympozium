@@ -173,8 +173,13 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 // run at all, so a later turn cannot see an earlier turn's settings.
 func actorChildEnv(turn actorTurn) []string {
 	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + getEnv("HOME", "/tmp")}
+	// Where the turn's tool calls go. It comes from this actor's own
+	// environment, frozen in the snapshot, never from the turn.
+	if base := strings.TrimRight(os.Getenv("ACTOR_TURN_URL"), "/"); base != "" {
+		env = append(env, actorToolsURLEnv+"="+base)
+	}
 	for k, v := range turn.Env {
-		if k == "" || strings.ContainsAny(k, "=\x00") || k == "PATH" || k == "HOME" {
+		if k == "" || strings.ContainsAny(k, "=\x00") || k == "PATH" || k == "HOME" || k == actorToolsURLEnv {
 			continue
 		}
 		env = append(env, k+"="+v)
@@ -254,4 +259,67 @@ func runActor() {
 	log.Printf("actor mode: waiting for turns from %s", base)
 	loop := &actorLoop{base: base, client: newActorHTTPClient(), runTurn: runTurnAsChild, idle: 100 * time.Millisecond}
 	loop.run(ctx)
+}
+
+// Tools in an actor.
+//
+// A tool that acts outside the sandbox cannot be a file handed to a sidecar:
+// there is none. It is a request to the control plane, carrying the same
+// placeholder credential as the turn requests, which Substrate's egress
+// gateway replaces with this actor's identity. The control plane decides
+// whether the run may make the call; this process only asks.
+
+const (
+	// actorToolsURLEnv is set for a turn's runner when it is inside an actor.
+	actorToolsURLEnv = "ACTOR_TOOLS_URL"
+	actorToolPath    = "/v1/actor/tools/"
+)
+
+// inActor reports whether this runner is a turn inside a Substrate actor.
+func inActor() bool { return os.Getenv(actorToolsURLEnv) != "" }
+
+// actorOfferedTools narrows the runner's tools to the ones the control plane
+// serves this run. Every other built-in tool needs a sidecar or the node
+// network, and an actor has neither.
+func actorOfferedTools(tools []ToolDef) []ToolDef {
+	offered := map[string]bool{}
+	for _, name := range strings.Split(os.Getenv("ACTOR_TOOLS"), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			offered[name] = true
+		}
+	}
+	kept := tools[:0:0]
+	for _, t := range tools {
+		if offered[t.Name] {
+			kept = append(kept, t)
+		}
+	}
+	return kept
+}
+
+// callActorTool asks the control plane to make a tool call for this run and
+// returns what to tell the model.
+func callActorTool(ctx context.Context, tool string, args any) string {
+	body, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+	loop := &actorLoop{base: os.Getenv(actorToolsURLEnv), client: newActorHTTPClient()}
+	status, resp, err := loop.do(ctx, http.MethodPost, actorToolPath+tool, body)
+	if err != nil {
+		return fmt.Sprintf("Error: tool %s could not be reached: %v", tool, err)
+	}
+	var out struct {
+		Result string `json:"result"`
+		Error  string `json:"error"`
+	}
+	_ = json.Unmarshal(resp, &out)
+	switch {
+	case status == http.StatusOK:
+		return out.Result
+	case status == http.StatusForbidden && out.Error != "":
+		return "Error: " + out.Error
+	default:
+		return fmt.Sprintf("Error: tool %s is unavailable (status %d)", tool, status)
+	}
 }

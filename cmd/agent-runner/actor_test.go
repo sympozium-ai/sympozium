@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -79,5 +80,63 @@ func TestTailBufferKeepsTheEnd(t *testing.T) {
 	_, _ = b.Write([]byte("defg"))
 	if b.String() != "defg" {
 		t.Fatalf("tail = %q", b.String())
+	}
+}
+
+// Inside an actor a tool that acts outside the sandbox is a request to the
+// control plane carrying the placeholder credential, and the model is told
+// what the control plane decided.
+func TestActorToolIsARequestToTheControlPlane(t *testing.T) {
+	var gotPath, gotAuth, gotBody string
+	status, reply := http.StatusOK, `{"result":"Message sent to slack channel"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotPath, gotAuth, gotBody = r.URL.Path, r.Header.Get("Authorization"), string(b)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, reply)
+	}))
+	defer srv.Close()
+	t.Setenv(actorToolsURLEnv, srv.URL)
+	t.Setenv("ACTOR_TOOLS", "send_channel_message")
+
+	out := executeToolCall(context.Background(), ToolSendChannelMessage, `{"channel":"slack","text":"hi"}`)
+	if out != "Message sent to slack channel" {
+		t.Fatalf("result = %q", out)
+	}
+	if gotPath != "/v1/actor/tools/send_channel_message" || gotAuth != actorPlaceholderCredential || !strings.Contains(gotBody, `"text":"hi"`) {
+		t.Fatalf("request = %s auth=%q body=%s", gotPath, gotAuth, gotBody)
+	}
+
+	status, reply = http.StatusForbidden, `{"error":"tool \"send_channel_message\" is denied by policy"}`
+	if out := executeToolCall(context.Background(), ToolSendChannelMessage, `{"channel":"slack","text":"hi"}`); !strings.Contains(out, "denied by policy") {
+		t.Errorf("refusal reached the model as %q", out)
+	}
+
+	// A tool the run was not offered never leaves the process, and never
+	// falls back to the pod's file protocol.
+	gotPath = ""
+	for _, tool := range []string{ToolScheduleTask, ToolExecuteCommand, ToolFetchURL, ToolWriteFile} {
+		if out := executeToolCall(context.Background(), tool, `{"name":"n","action":"delete","command":"id","url":"http://x","path":"/tmp/x","content":"y"}`); !strings.Contains(out, "not available") {
+			t.Errorf("%s: %q, want it refused", tool, out)
+		}
+	}
+	if gotPath != "" {
+		t.Errorf("an unoffered tool made a request to %s", gotPath)
+	}
+}
+
+// The turn cannot redirect tool calls: where they go is fixed by the actor's
+// own environment.
+func TestTurnCannotRedirectToolCalls(t *testing.T) {
+	t.Setenv("ACTOR_TURN_URL", "http://controller.svc:8090/")
+	env := actorChildEnv(actorTurn{Env: map[string]string{actorToolsURLEnv: "http://attacker.example", "TASK": "t"}})
+	var urls []string
+	for _, kv := range env {
+		if strings.HasPrefix(kv, actorToolsURLEnv+"=") {
+			urls = append(urls, kv)
+		}
+	}
+	if len(urls) != 1 || urls[0] != actorToolsURLEnv+"=http://controller.svc:8090" {
+		t.Fatalf("%s = %v, want only the actor's own turn endpoint", actorToolsURLEnv, urls)
 	}
 }

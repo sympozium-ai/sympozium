@@ -265,15 +265,26 @@ harnessGateway:
   affinity: {}
 
 # -- Agent Substrate execution backend. EXPERIMENTAL and off by default.
-# Enabling it changes no run: only an AgentRun with `spec.backend: substrate`
-# executes as a Substrate actor, and such a run on a release without this
-# block is refused (SUBSTRATE_NOT_CONFIGURED), never run as a Job. Needs an
+# Enabled, with `default: true`, it is the execution plane of every AgentRun
+# that names no backend and that it can execute; a run it cannot execute yet
+# (skills, MCP servers, memory, delegation, enduring runs) runs as a Job as
+# before and says why in its DefaultExecutionPlane condition. An AgentRun
+# with `spec.backend: substrate` always asks for an actor: it is refused, not
+# run as a Job, if it cannot have one, and on a release without this block
+# (SUBSTRATE_NOT_CONFIGURED). Needs an
 # Agent Substrate install (not deployed by this chart) and
 # harnessGateway.enabled, because an actor reaches its model only through the
 # gateway, which adds the Agent's key outside the sandbox.
 # See docs/design/substrate-backend.md.
 substrate:
   enabled: false
+  # -- Make Substrate the execution plane of runs that set no spec.backend.
+  # false leaves every such run a Job; only `spec.backend: substrate` runs
+  # are then actors. A run on Substrate is offered only the tools the
+  # controller serves it (send_channel_message, schedule_task): it has no
+  # fetch_url, file tools or execute_command, because an actor has no network
+  # but its two gateways.
+  default: true
   # -- REQUIRED acknowledgement, false by default. Substrate's egress gateway
   # reaches the model gateway and the controller's turn endpoint over
   # clear-text HTTP inside the cluster: it verifies upstream certificates

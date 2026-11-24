@@ -51,6 +51,10 @@ type Settings struct {
 	// It is only safe on a CNI that enforces NetworkPolicy: see
 	// PlaintextHopWarning.
 	AllowPlaintextGatewayHop bool
+
+	// Default makes Substrate the execution plane of runs that name no
+	// backend (controller only). On unless SUBSTRATE_DEFAULT is false.
+	Default bool
 }
 
 // PlaintextHopWarning is logged by the controller and the model gateway when
@@ -94,6 +98,14 @@ func SettingsFromEnv(getenv func(string) string) (*Settings, error) {
 			return nil, fmt.Errorf("SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP: %q is not true or false", v)
 		}
 		s.AllowPlaintextGatewayHop = allow
+	}
+	s.Default = true
+	if v := getenv("SUBSTRATE_DEFAULT"); v != "" {
+		def, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("SUBSTRATE_DEFAULT: %q is not true or false", v)
+		}
+		s.Default = def
 	}
 	if s.JWKSURL == "" {
 		s.JWKSURL = strings.TrimRight(s.Issuer, "/") + "/openid/v1/jwks"
