@@ -40,6 +40,8 @@ type countingSubstrate struct {
 	// onSuspend runs inside SuspendActor, so a test can see what existed at
 	// the moment the turn was stopped.
 	onSuspend func()
+	// noUID makes CreateActor return actors without a UID.
+	noUID bool
 }
 
 func newCountingSubstrate() *countingSubstrate {
@@ -96,6 +98,9 @@ func (f *countingSubstrate) CreateActor(_ context.Context, atespace, name, _ str
 	f.seq++
 	f.created++
 	a := &substrate.Actor{Atespace: atespace, Name: name, UID: fmt.Sprintf("actor-uid-%d", f.seq), State: substrate.StateSuspended}
+	if f.noUID {
+		a.UID = ""
+	}
 	f.actors[key] = a
 	return *a, true, nil
 }
@@ -576,6 +581,78 @@ func TestSubstrateStartReplayAfterCompletionChangesNothing(t *testing.T) {
 	}
 	if after.Status.Substrate.ReceiptDigest != done.Status.Substrate.ReceiptDigest {
 		t.Errorf("the receipt changed")
+	}
+}
+
+// The turn belongs to one actor, by UID. Once the UID is on the run's status
+// a token for the same name is the run's only if it carries that UID: one
+// with none, or with another (an actor deleted and created again under the
+// name), neither claims the turn nor completes it. Before the UID is
+// recorded the run is not Running, and nothing is claimable at all.
+func TestSubstrateTurnIsHeldToTheRecordedActorUID(t *testing.T) {
+	ctx := context.Background()
+	r, run, api := substrateUnit(t, nil)
+	api.failNext["CreateActor"] = 1
+	turns := r.SubstrateTurns()
+	result := substrate.TurnResult{ID: string(run.UID), Result: json.RawMessage(`{"status":"success","response":"done"}`)}
+	named := func(uid string) substrate.ActorRef {
+		return substrate.ActorRef{Atespace: run.Namespace, Name: run.Name, UID: uid}
+	}
+	refused := func(when string, actor substrate.ActorRef) {
+		t.Helper()
+		if _, ok, err := turns.Claim(ctx, actor); ok || err != nil {
+			t.Errorf("%s: claim ok=%v err=%v, want refused", when, ok, err)
+		}
+		if err := turns.Complete(ctx, actor, result); !errors.Is(err, substrate.ErrNoSuchTurn) {
+			t.Errorf("%s: complete err=%v, want ErrNoSuchTurn", when, err)
+		}
+	}
+
+	bound := reconcileUntil(t, r, run, func(run *sympoziumv1alpha1.AgentRun) bool { return run.Status.Substrate != nil })
+	if bound.Status.Substrate.ActorUID != "" || isRunning(bound) {
+		t.Fatalf("want a bound run with no actor yet: phase %q substrate %+v", bound.Status.Phase, bound.Status.Substrate)
+	}
+	refused("before the UID is recorded, a token with no UID", named(""))
+	refused("before the UID is recorded, a token with a UID", named("actor-uid-1"))
+
+	stored := reconcileUntil(t, r, run, isRunning)
+	uid := stored.Status.Substrate.ActorUID
+	if uid == "" {
+		t.Fatal("a Running run has no recorded actor UID")
+	}
+	refused("a token with no UID", named(""))
+	refused("a token with a different UID", named("not-"+uid))
+
+	turn, ok, err := turns.Claim(ctx, named(uid))
+	if err != nil || !ok || turn.ID != string(run.UID) {
+		t.Fatalf("the run's actor: claim %+v ok=%v err=%v", turn, ok, err)
+	}
+	// Claiming changed nothing for the others.
+	refused("after the claim, a token with no UID", named(""))
+	refused("after the claim, a token with a different UID", named("not-"+uid))
+	var untouched sympoziumv1alpha1.AgentRun
+	if err := r.Get(ctx, client.ObjectKeyFromObject(run), &untouched); err != nil {
+		t.Fatal(err)
+	}
+	if untouched.Status.Substrate.Outcome != nil {
+		t.Fatalf("a refused post was recorded: %+v", untouched.Status.Substrate.Outcome)
+	}
+	if err := turns.Complete(ctx, named(uid), result); err != nil {
+		t.Fatalf("the run's actor: complete: %v", err)
+	}
+}
+
+// An actor the Control API returns without a UID cannot be held to anything,
+// so the run fails instead of becoming Running.
+func TestSubstrateRunFailsOnAnActorWithoutAUID(t *testing.T) {
+	r, run, api := substrateUnit(t, nil)
+	api.noUID = true
+	failed := reconcileUntil(t, r, run, isTerminal)
+	if failed.Status.Phase != sympoziumv1alpha1.AgentRunPhaseFailed || !strings.Contains(failed.Status.Error, "without a UID") {
+		t.Fatalf("phase %s error %q", failed.Status.Phase, failed.Status.Error)
+	}
+	if n := api.count("ResumeActor"); n != 0 {
+		t.Errorf("the actor was resumed %d times", n)
 	}
 }
 

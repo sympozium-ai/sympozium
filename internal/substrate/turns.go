@@ -181,14 +181,14 @@ func (v *JWTVerifier) Verify(ctx context.Context, token string) (ActorRef, error
 	return ActorRef{Atespace: parts[1], Name: parts[2], UID: extra.Actor.UID}, nil
 }
 
-// VerifyActor is Verify for callers that only need the actor's name, such as
-// the harness gateway, which compares it with the actor a run is bound to.
-func (v *JWTVerifier) VerifyActor(ctx context.Context, token string) (string, error) {
-	actor, err := v.Verify(ctx, token)
+// VerifyActor is Verify for the harness gateway, which compares the actor's
+// name and UID with the actor a run is bound to.
+func (v *JWTVerifier) VerifyActor(ctx context.Context, token string) (actor, uid string, err error) {
+	ref, err := v.Verify(ctx, token)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return actor.String(), nil
+	return ref.String(), ref.UID, nil
 }
 
 // TurnHandler serves the turn endpoint.

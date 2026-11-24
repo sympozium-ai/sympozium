@@ -356,6 +356,11 @@ func (b substrateBackend) Start(ctx context.Context, log logr.Logger, run *sympo
 	if st.ActorUID != "" && actor.UID != st.ActorUID {
 		return ctrl.Result{}, r.failRun(ctx, run, "the run's actor was replaced")
 	}
+	if actor.UID == "" {
+		// The UID is what the turn endpoint and the model gateway hold an
+		// actor JWT to. A run without one could never be served.
+		return ctrl.Result{}, r.failRun(ctx, run, "backend substrate returned an actor without a UID")
+	}
 	// Default deny: these two are everything the actor can reach. The JWT
 	// goes wherever this provider's client sends its key. An actor has one
 	// egress policy, replaced whole, so a replay sets the same policy again.
@@ -782,8 +787,11 @@ func (s *SubstrateTurns) runFor(ctx context.Context, reader client.Reader, actor
 	if st == nil || st.Atespace != actor.Atespace || st.Actor != actor.Name || run.DeletionTimestamp != nil {
 		return nil, false
 	}
-	// An actor deleted and created again under the same name is not the run's.
-	if st.ActorUID != "" && actor.UID != "" && st.ActorUID != actor.UID {
+	// An actor deleted and created again under the same name is not the run's,
+	// and a token that does not say which actor it is cannot show otherwise:
+	// once the UID is recorded, only a token carrying that UID is the run's.
+	// Before it is recorded the run is not Running, so nothing is claimable.
+	if st.ActorUID != "" && actor.UID != st.ActorUID {
 		return nil, false
 	}
 	return &run, true

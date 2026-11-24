@@ -91,9 +91,10 @@ type ProfileSource interface {
 }
 
 // ActorVerifier turns a bearer credential into the Substrate actor it names,
-// as <atespace>/<name>.
+// as <atespace>/<name>, and that actor's UID. The UID is empty when the
+// credential carries none; the gateway refuses such a credential.
 type ActorVerifier interface {
-	VerifyActor(ctx context.Context, token string) (string, error)
+	VerifyActor(ctx context.Context, token string) (actor, uid string, err error)
 }
 
 // Gateway swaps a run token for the run's model key.
@@ -265,6 +266,18 @@ func (g *Gateway) tokenSecret(ctx context.Context, r *http.Request, run *api.Age
 		if g.Actors == nil {
 			return nil, false
 		}
+		// The name alone would also admit an actor deleted and created again
+		// under it. The controller records the actor's UID on the run's status
+		// in the same update that makes the run Running, before it wakes the
+		// actor, so the run's own actor never calls before the UID is there.
+		// No recorded UID, or a JWT without one, is a refusal.
+		boundUID := ""
+		if st := run.Status.Substrate; st != nil && st.Atespace+"/"+st.Actor == bound {
+			boundUID = st.ActorUID
+		}
+		if boundUID == "" {
+			return nil, false
+		}
 		// The JWT arrives wherever the provider's client puts its key.
 		places := []Auth{{Header: "Authorization", Prefix: "Bearer "}}
 		if profile != nil {
@@ -275,8 +288,10 @@ func (g *Gateway) tokenSecret(ctx context.Context, r *http.Request, run *api.Age
 			if !ok || presented == "" {
 				continue
 			}
-			actor, err := g.Actors.VerifyActor(ctx, presented)
-			if err == nil && subtle.ConstantTimeCompare([]byte(actor), []byte(bound)) == 1 {
+			actor, uid, err := g.Actors.VerifyActor(ctx, presented)
+			if err == nil && uid != "" &&
+				subtle.ConstantTimeCompare([]byte(actor), []byte(bound)) == 1 &&
+				subtle.ConstantTimeCompare([]byte(uid), []byte(boundUID)) == 1 {
 				return &secret, true
 			}
 		}

@@ -23,6 +23,7 @@ import (
 	api "github.com/sympozium-ai/sympozium/api/v1alpha1"
 	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
 	"github.com/sympozium-ai/sympozium/internal/modelkey"
+	"github.com/sympozium-ai/sympozium/internal/substrate"
 )
 
 // The key path (checkpoint 3). The harness gateway is the real one; what it
@@ -107,6 +108,18 @@ profiles:
 type staticProfiles struct{ set *harnessgateway.Set }
 
 func (s staticProfiles) Load(context.Context) (*harnessgateway.Set, error) { return s.set, nil }
+
+// recordActor records the UID of the actor Substrate created for the run, as
+// the controller does on the run's status. The gateway refuses the actor's
+// JWT until it is there.
+func (k *keyPath) recordActor(ctx context.Context, run string, actor substrate.Actor) error {
+	var agentRun api.AgentRun
+	if err := k.objects.Get(ctx, types.NamespacedName{Namespace: keyPathNamespace, Name: run}, &agentRun); err != nil {
+		return err
+	}
+	agentRun.Status.Substrate = &api.SubstrateStatus{Atespace: actor.Atespace, Actor: actor.Name, ActorUID: actor.UID}
+	return k.objects.Status().Update(ctx, &agentRun)
+}
 
 // bind records a Running AgentRun for the Agent and binds it to one actor, as
 // the controller will when it starts a run on Substrate.

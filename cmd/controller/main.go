@@ -258,6 +258,9 @@ func main() {
 				os.Exit(1)
 			}
 			setupLog.Info("Agent Substrate backend enabled (experimental; clear-text hop acknowledged)", "api", substrateSettings.APIEndpoint, "turnEndpoint", substrateSettings.TurnListen)
+			// The controller cannot see what the CNI enforces, so it says
+			// this on every start with the acknowledgement set.
+			setupLog.Info(substrate.PlaintextHopWarning, "turnEndpoint", substrateSettings.TurnListen)
 		}
 	}
 	if err := agentRunReconciler.SetupWithManager(mgr); err != nil {

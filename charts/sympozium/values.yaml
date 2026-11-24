@@ -285,6 +285,15 @@ substrate:
   # opened, and no Service or NetworkPolicy rule for them is rendered. Set it
   # to true only where that hop is protected some other way (a mesh, an
   # encrypted CNI) or accepted.
+  #
+  # ONLY SAFE ON A CNI THAT ENFORCES NetworkPolicy (e.g. Calico, Cilium). The
+  # NetworkPolicy rule this chart renders is what keeps other pods off the
+  # model gateway's clear-text actor listener. On a CNI that does not enforce
+  # NetworkPolicy (e.g. flannel) that rule does nothing: anything in the
+  # cluster can reach the clear-text listeners, and nothing confines the hop
+  # that carries the actor JWTs and prompts. The controller's turn endpoint
+  # has no NetworkPolicy from this chart on any CNI; add one for the
+  # controller pods if your cluster allows it.
   allowPlaintextGatewayHop: false
   # -- agent-runner image actors run, pinned by digest (repo@sha256:...). It
   # is frozen into Substrate's golden snapshot, so a tag is refused.

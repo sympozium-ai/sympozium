@@ -200,9 +200,12 @@ func main() {
 		}
 		start := time.Now()
 
-		_, _, err := c.CreateActor(ctx, ref.Atespace, ref.Name, tpl.Name)
+		created, _, err := c.CreateActor(ctx, ref.Atespace, ref.Name, tpl.Name)
 		must(err)
 		it.CreateMs = ms(time.Since(start))
+		if keys != nil {
+			must(keys.recordActor(ctx, it.Run, created))
+		}
 
 		t := time.Now()
 		must(c.SetEgress(ctx, ref.Atespace, ref.Name, []substrate.EgressTarget{{Hostname: *publicHost, Port: int32(*publicPort), ActorJWTAudience: *audience}}))

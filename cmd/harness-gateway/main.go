@@ -110,6 +110,9 @@ func run() error {
 				IdleTimeout:       2 * time.Minute,
 				MaxHeaderBytes:    64 << 10,
 			}
+			// The gateway cannot see what the CNI enforces, so it says this
+			// on every start with the acknowledgement set.
+			fmt.Fprintf(os.Stderr, "harness-gateway: %s (actor listener %s)\n", substrate.PlaintextHopWarning, actorServer.Addr)
 		} else {
 			fmt.Fprintln(os.Stderr, "harness-gateway: Agent Substrate is configured, but the clear-text actor listener stays closed until SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP=true")
 		}

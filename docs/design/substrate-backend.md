@@ -81,7 +81,7 @@ sequenceDiagram
     C->>C: status.substrate = {atespace, actor}
     C->>C: key binding for this actor
     C->>S: create actor, egress policy
-    C->>C: phase = Running
+    C->>C: phase = Running, status.substrate.actorUID
     C->>S: resume actor
     S-->>A: restored from snapshot (~0.2 s)
     A->>E: GET /v1/actor/turn (placeholder credential)
@@ -89,7 +89,7 @@ sequenceDiagram
     C-->>A: turn: task, model, gateway URL
     A->>E: model call (placeholder credential)
     E->>G: same request + actor JWT
-    G->>G: actor → run → Agent → key
+    G->>G: actor (name and UID) → run → Agent → key
     G->>P: request + the Agent's key
     P-->>A: response
     A->>E: POST /v1/actor/turn/result
@@ -132,11 +132,26 @@ placeholder unreplaced is refused.
 The controller writes `status.substrate` (`atespace`, `actor`) before it
 creates anything. The atespace is the run's namespace and the actor is the
 run's name, so the actor's identity (`actor/<namespace>/<run>`) leads
-straight to the run with no lookup table. The turn endpoint then checks that
-the run's status names that actor, with that actor's UID, before handing
-over the turn. An actor deleted and created again under the same name is not
-the run's actor. The API server refuses a status update that would move a run
-to another actor.
+straight to the run with no lookup table. The API server refuses a status
+update that would move a run to another actor.
+
+A name can be reused, so the name is not the whole identity. When the
+controller has created the actor it records the actor's UID in
+`status.substrate.actorUID`, in the same status update that makes the run
+`Running`, and only then resumes the actor. Substrate puts the same UID in
+every JWT it mints for that actor. From then on **both receivers hold a JWT
+to the recorded UID**:
+
+- The turn endpoint hands over the turn, and accepts the result, only for a
+  JWT whose actor name *and* UID are the ones on the run's status. A JWT
+  that carries no UID is refused, and so is one that carries another UID: an
+  actor deleted and created again under the same name is not the run's
+  actor. Before the UID is recorded the run is not `Running`, so there is
+  nothing to claim.
+- The model gateway makes the same check before it adds the key (below).
+
+An actor that Substrate returns without a UID fails the run instead of
+starting it.
 
 ### The key is added outside the sandbox
 
@@ -149,9 +164,11 @@ no token. The model gateway reads it on every call:
 flowchart LR
     R["Request to<br/>/runs/&lt;ns&gt;/&lt;run&gt;/..."] --> V{"JWT valid for<br/>Substrate's issuer<br/>and our audience?"}
     V -- no --> X["401"]
-    V -- yes --> B{"Actor in the JWT is the<br/>actor bound to this run?"}
+    V -- yes --> B{"Actor named in the JWT is the<br/>actor bound to this run?"}
     B -- no --> X
-    B -- yes --> L{"Run Pending or Running?"}
+    B -- yes --> U{"JWT carries a UID, and it is<br/>status.substrate.actorUID?"}
+    U -- "no UID, another UID,<br/>or none recorded" --> X
+    U -- yes --> L{"Run Pending or Running?"}
     L -- no --> F["403"]
     L -- yes --> O{"Agent still owns the key,<br/>same UIDs, key pinned<br/>to this origin?"}
     O -- no --> F
@@ -161,6 +178,16 @@ flowchart LR
 The path names the run, but the path is chosen by the caller. What decides
 is the binding the controller wrote. An actor that calls another run's path
 gets a 401, which is what a wrong token gets.
+
+The binding Secret names the actor; the run's status says *which* actor of
+that name, by UID. The gateway reads both: it already reads the run on every
+call, uncached, for the phase check, and takes `status.substrate.actorUID`
+from that same read. The JWT's UID must equal it. A JWT with no UID, a JWT
+with another UID (the name reused by a new actor), and a run with no
+recorded UID are all a 401, and no provider call is made. Because the
+controller writes the UID before it resumes the actor, the run's own actor
+never calls before the UID is there, and there is no second copy of the UID
+that could lag behind the first.
 
 These are the checks every gateway-mediated run passes, and the same code
 makes them:
@@ -234,8 +261,9 @@ How it meets the seam's contract:
 Everything the actor sends is written by an LLM-driven process.
 
 - A request body is capped at 5 MiB.
-- A result is accepted only from the run's own actor, for the run's own UID,
-  while the run is Running, and only once. A second post, identical or not,
+- A result is accepted only from the run's own actor (by name and by the
+  recorded actor UID; a JWT without a UID is not accepted), for the run's own
+  UID, while the run is Running, and only once. A second post, identical or not,
   is refused and changes nothing.
 - A result document over 256 KiB, or one that is not valid JSON, is dropped.
 - The result is interpreted by the same function that reads a Job pod's
@@ -254,7 +282,7 @@ Everything is under `substrate:` in `charts/sympozium/values.yaml`. With
 | Value | Default | Meaning |
 |---|---|---|
 | `substrate.enabled` | `false` | Wire the controller and the model gateway to a Substrate install. Needs `harnessGateway.enabled`; the chart fails to render without it. |
-| `substrate.allowPlaintextGatewayHop` | `false` | The acknowledgement of [the clear-text hop](#the-clear-text-hop). While `false`, every run is refused and no listener, Service or NetworkPolicy rule for actors exists. |
+| `substrate.allowPlaintextGatewayHop` | `false` | The acknowledgement of [the clear-text hop](#the-clear-text-hop). While `false`, every run is refused and no listener, Service or NetworkPolicy rule for actors exists. **Only safe on a CNI that enforces NetworkPolicy** (for example Calico or Cilium): on one that does not (for example flannel) anything in the cluster can reach the clear-text listeners. |
 | `substrate.runnerImage` | `""` | agent-runner image actors run. Required, and must be pinned by digest. |
 | `substrate.controlAPI.endpoint` | `""` | Control API `host:port`. Required. |
 | `substrate.controlAPI.serverName` | `""` | Name in the Control API's certificate, if it differs from the host. |
@@ -298,7 +326,7 @@ configured when `SUBSTRATE_JWT_ISSUER` is set.
 | `SUBSTRATE_JWKS_SERVER_NAME` | both | Name in the key set server's certificate, if it differs from the URL |
 | `SUBSTRATE_JWT_AUDIENCE` | both | Audience actor JWTs are minted for and checked against. Default: `sympozium` |
 | `SUBSTRATE_CA_FILE` | both | CA bundle for Substrate's serving certificates |
-| `SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP` | both | `true` acknowledges the clear-text hop. Anything else keeps the actor listeners closed and refuses every run; a value that is not a boolean stops the process |
+| `SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP` | both | `true` acknowledges the clear-text hop, and is only safe on a CNI that enforces NetworkPolicy; both processes log a warning saying so at start. Anything else keeps the actor listeners closed and refuses every run; a value that is not a boolean stops the process |
 | `SUBSTRATE_API_ENDPOINT` | controller | Control API `host:port` |
 | `SUBSTRATE_API_SERVER_NAME` | controller | Name in the Control API's certificate |
 | `SUBSTRATE_TOKEN_FILE` | controller | Bearer token for the Control API; re-read on every call |
@@ -493,6 +521,39 @@ So the hop is **gated, not hidden**:
   service mesh or an encrypting CNI between Substrate's egress gateway and
   the Sympozium namespace) or that the exposure is accepted.
 
+**The flag is only safe on a CNI that enforces NetworkPolicy** (for example
+Calico or Cilium). The NetworkPolicy rule the chart renders is the only
+thing that keeps other pods off the model gateway's clear-text actor
+listener: it admits Substrate's egress gateway namespace on that port and
+nobody else. A NetworkPolicy is a request to the CNI, and a CNI that does not
+implement it (for example flannel on its own) accepts the object and
+enforces nothing. On such a cluster, with the flag set:
+
+- anything in the cluster can open a connection to the clear-text actor
+  listener and to the turn endpoint;
+- nothing confines the hop that carries the actor JWTs and the runs'
+  prompts and responses in clear text to Substrate's egress gateway and the
+  two Sympozium endpoints.
+
+Both listeners still refuse a request without a valid actor JWT for the
+run's recorded actor, so reaching them is not the same as using them. But a
+JWT that is read off the hop can be replayed, from anywhere that reaches the
+listener, for the rest of its five minutes, and on a non-enforcing CNI that
+is anywhere in the cluster. Neither the controller nor the gateway can tell
+what the CNI enforces, so both log a warning at start whenever the flag is
+set.
+
+The turn endpoint is weaker still: the chart renders no NetworkPolicy for
+the controller (see [Security](#security)), so on any CNI the turn endpoint
+is reachable by every pod, and only the actor JWT check stands in front of
+it. On an enforcing CNI, add a policy for the controller pods that admits
+Substrate's egress gateway on the turn port.
+
+NetworkPolicy limits who can connect. It does not encrypt: on any CNI the
+hop is readable by whatever sits on the path between the egress gateway and
+the two endpoints (the nodes, and anything with host-network access to
+them).
+
 Closing it properly needs one of: an upstream trust bundle option in
 Substrate's egress gateway, a publicly trusted certificate on the model
 gateway and the turn endpoint, or a mesh on that hop. Once both endpoints can
@@ -508,7 +569,14 @@ longer needed (`SubstrateEndpoint.TLS`).
   scope no wider than the actors, templates and egress policies of the
   namespaces Sympozium runs in.
 - The turn endpoint has no NetworkPolicy of its own, because the controller
-  has none. It accepts nothing without a valid actor JWT.
+  has none. It accepts nothing without a valid actor JWT that carries the
+  UID of the run's recorded actor.
+- The NetworkPolicy rule on the gateway's actor port only exists where the
+  CNI enforces NetworkPolicy. See [the clear-text hop](#the-clear-text-hop).
+- The live runs in the evidence notes were on a cluster whose CNI (flannel)
+  does not enforce NetworkPolicy, with the controller and gateway out of
+  cluster, so the NetworkPolicy rule has only been checked as rendered YAML,
+  never as an enforced policy.
 
 ### Scale
 

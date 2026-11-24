@@ -47,8 +47,21 @@ type Settings struct {
 	// five-minute JWT for one actor and one audience, and the run's prompts
 	// and responses. Without the acknowledgement the backend refuses every
 	// run and neither clear-text listener is opened.
+	//
+	// It is only safe on a CNI that enforces NetworkPolicy: see
+	// PlaintextHopWarning.
 	AllowPlaintextGatewayHop bool
 }
+
+// PlaintextHopWarning is logged by the controller and the model gateway when
+// the clear-text hop is acknowledged. Nothing in either process can tell
+// whether the cluster's CNI enforces NetworkPolicy, so the operator is told
+// every time.
+const PlaintextHopWarning = "WARNING: SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP=true (chart: substrate.allowPlaintextGatewayHop) " +
+	"is only safe on a CNI that enforces NetworkPolicy (for example Calico or Cilium). " +
+	"The clear-text listeners for Substrate actors are open, and NetworkPolicy is what keeps other workloads off them. " +
+	"On a CNI that does not enforce it (for example flannel) anything in the cluster can reach those listeners, " +
+	"and nothing confines the hop that carries actor JWTs and the runs' prompts and responses in clear text"
 
 // SettingsFromEnv reads SUBSTRATE_* variables. It returns nil when
 // SUBSTRATE_JWT_ISSUER is unset: Substrate is not configured.

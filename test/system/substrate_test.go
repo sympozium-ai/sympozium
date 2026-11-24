@@ -247,14 +247,15 @@ func (f *fakeSubstrate) statsFor(key string) actorStats {
 
 func (f *fakeSubstrate) wasDeleted(key string) bool { return f.statsFor(key).deletes > 0 }
 
-// actorJWTs stands in for Substrate's issuer at the model gateway.
-type actorJWTs map[string]string
+// actorJWTs stands in for Substrate's issuer at the model gateway: each
+// token is an actor, with the UID its JWT carries (or none).
+type actorJWTs map[string]substrate.ActorRef
 
-func (a actorJWTs) VerifyActor(_ context.Context, token string) (string, error) {
+func (a actorJWTs) VerifyActor(_ context.Context, token string) (string, string, error) {
 	if actor, ok := a[token]; ok {
-		return actor, nil
+		return actor.String(), actor.UID, nil
 	}
-	return "", errors.New("not an actor JWT")
+	return "", "", errors.New("not an actor JWT")
 }
 
 func substrateAgent(ns, name string) *sympoziumv1alpha1.Agent {
@@ -454,11 +455,13 @@ func TestSubstrateRunExecutesAsAnActorWithoutTheKey(t *testing.T) {
 		t.Errorf("the key is pinned to %q, want the operator profile's upstream %s", modelkey.PinnedOrigin(&key), providerStub.URL)
 	}
 
-	// Nobody else gets the turn: another actor, or a new actor of this name.
+	// Nobody else gets the turn: another actor, a new actor of this name,
+	// or a token that does not say which actor of this name it is.
 	for name, other := range map[string]substrate.ActorRef{
 		"another actor":       {Atespace: ns, Name: "someone-else", UID: "x"},
 		"another namespace":   {Atespace: "default", Name: "sub-run", UID: st.ActorUID},
 		"a replacement actor": {Atespace: ns, Name: "sub-run", UID: "not-" + st.ActorUID},
+		"a token with no UID": {Atespace: ns, Name: "sub-run"},
 	} {
 		if _, ok, _ := turns.Claim(testCtx, other); ok {
 			t.Errorf("%s claimed the run's turn", name)
@@ -471,9 +474,20 @@ func TestSubstrateRunExecutesAsAnActorWithoutTheKey(t *testing.T) {
 
 	// The real model gateway, reading what the controller wrote: the run's
 	// actor gets the Agent's key added; any other caller is refused.
-	call := actorGateway(t, actorJWTs{"jwt-self": actorKey, "jwt-other": ns + "/someone-else"})
+	call := actorGateway(t, actorJWTs{
+		"jwt-self":      self,
+		"jwt-other":     {Atespace: ns, Name: "someone-else", UID: st.ActorUID},
+		"jwt-no-uid":    {Atespace: ns, Name: "sub-run"},
+		"jwt-recreated": {Atespace: ns, Name: "sub-run", UID: "not-" + st.ActorUID},
+	})
 	if status := call(ns, "sub-run", "jwt-other"); status != http.StatusUnauthorized {
 		t.Errorf("another actor on this run's path: status %d, want 401", status)
+	}
+	if status := call(ns, "sub-run", "jwt-no-uid"); status != http.StatusUnauthorized {
+		t.Errorf("a JWT with no actor UID: status %d, want 401", status)
+	}
+	if status := call(ns, "sub-run", "jwt-recreated"); status != http.StatusUnauthorized {
+		t.Errorf("a recreated actor of the same name: status %d, want 401", status)
 	}
 	if status := call(ns, "sub-run", "substrate-actor"); status != http.StatusUnauthorized {
 		t.Errorf("unreplaced placeholder: status %d, want 401", status)
@@ -851,7 +865,7 @@ func TestSubstrateRunTimedOutIsCancelledThenReleased(t *testing.T) {
 	t.Cleanup(func() { _ = k8sClient.Delete(testCtx, run) })
 
 	running := waitPhase(t, run, sympoziumv1alpha1.AgentRunPhaseRunning)
-	call := actorGateway(t, actorJWTs{"jwt-slow": actorKey})
+	call := actorGateway(t, actorJWTs{"jwt-slow": {Atespace: ns, Name: "sub-slow", UID: running.Status.Substrate.ActorUID}})
 	if status := call(ns, "sub-slow", "jwt-slow"); status != http.StatusOK {
 		t.Fatalf("while Running the actor got status %d, want 200", status)
 	}
@@ -902,9 +916,9 @@ func TestSubstrateRunDeletedWhileRunningIsCancelledThenReleased(t *testing.T) {
 	if err := k8sClient.Create(testCtx, run); err != nil {
 		t.Fatal(err)
 	}
-	waitPhase(t, run, sympoziumv1alpha1.AgentRunPhaseRunning)
+	running := waitPhase(t, run, sympoziumv1alpha1.AgentRunPhaseRunning)
 	pollUntil(t, 10*time.Second, 50*time.Millisecond, func() bool { return substrateAPI.statsFor(actorKey).resumes > 0 })
-	call := actorGateway(t, actorJWTs{"jwt-cancelled": actorKey})
+	call := actorGateway(t, actorJWTs{"jwt-cancelled": {Atespace: ns, Name: "sub-cancelled", UID: running.Status.Substrate.ActorUID}})
 	if err := k8sClient.Delete(testCtx, run); err != nil {
 		t.Fatal(err)
 	}

@@ -130,6 +130,15 @@ idle cost was not measured for comparison.
 - The controller and gateway binaries were not deployed; their wiring
   (`cmd/controller`, `cmd/harness-gateway`) compiles and the same code ran
   in one process in `hack/substrate-e2e`.
+- **The NetworkPolicy guard on the clear-text hop.** The framework cluster's
+  CNI is flannel, which does not enforce NetworkPolicy, and the controller
+  and gateway ran out of cluster, so no NetworkPolicy for the clear-text
+  listeners was deployed, let alone enforced. Nothing here shows that other
+  workloads are kept off those listeners. Acknowledging the clear-text hop
+  (`substrate.allowPlaintextGatewayHop`) is only safe on a CNI that enforces
+  NetworkPolicy (for example Calico or Cilium): on flannel anything in the
+  cluster can reach the listeners, and nothing confines the hop that carries
+  the actor JWTs and prompts.
 - The runner's drain-signal handling was added after the measured image was
   built and has not run in an actor.
 - No chart values exist for any of this.

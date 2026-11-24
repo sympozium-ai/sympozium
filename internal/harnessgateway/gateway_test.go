@@ -1232,15 +1232,25 @@ func TestAnOriginBelongsToItsProfile(t *testing.T) {
 	}
 }
 
-// actorTokens stands in for Substrate's issuer: each token names an actor.
-type actorTokens map[string]string
+// actorTokens stands in for Substrate's issuer: each token names an actor
+// and carries that actor's UID, or none.
+type actorTokens map[string]actorIdentity
 
-func (a actorTokens) VerifyActor(_ context.Context, token string) (string, error) {
+type actorIdentity struct{ name, uid string }
+
+func (a actorTokens) VerifyActor(_ context.Context, token string) (string, string, error) {
 	actor, ok := a[token]
 	if !ok {
-		return "", errors.New("not an actor JWT")
+		return "", "", errors.New("not an actor JWT")
 	}
-	return actor, nil
+	return actor.name, actor.uid, nil
+}
+
+// bindActor binds the run to an actor as the controller does: the name on the
+// binding Secret, and the actor with its UID on the run's status.
+func (f *fixture) bindActor(atespace, name, uid string) {
+	f.token.Annotations[ActorAnnotation] = atespace + "/" + name
+	f.run.Status.Substrate = &api.SubstrateStatus{Atespace: atespace, Actor: name, ActorUID: uid}
 }
 
 func (f *fixture) serveActors(t *testing.T, set *Set, actors ActorVerifier) *httptest.Server {
@@ -1265,8 +1275,8 @@ func (f *fixture) serveActors(t *testing.T, set *Set, actors ActorVerifier) *htt
 func TestActorBoundRunIsIdentifiedOnlyByItsActor(t *testing.T) {
 	upstream, got := recordingUpstream(t, "ok")
 	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
-	f.token.Annotations[ActorAnnotation] = "space/run-a"
-	actors := actorTokens{"jwt-a": "space/run-a", "jwt-b": "space/run-b"}
+	f.bindActor("space", "run-a", "uid-a")
+	actors := actorTokens{"jwt-a": {"space/run-a", "uid-a"}, "jwt-b": {"space/run-b", "uid-b"}}
 	gateway := f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actors)
 	const path = "/runs/ns/run/v1/chat/completions"
 
@@ -1295,10 +1305,71 @@ func TestActorBoundRunIsIdentifiedOnlyByItsActor(t *testing.T) {
 	}
 }
 
+// The binding names an actor; the run's status says which actor of that name.
+// A JWT for the same name is the run's only if it carries that UID: an actor
+// deleted and created again under the name has another, and a JWT with none
+// cannot show which it is.
+func TestActorBoundRunRequiresTheRecordedActorUID(t *testing.T) {
+	upstream, got := recordingUpstream(t, "ok")
+	actors := actorTokens{
+		"jwt-a":           {"space/run-a", "uid-a"},
+		"jwt-no-uid":      {"space/run-a", ""},
+		"jwt-recreated":   {"space/run-a", "uid-a2"},
+		"jwt-other-actor": {"space/run-b", "uid-a"},
+	}
+	const path = "/runs/ns/run/v1/chat/completions"
+	serve := func(bind func(f *fixture)) *httptest.Server {
+		f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
+		bind(f)
+		return f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actors)
+	}
+
+	gateway := serve(func(f *fixture) { f.bindActor("space", "run-a", "uid-a") })
+	response, body := call(t, gateway, path, map[string]string{"Authorization": "Bearer jwt-a"})
+	if response.StatusCode != http.StatusOK || body != "ok" {
+		t.Fatalf("matching UID: status %d body %q", response.StatusCode, body)
+	}
+	if auth := got.header.Get("Authorization"); auth != "Bearer "+testKey {
+		t.Fatalf("upstream got %q, want the Agent's key", auth)
+	}
+	refused := func(name string, gateway *httptest.Server, jwt string) {
+		t.Helper()
+		got.header = nil
+		response, _ := call(t, gateway, path, map[string]string{"Authorization": "Bearer " + jwt})
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s: status %d, want 401", name, response.StatusCode)
+		}
+		if got.header != nil {
+			t.Errorf("%s: the request reached the provider", name)
+		}
+	}
+	refused("a JWT with no UID", gateway, "jwt-no-uid")
+	refused("a recreated actor of the same name", gateway, "jwt-recreated")
+	refused("another actor with the same UID", gateway, "jwt-other-actor")
+
+	// The run's side: no recorded UID, no status at all, or a status that
+	// names another actor than the binding, each refuse even the right JWT.
+	for name, bind := range map[string]func(f *fixture){
+		"no recorded UID": func(f *fixture) { f.bindActor("space", "run-a", "") },
+		"no substrate status": func(f *fixture) {
+			f.bindActor("space", "run-a", "uid-a")
+			f.run.Status.Substrate = nil
+		},
+		"status names another actor": func(f *fixture) {
+			f.bindActor("space", "run-a", "uid-a")
+			f.run.Status.Substrate.Actor = "run-z"
+		},
+	} {
+		gateway := serve(bind)
+		refused(name, gateway, "jwt-a")
+		refused(name+", JWT with no UID", gateway, "jwt-no-uid")
+	}
+}
+
 func TestActorBoundRunIsRefusedWithoutAVerifier(t *testing.T) {
 	upstream, got := recordingUpstream(t, "ok")
 	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
-	f.token.Annotations[ActorAnnotation] = "space/run-a"
+	f.bindActor("space", "run-a", "uid-a")
 	gateway := f.serve(t, shippedProfiles(t, upstream.URL, ""))
 	response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", map[string]string{"Authorization": "Bearer " + testToken})
 	if response.StatusCode != http.StatusUnauthorized || got.header != nil {
@@ -1309,7 +1380,7 @@ func TestActorBoundRunIsRefusedWithoutAVerifier(t *testing.T) {
 func TestActorJWTDoesNotOpenATokenRun(t *testing.T) {
 	upstream, got := recordingUpstream(t, "ok")
 	f := newFixture("openai", "OPENAI_API_KEY", upstream.URL)
-	gateway := f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actorTokens{"jwt-a": "space/run-a"})
+	gateway := f.serveActors(t, shippedProfiles(t, upstream.URL, ""), actorTokens{"jwt-a": {"space/run-a", "uid-a"}})
 	response, _ := call(t, gateway, "/runs/ns/run/v1/chat/completions", map[string]string{"Authorization": "Bearer jwt-a"})
 	if response.StatusCode != http.StatusUnauthorized || got.header != nil {
 		t.Fatalf("status %d, reached provider: %v", response.StatusCode, got.header != nil)
