@@ -85,6 +85,37 @@ func TestBuildJob_TTLAndBackoff(t *testing.T) {
 	}
 }
 
+func TestBuildJob_KeepCleanupDropsTTL(t *testing.T) {
+	r := &AgentRunReconciler{}
+	run := newTestRun()
+	run.Spec.Cleanup = "keep"
+	job, _ := r.buildJob(context.Background(), run, false, nil, nil, nil, nil)
+
+	if job.Spec.TTLSecondsAfterFinished != nil {
+		t.Errorf("TTL = %d, want unset for cleanup: keep", *job.Spec.TTLSecondsAfterFinished)
+	}
+
+	run.Spec.Cleanup = "delete"
+	job, _ = r.buildJob(context.Background(), run, false, nil, nil, nil, nil)
+	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != 300 {
+		t.Error("TTL should stay 300 for cleanup: delete")
+	}
+}
+
+func TestFinishedJobPropagation(t *testing.T) {
+	for cleanup, want := range map[string]metav1.DeletionPropagation{
+		"":       metav1.DeletePropagationBackground,
+		"delete": metav1.DeletePropagationBackground,
+		"keep":   metav1.DeletePropagationOrphan,
+	} {
+		run := newTestRun()
+		run.Spec.Cleanup = cleanup
+		if got := finishedJobPropagation(run); got != want {
+			t.Errorf("cleanup %q: propagation = %s, want %s", cleanup, got, want)
+		}
+	}
+}
+
 func TestBuildJob_DeadlineDefault(t *testing.T) {
 	r := &AgentRunReconciler{}
 	job, _ := r.buildJob(context.Background(), newTestRun(), false, nil, nil, nil, nil)

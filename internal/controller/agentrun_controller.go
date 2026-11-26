@@ -1467,7 +1467,7 @@ func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, ag
 				log.Info("Agent container terminated successfully; cleaning up lingering sidecars")
 				result, _, usage, skipped := r.extractResultFromPod(ctx, log, agentRun)
 				// Delete the Job so Kubernetes kills remaining sidecar containers.
-				_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+				_ = r.Delete(ctx, job, client.PropagationPolicy(finishedJobPropagation(agentRun)))
 				if skipped {
 					return r.skipRun(ctx, agentRun, result)
 				}
@@ -1488,7 +1488,7 @@ func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, ag
 			}
 			r.extractAndPersistMemory(ctx, log, agentRun)
 			r.persistFailureMemory(ctx, log, agentRun, errMsg)
-			_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+			_ = r.Delete(ctx, job, client.PropagationPolicy(finishedJobPropagation(agentRun)))
 			if hasPostRunHooks {
 				return r.startPostRun(ctx, log, agentRun, 1, errMsg, nil)
 			}
@@ -1580,6 +1580,21 @@ func (r *AgentRunReconciler) checkAgentContainer(ctx context.Context, log logr.L
 		return false, 0, "", hasSidecars
 	}
 	return false, 0, "", hasSidecars
+}
+
+// keepRunPod reports whether the run asked to retain its pod for debugging.
+func keepRunPod(agentRun *sympoziumv1alpha1.AgentRun) bool {
+	return agentRun.Spec.Cleanup == "keep"
+}
+
+// finishedJobPropagation picks how to delete the Job of a run whose agent has
+// exited. With cleanup: keep the pod is orphaned rather than killed, so its
+// logs survive; the Job still goes so its active deadline can't reap the pod.
+func finishedJobPropagation(agentRun *sympoziumv1alpha1.AgentRun) metav1.DeletionPropagation {
+	if keepRunPod(agentRun) {
+		return metav1.DeletePropagationOrphan
+	}
+	return metav1.DeletePropagationBackground
 }
 
 // reconcileCompleted handles cleanup of completed AgentRuns.
@@ -3302,7 +3317,12 @@ func (r *AgentRunReconciler) buildJob(
 
 	// Job-only knobs — the Sandbox CR has no equivalent, so they stay here
 	// rather than in the shared template.
-	ttl := int32(300)
+	// cleanup: keep leaves the finished Job, and so its pod, for debugging.
+	var jobTTL *int32
+	if !keepRunPod(agentRun) {
+		ttl := int32(300)
+		jobTTL = &ttl
+	}
 	deadline := int64(600)
 	if agentRun.Spec.Timeout != nil {
 		deadline = int64(agentRun.Spec.Timeout.Duration.Seconds()) + 60
@@ -3325,7 +3345,7 @@ func (r *AgentRunReconciler) buildJob(
 			Labels:    agentPodLabels(agentRun),
 		},
 		Spec: batchv1.JobSpec{
-			TTLSecondsAfterFinished: &ttl,
+			TTLSecondsAfterFinished: jobTTL,
 			ActiveDeadlineSeconds:   &deadline,
 			BackoffLimit:            &backoffLimit,
 			Template:                template,
