@@ -210,8 +210,9 @@ spec:
                     self.toolRefs.filter(x, x.name == t.name).size() == 0)'
               cleanup:
                 default: delete
-                description: 'Cleanup policy: "delete" to remove pod after completion,
-                  "keep" for debugging.'
+                description: |-
+                  Cleanup policy: "delete" to remove pod after completion, "keep" for debugging.
+                  With "keep", skill sidecars keep running until the AgentRun is removed.
                 enum:
                 - delete
                 - keep

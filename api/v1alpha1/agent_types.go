@@ -460,7 +460,8 @@ type AgentConfig struct {
 
 	// Cleanup is the pod cleanup policy ("delete" or "keep") applied to
 	// AgentRuns created by this agent's SympoziumSchedules. When empty, runs
-	// use "delete". An AgentRun's own spec.cleanup is never overridden.
+	// use "delete". An AgentRun's own spec.cleanup is never overridden. With
+	// "keep", skill sidecars keep running until the AgentRun is removed.
 	// +kubebuilder:validation:Enum=delete;keep
 	// +optional
 	Cleanup string `json:"cleanup,omitempty"`
