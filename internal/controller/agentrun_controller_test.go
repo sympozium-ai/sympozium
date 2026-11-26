@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -102,16 +105,42 @@ func TestBuildJob_KeepCleanupDropsTTL(t *testing.T) {
 	}
 }
 
-func TestFinishedJobPropagation(t *testing.T) {
-	for cleanup, want := range map[string]metav1.DeletionPropagation{
-		"":       metav1.DeletePropagationBackground,
-		"delete": metav1.DeletePropagationBackground,
-		"keep":   metav1.DeletePropagationOrphan,
-	} {
+func TestDeleteFinishedJob_KeepAdoptsPod(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := sympoziumv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add sympozium scheme: %v", err)
+	}
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("add client-go scheme: %v", err)
+	}
+
+	for _, cleanup := range []string{"keep", "delete"} {
 		run := newTestRun()
+		run.UID = "run-uid"
 		run.Spec.Cleanup = cleanup
-		if got := finishedJobPropagation(run); got != want {
-			t.Errorf("cleanup %q: propagation = %s, want %s", cleanup, got, want)
+		run.Status.PodName = "test-run-pod"
+		job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "test-run", Namespace: "default"}}
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-run-pod", Namespace: "default"}}
+
+		cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(run, job, pod).Build()
+		r := &AgentRunReconciler{Client: cl, Scheme: scheme, Log: logr.Discard()}
+		r.deleteFinishedJob(context.Background(), logr.Discard(), run, job)
+
+		if err := cl.Get(context.Background(), client.ObjectKeyFromObject(job), &batchv1.Job{}); !apierrors.IsNotFound(err) {
+			t.Errorf("cleanup %q: Job should be deleted, got err %v", cleanup, err)
+		}
+		var got corev1.Pod
+		if err := cl.Get(context.Background(), client.ObjectKeyFromObject(pod), &got); err != nil {
+			t.Fatalf("cleanup %q: get pod: %v", cleanup, err)
+		}
+		owned := false
+		for _, ref := range got.OwnerReferences {
+			if ref.Kind == "AgentRun" && ref.UID == run.UID {
+				owned = true
+			}
+		}
+		if owned != (cleanup == "keep") {
+			t.Errorf("cleanup %q: pod owned by AgentRun = %v, want %v", cleanup, owned, cleanup == "keep")
 		}
 	}
 }

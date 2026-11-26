@@ -1467,7 +1467,7 @@ func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, ag
 				log.Info("Agent container terminated successfully; cleaning up lingering sidecars")
 				result, _, usage, skipped := r.extractResultFromPod(ctx, log, agentRun)
 				// Delete the Job so Kubernetes kills remaining sidecar containers.
-				_ = r.Delete(ctx, job, client.PropagationPolicy(finishedJobPropagation(agentRun)))
+				r.deleteFinishedJob(ctx, log, agentRun, job)
 				if skipped {
 					return r.skipRun(ctx, agentRun, result)
 				}
@@ -1488,7 +1488,7 @@ func (r *AgentRunReconciler) observeJob(ctx context.Context, log logr.Logger, ag
 			}
 			r.extractAndPersistMemory(ctx, log, agentRun)
 			r.persistFailureMemory(ctx, log, agentRun, errMsg)
-			_ = r.Delete(ctx, job, client.PropagationPolicy(finishedJobPropagation(agentRun)))
+			r.deleteFinishedJob(ctx, log, agentRun, job)
 			if hasPostRunHooks {
 				return r.startPostRun(ctx, log, agentRun, 1, errMsg, nil)
 			}
@@ -1587,14 +1587,34 @@ func keepRunPod(agentRun *sympoziumv1alpha1.AgentRun) bool {
 	return agentRun.Spec.Cleanup == "keep"
 }
 
-// finishedJobPropagation picks how to delete the Job of a run whose agent has
-// exited. With cleanup: keep the pod is orphaned rather than killed, so its
-// logs survive; the Job still goes so its active deadline can't reap the pod.
-func finishedJobPropagation(agentRun *sympoziumv1alpha1.AgentRun) metav1.DeletionPropagation {
+// deleteFinishedJob removes the Job of a run whose agent has exited, which
+// also stops lingering sidecars. With cleanup: keep the pod is first owned by
+// the AgentRun and then orphaned, so its logs survive until the run is pruned.
+func (r *AgentRunReconciler) deleteFinishedJob(ctx context.Context, log logr.Logger, agentRun *sympoziumv1alpha1.AgentRun, job *batchv1.Job) {
+	propagation := metav1.DeletePropagationBackground
 	if keepRunPod(agentRun) {
-		return metav1.DeletePropagationOrphan
+		if err := r.adoptRunPod(ctx, agentRun); err != nil {
+			// An unowned pod would never be collected, so drop it instead.
+			log.Error(err, "Could not tie kept pod to the AgentRun; deleting it with the Job")
+		} else {
+			propagation = metav1.DeletePropagationOrphan
+		}
 	}
-	return metav1.DeletePropagationBackground
+	_ = r.Delete(ctx, job, client.PropagationPolicy(propagation))
+}
+
+// adoptRunPod adds an owner reference from the run's pod to the AgentRun, so
+// the pod outlives its Job but is still garbage-collected with the run.
+func (r *AgentRunReconciler) adoptRunPod(ctx context.Context, agentRun *sympoziumv1alpha1.AgentRun) error {
+	pod := &corev1.Pod{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: agentRun.Namespace, Name: agentRun.Status.PodName}, pod); err != nil {
+		return err
+	}
+	patch := client.MergeFrom(pod.DeepCopy())
+	if err := controllerutil.SetOwnerReference(agentRun, pod, r.Scheme); err != nil {
+		return err
+	}
+	return r.Patch(ctx, pod, patch)
 }
 
 // reconcileCompleted handles cleanup of completed AgentRuns.
