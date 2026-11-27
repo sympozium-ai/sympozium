@@ -2615,6 +2615,7 @@ var tuiCommands = []struct{ cmd, desc string }{
 	{"l", "Logs (pods) / events (resources)"},
 	{"d", "Describe selected resource"},
 	{"Esc", "Go back / return to Agents"},
+	{"Up/Ctrl+P, Down/Ctrl+N", "Recall previous / next command (command bar)"},
 	{"R", "Run task on selected agent"},
 	{"O", "Launch onboard wizard"},
 	{"x", "Delete selected resource"},
@@ -2825,6 +2826,12 @@ type tuiModel struct {
 	suggestions []suggestion
 	suggestIdx  int
 	lastInput   string
+
+	// Input history (session only): historyIndex == len(commandHistory) means
+	// the user is not browsing history.
+	commandHistory []string
+	historyIndex   int
+	historyDraft   string // input saved when history browsing starts
 
 	// Delete confirmation
 	confirmDelete      bool
@@ -4233,7 +4240,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.acceptSuggestion()
 					return m, nil
 				}
-			case tea.KeyUp:
+			case tea.KeyUp, tea.KeyCtrlP:
 				if len(m.suggestions) > 0 {
 					m.suggestIdx--
 					if m.suggestIdx < 0 {
@@ -4241,12 +4248,36 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, nil
 				}
-			case tea.KeyDown:
+				if len(m.commandHistory) > 0 {
+					if m.historyIndex == len(m.commandHistory) {
+						m.historyDraft = m.input.Value()
+					}
+					if m.historyIndex > 0 {
+						m.historyIndex--
+					}
+					m.input.SetValue(m.commandHistory[m.historyIndex])
+					m.input.CursorEnd()
+					return m, nil
+				}
+			case tea.KeyDown, tea.KeyCtrlN:
 				if len(m.suggestions) > 0 {
 					m.suggestIdx++
 					if m.suggestIdx >= len(m.suggestions) {
 						m.suggestIdx = 0
 					}
+					return m, nil
+				}
+				if len(m.commandHistory) > 0 {
+					if m.historyIndex >= len(m.commandHistory) {
+						return m, nil // not browsing history; keep the draft
+					}
+					m.historyIndex++
+					if m.historyIndex == len(m.commandHistory) {
+						m.input.SetValue(m.historyDraft)
+					} else {
+						m.input.SetValue(m.commandHistory[m.historyIndex])
+					}
+					m.input.CursorEnd()
 					return m, nil
 				}
 			case tea.KeyEnter:
@@ -4258,6 +4289,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if input == "" {
 					break
 				}
+				if n := len(m.commandHistory); n == 0 || m.commandHistory[n-1] != input {
+					m.commandHistory = append(m.commandHistory, input)
+				}
+				m.historyIndex = len(m.commandHistory)
 				m.input.SetValue("")
 				m.suggestions = nil
 				m.suggestIdx = 0
