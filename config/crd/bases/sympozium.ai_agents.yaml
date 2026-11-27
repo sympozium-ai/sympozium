@@ -109,6 +109,16 @@ spec:
                           BaseURL overrides the provider's default API endpoint.
                           Use for OpenAI-compatible providers (GitHub Copilot, Azure OpenAI, Ollama, etc.).
                         type: string
+                      cleanup:
+                        description: |-
+                          Cleanup is the pod cleanup policy ("delete" or "keep") applied to
+                          AgentRuns created by this agent's SympoziumSchedules. When empty, runs
+                          use "delete". An AgentRun's own spec.cleanup is never overridden. With
+                          "keep", skill sidecars keep running until the AgentRun is removed.
+                        enum:
+                        - delete
+                        - keep
+                        type: string
                       env:
                         additionalProperties:
                           type: string

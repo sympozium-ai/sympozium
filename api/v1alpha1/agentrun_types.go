@@ -91,6 +91,7 @@ type AgentRunSpec struct {
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 
 	// Cleanup policy: "delete" to remove pod after completion, "keep" for debugging.
+	// With "keep", skill sidecars keep running until the AgentRun is removed.
 	// +kubebuilder:default="delete"
 	// +kubebuilder:validation:Enum=delete;keep
 	Cleanup string `json:"cleanup,omitempty"`

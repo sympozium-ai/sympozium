@@ -598,6 +598,7 @@ func (r *EnsembleReconciler) buildAgent(
 					Subagents:                persona.Subagents,
 					Env:                      persona.Env,
 					RunTimeout:               persona.RunTimeout,
+					Cleanup:                  persona.Cleanup,
 					Thinking:                 persona.Thinking,
 					MaxTokens:                persona.MaxTokens,
 					Temperature:              persona.Temperature,

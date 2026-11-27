@@ -318,6 +318,13 @@ type AgentConfigSpec struct {
 	// +optional
 	Env map[string]string `json:"env,omitempty"`
 
+	// Cleanup is the pod cleanup policy ("delete" or "keep") for AgentRuns
+	// created by this agent configuration's schedule. Propagated to the
+	// generated Agent's AgentConfig.Cleanup. When empty, runs use "delete".
+	// +kubebuilder:validation:Enum=delete;keep
+	// +optional
+	Cleanup string `json:"cleanup,omitempty"`
+
 	// RunTimeout is the maximum duration for each agent run created for this
 	// agent configuration (e.g. "30m", "1h"). Propagated to the generated
 	// Agent's AgentConfig.RunTimeout, which the controllers then persist onto
