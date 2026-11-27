@@ -8,7 +8,7 @@ RUN apk add --no-cache bash jq \
     && adduser -D -u 1000 agent
 
 COPY images/skill-echotool/svc-tool.sh /usr/local/bin/svc-tool
-COPY images/skill-echotool/tool-executor.sh /usr/local/bin/tool-executor.sh
+COPY pkg/sidecartools/tool-executor.sh /usr/local/bin/tool-executor.sh
 RUN chmod +x /usr/local/bin/svc-tool /usr/local/bin/tool-executor.sh
 
 USER 1000

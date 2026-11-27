@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -12,6 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/yaml"
 
 	sympoziumv1alpha1 "github.com/sympozium-ai/sympozium/api/v1alpha1"
 )
@@ -19,8 +21,8 @@ import (
 const skillPackFinalizer = "sympozium.ai/skillpack-finalizer"
 
 // SkillPackReconciler reconciles SkillPack objects.
-// It generates ConfigMaps from SkillPack CRDs that are then projected
-// into agent pods as skill bundles.
+// It generates ConfigMaps from SkillPack CRDs that are then mounted
+// into agent pods as skill bundles, one directory per pack under /skills.
 type SkillPackReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -98,9 +100,9 @@ func (r *SkillPackReconciler) reconcileConfigMap(ctx context.Context, log logr.L
 	data := make(map[string]string)
 	for _, skill := range skillPack.Spec.Skills {
 		key := fmt.Sprintf("%s.md", skill.Name)
-		content := skill.Content
-		if skill.Description != "" {
-			content = fmt.Sprintf("# %s\n\n> %s\n\n%s", skill.Name, skill.Description, content)
+		content, err := renderSkillContent(skill.Name, skill.Description, skill.Content)
+		if err != nil {
+			return fmt.Errorf("rendering skill %q: %w", skill.Name, err)
 		}
 		data[key] = content
 	}
@@ -144,4 +146,27 @@ func (r *SkillPackReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&sympoziumv1alpha1.SkillPack{}).
 		Owns(&corev1.ConfigMap{}).
 		Complete(r)
+}
+
+// skillFrontmatter is the header renderSkillContent writes. The agent runner
+// indexes skills by it, and it follows the SKILL.md convention external
+// harnesses read.
+type skillFrontmatter struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// renderSkillContent prefixes a skill body with YAML frontmatter carrying its
+// name and description, so the agent runner can list skills without reading
+// their bodies into the prompt. A body that already opens with its own
+// frontmatter is the author's and is left as is.
+func renderSkillContent(name, description, body string) (string, error) {
+	if strings.HasPrefix(body, "---\n") || strings.HasPrefix(body, "---\r\n") {
+		return body, nil
+	}
+	header, err := yaml.Marshal(skillFrontmatter{Name: name, Description: description})
+	if err != nil {
+		return "", err
+	}
+	return "---\n" + string(header) + "---\n\n" + body, nil
 }

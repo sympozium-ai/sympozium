@@ -36,8 +36,10 @@ RUN addgroup -g 1000 sympozium && \
     mkdir -p /workspace /ipc/tools && \
     chown -R sympozium:sympozium /workspace /ipc
 
+# The shared executor, run by the wrapper below after it loads GH_TOKEN.
+COPY pkg/sidecartools/tool-executor.sh /usr/local/bin/sympozium-tool-executor.sh
 COPY images/skill-github-gitops/tool-executor.sh /usr/local/bin/tool-executor.sh
-RUN chmod +x /usr/local/bin/tool-executor.sh
+RUN chmod +x /usr/local/bin/sympozium-tool-executor.sh /usr/local/bin/tool-executor.sh
 
 USER 1000
 
