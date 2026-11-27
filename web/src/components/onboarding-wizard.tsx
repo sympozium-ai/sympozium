@@ -114,7 +114,7 @@ export const PROVIDERS = [
   {
     value: "anthropic",
     label: "Anthropic",
-    defaultModel: "claude-sonnet-4-20250514",
+    defaultModel: "claude-sonnet-5-5",
     defaultBaseURL: "",
     icon: AnthropicIcon,
   },

@@ -33,7 +33,7 @@ const CHAT = "/v1/chat/completions";
 
 export const CELLN_PROVIDERS: CellnProviderPreset[] = [
   { value: "openai", label: "OpenAI", kind: "hosted", protocol: "openai-chat", origin: "https://api.openai.com", path: CHAT, suggestedModel: "gpt-4o", icon: Bot },
-  { value: "anthropic", label: "Anthropic", kind: "hosted", protocol: "anthropic-messages", origin: "https://api.anthropic.com", path: "/v1/messages", suggestedModel: "claude-sonnet-4-20250514", icon: Bot },
+  { value: "anthropic", label: "Anthropic", kind: "hosted", protocol: "anthropic-messages", origin: "https://api.anthropic.com", path: "/v1/messages", suggestedModel: "claude-sonnet-5-5", icon: Bot },
   { value: "openrouter", label: "OpenRouter", kind: "hosted", protocol: "openai-chat", origin: "https://openrouter.ai", path: "/api/v1/chat/completions", icon: Sparkles },
   { value: "deepseek", label: "DeepSeek", kind: "hosted", protocol: "openai-chat", origin: "https://api.deepseek.com", path: "/chat/completions", suggestedModel: "deepseek-chat", icon: Bot },
   { value: "mistral", label: "Mistral", kind: "hosted", protocol: "openai-chat", origin: "https://api.mistral.ai", path: CHAT, suggestedModel: "mistral-large-latest", icon: Bot },
