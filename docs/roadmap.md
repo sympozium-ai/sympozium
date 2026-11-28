@@ -1,6 +1,11 @@
 # Sympozium Roadmap
 
-Last updated: 2026-10-30, after v0.12.1.
+Last updated: 2026-10-30, after v0.12.2 and Substrate phase 0a.
+
+> **Superseded:** the February 2026 OpenClaw gap analysis that used to live
+> here is no longer the plan. It is kept as history in the
+> [original design](design.md); see [Not planned](#not-planned) for what
+> happened to its items.
 
 This page says where the project is, what is being worked on, and what comes
 next. It is maintained: when something here ships or is dropped, the page
@@ -29,12 +34,66 @@ frees up on the coordination layer. The reasoning is in
 [Sympozium vs Google AX and Agent Substrate](sympozium-vs-google-ax.md); the
 work is tracked in [epic #692](https://github.com/sympozium-ai/sympozium/issues/692).
 
+## Layers
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ Sympozium: coordination layer (what agents do)                       │
+│  identity & Agent keys · policy & tool gating · ensembles · channels │
+│  schedules · memory · spend · observability & attribution · console  │
+├──────────────────────── ExecutionBackend seam ───────────────────────┤
+│  start · phase · logs · cancel · identity  (target: no key crosses)  │
+├───────────────┬────────────────┬───────────────┬─────────────────────┤
+│ Job (default) │ Agent Sandbox  │ Celln (opt-in,│ Agent Substrate     │
+│               │                │ scope frozen) │ (exploratory, #692) │
+└───────────────┴────────────────┴───────────────┴─────────────────────┘
+```
+
+**Sympozium owns**, for every backend:
+
+- **Identity and keys.** The Agent is the only identity that can use its
+  model key. The target for every backend is option (a) in #692: the key is
+  added at our model gateway, which is the run's only route to a model, and
+  no backend, node or sandbox holds it. Today that is true on Celln only; Job
+  and Agent Sandbox pods still receive the key as an environment variable in
+  the agent container, and model provider headers as `MODEL_PROVIDER_HEADERS`.
+  That is a known exception for the Job (and Agent Sandbox) backend; closing
+  it by routing those runs through the model gateway is a workstream below.
+- **Policy and tool gating.** `SympoziumPolicy` allow/deny is enforced in our
+  tool server and admission, not inside the sandbox.
+- **Ensembles, channels, schedules and memory.** Delegation, handoffs and
+  routing are decided above the backend.
+- **Spend.** Budgets and ceilings belong in Sympozium, not in a backend, so
+  a namespace ceiling holds whichever backend ran the turn
+  ([#688](https://github.com/sympozium-ai/sympozium/issues/688)).
+- **Observability and attribution.** Traces, token usage, cost and device
+  energy are attributed to the run (namespace, run UID), including when a
+  backend multiplexes many runs onto one warm worker.
+
+**Backends own** isolation, density, placement and warm pools. The seam
+between the two is deliberately narrow: start, phase, logs, cancel and
+identity. Enduring runs and suspend/resume are not part of it yet. See
+[#699](https://github.com/sympozium-ai/sympozium/issues/699), where the seam is being built.
+
+| Backend | Status | Needs |
+|---|---|---|
+| Kubernetes Job | Default, first class | Nothing beyond Kubernetes |
+| Agent Sandbox | Supported | The Agent Sandbox CRDs |
+| Celln | Opt-in, scope frozen ([#693](https://github.com/sympozium-ai/sympozium/issues/693)) | KVM nodes, `--celln-fleet` |
+| Agent Substrate | Spike: installed (phase 0a), AgentRun backend next ([#699](https://github.com/sympozium-ai/sympozium/issues/699)) | Three beta feature gates, gVisor, PostgreSQL, object storage (bundled in the single-node profile) |
+
+Consumer hardware first still holds: a Kind cluster or a single small node
+must get the whole coordination layer on the Job backend, with nothing else
+to install.
+
 Two threads carry on from 0.12 unchanged:
 
 - **Agent-bound model access.** An Agent brings its own `ModelConnection`
   and key; nothing on an execution node ever holds a model credential, and
   every model request leaves through the model gateway under that Agent's
-  identity. This holds for every backend, including Substrate. See
+  identity. This holds on Celln today and is the bar for Substrate; Job and
+  Agent Sandbox runs still mount the key into the agent container and move
+  behind the gateway next (see In progress). See
   [Agent-bound model access](design/celln-agent-bound-model-access.md).
 - **Bring-your-own harness.** External runtimes (Codex, Claude Code, Pi,
   Hermes, Goose and friends) run under an administrator-approved
@@ -54,12 +113,34 @@ Two threads carry on from 0.12 unchanged:
 
 ## In progress
 
+- **ExecutionBackend seam.** The controller's Job, Agent Sandbox and Celln
+  paths move behind one narrow interface with no behaviour change, so a new
+  backend is an implementation, not a fork of the reconciler. Part of
+  [#692](https://github.com/sympozium-ai/sympozium/issues/692).
+- **Agent keys behind the gateway on every backend.** Job and Agent Sandbox
+  runs reach the model through a gateway instead of mounting the Agent's
+  key, so the per-Agent key guarantee no longer depends on which backend ran
+  the turn. Harness runs first: a per-run token swapped for the key outside
+  the pod, opt-in by policy
+  ([#700](https://github.com/sympozium-ai/sympozium/pull/700), draft). The
+  same route is what lets the #688 spend ceiling hold for every backend.
 - **Pluggable execution plane, Substrate spike** ([#692](https://github.com/sympozium-ai/sympozium/issues/692)).
   Four weeks with exit criteria: an `AgentRun` runs as a Substrate actor on
   the maintainer's cluster, under a `SympoziumPolicy`, with the Agent's key
   never inside the sandbox, phases and logs on the `AgentRun`, and a written
   go/no-go with latency and idle-cost numbers against the Job and Celln
   backends. No-go is a valid outcome.
+  - Phase 0a, install, is done: Substrate v1.0.0-rc.1 on a single-node
+    kubeadm cluster (Kubernetes 1.35) took three beta feature gates and about
+    five minutes; a gVisor actor resumes from its golden snapshot in 0.65 s
+    and suspends in 0.44 s
+    ([install record](evidence/substrate-install-framework-2026-10-30.md)).
+  - Phase 0b, an `AgentRun` as a Substrate actor, is next
+    ([#699](https://github.com/sympozium-ai/sympozium/issues/699)): an
+    atespace per namespace, an `ActorTemplate` per runtime image digest, an
+    actor per run (resume per turn, suspend between), egress pinned to our
+    model gateway so the key path does not change, tools as MCP servers, and
+    a vendored copy of Substrate's one public proto.
 - **Celln becomes an option, not the default** ([#693](https://github.com/sympozium-ai/sympozium/issues/693)).
   `sympozium install` deploys the fleet only with `--celln-fleet`; the Job
   backend is the default for new Agents; onboarding offers Celln alongside
@@ -89,15 +170,19 @@ Ordered by what unblocks the most users. Each has, or will get, an issue.
    `spec.backend: substrate`, validation and parity tests, install wiring or a
    documented external install, backend choice in the console, and enduring
    runs as suspended actors instead of leased parents.
-2. **Fleet operations.** A per-namespace spend ceiling and refusal events on the
-   run ([#688](https://github.com/sympozium-ai/sympozium/issues/688)); a KVM CI
-   lane that boots cells on an enforcing CNI and publishes release evidence
-   ([#685](https://github.com/sympozium-ai/sympozium/issues/685)). On the Celln
-   side: secret providers with live withdrawal, fleet-wide revocation, and a
-   persistent execution model, tracked in its
+2. **Spend and operations.** A per-namespace spend ceiling owned by
+   Sympozium and enforced for every backend, and refusal events on the run
+   ([#688](https://github.com/sympozium-ai/sympozium/issues/688)). It needs
+   the Job backend's model traffic routed through the model gateway (see
+   In progress). A KVM CI lane that boots cells on an enforcing CNI and
+   publishes release evidence
+   ([#685](https://github.com/sympozium-ai/sympozium/issues/685)) is kept
+   through the Celln scope freeze so the opt-in backend does not rot; Celln
+   maintenance (secret providers with live withdrawal, fleet-wide revocation)
+   is tracked in its
    [roadmap project](https://github.com/orgs/sympozium-ai/projects/1).
-3. **Observability.** OpenTelemetry `gen_ai.*` semantic conventions on
-   agent-runner spans (maintainer take-over of an external PR, in review), and
+3. **Observability and attribution.** Per-run device energy that stays
+   correct when a backend runs many runs on one warm worker, and
    an OTel transport with durable execution audit retention for the fleet.
 4. **Provider breadth without code.** Presets for OpenAI-compatible gateways
    (Databricks, OrcaRouter and others) on top of the `custom` connection,
