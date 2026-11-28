@@ -1,0 +1,5 @@
+# Custom labels of the self-hosted runners (see docs/reference/celln-kvm-lane.md).
+self-hosted-runner:
+  labels:
+    - kvm
+    - celln-lane

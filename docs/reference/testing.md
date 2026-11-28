@@ -48,11 +48,16 @@ Images are built and pushed on `main`.
 Celln tests need a Linux host with `/dev/kvm`; on Kind, copy the host kernel
 into each node first (see
 [Celln Fleet Installation](../guides/celln-fleet-installation.md#prerequisites)).
+The scheduled [Celln KVM lane](celln-kvm-lane.md) runs these journeys on a
+dedicated KVM host with an enforcing CNI and attaches the evidence to each
+release.
 
 | Script / target | What it proves |
 |-----------------|----------------|
 | `test/integration/test-celln-fleet.sh` | The model-free fleet on multi-node Kind: install with no model input, two teams' own connections and keys through the API, a key canary proving each Agent's key and no other reaches the provider, refused key reuse and origin move, the package gate, node loss |
 | `test/integration/test-celln-oneliner.sh` | A bare `sympozium install` brings up the fleet and the gateway; `sympozium doctor` passes |
+| `test/integration/test-celln-netpol-enforced.sh` | The fleet's NetworkPolicies are enforced on the CNI: positive controls connect, unadmitted peers cannot |
+| `test/integration/test-celln-three-way.sh` | Two Agents' conversations and a one-shot run answer the same question concurrently |
 | `make test-celln-authorisation-contract` | Namespace-authorisation fixtures (no cluster, no KVM) |
 | `make test-celln-model-budget` | Model-budget accounting against a real PostgreSQL (`DATABASE_URL`) |
 | `make test-celln-model-gateway-live` | The model gateway against a live API server and PostgreSQL |
