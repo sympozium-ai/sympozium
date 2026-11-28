@@ -293,3 +293,112 @@ lookup is empty under `helm template`; the key id still applies.
 {{- end -}}
 {{- $ids | toJson | sha256sum -}}
 {{- end -}}
+
+{{/*
+sympozium.substrateEnabled: "true" when the experimental Agent Substrate
+backend is switched on (substrate.enabled). Empty otherwise, and then nothing
+below renders anything.
+*/}}
+{{- define "sympozium.substrateEnabled" -}}
+{{- if (.Values.substrate | default dict).enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+sympozium.substrateActorsReachable: "true" when the clear-text listeners for
+actors may be exposed: Substrate is on and the operator acknowledged the
+clear-text hop. Without the acknowledgement no Service port or NetworkPolicy
+rule for them is rendered, and the binaries keep the listeners closed.
+*/}}
+{{- define "sympozium.substrateActorsReachable" -}}
+{{- $s := .Values.substrate | default dict -}}
+{{- if and $s.enabled $s.allowPlaintextGatewayHop -}}true{{- end -}}
+{{- end -}}
+
+{{- define "sympozium.substrateTurnPort" -}}
+{{- ((.Values.substrate | default dict).turnEndpoint | default dict).port | default 8090 | int -}}
+{{- end -}}
+
+{{- define "sympozium.substrateGatewayPort" -}}
+{{- ((.Values.substrate | default dict).gateway | default dict).port | default 8080 | int -}}
+{{- end -}}
+
+{{/*
+sympozium.substrateSharedEnv: the SUBSTRATE_* variables the controller and the
+model gateway both read, from the same values, so the one that binds a run to
+an actor and the one that checks the actor's JWT cannot disagree.
+*/}}
+{{- define "sympozium.substrateSharedEnv" -}}
+{{- $s := .Values.substrate | default dict -}}
+{{- $jwt := $s.jwt | default dict -}}
+- name: SUBSTRATE_JWT_ISSUER
+  value: {{ required "substrate.jwt.issuer is required when substrate.enabled" $jwt.issuer | quote }}
+{{- with $jwt.jwksURL }}
+- name: SUBSTRATE_JWKS_URL
+  value: {{ . | quote }}
+{{- end }}
+{{- with $jwt.jwksServerName }}
+- name: SUBSTRATE_JWKS_SERVER_NAME
+  value: {{ . | quote }}
+{{- end }}
+- name: SUBSTRATE_JWT_AUDIENCE
+  value: {{ $jwt.audience | default "sympozium" | quote }}
+- name: SUBSTRATE_CA_FILE
+  value: /etc/sympozium/substrate-ca/ca.crt
+# The hop from Substrate's egress gateway to here is clear text. "false"
+# keeps the listener for actors closed and refuses every substrate run.
+- name: SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP
+  value: {{ $s.allowPlaintextGatewayHop | default false | quote }}
+{{- end -}}
+
+{{/*
+sympozium.substrateControllerEnv: what only the controller needs: the Control
+API, the runner image, and how actors address the turn endpoint and the model
+gateway.
+*/}}
+{{- define "sympozium.substrateControllerEnv" -}}
+{{- $s := .Values.substrate | default dict -}}
+{{- $api := $s.controlAPI | default dict -}}
+{{- $ns := include "sympozium.namespace" . -}}
+{{- if not (.Values.harnessGateway | default dict).enabled -}}
+{{- fail "substrate.enabled needs harnessGateway.enabled: an actor reaches its model only through the gateway" -}}
+{{- end -}}
+{{- $image := required "substrate.runnerImage is required when substrate.enabled" $s.runnerImage -}}
+{{- if not (contains "@sha256:" $image) -}}
+{{- fail "substrate.runnerImage must be pinned by digest (repo@sha256:...)" -}}
+{{- end -}}
+{{ include "sympozium.substrateSharedEnv" . }}
+- name: SUBSTRATE_API_ENDPOINT
+  value: {{ required "substrate.controlAPI.endpoint is required when substrate.enabled" $api.endpoint | quote }}
+{{- with $api.serverName }}
+- name: SUBSTRATE_API_SERVER_NAME
+  value: {{ . | quote }}
+{{- end }}
+- name: SUBSTRATE_TOKEN_FILE
+  value: /var/run/secrets/sympozium/substrate/token
+- name: SUBSTRATE_RUNNER_IMAGE
+  value: {{ $image | quote }}
+- name: SUBSTRATE_TURN_LISTEN
+  value: {{ printf ":%s" (include "sympozium.substrateTurnPort" .) | quote }}
+- name: SUBSTRATE_TURN_HOST
+  value: {{ printf "sympozium-substrate-turns.%s.svc" $ns | quote }}
+- name: SUBSTRATE_TURN_PORT
+  value: {{ include "sympozium.substrateTurnPort" . | quote }}
+- name: SUBSTRATE_GATEWAY_HOST
+  value: {{ printf "harness-gateway.%s.svc" $ns | quote }}
+- name: SUBSTRATE_GATEWAY_PORT
+  value: {{ include "sympozium.substrateGatewayPort" . | quote }}
+{{- end -}}
+
+{{/*
+sympozium.substrateCAVolume: Substrate's CA bundle, from the operator's
+ConfigMap, as ca.crt.
+*/}}
+{{- define "sympozium.substrateCAVolume" -}}
+{{- $ca := (.Values.substrate | default dict).ca | default dict -}}
+- name: substrate-ca
+  configMap:
+    name: {{ required "substrate.ca.configMap is required when substrate.enabled" $ca.configMap | quote }}
+    items:
+      - key: {{ $ca.key | default "ca.crt" | quote }}
+        path: ca.crt
+{{- end -}}

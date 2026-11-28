@@ -1,0 +1,32 @@
+{{- /*
+Agent Substrate execution backend (experimental, off by default). The
+controller and model gateway wiring is in their own templates; this file adds
+the one object that exists only for Substrate: the Service actors reach the
+controller's turn endpoint through.
+
+It is rendered only when the operator has also acknowledged the clear-text hop
+(substrate.allowPlaintextGatewayHop). Without that the controller does not
+open the turn endpoint and refuses every backend=substrate run.
+*/ -}}
+{{- if include "sympozium.substrateActorsReachable" . }}
+# Where Substrate's egress gateway reaches the controller's turn endpoint on
+# behalf of an actor. Clear text: what crosses it is a short-lived actor JWT,
+# the run's task and its result, never a model key. The endpoint runs on every
+# controller replica and holds no state.
+apiVersion: v1
+kind: Service
+metadata:
+  name: sympozium-substrate-turns
+  namespace: {{ include "sympozium.namespace" . }}
+  labels:
+    {{- include "sympozium.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    control-plane: controller-manager
+  ports:
+    - name: actor-turns
+      port: {{ include "sympozium.substrateTurnPort" . }}
+      targetPort: actor-turns
+      protocol: TCP
+{{- end }}

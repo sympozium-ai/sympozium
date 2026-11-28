@@ -149,7 +149,7 @@ ux-tests-serve-open: web-install ## Open Cypress interactive runner against `sym
 test-web-proxy: ## Run web-proxy HTTP API tests (requires a running web-endpoint service)
 	bash ./test/integration/test-web-proxy-api.sh
 
-vet: vet-tags ## Run go vet (including build-tagged code, see vet-tags)
+vet: vet-tags substrate-api-check ## Run go vet (including build-tagged code, see vet-tags)
 	$(GOVET) ./...
 
 # Files behind a build constraint are invisible to `go build|vet|test ./...`, so
@@ -161,6 +161,10 @@ vet: vet-tags ## Run go vet (including build-tagged code, see vet-tags)
 vet-tags: ## Vet code `go vet ./...` cannot see (build tags, other-OS files)
 	$(GOVET) -tags system ./test/system/...
 	$(GOVET) hack/sync-harness-defaults.go
+
+.PHONY: substrate-api-check
+substrate-api-check: ## Check the vendored Agent Substrate API matches its pinned tag
+	@hack/vendor-substrate-api.sh --check
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...

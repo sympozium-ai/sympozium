@@ -138,7 +138,13 @@ type AgentRunSpec struct {
 	//
 	// Celln is selected for individual high-risk or bounded computations;
 	// ensembles and workflows always use the Job backend.
-	// +kubebuilder:validation:Enum=job;celln
+	// "substrate": an Agent Substrate actor (experimental, #699). Only this
+	//   value selects it, and only on a controller an operator has configured
+	//   for Substrate; anything else is refused, never run as a Job. One-shot
+	//   string tasks with a model key only; the key never enters the sandbox
+	//   and the actor reaches nothing but the controller's turn endpoint and
+	//   the model gateway.
+	// +kubebuilder:validation:Enum=job;celln;substrate
 	// +optional
 	Backend string `json:"backend,omitempty"`
 
@@ -422,6 +428,7 @@ func (p AgentRunPhase) IsTerminal() bool {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cellnIssuance) || has(self.cellnIssuance)",message="saved Celln issuance cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cellnParent) || has(self.cellnParent)",message="saved Celln parent cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cellnScoped) || has(self.cellnScoped)",message="saved scoped Celln identity cannot be removed"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.substrate) || has(self.substrate)",message="a run's actor binding and execution receipt cannot be removed"
 type AgentRunStatus struct {
 	// CellnOnly records a new run's execution boundary before any finalizer or
 	// workload side effects. The controller refuses subsequent backend changes.
@@ -590,6 +597,65 @@ type AgentRunStatus struct {
 	// retain their namespace-aware parent incarnation here.
 	// +optional
 	CellnScoped *CellnScopedStatus `json:"cellnScoped,omitempty"`
+	// Substrate binds the run to its Agent Substrate actor. It is written
+	// before the actor is created and never changes to another actor.
+	// +optional
+	Substrate *SubstrateStatus `json:"substrate,omitempty"`
+}
+
+// SubstrateStatus records where a backend=substrate run executes.
+// +kubebuilder:validation:XValidation:rule="self.atespace == oldSelf.atespace && self.actor == oldSelf.actor",message="a run never moves to another actor"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.receiptDigest) || (has(self.receiptDigest) && self.receiptDigest == oldSelf.receiptDigest)",message="the execution receipt is write-once"
+type SubstrateStatus struct {
+	// Atespace and Actor name the actor. The pair is what an actor's JWT says
+	// about it, so it is also how a call from the sandbox is tied to this run.
+	// +kubebuilder:validation:MaxLength=63
+	Atespace string `json:"atespace"`
+	// +kubebuilder:validation:MaxLength=63
+	Actor string `json:"actor"`
+	// ActorUID tells this actor apart from an earlier one of the same name.
+	// +optional
+	ActorUID string `json:"actorUID,omitempty"`
+	// Template is the actor template (one per runner image digest).
+	// +optional
+	Template string `json:"template,omitempty"`
+	// AttemptedAt is when the run was bound to its actor, before anything
+	// was created. Starting the actor is bounded from here by the run's
+	// timeout.
+	// +optional
+	AttemptedAt *metav1.Time `json:"attemptedAt,omitempty"`
+	// Worker is the pod that last held the actor. It can change between
+	// resumes; attribution keys on the actor, not on this.
+	// +optional
+	Worker string `json:"worker,omitempty"`
+	// ResumedAt is when the actor was last resumed for this run.
+	// +optional
+	ResumedAt *metav1.Time `json:"resumedAt,omitempty"`
+	// Outcome is what the actor reported for the run's turn. It comes from
+	// the sandbox and is validated before anything acts on it.
+	// +optional
+	Outcome *SubstrateOutcome `json:"outcome,omitempty"`
+	// ReceiptDigest is the execution receipt: a digest over the run, the
+	// actor that executed it and the outcome that actor reported. It is
+	// written once, in the same update as Outcome, and the API refuses any
+	// later change to it.
+	// +kubebuilder:validation:MaxLength=128
+	// +optional
+	ReceiptDigest string `json:"receiptDigest,omitempty"`
+	// Released is set once the actor is confirmed deleted.
+	// +optional
+	Released bool `json:"released,omitempty"`
+}
+
+// SubstrateOutcome is the result an actor posted to the turn endpoint.
+type SubstrateOutcome struct {
+	ExitCode int32 `json:"exitCode"`
+	// Result is the runner's result document, bounded in size.
+	// +optional
+	Result string `json:"result,omitempty"`
+	// ReportedAt is when the result arrived. With ResumedAt it bounds the
+	// time the actor was active for this run.
+	ReportedAt metav1.Time `json:"reportedAt"`
 }
 
 // CellnScopedStatus is the durable controller-side recovery record for the
@@ -962,6 +1028,7 @@ type RetrySpec struct {
 // reconciles into a Kubernetes Job.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnIssuance) || (has(self.status) && has(self.status.cellnIssuance))",message="saved Celln issuance status cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnParent) || (has(self.status) && has(self.status.cellnParent))",message="saved Celln parent status cannot be removed"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.substrate) || (has(self.status) && has(self.status.substrate))",message="a run's actor binding and execution receipt cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.cellnOnly) || !oldSelf.status.cellnOnly || (has(self.status) && has(self.status.cellnOnly) && self.status.cellnOnly)",message="a recorded Celln-only execution boundary cannot be removed"
 // +kubebuilder:validation:XValidation:rule="!has(self.status) || !has(self.status.cellnOnly) || !self.status.cellnOnly || (has(self.spec.backend) && self.spec.backend == 'celln')",message="a recorded Celln-only run cannot change execution backend"
 type AgentRun struct {

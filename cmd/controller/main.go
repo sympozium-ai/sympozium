@@ -31,6 +31,7 @@ import (
 	"github.com/sympozium-ai/sympozium/internal/harnessgateway"
 	"github.com/sympozium-ai/sympozium/internal/orchestrator"
 	"github.com/sympozium-ai/sympozium/internal/pricing"
+	"github.com/sympozium-ai/sympozium/internal/substrate"
 	"github.com/sympozium-ai/sympozium/pkg/telemetry"
 )
 
@@ -232,6 +233,35 @@ func main() {
 		}
 		agentRunReconciler.ScopedDispatcher = dispatcher
 		setupLog.Info("Scoped Celln one-shot and enduring execution enabled")
+	}
+	// Agent Substrate is an optional, experimental execution backend, used
+	// only by runs that ask for it (spec.backend: substrate). Without it such
+	// a run is refused; nothing falls back to another backend.
+	substrateSettings, err := substrate.SettingsFromEnv(os.Getenv)
+	if err != nil {
+		setupLog.Error(err, "invalid Agent Substrate configuration")
+		os.Exit(1)
+	}
+	if substrateSettings != nil {
+		runnable, err := controller.SetupSubstrate(agentRunReconciler, substrateSettings)
+		if err != nil {
+			setupLog.Error(err, "invalid Agent Substrate configuration")
+			os.Exit(1)
+		}
+		if runnable == nil {
+			// The turn endpoint is clear text. It stays closed, and every
+			// backend=substrate run is refused, until the operator says so.
+			setupLog.Info("Agent Substrate is configured but refuses runs: the hop from its egress gateway to the model gateway and the turn endpoint is clear text; set SUBSTRATE_ALLOW_PLAINTEXT_GATEWAY_HOP=true (chart: substrate.allowPlaintextGatewayHop) to accept that")
+		} else {
+			if err := mgr.Add(runnable); err != nil {
+				setupLog.Error(err, "unable to add the Substrate turn endpoint")
+				os.Exit(1)
+			}
+			setupLog.Info("Agent Substrate backend enabled (experimental; clear-text hop acknowledged)", "api", substrateSettings.APIEndpoint, "turnEndpoint", substrateSettings.TurnListen)
+			// The controller cannot see what the CNI enforces, so it says
+			// this on every start with the acknowledgement set.
+			setupLog.Info(substrate.PlaintextHopWarning, "turnEndpoint", substrateSettings.TurnListen)
+		}
 	}
 	if err := agentRunReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AgentRun")

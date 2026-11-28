@@ -219,6 +219,9 @@ func main() {
 		case "workspace-marker":
 			runWorkspaceMarker()
 			return
+		case "actor":
+			runActor()
+			return
 		}
 	}
 

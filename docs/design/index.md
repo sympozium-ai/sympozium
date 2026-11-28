@@ -8,6 +8,7 @@ user guides: for how things work today, start with
 ## Design documents and decisions
 
 - [ExecutionBackend seam: pluggable execution under the coordination layer](execution-backend-seam.md)
+- [Substrate backend: an AgentRun as an Agent Substrate actor (experimental, opt-in)](substrate-backend.md)
 - [Celln: single execution plane](celln-single-execution-plane.md)
 - [ADR: Harness identity, Celln placement and approved tool lending](celln-runtime-tool-contract.md)
 - [Celln namespace authorisation and cross-repository conformance contract](celln-namespace-authorisation.md)

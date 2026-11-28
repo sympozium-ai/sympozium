@@ -88,6 +88,15 @@ func (r *AgentRunReconciler) runKeyIsMediated(ctx context.Context, agentRun *sym
 	if agentRun.Spec.Backend == "celln" && scopedCatalogueSelected(agentRun) {
 		return false, nil
 	}
+	// A Substrate actor never holds its key: the backend, not the Agent's
+	// policy, sends its model calls through the gateway. The origin check
+	// skipped here is made by the backend instead, before anything exists
+	// (substrateBackend.admit): the key goes only to the operator's profile
+	// upstream, and a key pinned elsewhere is refused. A run the backend
+	// refuses never reaches a pod, so the key never travels unjudged.
+	if substrateOwns(agentRun) {
+		return true, nil
+	}
 	return r.runIsMediated(ctx, agentRun)
 }
 

@@ -1,6 +1,6 @@
 # Sympozium Roadmap
 
-Last updated: 2026-10-30, after v0.12.1.
+Last updated: 2026-11-22, after v0.13.0.
 
 This page says where the project is, what is being worked on, and what comes
 next. It is maintained: when something here ships or is dropped, the page
@@ -60,6 +60,15 @@ Two threads carry on from 0.12 unchanged:
   never inside the sandbox, phases and logs on the `AgentRun`, and a written
   go/no-go with latency and idle-cost numbers against the Job and Celln
   backends. No-go is a valid outcome.
+  Status, 2026-11-22: a run executes as an actor through the real controller
+  in about 0.4 s against about 11 s for a Job, with the key added outside
+  the sandbox. The recommendation is go, with conditions: an unencrypted hop
+  to the model gateway to close, and tools not yet designed. The backend is
+  in the tree as experimental and opt-in: off by default in the chart, used
+  only by runs with `backend: substrate`, and refusing every run until the
+  operator acknowledges the unencrypted hop. See the
+  [design note](design/substrate-backend.md) and the
+  [results](evidence/substrate-spike-go-no-go-2026-11-22.md).
 - **Celln becomes an option, not the default** ([#693](https://github.com/sympozium-ai/sympozium/issues/693)).
   `sympozium install` deploys the fleet only with `--celln-fleet`; the Job
   backend is the default for new Agents; onboarding offers Celln alongside

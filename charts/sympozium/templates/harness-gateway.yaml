@@ -4,6 +4,9 @@
 {{- $tlsSecret := include "sympozium.harnessGatewayTLSSecret" . }}
 {{- $tenantNamespaces := .Values.harnessGateway.namespaces }}
 {{- $allowed := .Files.Get "files/harness-gateway/allowed.yaml" | fromYaml }}
+{{- $substrate := include "sympozium.substrateEnabled" . }}
+{{- $actorsReachable := include "sympozium.substrateActorsReachable" . }}
+{{- $substrateEgress := (.Values.substrate | default dict).egressGateway | default dict }}
 # Provider profiles. These decide where a real key goes, so they live here and
 # nowhere a tenant can write. Add entries with values harnessGateway.profiles.
 apiVersion: v1
@@ -220,10 +223,22 @@ spec:
             {{- end }}
             - name: HARNESS_GATEWAY_DRAIN_SECONDS
               value: {{ default 30 .Values.harnessGateway.drainSeconds | int | quote }}
+            {{- if $substrate }}
+            # Agent Substrate (experimental): actors are identified by a JWT
+            # from Substrate's issuer, on a listener of their own.
+            {{- include "sympozium.substrateSharedEnv" . | nindent 12 }}
+            - name: HARNESS_GATEWAY_ACTOR_LISTEN
+              value: {{ printf ":%s" (include "sympozium.substrateGatewayPort" .) | quote }}
+            {{- end }}
           ports:
             - name: https
               containerPort: 8443
               protocol: TCP
+            {{- if $substrate }}
+            - name: actors
+              containerPort: {{ include "sympozium.substrateGatewayPort" . }}
+              protocol: TCP
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /healthz
@@ -238,6 +253,11 @@ spec:
             - name: tls
               mountPath: /etc/harness-gateway/tls
               readOnly: true
+            {{- if $substrate }}
+            - name: substrate-ca
+              mountPath: /etc/sympozium/substrate-ca
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.harnessGateway.resources | nindent 12 }}
           securityContext:
@@ -256,6 +276,9 @@ spec:
                 path: tls.crt
               - key: tls.key
                 path: tls.key
+        {{- if $substrate }}
+        {{- include "sympozium.substrateCAVolume" . | nindent 8 }}
+        {{- end }}
       {{- with .Values.harnessGateway.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -284,6 +307,14 @@ spec:
       port: 443
       targetPort: https
       protocol: TCP
+    {{- if $actorsReachable }}
+    # Clear text, for Substrate's egress gateway only (see the NetworkPolicy
+    # below). Rendered only with substrate.allowPlaintextGatewayHop.
+    - name: actors
+      port: {{ include "sympozium.substrateGatewayPort" . }}
+      targetPort: actors
+      protocol: TCP
+    {{- end }}
 ---
 # Only run pods reach the gateway. A stolen run token is useless from outside
 # the cluster.
@@ -307,6 +338,21 @@ spec:
       ports:
         - protocol: TCP
           port: 8443
+    {{- if $actorsReachable }}
+    # Actors never connect themselves: their calls arrive from Substrate's
+    # egress gateway, which is the only source admitted on the actor port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $substrateEgress.namespace | default "ate-system" | quote }}
+          {{- with $substrateEgress.podSelector }}
+          podSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ include "sympozium.substrateGatewayPort" . }}
+    {{- end }}
   {{- with .Values.harnessGateway.egress }}
   egress:
     {{- toYaml . | nindent 4 }}

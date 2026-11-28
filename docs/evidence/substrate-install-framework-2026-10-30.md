@@ -13,7 +13,7 @@ number below was measured on the maintainer's cluster the same day.
 | | |
 |---|---|
 | Host | `framework`, single node, Fedora Linux 43, kernel 7.1.8 |
-| Kubernetes | kubeadm v1.35.7, containerd 2.3.3, Calico-style default CNI, `local-path` StorageClass |
+| Kubernetes | kubeadm v1.35.7, containerd 2.3.3, flannel CNI (does not enforce NetworkPolicy), `local-path` StorageClass |
 | Hardware | 32 CPUs, 62 GiB RAM, `/dev/kvm` present |
 | Already running | Sympozium v0.12.2 with its Celln fleet, a Postgres, llama-server |
 

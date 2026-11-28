@@ -95,7 +95,7 @@ What step 1 implements versus what is a target:
 |---|---|
 | `Phase`: `Refused`, `Uncertain`, `ContextLost` for Celln | done. `Refused` = a shared admission refusal (`ModelKeyAuthorized=False`, typed `MODEL_KEY_*` code, Job and Celln alike) or `status.cellnScoped.nativePhase == "Refused"` (also after `StartAttempted`); `ContextLost` = a receiver-reported `AUTH_CONTEXT_LOST` (`CellnContextLost` condition); `Uncertain` = `CellnScopedExecution` Unknown on a live run, including the `NativeOwnerUncertain` grace period, which can still end in a lease-elapsed success |
 | `Result` with an opaque `Receipt` | done, read-only from status |
-| `Admit`, the idempotency key on `Start`, `Cancel`, and the `Unknown` phase | target; not implemented |
+| `Admit`, the idempotency key on `Start`, `Cancel`, and the `Unknown` phase | target; not implemented for Job and Celln. The Substrate backend has `Preflight`, an idempotent `Start` and `Cancel` (see the update below) |
 | Closed enums for `RefusalCode` / `PublicReason` | target. Today `RefusalCode` is a string; Celln's code is the `AUTH_*` prefix `scopedFailureSummary` writes, empty when it mapped none |
 | A bound on `Result.Output` size | target |
 | "Celln success requires a receipt" enforced in `Result` | target; `Result` reports whatever status holds |
@@ -116,6 +116,66 @@ What step 1 implements versus what is a target:
    Celln dispatcher (`internal/cellnscoped`) into the controller, above the
    seam. That is the hook for #688.
 5. Wrap Agent Sandbox; add Substrate (#699).
+
+Update, 2026-11-22: a spike of step 5's second half exists. The
+[Substrate backend](substrate-backend.md) implements this interface as it
+stands (reconcile-shaped `Start`, `Observe`, `Release`), ahead of steps 1 to
+4. Two things changed in the reconciler to let a backend arrive without a
+branch of its own:
+
+- `executionBackendSet.admitted` picks the backend for a run that has passed
+  shared admission, by asking each backend's `Owns`. `reconcilePending` and
+  `reconcileRunning` call it where they called the Job backend directly.
+  Celln is still selected earlier, before admission.
+- `executionBackendSet.releasedOnCompletion` lists the backends whose
+  execution must be confirmed gone when a run ends. `reconcileCompleted` and
+  `reconcileDelete` loop over it. This is a third release path beside the
+  two recorded below, until `Cancel` and `Release` are split.
+
+What the spike says about the target contract: the Substrate backend wanted
+`Admit` (its key binding is admission, and it runs inside `Start` today), an
+idempotency key (it uses the actor name), and `Phase` separate from
+`Result` (its `Observe` reads an outcome from status and then drives
+`succeedRun` itself, as the Job backend does).
+
+Update, with the Substrate backend becoming an experimental, opt-in backend:
+it now meets four parts of the target contract that the wrapped backends do
+not yet, and two of them are new, **optional** parts of the seam. A backend
+has them by implementing a second small interface, found by type assertion,
+so Job and Celln are untouched and behave exactly as before.
+
+- **`executionPreflighter`** (`Preflight(ctx, run) *Refusal`): the first
+  piece of `Admit`. A backend that can refuse a run from its spec and its own
+  configuration says so before shared admission resolves or reads anything.
+  `Reconcile` calls `executionBackendSet.preflight` for a Pending run and ends
+  a refused one with `refuseExecution`.
+- **`executionCanceler`** (`Cancel(ctx, log, run) error`): step 3 above, for
+  the backend that has it. `Cancel` stops the work of a run that has not
+  finished and cleans nothing up; `Release` stays idempotent, confirmed
+  cleanup that does not depend on `Cancel` having run. `reconcileDelete`
+  calls `executionBackendSet.cancel` for a run deleted before it was
+  terminal, then releases as before. For Substrate, `Cancel` revokes the
+  run's key binding first (the actor loses model access), then suspends the
+  actor; its own `Observe` calls it on a timeout. `AgentRun` has no other
+  stop signal today.
+- **Backend refusals are typed.** `SUBSTRATE_*` codes are `RefusalCode`s. A
+  backend refusal is recorded by `refuseExecution` as the
+  `ExecutionAdmitted=False` condition, with the code as its reason, stamped
+  by `failRun` in the same status update as `Failed` and read back through
+  `terminalMark`, as `ModelKeyAuthorized` is. A `MODEL_KEY_*` code raised by
+  a backend is recorded as the shared `ModelKeyAuthorized` refusal it is.
+  How Job and Celln report policy denials is unchanged.
+- **Idempotent `Start` and a write-once receipt**, inside the backend:
+  "attempted" (`status.substrate`) is persisted before any Control API call,
+  the actor name is the idempotency key, and `status.substrate.receiptDigest`
+  is written once with the outcome and guarded by a CEL rule on the CRD.
+
+`AgentRunReconciler.ExecutionResult` is a read-only view for callers outside
+the package: the backend that owns a run and its `Result`.
+
+`jobBackend.Owns` now says no to a run that asks for `backend: substrate`, so
+exactly one backend owns any run and a refused Substrate run is never the Job
+backend's.
 
 ### Types
 
