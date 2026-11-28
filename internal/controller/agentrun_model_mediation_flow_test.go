@@ -566,6 +566,13 @@ func TestAssertNoModelSecretInPod(t *testing.T) {
 		return corev1.Container{Name: "c", Env: []corev1.EnvVar{{Name: "E", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: name}}}}}}
 	}
 	from := corev1.Container{Name: "c", EnvFrom: []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "headers"}}}}}
+	projected := func(names ...string) corev1.Volume {
+		var sources []corev1.VolumeProjection
+		for _, name := range names {
+			sources = append(sources, corev1.VolumeProjection{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: name}}})
+		}
+		return corev1.Volume{Name: "p", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: sources}}}
+	}
 	for name, tc := range map[string]struct {
 		spec corev1.PodSpec
 		ok   bool
@@ -577,6 +584,9 @@ func TestAssertNoModelSecretInPod(t *testing.T) {
 		"the key in a sidecar":           {corev1.PodSpec{Containers: []corev1.Container{ref("token"), ref("key")}}, false},
 		"a whole Secret through envFrom": {corev1.PodSpec{Containers: []corev1.Container{from}}, false},
 		"the key as a volume":            {corev1.PodSpec{Volumes: []corev1.Volume{{Name: "v", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "key"}}}}}, false},
+		"the key in a projected volume":  {corev1.PodSpec{Volumes: []corev1.Volume{projected("token", "key")}}, false},
+		"projected headers Secret":       {corev1.PodSpec{Volumes: []corev1.Volume{projected("headers")}}, false},
+		"a clean projected volume":       {corev1.PodSpec{Volumes: []corev1.Volume{projected("token")}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := assertNoModelSecretInPod(run, &tc.spec); (err == nil) != tc.ok {
